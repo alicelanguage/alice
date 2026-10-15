@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <!-- Native kernels: built when a C compiler is present; Native.cs falls back to managed SIMD otherwise. -->
+  <PropertyGroup>
+    <NativeSrc>$(MSBuildThisFileDirectory)../../native/alice_native.c</NativeSrc>
+    <NativeOut>$(IntermediateOutputPath)libalice_native.so</NativeOut>
+  </PropertyGroup>
+  <Target Name="BuildAliceNative" BeforeTargets="AssignTargetPaths" Condition="'$(OS)' != 'Windows_NT'">
+    <Exec Command="cc -O3 -march=native -fPIC -shared -o &quot;$(NativeOut)&quot; &quot;$(NativeSrc)&quot;" ContinueOnError="true" Condition="!Exists('$(NativeOut)')" />
+    <ItemGroup Condition="Exists('$(NativeOut)')">
+      <None Include="$(NativeOut)" Link="libalice_native.so" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>
