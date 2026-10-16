@@ -1,7 +1,8 @@
 #!/bin/sh
 # Alice installer for Linux and macOS.
 #
-#   curl -fsSL https://github.com/alicelanguage/alice/releases/latest/download/install.sh | sh
+#   curl -fsSL https://alice-lang.org/install.sh | sh
+#   (mirror: https://github.com/alicelanguage/alice/releases/latest/download/install.sh)
 #   curl -fsSL .../install.sh | sh -s -- --nightly
 #
 # Installs a verified release into $ALICE_HOME/toolchains/VERSION (default ~/.alice), makes it the default,
@@ -82,7 +83,7 @@ sha256() {
 case "$(uname -s)" in
   Linux) os=linux ;;
   Darwin) os=osx ;;
-  MINGW*|MSYS*|CYGWIN*) die "use install.ps1 on Windows" "irm https://github.com/$REPO/releases/latest/download/install.ps1 | iex" ;;
+  MINGW*|MSYS*|CYGWIN*) die "use install.ps1 on Windows" "irm https://alice-lang.org/install.ps1 | iex" ;;
   *) die "unsupported OS $(uname -s)" ;;
 esac
 case "$(uname -m)" in

@@ -4,18 +4,18 @@
 
 ```bash
 # Linux, macOS
-curl -fsSL https://github.com/alicelanguage/alice/releases/latest/download/install.sh | sh
+curl -fsSL https://alice-lang.org/install.sh | sh
 curl -fsSL .../install.sh | sh -s -- --nightly       # or --version 0.10.1, --home DIR, --no-modify-path
 ```
 
 ```powershell
 # Windows (no administrator rights, no Visual Studio)
-irm https://github.com/alicelanguage/alice/releases/latest/download/install.ps1 | iex
+irm https://alice-lang.org/install.ps1 | iex
 ```
 
 The scripts (`scripts/install.sh`, `scripts/install.ps1`, attached to every release and served by the site) pick the
 archive for the platform, verify its SHA-256, install it into `~/.alice/toolchains/VERSION`, make it the default,
-add `~/.alice/bin` to PATH, and install the .NET 10 SDK per-user with Microsoft's `dotnet-install` script when it is
+add `~/.alice/bin` to PATH (the same files are attached to every GitHub release as a mirror), and install the .NET 10 SDK per-user with Microsoft's `dotnet-install` script when it is
 missing (`--no-dotnet` / `-NoDotnet` skips that). `--archive FILE` installs a downloaded archive offline. Afterwards
 use `alice toolchain` and `alice self update` ([toolchains](tooling.md#toolchains)).
 

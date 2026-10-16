@@ -1,6 +1,7 @@
 # Alice installer for Windows (PowerShell 5.1+ or 7+). No administrator rights, no Visual Studio.
 #
-#   irm https://github.com/alicelanguage/alice/releases/latest/download/install.ps1 | iex
+#   irm https://alice-lang.org/install.ps1 | iex
+#   (mirror: https://github.com/alicelanguage/alice/releases/latest/download/install.ps1)
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Version nightly
 #
 # Installs a verified release into $env:ALICE_HOME\toolchains\VERSION (default ~\.alice), makes it the default,
