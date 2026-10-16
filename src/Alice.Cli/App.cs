@@ -13,7 +13,7 @@ public static class App
     static readonly (string Name, string Key)[] Commands =
     [
         ("new", "cmd.new"), ("build", "cmd.build"), ("run", "cmd.run"), ("check", "cmd.check"), ("test", "cmd.test"),
-        ("add", "cmd.add"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("fmt", "cmd.fmt"), ("sln", "cmd.sln"), ("version", "cmd.version"),
+        ("add", "cmd.add"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
     ];
 
     public static int Run(string[] argv)
@@ -43,7 +43,7 @@ public static class App
                 "fmt" => FormatCommand.Run(rest),
                 "add" => ProjectCommands.Add(rest),
                 "clean" => ProjectCommands.Clean(rest),
-                "sln" => ProjectCommands.Sln(rest),
+                "update" => ProjectCommands.Update(rest),
                 "version" => VersionCommand.Run(),
                 _ when args[0].EndsWith(".al") => CompileCommands.RunCmd(args),
                 _ => Unknown(args[0]),

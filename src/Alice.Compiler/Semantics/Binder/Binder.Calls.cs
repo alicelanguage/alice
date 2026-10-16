@@ -9,6 +9,12 @@ public sealed partial class Binder
     AType BindCall(CallExpr c)
     {
         if (c.Recv == null) return BindSelfCall(c);
+        if (c.Name == "new" && GenericPathNew(c) is NewExpr ne)
+        {
+            c.Res = "asnew";
+            c.Sym = ne;
+            return BindExpr(ne);
+        }
         AType recv = BindExpr(c.Recv);
         bool conc = IsConcurrentCall(c, recv);
         if (conc) MarkConcurrentArgs(c.Args);
@@ -160,6 +166,21 @@ public sealed partial class Binder
         if (c.Block != null) BindLambda(c.Block, new List<AType>());
         c.Res = hasArgs || c.Block != null ? "call" : "unknown-member";
         return AType.Unknown;
+    }
+
+    /// <summary>
+    /// `System.Collections.Concurrent.ConcurrentBag(Int32).new` parses as a call with constant arguments; when the
+    /// dotted path names a generic type and the arguments name types, it is a generic construction.
+    /// </summary>
+    NewExpr? GenericPathNew(CallExpr c)
+    {
+        if (c.Recv is not CallExpr { Recv: ConstExpr owner, Block: null } g || g.Args.Count == 0) return null;
+        if (!g.Args.All(a => a.Value is ConstExpr { Ref.Args.Count: 0 } || a.Value is ConstExpr)) return null;
+        var targs = g.Args.Select(a => ((ConstExpr)a.Value!).Ref).ToList();
+        if (targs.Any(t => TypeByName(t.Name, t.Args) == null)) return null;
+        string path = owner.Ref.Name + "." + g.Name;
+        if (TypeByName(path, targs) == null) return null;
+        return new NewExpr { TypeRef = new TypeRef { Name = path, Args = targs, Line = c.Line }, Args = c.Args, Block = c.Block, Line = c.Line };
     }
 
     static bool HasMember(AType recv, string name, int argc)

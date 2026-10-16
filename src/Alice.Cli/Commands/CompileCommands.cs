@@ -92,9 +92,32 @@ public static class CompileCommands
         return 0;
     }
 
+    /// <summary>Builds every workspace member, dependencies first.</summary>
+    public static int BuildWorkspace(string root, bool release)
+    {
+        var ws = Workspace.Load(root);
+        UiH.Status(T("workspace"), $"{ws.Members.Count} member(s): {string.Join(", ", ws.Members.Select(m => m.Name))}", "blue");
+        foreach (var m in ws.Members)
+        {
+            int rc = BuildProject(Manifest.Sync(m.Dir), release);
+            if (rc != 0) return rc;
+        }
+        return 0;
+    }
+
     static int RunProject(Options o)
     {
-        var proj = ProjectFiles.Find(o.Project ?? ".") ?? throw new CompileException(T("no.project"));
+        string where = o.Project ?? ".";
+        if (Workspace.IsWorkspaceRoot(where))
+        {
+            var ws = Workspace.Load(where);
+            var exes = ws.Members.Where(m => m.Kind != "lib").ToList();
+            string? pick = o.Rest.FirstOrDefault(r => exes.Any(e => e.Name == r));
+            var target = pick != null ? exes.First(e => e.Name == pick) : exes.Count == 1 ? exes[0] : throw new CompileException($"workspace has {exes.Count} runnable members ({string.Join(", ", exes.Select(e => e.Name))}): alice run <member>");
+            if (pick != null) o.Rest.Remove(pick);
+            where = target.Dir;
+        }
+        var proj = ProjectFiles.Find(where) ?? throw new CompileException(T("no.project"));
         int rc = BuildProject(proj, o.Release);
         if (rc != 0) return rc;
         UiH.Status(T("running"), Path.GetFileNameWithoutExtension(proj));
@@ -108,6 +131,7 @@ public static class CompileCommands
         var o = Parse(a);
         if (o.Files.Count == 0)
         {
+            if (Workspace.IsWorkspaceRoot(o.Project ?? ".")) return BuildWorkspace(o.Project ?? ".", o.Release);
             var proj = ProjectFiles.Find(o.Project ?? ".") ?? throw new CompileException(T("no.project"));
             return BuildProject(proj, o.Release || o.Native, o.Native);
         }
@@ -127,7 +151,7 @@ public static class CompileCommands
         foreach (var r in o.Refs) File.Copy(r, Path.Combine(dir, Path.GetFileName(r)), true);
         if (exe)
             File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"),
-                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Globalization.Invariant\":true,\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":true,\"System.GC.Concurrent\":true}}}");
+                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":true,\"System.GC.Concurrent\":true}}}");
         UiH.Status(T("finished"), dll);
         return 0;
     }
@@ -173,7 +197,25 @@ public static class CompileCommands
             return r.ExitCode == 0 ? 1 : r.ExitCode;
         }
         UiH.Status(T("finished"), T("finished.detail", Math.Max(1, built), UiH.Elapsed(sw)));
+        RecordLock(proj);
         return 0;
+    }
+
+    /// <summary>After a successful restore, pin the exact NuGet versions in alice.lock.</summary>
+    static void RecordLock(string proj)
+    {
+        string dir = Path.GetDirectoryName(Path.GetDirectoryName(proj)!)!;
+        if (!File.Exists(Path.Combine(dir, Manifest.FileName))) return;
+        var deps = TomlLite.Parse(File.ReadAllText(Path.Combine(dir, Manifest.FileName))).GetValueOrDefault("dependencies") ?? new();
+        var nuget = deps.Where(kv => kv.Value is string).Select(kv => kv.Key).ToList();
+        if (nuget.Count == 0) return;
+        var resolved = Lockfile.FromAssets(Path.Combine(dir, "obj", "project.assets.json"), nuget);
+        if (resolved.Count == 0) return;
+        string lockDir = Workspace.FindRoot(dir) ?? dir;
+        var before = Lockfile.Read(dir);
+        if (resolved.All(kv => before.TryGetValue(kv.Key, out var v) && v == kv.Value)) return;
+        Lockfile.Write(lockDir, resolved);
+        UiH.Status(T("locked"), string.Join(", ", resolved.Select(kv => $"{kv.Key} {kv.Value}")));
     }
 
     static void Report(DotNet.Result r)

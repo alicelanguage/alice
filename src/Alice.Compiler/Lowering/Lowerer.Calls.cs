@@ -9,6 +9,7 @@ public sealed partial class Lowerer
     MExpr Call(CallExpr c)
     {
         if (c.Res == "fused") return new MCode((string)c.Sym!);
+        if (c.Res == "asnew") return Expr((NewExpr)c.Sym!);
         if (c.Res == "ext" && c.Block != null && TryInline(c) is MExpr inlined) return inlined;
         if (c.Res == "ext" && c.Block == null && TryFuseSink(c) is MExpr fused) return fused;
 

@@ -10,6 +10,16 @@ public static class ProjectCommands
 {
     public static int New(List<string> a)
     {
+        if (a.Contains("--workspace"))
+        {
+            string wname = a.FirstOrDefault(x => !x.StartsWith("--")) ?? throw new CompileException(T("no.files"));
+            Directory.CreateDirectory(wname);
+            if (File.Exists(Path.Combine(wname, Manifest.FileName))) throw new CompileException(T("exists", wname));
+            File.WriteAllText(Path.Combine(wname, Manifest.FileName), "[workspace]\nmembers = []\n");
+            File.WriteAllText(Path.Combine(wname, ".gitignore"), "bin/\nobj/\n.alice/\n");
+            UiH.Status(T("created"), $"workspace `{wname}`");
+            return 0;
+        }
         string kind = a.Contains("--lib") ? "lib" : a.Contains("--game") ? "game" : "exe";
         string? name = a.FirstOrDefault(x => !x.StartsWith("--"));
         if (name == null) throw new CompileException(T("no.files"));
@@ -22,10 +32,37 @@ public static class ProjectCommands
         Manifest.Sync(dir);
         File.WriteAllText(Path.Combine(dir, "src", kind == "lib" ? "lib.al" : "main.al"), ProjectFiles.MainSource(proj, kind));
         File.WriteAllText(Path.Combine(dir, "test", "basics_test.al"), ProjectFiles.TestSource(proj));
-        File.WriteAllText(Path.Combine(dir, ".gitignore"), "bin/\nobj/\n*.alproj\n");
+        File.WriteAllText(Path.Combine(dir, ".gitignore"), "bin/\nobj/\n.alice/\n");
+        RegisterMember(dir);
         UiH.Status(T("created"), $"{kind} `{proj}`");
         UiH.Status("", T("created.next", name), "grey");
         return 0;
+    }
+
+    /// <summary>New projects created inside a workspace become members automatically.</summary>
+    static void RegisterMember(string dir)
+    {
+        var root = Workspace.FindRoot(Path.GetDirectoryName(dir)!);
+        if (root == null) return;
+        if (Workspace.Load(root).Members.Any(m => m.Dir == dir)) return;
+        string rel = Path.GetRelativePath(root, dir).Replace('\\', '/');
+        string file = Path.Combine(root, Manifest.FileName);
+        string text = File.ReadAllText(file);
+        var m = System.Text.RegularExpressions.Regex.Match(text, @"members\s*=\s*\[(?<items>[^\]]*)\]");
+        if (!m.Success) return;
+        string items = m.Groups["items"].Value.Trim();
+        string updated = items.Length == 0 ? $"\"{rel}\"" : items.TrimEnd(',') + $", \"{rel}\"";
+        File.WriteAllText(file, text.Remove(m.Groups["items"].Index, m.Groups["items"].Length).Insert(m.Groups["items"].Index, updated));
+        UiH.Status(T("workspace"), $"+ {rel}", "blue");
+    }
+
+    /// <summary>`alice update`: drop pinned versions, restore, and lock the newly resolved ones.</summary>
+    public static int Update(List<string> a)
+    {
+        string dir = Workspace.FindRoot(".") ?? ".";
+        var lockPath = Path.Combine(dir, Lockfile.FileName);
+        if (File.Exists(lockPath)) File.Delete(lockPath);
+        return Workspace.IsWorkspaceRoot(dir) ? CompileCommands.BuildWorkspace(dir, false) : CompileCommands.Build(new List<string>());
     }
 
     public static int Add(List<string> a)
@@ -64,25 +101,6 @@ public static class ProjectCommands
             if (Directory.Exists(p)) Directory.Delete(p, true);
         }
         UiH.Status(T("cleaned"), Path.GetFullPath(root));
-        return 0;
-    }
-
-    public static int Sln(List<string> a)
-    {
-        if (a.Count == 2 && a[0] == "new")
-        {
-            string path = a[1].EndsWith(".sln") || a[1].EndsWith(".slnx") ? a[1] : a[1] + ".slnx";
-            ProjectFiles.NewSolution(path);
-            UiH.Status(T("created"), path);
-            return 0;
-        }
-        if (a.Count < 3 || a[0] != "add") throw new CompileException(T("cmd.sln"));
-        foreach (var raw in a.Skip(2))
-        {
-            var p = ProjectFiles.Find(raw) ?? raw;
-            ProjectFiles.AddToSolution(a[1], p);
-            UiH.Status(T("added"), $"{p} → {a[1]}");
-        }
         return 0;
     }
 }

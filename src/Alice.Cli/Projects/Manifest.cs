@@ -18,8 +18,11 @@ public static class Manifest
         var pkg = toml.GetValueOrDefault("package") ?? new Dictionary<string, object>();
         string name = pkg.TryGetValue("name", out var n) ? (string)n : Path.GetFileName(dir);
         string kind = pkg.TryGetValue("kind", out var k) ? (string)k : "exe";
-        string proj = Path.Combine(dir, name + ".alproj");
+        string genDir = Path.Combine(dir, ".alice");
+        string proj = Path.Combine(genDir, name + ".alproj");
         if (!visiting.Add(dir)) return proj;
+        var locked = Lockfile.Read(dir);
+        Workspace? ws = null;
 
         var props = new StringBuilder();
         props.Append($"    <OutputType>{(kind == "lib" ? "Library" : "Exe")}</OutputType>\n");
@@ -32,31 +35,57 @@ public static class Manifest
         var items = new StringBuilder();
         foreach (var (dep, spec) in toml.GetValueOrDefault("dependencies") ?? new Dictionary<string, object>())
         {
-            if (spec is string version) { items.Append($"    <PackageReference Include=\"{dep}\" Version=\"{version}\" />\n"); continue; }
-            if (spec is not Dictionary<string, object> t || !t.TryGetValue("path", out var p)) continue;
-            string target = Path.GetFullPath(Path.Combine(dir, (string)p));
+            if (spec is string version)
+            {
+                string pinned = locked.TryGetValue(dep, out var lv) ? $"[{lv}]" : version;
+                items.Append($"    <PackageReference Include=\"{dep}\" Version=\"{pinned}\" />\n");
+                continue;
+            }
+            if (spec is not Dictionary<string, object> t) continue;
+            string target;
+            if (t.TryGetValue("workspace", out var w) && w is true)
+            {
+                var root = Workspace.FindRoot(dir) ?? throw new InvalidOperationException($"{dep} = {{ workspace = true }} but {dir} is not inside a workspace");
+                ws ??= Workspace.Load(root);
+                var member = ws.Members.FirstOrDefault(m => m.Name == dep) ?? throw new InvalidOperationException($"workspace has no member named '{dep}' (members: {string.Join(", ", ws.Members.Select(m => m.Name))})");
+                target = member.Dir;
+            }
+            else if (t.TryGetValue("path", out var p)) target = Path.GetFullPath(Path.Combine(dir, (string)p));
+            else continue;
             string reference;
             if (Directory.Exists(target) && File.Exists(Path.Combine(target, FileName))) reference = Sync(target, visiting);
             else if (Directory.Exists(target)) reference = Directory.GetFiles(target, "*.*proj").FirstOrDefault() ?? target;
             else reference = target;
-            items.Append($"    <ProjectReference Include=\"{Path.GetRelativePath(dir, reference).Replace('\\', '/')}\" />\n");
+            items.Append($"    <ProjectReference Include=\"{Path.GetRelativePath(genDir, reference).Replace('\\', '/')}\" />\n");
         }
         if (kind == "game" && !items.ToString().Contains("MonoGame"))
             items.Append("    <PackageReference Include=\"MonoGame.Framework.DesktopGL\" Version=\"3.8.*\" />\n");
 
         string sdk = ProjectFiles.SdkDir.Replace('\\', '/');
+        // Hidden MSBuild project: sources and bin/obj stay in the package directory, nothing to hand-edit.
         string xml = $"""
             <!-- generated from alice.toml by alice: edit alice.toml instead -->
-            <Project Sdk="Microsoft.NET.Sdk">
+            <Project>
+              <PropertyGroup>
+                <AliceSourceRoot>$(MSBuildThisFileDirectory)../</AliceSourceRoot>
+                <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../obj/</BaseIntermediateOutputPath>
+                <BaseOutputPath>$(MSBuildThisFileDirectory)../bin/</BaseOutputPath>
+                <AssemblyName>{name}</AssemblyName>
+                <RootNamespace>{name}</RootNamespace>
+              </PropertyGroup>
+              <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
               <Import Project="{sdk}/Alice.props" Condition="'$(AliceCliProject)' == ''" />
               <PropertyGroup>
             {props}  </PropertyGroup>
               <ItemGroup>
+                <Compile Include="$(AliceSourceRoot)src/**/*.cs" />
             {items}  </ItemGroup>
               <Import Project="{sdk}/Alice.targets" Condition="'$(AliceCliProject)' == ''" />
+              <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
             </Project>
 
             """;
+        Directory.CreateDirectory(genDir);
         if (!File.Exists(proj) || File.ReadAllText(proj) != xml) File.WriteAllText(proj, xml);
         return proj;
     }

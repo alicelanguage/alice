@@ -28,12 +28,13 @@ public class SampleTests
     [Fact]
     public void Interop_samples_build_and_run()
     {
+        // the Alice workspace generates its MSBuild projects; C# then references AliceLib like any project
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", Path.Combine(Root(), "samples")]));
         Dotnet("build", "CSharpApp/CSharpApp.csproj");
-        Dotnet("build", "AliceApp/AliceApp.alproj");
         var cs = Dotnet("run", "--no-build", "--project", "CSharpApp/CSharpApp.csproj");
         Assert.Contains("distance=5", cs);
         Assert.Contains("pattern-matched an Alice sum type from C#", cs);
-        var al = Dotnet("run", "--no-build", "--project", "AliceApp/AliceApp.alproj");
+        var al = Dotnet("run", "--no-build", "--project", "AliceApp/.alice/AliceApp.alproj");
         Assert.Contains("median from C#: 3", al);
         Assert.Contains("C# counter: 45", al);
         Assert.Contains("distance: 10", al);

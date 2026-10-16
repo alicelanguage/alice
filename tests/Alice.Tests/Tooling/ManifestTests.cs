@@ -49,16 +49,16 @@ public class ManifestTests
         File.WriteAllText(Path.Combine(root, "legacy", "Legacy.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />");
 
         var proj = Manifest.Sync(Path.Combine(root, "app"));
-        Assert.Equal(Path.Combine(root, "app", "demo-app.alproj"), proj);
+        Assert.Equal(Path.Combine(root, "app", ".alice", "demo-app.alproj"), proj);
         var xml = File.ReadAllText(proj);
         Assert.Contains("generated from alice.toml", xml);
         Assert.Contains("<OutputType>Exe</OutputType>", xml);
         Assert.Contains("<PackageReference Include=\"MonoGame.Framework.DesktopGL\" Version=\"3.8.*\" />", xml);
-        Assert.Contains("../geo/geo.alproj", xml.Replace('\\', '/'));
-        Assert.Contains("../legacy/Legacy.csproj", xml.Replace('\\', '/'));
+        Assert.Contains("../../geo/.alice/geo.alproj", xml.Replace('\\', '/'));
+        Assert.Contains("../../legacy/Legacy.csproj", xml.Replace('\\', '/'));
         Assert.Contains("<PublishAot>true</PublishAot>", xml);
-        Assert.True(File.Exists(Path.Combine(root, "geo", "geo.alproj")));   // path deps are synced too
-        Assert.Contains("<OutputType>Library</OutputType>", File.ReadAllText(Path.Combine(root, "geo", "geo.alproj")));
+        Assert.True(File.Exists(Path.Combine(root, "geo", ".alice", "geo.alproj")));   // path deps are synced too
+        Assert.Contains("<OutputType>Library</OutputType>", File.ReadAllText(Path.Combine(root, "geo", ".alice", "geo.alproj")));
     }
 
     [Fact]
@@ -72,19 +72,5 @@ public class ManifestTests
         var t = TomlLite.Parse(File.ReadAllText(Path.Combine(dir, "alice.toml")));
         Assert.Equal("13.0.3", t["dependencies"]["Newtonsoft.Json"]);
         Assert.Equal("../geo", ((Dictionary<string, object>)t["dependencies"]["geo"])["path"]);
-    }
-
-    [Fact]
-    public void Slnx_entries_get_the_csharp_project_type()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "alice-sln-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(dir, "a"));
-        var slnx = Path.Combine(dir, "All.slnx");
-        ProjectFiles.NewSolution(slnx);
-        ProjectFiles.AddToSolution(slnx, Path.Combine(dir, "a", "a.alproj"));
-        ProjectFiles.AddToSolution(slnx, Path.Combine(dir, "a", "a.alproj"));
-        var text = File.ReadAllText(slnx);
-        Assert.Single(System.Text.RegularExpressions.Regex.Matches(text, "a.alproj"));
-        Assert.Contains("Type=\"C#\"", text);
     }
 }

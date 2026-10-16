@@ -6,7 +6,6 @@
     <LangVersion>preview</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>disable</ImplicitUsings>
-    <InvariantGlobalization>true</InvariantGlobalization>
     <TieredPGO>true</TieredPGO>
     <!-- Alice auto-parallelizes allocation-heavy loops: server GC collects with all cores (DATAS keeps the heap adaptive) -->
     <ServerGarbageCollection Condition="'$(ServerGarbageCollection)' == ''">true</ServerGarbageCollection>

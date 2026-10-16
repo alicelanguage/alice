@@ -1,0 +1,7 @@
+[package]
+name = "AliceApp"
+kind = "exe"
+
+[dependencies]
+AliceLib = { workspace = true }
+CSharpLib = { path = "../CSharpLib/CSharpLib.csproj" }

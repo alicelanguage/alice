@@ -130,7 +130,7 @@ public sealed partial class Parser
                     e = n;
                     continue;
                 }
-                if (e is ConstExpr ce2 && nt.Kind == "const" && ce2.Ref.Args.Count == 0 && (!(IsOp("(") && !Cur.Space) || (!IsCtorCall() && Peek(1).Kind == "const")))
+                if (e is ConstExpr ce2 && nt.Kind == "const" && ce2.Ref.Args.Count == 0 && !(IsOp("(") && !Cur.Space))
                 {
                     ce2.Ref.Name += "." + name;
                     if (IsOp("(") && !Cur.Space) ce2.Ref = TypeFromName(ce2.Ref.Name, tok);

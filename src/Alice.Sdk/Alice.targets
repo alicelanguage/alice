@@ -9,11 +9,11 @@
     <AliceHome Condition="'$(AliceHome)' == ''">$(MSBuildThisFileDirectory)../</AliceHome>
     <AliceCompiler Condition="'$(AliceCompiler)' == '' and '$(AliceCliProject)' != ''">$([System.IO.Path]::GetDirectoryName($(AliceCliProject)))/bin/$(Configuration)/net10.0/alice.dll</AliceCompiler>
     <AliceCompiler Condition="'$(AliceCompiler)' == ''">$(AliceHome)alice.dll</AliceCompiler>
-    <AliceGenDir>$(IntermediateOutputPath)alice/</AliceGenDir>
   </PropertyGroup>
 
   <ItemGroup>
-    <AliceSource Include="**/*.al" Exclude="bin/**;obj/**;$(DefaultItemExcludes)" />
+    <AliceSource Include="$(AliceSourceRoot)**/*.al" Exclude="$(AliceSourceRoot)bin/**;$(AliceSourceRoot)obj/**;$(AliceSourceRoot).alice/**;$(AliceSourceRoot)test/**" Condition="'$(AliceSourceRoot)' != ''" />
+    <AliceSource Include="**/*.al" Exclude="bin/**;obj/**;$(DefaultItemExcludes)" Condition="'$(AliceSourceRoot)' == ''" />
     <ProjectReference Include="$(AliceRuntimeProject)" Condition="'$(AliceRuntimeProject)' != ''" />
     <Reference Include="Alice.Runtime" Condition="'$(AliceRuntimeProject)' == ''">
       <HintPath>$(AliceHome)Alice.Runtime.dll</HintPath>
@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <Target Name="AliceGenerate" BeforeTargets="CoreCompile" DependsOnTargets="ResolveReferences" Condition="'@(AliceSource)' != ''">
+    <!-- evaluated at execution time: IntermediateOutputPath is defined by the SDK targets imported after this file -->
+    <PropertyGroup>
+      <AliceGenDir>$(ProjectDir)$(IntermediateOutputPath)alice/</AliceGenDir>
+      <AliceGenDir Condition="$([System.IO.Path]::IsPathRooted('$(IntermediateOutputPath)'))">$(IntermediateOutputPath)alice/</AliceGenDir>
+    </PropertyGroup>
     <MakeDir Directories="$(AliceGenDir)" />
     <WriteLinesToFile File="$(AliceGenDir)refs.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
     <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
