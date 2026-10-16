@@ -1,5 +1,5 @@
 # 0002 - Separate runtime and native kernels
-Status: accepted
+Status: amended (2026-10-15: clang/LLVM kernels removed; runtime is pure managed SIMD)
 Context: Fast numeric code needs SIMD and tuned kernels. The compiler must not carry runtime code.
 Decision:
 - `src/Alice.Runtime` is a separate assembly referenced by compiled programs: `Simd`, sparse (`CsrMatrix<T>`, `SparseVector<T>`), `Par`, `AMath`, `Native`, `Prelude`.

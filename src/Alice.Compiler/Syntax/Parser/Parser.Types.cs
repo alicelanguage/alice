@@ -1,0 +1,73 @@
+namespace Alice.Compiler.Syntax;
+
+public sealed partial class Parser
+{
+    TypeRef Type()
+    {
+        Token tok = Cur;
+        if (IsOp("{"))
+        {
+            Next();
+            var tr = At(new TypeRef { Special = "tuple" }, tok);
+            tr.Args.Add(Type());
+            while (IsOp(",")) { Next(); tr.Args.Add(Type()); }
+            Expect("}");
+            return tr;
+        }
+        if (t[p].Kind != "const") throw Err("expected type");
+        var r = At(new TypeRef(), tok);
+        string name = Next().Text;
+        if (name.EndsWith("?")) { r.Nullable = true; name = name[..^1]; }
+        while (IsOp("::") || (IsOp(".") && Peek(1).Kind == "const"))
+        {
+            Next();
+            string seg = Next().Text;
+            if (seg.EndsWith("?")) { r.Nullable = true; seg = seg[..^1]; }
+            name += "." + seg;
+        }
+        r.Name = name;
+        if (IsOp("(") && !Cur.Space)
+        {
+            Next();
+            r.Args.Add(Type());
+            while (IsOp(",")) { Next(); r.Args.Add(Type()); }
+            Expect(")");
+        }
+        if (IsOp("?") && !Cur.Space) { Next(); r.Nullable = true; }
+        if (IsOp("*") && !Cur.Space) { Next(); r.Pointer = true; }
+        return r;
+    }
+
+    /// <summary>Crystal proc type: `A, B -> R`, `A ->` (no result), `-> R`. Args holds params then the result (or none).</summary>
+    TypeRef ProcType()
+    {
+        var r = At(new TypeRef { Special = "proc" }, Cur);
+        var ps = new List<TypeRef>();
+        if (!IsOp("->"))
+        {
+            ps.Add(Type());
+            while (IsOp(",")) { Next(); ps.Add(Type()); }
+        }
+        Expect("->");
+        r.Args.AddRange(ps);
+        if (t[p].Kind == "const" || IsOp("{")) r.Args.Add(Type());
+        else r.Args.Add(new TypeRef { Name = "Nil" });
+        return r;
+    }
+
+    /// <summary>Generic suffix after a type name in expression position: `List(Int32)`.</summary>
+    TypeRef TypeFromName(string name, Token tok)
+    {
+        var r = At(new TypeRef(), tok);
+        if (name.EndsWith("?")) { r.Nullable = true; name = name[..^1]; }
+        r.Name = name;
+        if (IsOp("(") && !Cur.Space)
+        {
+            Next();
+            r.Args.Add(Type());
+            while (IsOp(",")) { Next(); r.Args.Add(Type()); }
+            Expect(")");
+        }
+        return r;
+    }
+}

@@ -2,17 +2,6 @@ using System.Text;
 
 namespace Alice.Compiler;
 
-public sealed class CompileException(string message) : Exception(message);
-
-public sealed class Token
-{
-    public string Kind = "";   // id const ivar int float str char op nl eof
-    public string Text = "";
-    public int Line;
-    public int Col;
-    public bool Space;         // whitespace precedes the token
-}
-
 /// <summary>Alice lexer. Newlines are statement terminators except inside ()/[] or after a continuing operator.</summary>
 public sealed class Lexer
 {
@@ -84,6 +73,15 @@ public sealed class Lexer
         int el = last == null ? line : last.Line;
         Add("eof", "", el, 1);
         return toks;
+    }
+
+    /// <summary>`:name` is a symbol after whitespace or an opening/separator token (not `a ? b :c`, not `x: 1`).</summary>
+    bool SymbolContext()
+    {
+        Token? last = Last();
+        if (last == null || last.Kind == "nl") return true;
+        if (last.Kind == "op") return " ( [ { , => = == != << ".Contains(" " + last.Text + " ");
+        return space && last.Kind == "id";
     }
 
     void Newline(int l, int c)
@@ -223,6 +221,15 @@ public sealed class Lexer
 
     void Op(int l, int c)
     {
+        if (src[pos] == ':' && (char.IsLetter(At(1)) || At(1) == '_') && SymbolContext())
+        {
+            Adv();
+            int s = pos;
+            while (pos < src.Length && (char.IsLetterOrDigit(src[pos]) || src[pos] == '_')) Adv();
+            if (At(0) == '?' || At(0) == '!') Adv();
+            Add("sym", src.Substring(s, pos - s), l, c);
+            return;
+        }
         string? op = null;
         foreach (var o in Ops3) if (string.CompareOrdinal(src, pos, o, 0, 3) == 0) { op = o; break; }
         if (op == null) foreach (var o in Ops2) if (string.CompareOrdinal(src, pos, o, 0, 2) == 0) { op = o; break; }

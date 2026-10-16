@@ -10,15 +10,14 @@ public sealed record SourceFile(string Path, string Text);
 /// <summary>Front door: Alice source -> lowered C# -> Roslyn -> IL assembly on the CLR.</summary>
 public static class AliceCompiler
 {
-    /// <summary>Lowers one or more files sharing global facts (virtual dispatch, zero-arg calls).</summary>
-    public static List<string> TranspileAll(IReadOnlyList<SourceFile> files)
+    /// <summary>Alice files -> AST -> bound HIR -> MIR -> C# (one unit per file).</summary>
+    public static List<string> TranspileAll(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs = null)
     {
-        var g = new Globals();
-        var raw = new List<string>();
-        foreach (var f in files) raw.Add(new Translator(g, f.Path).TranslateFile(f.Text));
-        var outp = new List<string>();
-        foreach (var r in raw) outp.Add(g.Resolve(r));
-        return outp;
+        var asts = files.Select(f => Syntax.Parser.ParseFile(f.Text, f.Path)).ToList();
+        var binder = new Semantics.Binder(asts, new Semantics.ClrTypes(extraRefs));
+        binder.Bind();
+        var emitter = new Backend.Emitter(binder);
+        return asts.Select(emitter.EmitFile).ToList();
     }
 
     public static string Transpile(string src, string file = "main.al") => TranspileAll([new SourceFile(file, src)])[0];

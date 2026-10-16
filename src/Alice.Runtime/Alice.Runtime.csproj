@@ -8,15 +8,4 @@
     <IsTrimmable>true</IsTrimmable>
   </PropertyGroup>
 
-  <!-- Native kernels: built when a C compiler is present; Native.cs falls back to managed SIMD otherwise. -->
-  <PropertyGroup>
-    <NativeSrc>$(MSBuildThisFileDirectory)Native/alice_native.c</NativeSrc>
-    <NativeOut>$(IntermediateOutputPath)libalice_native.so</NativeOut>
-  </PropertyGroup>
-  <Target Name="BuildAliceNative" BeforeTargets="AssignTargetPaths" Condition="'$(OS)' != 'Windows_NT'">
-    <Exec Command="clang -O3 -march=native -ffast-math -fPIC -shared -o &quot;$(NativeOut)&quot; &quot;$(NativeSrc)&quot;" ContinueOnError="true" Condition="!Exists('$(NativeOut)')" />
-    <ItemGroup Condition="Exists('$(NativeOut)')">
-      <None Include="$(NativeOut)" Link="libalice_native.so" CopyToOutputDirectory="PreserveNewest" />
-    </ItemGroup>
-  </Target>
 </Project>
