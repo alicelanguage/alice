@@ -101,6 +101,8 @@ public sealed partial class Lowerer
     {
         switch (n.Res)
         {
+            case "local" when soa != null && n.Sym == soa.P:
+                return new MIndex { Target = new MCode(soa.Store), Args = { new MCode(soa.Idx) } };
             case "local":
                 return new MCode(((LocalSym)n.Sym!).CsName);
             case "field":

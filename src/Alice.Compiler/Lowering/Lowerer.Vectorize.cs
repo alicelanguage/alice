@@ -155,7 +155,7 @@ public sealed partial class Lowerer
     static string Base(MExpr src) => $"{MM}.GetArrayDataReference({Printer(src)})";
 
     /// <summary>Translates a block expression to lane-wise vector code; null when it is not vectorizable.</summary>
-    string? Vec(Syntax.Expr e, Dictionary<LocalSym, string> env, string T, bool wantMask)
+    string? Vec(Syntax.Expr e, Dictionary<LocalSym, string> env, string T, bool wantMask, SoaCtx? sc = null)
     {
         string vt = $"{V}<{T}>";
         bool isFloat = T is "float" or "double";
@@ -170,43 +170,48 @@ public sealed partial class Lowerer
                     return sym.Type.IsNumeric ? $"new {vt}(({T}){sym.CsName})" : null;
                 }
             case UnaryExpr { Op: "-" } u when !wantMask:
-                return Vec(u.E, env, T, false) is string x ? $"-({x})" : null;
+                return Vec(u.E, env, T, false, sc) is string x ? $"-({x})" : null;
             case UnaryExpr { Op: "!" } u when wantMask:
-                return Vec(u.E, env, T, true) is string m ? $"{V}.OnesComplement({m})" : null;
+                return Vec(u.E, env, T, true, sc) is string m ? $"{V}.OnesComplement({m})" : null;
             case BinaryExpr b:
                 {
                     string? fn = b.Op switch { "<" => "LessThan", ">" => "GreaterThan", "<=" => "LessThanOrEqual", ">=" => "GreaterThanOrEqual", "==" => "Equals", "!=" => "Equals", _ => null };
                     if (fn != null && wantMask)
                     {
                         if (!b.L.Type.IsNumeric || !b.R.Type.IsNumeric) return null;
-                        var l = Vec(b.L, env, T, false);
-                        var r = Vec(b.R, env, T, false);
+                        var l = Vec(b.L, env, T, false, sc);
+                        var r = Vec(b.R, env, T, false, sc);
                         if (l == null || r == null) return null;
                         string cmp = $"{V}.{fn}({l}, {r})";
                         return b.Op == "!=" ? $"{V}.OnesComplement({cmp})" : cmp;
                     }
                     if (b.Op is "&&" or "||" && wantMask)
                     {
-                        var l = Vec(b.L, env, T, true);
-                        var r = Vec(b.R, env, T, true);
+                        var l = Vec(b.L, env, T, true, sc);
+                        var r = Vec(b.R, env, T, true, sc);
                         if (l == null || r == null) return null;
                         return $"{V}.{(b.Op == "&&" ? "BitwiseAnd" : "BitwiseOr")}({l}, {r})";
                     }
                     if (b.Op is "+" or "-" or "*" || (b.Op == "/" && isFloat))
                     {
                         if (wantMask) return null;
-                        var l = Vec(b.L, env, T, false);
-                        var r = Vec(b.R, env, T, false);
+                        var l = Vec(b.L, env, T, false, sc);
+                        var r = Vec(b.R, env, T, false, sc);
                         return l != null && r != null ? $"({l} {b.Op} {r})" : null;
                     }
                     return null;
                 }
             case TernaryExpr t when !wantMask:
                 {
-                    var c = Vec(t.C, env, T, true);
-                    var a = Vec(t.A, env, T, false);
-                    var bb = Vec(t.B, env, T, false);
+                    var c = Vec(t.C, env, T, true, sc);
+                    var a = Vec(t.A, env, T, false, sc);
+                    var bb = Vec(t.B, env, T, false, sc);
                     return c != null && a != null && bb != null ? $"{V}.ConditionalSelect({c}, {a}, {bb})" : null;
+                }
+            case CallExpr { Res: "field" } fc when !wantMask && sc != null && fc.Recv is NameExpr { Sym: LocalSym fp } && fp == sc.P:
+                {
+                    var f = (FieldSym)fc.Sym!;
+                    return f.Type.Cs == T ? $"{V}.LoadUnsafe(ref {MM}.GetArrayDataReference({sc.Store}.{f.CsName}), (nuint){sc.Idx})" : null;
                 }
             case CallExpr c when !wantMask:
                 {
@@ -224,7 +229,7 @@ public sealed partial class Lowerer
                     }
                     else return null;
                     if (fn == null || args.Count == 0) return null;
-                    var vs = args.Select(a => Vec(a, env, T, false)).ToList();
+                    var vs = args.Select(a => Vec(a, env, T, false, sc)).ToList();
                     return vs.All(v => v != null) ? $"{V}.{fn}({string.Join(", ", vs)})" : null;
                 }
         }

@@ -20,6 +20,8 @@ public sealed class TypeSym
     public TypeSym? Parent;           // sum-type variant -> its enum
     public List<TypeSym> Variants = new();
     public List<string> FieldOrder = new();   // record / variant positional fields
+    public TypeSym? SoaStore;         // @[SoA] struct -> its columnar store type
+    public TypeSym? SoaOf;            // store -> element struct
     public readonly Dictionary<string, List<MethodSym>> Methods = new();
     public readonly Dictionary<string, FieldSym> Fields = new();
 

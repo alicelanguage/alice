@@ -59,6 +59,7 @@ public static class Builtins
     public static AType ElemOf(AType t)
     {
         if (t.Kind == "array" && t.Elem != null) return t.Elem;
+        if (t.Sym?.SoaOf is TypeSym soaElem) return soaElem.Type;
         if (t.IsString) return AType.Char;
         if (t.Clr != null)
         {
@@ -124,6 +125,8 @@ public static class Builtins
             case "take":
             case "drop":
                 return e.IsKnown ? AType.Array(e) : AType.Unknown;
+            case "sum" when blockRet != null:
+                return br;
             case "first":
             case "last":
             case "max":

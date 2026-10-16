@@ -109,6 +109,8 @@ public sealed partial class Binder
         }
         foreach (var s in Types.Values.Distinct())
             if (s.BaseClass != null) s.BaseClass.HasSubclass = true;
+        foreach (var s in Types.Values.Distinct().ToList())
+            if (s.Decl != null && s.Decl.Attrs.Contains("SoA") && s.SoaStore == null) CreateSoaStore(s);
     }
 
     void DeclareItems(List<Item> items, TypeSym owner)
@@ -216,6 +218,29 @@ public sealed partial class Binder
                 vs.FieldOrder.Add(p.Name);
             }
         }
+    }
+
+    /// <summary>`@[SoA] record struct P(...)` gets `P.Store`: one array column per field + add/[]/remove_at/size/clear.</summary>
+    void CreateSoaStore(TypeSym s)
+    {
+        if (s.FieldOrder.Count == 0) throw Err(s.Decl!, "@[SoA] needs positional fields: record struct Name(a : T, ...)");
+        var st = new TypeSym { Name = "Store", Kind = "soa", Namespace = s.Namespace, SoaOf = s };
+        st.Type = new AType("class", s.Type.Cs + ".Store") { Sym = st };
+        s.SoaStore = st;
+        foreach (var f in s.FieldOrder)
+            st.Fields[f] = new FieldSym { Name = f, CsName = s.Fields[f].CsName, Type = AType.Array(s.Fields[f].Type), Kind = "column", Owner = st };
+        MethodSym M(string name, AType ret, params (string, AType)[] ps)
+        {
+            var m = new MethodSym { Name = name, CsName = name == "[]" ? "[]" : name, Owner = st, Ret = ret, RetDeclared = true };
+            foreach (var (pn, pt) in ps) m.Params.Add(new ParamSym { Name = pn, CsName = pn, Type = pt });
+            st.AddMethod(m);
+            return m;
+        }
+        M("add", AType.Int, ("item", s.Type));
+        M("size", AType.Int);
+        M("clear", AType.Void);
+        M("remove_at", AType.Void, ("index", AType.Int));
+        M("[]", s.Type, ("index", AType.Int));
     }
 
     void DeclareConst(ConstDecl c, TypeSym owner)

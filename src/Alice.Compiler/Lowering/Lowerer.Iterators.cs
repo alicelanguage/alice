@@ -87,6 +87,7 @@ public sealed partial class Lowerer
             stages.Insert(0, new Stage(st.Name, st.Block));
             src = st.Recv;
         }
+        if (src.Type.Sym?.SoaOf != null) return SoaPipeline(sink, sinkName, src, stages);
         AType elem = src is RangeExpr r0 ? (r0.A.Type.IsInteger ? r0.A.Type : AType.Int) : Builtins.ElemOf(src.Type);
         if (!elem.IsKnown) return null;
         var sb = sink.Block;

@@ -88,7 +88,7 @@ public sealed class Emitter
         var sb = new StringBuilder();
         foreach (var a in attrs)
         {
-            if (a is "Stack" or "Open") continue;
+            if (a is "Stack" or "Open" or "SoA") continue;
             if (a == "Inline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             else if (a == "NoInline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]\n");
             else if (a == "Hot") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n");
@@ -150,6 +150,7 @@ public sealed class Emitter
         if (ops.Contains("==") && !ops.Contains("!=")) body.Append($"public static bool operator !=({self} a, {self} b) => !(a == b);\n");
         if (ops.Contains("<") && !ops.Contains(">")) body.Append($"public static bool operator >({self} a, {self} b) => b < a;\n");
         if (ops.Contains("<=") && !ops.Contains(">=")) body.Append($"public static bool operator >=({self} a, {self} b) => b <= a;\n");
+        if (s.SoaStore != null) body.Append(SoAStore.Emit(s));
         // leaf classes are sealed: the JIT devirtualizes and inlines calls and type checks get cheaper
         bool open = s.HasSubclass || d.IsAbstract || d.Attrs.Contains("Open");
         string head = d.Kind switch
