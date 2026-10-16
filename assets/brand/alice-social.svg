@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="t">
+  <title id="t">Alice — curiouser and faster</title>
+  <rect width="1280" height="640" fill="#141210"/>
+  <rect x="24" y="24" width="1232" height="592" rx="32" fill="none" stroke="#C2183C" stroke-width="3"/>
+  <g transform="translate(80 70) scale(1)">
+  <g transform="translate(-50 26)">
+    <!-- straight ear: a lancet blade with a cherry core -->
+    <polygon points="198,262 206,76 238,40 254,250" fill="#F5EFE0" stroke="#0A0908" stroke-width="12" stroke-linejoin="miter"/>
+    <polygon points="216,226 220,98 234,82 240,230" fill="#C2183C"/>
+    <!-- bent ear: rises, then folds into a question mark -->
+    <polyline points="292,252 300,150 324,100 368,84 408,104 418,146 398,178 368,192 364,212" fill="none" stroke="#0A0908" stroke-width="54" stroke-linejoin="miter" stroke-miterlimit="8"/>
+    <polyline points="292,252 300,150 324,100 368,84 408,104 418,146 398,178 368,192 364,206" fill="none" stroke="#F5EFE0" stroke-width="32" stroke-linejoin="miter" stroke-miterlimit="8"/>
+    <!-- the question mark's dot -->
+    <polygon points="364,232 386,260 364,288 342,260" fill="#C2183C" stroke="#0A0908" stroke-width="8" stroke-linejoin="miter"/>
+    <!-- head: faceted like a card pip -->
+    <polygon points="168,312 196,254 256,232 318,250 344,312 320,382 256,420 192,382" fill="#F5EFE0" stroke="#0A0908" stroke-width="12" stroke-linejoin="miter"/>
+    <!-- eyes: a tall diamond, and a spiral into another world -->
+    <polygon points="222,280 235,304 222,332 209,304" fill="#141210"/>
+    <path d="M290 306 a4 4 0 1 1 8 0 a8 8 0 1 1 -16 0 a12 12 0 1 1 24 0 a16 16 0 1 1 -32 0" fill="none" stroke="#C2183C" stroke-width="5" stroke-linecap="round"/>
+    <!-- nose and a sly, lopsided smirk -->
+    <polygon points="249,346 265,346 257,359" fill="#C2183C"/>
+    <polyline points="232,376 262,380 288,358" fill="none" stroke="#141210" stroke-width="7" stroke-linejoin="miter"/>
+    <polygon points="282,357 293,352 289,364" fill="#141210"/>
+  </g>
+  </g>
+  <g transform="translate(600 150) scale(1.45)">
+    <path d="M8 100 L36 90 L62 100 L62 170 M62 130 L24 124 L4 148 L24 170 L62 162" fill="none" stroke="#F5EFE0" stroke-width="22" stroke-linejoin="miter" stroke-miterlimit="6" stroke-linecap="butt"/>
+    <path d="M108 30 L98 46 L98 170" fill="none" stroke="#F5EFE0" stroke-width="22" stroke-linejoin="miter" stroke-miterlimit="6" stroke-linecap="butt"/>
+    <path d="M138 96 L138 170" fill="none" stroke="#F5EFE0" stroke-width="22" stroke-linejoin="miter" stroke-miterlimit="6" stroke-linecap="butt"/>
+    <polygon points="138,36 152,54 138,72 124,54" fill="#C2183C"/>
+    <path d="M240 96 L202 90 L184 131 L202 170 L240 164" fill="none" stroke="#F5EFE0" stroke-width="22" stroke-linejoin="miter" stroke-miterlimit="6" stroke-linecap="butt"/>
+    <path d="M280 129 L328 127 L316 96 L288 90 L270 131 L288 170 L326 164" fill="none" stroke="#F5EFE0" stroke-width="22" stroke-linejoin="miter" stroke-miterlimit="6" stroke-linecap="butt"/>
+  </g>
+  <text x="608" y="470" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="38" fill="#F5EFE0">write it like Ruby · run it like C</text>
+  <text x="608" y="522" font-family="Georgia, 'Times New Roman', serif" font-size="30" fill="#C2183C">on all of .NET</text>
+</svg>

@@ -49,3 +49,4 @@
 - Errors from the generated C# are translated (AL0300–AL0315) with Alice type names; no `CS####` or `global::` in messages.
 - New tagline: "curiouser and faster: write it like Ruby, run it like C, on all of .NET".
 - REPL (`alice` / `alice repl`): Julia-style help/shell/package modes, multi-line input, history, Tab completion, `ans`, :reset/:load/:save/:emit/:time; piped mode for scripts.
+- Brand: white-rabbit mark (question-mark ear, diamond + spiral eyes), app icon, logo/wordmark (light/dark), mono mark, Ace-of-Rabbits card, social preview, PNG/ICO exports (`assets/brand`); `alice.exe` carries the icon.
