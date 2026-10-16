@@ -88,3 +88,24 @@ public class NativeTests
         Assert.Contains("@[Native]", ex.Message);
     }
 }
+
+public class NativeSpecializationTests
+{
+    [Fact]
+    public void Small_and_large_inputs_and_aliasing_all_match_managed()
+    {
+        var src = "@[Native]\ndef axpy(a : Float64, x : Array(Float64), y : Array(Float64))\n  for i in 0...x.size\n    y[i] = a * x[i] + y[i]\n  end\nend\n";
+        var nat = AliceCompiler.Load(AliceCompiler.CompileNative(src, "sp" + Guid.NewGuid().ToString("N")[..8], true).Image).GetType("Program")!.GetMethod("axpy")!;
+        foreach (int n in new[] { 0, 1, 5, 64, 65, 1000 })
+        {
+            var x = Enumerable.Range(0, n).Select(i => i * 0.5).ToArray();
+            var y = Enumerable.Range(0, n).Select(i => 1.0 + i).ToArray();
+            var expect = x.Zip(y, (a, b) => Math.FusedMultiplyAdd(2.0, a, b)).ToArray();
+            nat.Invoke(null, [2.0, x, y]);
+            for (int i = 0; i < n; i++) Assert.Equal(expect[i], y[i], 12);
+        }
+        var same = new[] { 1.0, 2.0, 3.0 };
+        nat.Invoke(null, [2.0, same, same]);     // aliased: managed fallback, y[i] = 2*y[i] + y[i]
+        Assert.Equal(new[] { 3.0, 6.0, 9.0 }, same);
+    }
+}

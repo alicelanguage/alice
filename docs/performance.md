@@ -92,3 +92,10 @@ nbody (`benchmarks/alice/nbody_native.al`, separate field arrays): 42.5 ms nativ
 Measured why the C benchmark is faster: its 5 bodies are a stack-local array of structs (no aliasing, x/y/z adjacent
 for SLP). Experiments on the generated C: `restrict` 49 ms (worse), length versioning 44 ms, stack copies +
 versioning 39 ms. Native pays off for loops whose data layout clang can exploit; it is not a blanket speedup.
+
+**Small-data specialization (now automatic in `CEmitter`):** each native function with array parameters gets a
+worker compiled per small length (0..64) of its first array, called on stack copies of the arrays (written ones are
+copied back); larger inputs use the generic worker; the C# wrapper uses the managed body if the same array is passed
+twice (so copies never change semantics). With bodies packed as one array (x, y, z, vx, vy, vz, mass per body),
+`benchmarks/alice/nbody_native.al` runs at **31.8-32.9 ms vs 33.4-34.5 ms for clang C** in the same session
+(identical checksum): C speed. Test: `NativeSpecializationTests`.

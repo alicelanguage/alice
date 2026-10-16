@@ -65,12 +65,70 @@ public sealed class CEmitter
         if (!m.IsStatic) throw Unsupported(d, "an instance method (use a top-level def or `def self.`)");
         string ret = CType(m.Ret) ?? throw Unsupported(d, $"return type {m.Ret.Cs}");
         var ps = Params(m, d);
-        string sig = $"ALICE_EXPORT {ret} {Symbol(m)}({string.Join(", ", ps.Select(p => p.Array ? $"{p.CType} {p.Name}, int32_t {p.Name}__len" : $"{p.CType} {p.Name}"))})";
+        string plist = string.Join(", ", ps.Select(p => p.Array ? $"{p.CType} {p.Name}, int32_t {p.Name}__len" : $"{p.CType} {p.Name}"));
+        string sig = $"ALICE_EXPORT {ret} {Symbol(m)}({plist})";
         decls.Append(sig).Append(";\n");
         var body = new StringBuilder();
         foreach (var h in d.HoistedLocals) body.Append($"    {LocalType(h, d)} {Name(h)} = 0;\n");
         Block(body, d.Body, 1, ret != "void");
-        defs.Append(sig).Append("\n{\n").Append(body).Append("}\n\n");
+        var arrays = ps.Where(p => p.Array).ToList();
+        if (arrays.Count == 0)
+        {
+            defs.Append(sig).Append("\n{\n").Append(body).Append("}\n\n");
+            return;
+        }
+        // Small-data specialization (what makes hand-written C fast): the worker is compiled once per small length
+        // of the first array (a compile-time constant, so loops fully unroll), on stack copies of the arrays
+        // (no aliasing; values stay in registers). Larger inputs use the generic worker in place.
+        string impl = Symbol(m) + "__impl";
+        string driver = arrays[0].Name;
+        string implBody = body.ToString().Replace(driver + "__len", "N");
+        defs.Append($"static inline __attribute__((always_inline)) {ret} {impl}({plist}, const int32_t N)\n{{\n{implBody}}}\n\n");
+        var written = WrittenArrays(d.Body);
+        string args(Func<(string CType, string Name, bool Array, AType Type), string> arr) =>
+            string.Join(", ", ps.Select(p => p.Array ? $"{arr(p)}, {p.Name}__len" : p.Name));
+        var o = new StringBuilder();
+        o.Append(sig).Append("\n{\n");
+        o.Append($"    if ({string.Join(" && ", arrays.Select(a => $"{a.Name}__len <= {SmallLimit}"))})\n    {{\n");
+        foreach (var a in arrays)
+        {
+            string et = a.CType.TrimEnd('*');
+            o.Append($"        {et} s_{a.Name}[{SmallLimit}];\n        for (int32_t k = 0; k < {a.Name}__len; k++) s_{a.Name}[k] = {a.Name}[k];\n");
+        }
+        if (ret != "void") o.Append($"        {ret} r = 0;\n");
+        o.Append($"        switch ({driver}__len)\n        {{\n");
+        for (int k = 0; k <= SmallLimit; k++)
+            o.Append($"            case {k}: {(ret != "void" ? "r = " : "")}{impl}({args(a => "s_" + a.Name)}, {k}); break;\n");
+        o.Append("        }\n");
+        foreach (var a in arrays.Where(a => written.Contains(a.Name)))
+            o.Append($"        for (int32_t k = 0; k < {a.Name}__len; k++) {a.Name}[k] = s_{a.Name}[k];\n");
+        o.Append(ret != "void" ? "        return r;\n" : "        return;\n");
+        o.Append("    }\n");
+        o.Append($"    {(ret != "void" ? "return " : "")}{impl}({args(a => a.Name)}, {driver}__len);\n}}\n\n");
+        defs.Append(o);
+    }
+
+    const int SmallLimit = 64;
+
+    /// <summary>Array parameters the function writes (copied back after the small-data path).</summary>
+    static HashSet<string> WrittenArrays(List<Stmt> body)
+    {
+        var r = new HashSet<string>();
+        void Walk(List<Stmt> b)
+        {
+            foreach (var s in b)
+            {
+                if (s is Assign { Target: IndexExpr { Target: NameExpr { Sym: LocalSym l } } }) r.Add(l.CsName.TrimStart('@'));
+                switch (s)
+                {
+                    case IfStmt i: foreach (var x in i.Bodies) Walk(x); if (i.Else != null) Walk(i.Else); break;
+                    case WhileStmt w: Walk(w.Body); break;
+                    case ForStmt f: Walk(f.Body); break;
+                }
+            }
+        }
+        Walk(body);
+        return r;
     }
 
     string LocalType(LocalSym l, Node at) => CType(l.Type) is string t && t != "void" ? t : throw Unsupported(at, $"local '{l.Name}' of type {l.Type.Cs}");

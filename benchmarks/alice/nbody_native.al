@@ -1,43 +1,49 @@
 # nbody with the hot loops in @[Native] functions (compiled by clang -O3 -march=native; managed fallback otherwise).
+# Bodies packed as one array, 7 values per body: x, y, z, vx, vy, vz, mass (array of structs).
 @[Native]
-def advance(x : Array(Float64), y : Array(Float64), z : Array(Float64), vx : Array(Float64), vy : Array(Float64), vz : Array(Float64), m : Array(Float64), steps : Int32)
-  n = x.size
+def advance(b : Array(Float64), steps : Int32)
+  n = b.size / 7
   dt = 0.01
   for s in 0...steps
     for i in 0...n
       for j in (i + 1)...n
-        dx = x[i] - x[j]
-        dy = y[i] - y[j]
-        dz = z[i] - z[j]
+        p = 7 * i
+        q = 7 * j
+        dx = b[p] - b[q]
+        dy = b[p + 1] - b[q + 1]
+        dz = b[p + 2] - b[q + 2]
         d2 = dx * dx + dy * dy + dz * dz
         mag = dt / (d2 * Math.Sqrt(d2))
-        vx[i] -= dx * m[j] * mag
-        vy[i] -= dy * m[j] * mag
-        vz[i] -= dz * m[j] * mag
-        vx[j] += dx * m[i] * mag
-        vy[j] += dy * m[i] * mag
-        vz[j] += dz * m[i] * mag
+        b[p + 3] -= dx * b[q + 6] * mag
+        b[p + 4] -= dy * b[q + 6] * mag
+        b[p + 5] -= dz * b[q + 6] * mag
+        b[q + 3] += dx * b[p + 6] * mag
+        b[q + 4] += dy * b[p + 6] * mag
+        b[q + 5] += dz * b[p + 6] * mag
       end
     end
     for i in 0...n
-      x[i] += dt * vx[i]
-      y[i] += dt * vy[i]
-      z[i] += dt * vz[i]
+      p = 7 * i
+      b[p] += dt * b[p + 3]
+      b[p + 1] += dt * b[p + 4]
+      b[p + 2] += dt * b[p + 5]
     end
   end
 end
 
 @[Native]
-def energy(x : Array(Float64), y : Array(Float64), z : Array(Float64), vx : Array(Float64), vy : Array(Float64), vz : Array(Float64), m : Array(Float64)) : Float64
-  n = x.size
+def energy(b : Array(Float64)) : Float64
+  n = b.size / 7
   e = 0.0
   for i in 0...n
-    e += 0.5 * m[i] * (vx[i] * vx[i] + vy[i] * vy[i] + vz[i] * vz[i])
+    p = 7 * i
+    e += 0.5 * b[p + 6] * (b[p + 3] * b[p + 3] + b[p + 4] * b[p + 4] + b[p + 5] * b[p + 5])
     for j in (i + 1)...n
-      dx = x[i] - x[j]
-      dy = y[i] - y[j]
-      dz = z[i] - z[j]
-      e -= m[i] * m[j] / Math.Sqrt(dx * dx + dy * dy + dz * dz)
+      q = 7 * j
+      dx = b[p] - b[q]
+      dy = b[p + 1] - b[q + 1]
+      dz = b[p + 2] - b[q + 2]
+      e -= b[p + 6] * b[q + 6] / Math.Sqrt(dx * dx + dy * dy + dz * dz)
     end
   end
   e
@@ -65,8 +71,18 @@ def kernel(steps : Int32) : Int64
   vx[0] = -px / sm
   vy[0] = -py / sm
   vz[0] = -pz / sm
-  advance(x, y, z, vx, vy, vz, m, steps)
-  Convert.ToInt64(energy(x, y, z, vx, vy, vz, m) * 1000000000.0)
+  b = Array(Float64).new(35)
+  for i in 0...5
+    b[7 * i] = x[i]
+    b[7 * i + 1] = y[i]
+    b[7 * i + 2] = z[i]
+    b[7 * i + 3] = vx[i]
+    b[7 * i + 4] = vy[i]
+    b[7 * i + 5] = vz[i]
+    b[7 * i + 6] = m[i]
+  end
+  advance(b, steps)
+  Convert.ToInt64(energy(b) * 1000000000.0)
 end
 
 def measure(steps : Int32, check : Int64) : Float64

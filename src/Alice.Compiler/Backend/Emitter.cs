@@ -313,7 +313,9 @@ public sealed class Emitter
         w.Append($"private static readonly unsafe {fpType} {fp} = ({fpType})global::Alice.Runtime.NativeLibs.Export(\"{NativeLib}\", \"{CEmitter.Symbol(m)}\");\n");
         w.Append($"#line {d.Line} \"{file}\"\n");
         w.Append($"public static unsafe {ret} {cs}({plist})\n{{\n");
-        w.Append($"    if ({fp} != null)\n    {{\n        {call}{invoke}\n    }}\n");
+        var arrNames = cps.Where(p => p.Array).Select(p => p.Name).ToList();
+        string distinct = string.Concat(arrNames.SelectMany((a, i) => arrNames.Skip(i + 1).Select(b => $" && !ReferenceEquals({a}, {b})")));
+        w.Append($"    if ({fp} != null{distinct})\n    {{\n        {call}{invoke}\n    }}\n");
         w.Append($"    {(ret == "void" ? "" : "return ")}__managed_{cs.TrimStart('@')}({args});\n}}\n");
         w.Append(managed);
         return w.ToString();

@@ -163,3 +163,13 @@ nbody is a .NET code-generation limit, not an Alice lowering gap: expert hand-op
 
 C's default FMA contraction explained most of the gap; Alice now contracts too (checksum unchanged). The rest is
 clang's vectorization/scheduling of the fixed 5-body loop, which RyuJIT does not reproduce (see docs/performance.md).
+
+## Run 7 — nbody at C speed with `@[Native]` (2026-10-16)
+
+| variant (same session, 3 runs) | ms |
+|---|---:|
+| Alice `@[Native]`, bodies packed as one array (`alice/nbody_native.al`) | 31.8 / 32.1 / 32.9 |
+| C clang -O3 -march=native (`c/bench nbody serial`) | 33.4 / 34.5 / 34.5 |
+| Alice managed (JIT, FMA) | ~43.6 |
+
+Identical checksum (-169086185). With this, Alice matches or beats C on all five C benchmarks (run 6 + run 7).
