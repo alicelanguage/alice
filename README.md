@@ -1,68 +1,96 @@
 # Alice
 
-A .NET language with Crystal/Ruby syntax. Ergonomic like Ruby, safe like Rust, fast like C, parallel like Elixir. Full C#/.NET interop. Pure C# compiler emits optimized IL via Roslyn; NativeAOT optional.
+**Ruby's rhythm. Crystal-style types. The .NET ecosystem.**
+
+[![Tests](https://github.com/kleeedolinux/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/kleeedolinux/alice/actions/workflows/ci.yml)
+[![Release](https://github.com/kleeedolinux/alice/actions/workflows/release.yml/badge.svg)](https://github.com/kleeedolinux/alice/actions/workflows/release.yml)
+
+Alice is a statically typed language for .NET. Write expressive `.al` programs with blocks, records and pattern matching; use .NET libraries and share ordinary CLR types with C#.
 
 ```crystal
-class Greeter
-  def initialize(@name : String)
-  end
+record Item(name : String, cents : Int32, quantity : Int32)
 
-  def greet : String
-    "Hello, #{@name}!"
-  end
-end
+items = [
+  Item.new("Coffee", 450, 2),
+  Item.new("Tea", 300, 1)
+]
 
-[1, 2, 3].each { |i| puts Greeter.new("Alice #{i}").greet }
+val total = items.map { |item| item.cents * item.quantity }.sum
+puts "Total: #{total} cents"   # Total: 1200 cents
 ```
+
+| What makes it Alice | What you get |
+|---|---|
+| Expressive syntax | Implicit returns, string interpolation, blocks, `&:method`, mixins and `require` |
+| Types with less ceremony | Type inference, generics, records and sum types with exhaustive matching |
+| Safety at compile time | Null-safety errors, immutable `val` bindings and data-race diagnostics (`AL0202`) |
+| Optimizing compiler | Iterator fusion, SIMD, structure-of-arrays and automatic parallelization when proven pure |
+| Concurrency | `spawn`, `async`/`await`, channels, actors, mutexes and atomics |
+| Native to .NET | BCL and NuGet libraries, C# interop, ASP.NET Core hosts and MonoGame |
+| Project tooling | `alice.toml`, workspaces, dependency locks, formatting and tests |
+
+Alice lowers through MIR to C#, then uses Roslyn to emit .NET IL. The compiler and runtime are written in C#. Inspect the generated C# with `alice emit`.
+
+## Start here
+
+Requires the **.NET 10 SDK**.
 
 ```bash
-dotnet run --project src/Alice.Cli -- run hello.al     # single file (follows require)
-alice new shop --workspace && cd shop
-alice new core --lib && alice new app                  # auto-registered members
-alice run app                                          # builds deps first, writes alice.lock
-cd app && alice add Newtonsoft.Json --version 13.*     # edits app/alice.toml
-alice test && alice fmt --check
+git clone https://github.com/kleeedolinux/alice.git
+cd alice
+dotnet build Alice.sln --configuration Release
+dotnet src/Alice.Cli/bin/Release/net10.0/alice.dll run examples/basics/hello.al
 ```
 
+Run any CLI command from this checkout with `dotnet run --project src/Alice.Cli -- <command>`. With a [release archive](https://github.com/kleeedolinux/alice/releases), extract the entire archive and add its directory to `PATH` to use `alice` directly. See [installation and checksums](docs/releases.md).
+
+```bash
+alice new shop
+cd shop
+alice run
+alice test
+alice fmt --check
+```
+
+`alice.toml` is the source of truth. The CLI generates MSBuild projects under `.alice/`.
+
 ```toml
-# app/alice.toml
 [package]
-name = "app"
-kind = "exe"          # exe | lib | game
+name = "shop"
+kind = "exe"
 
 [dependencies]
-core = { workspace = true }
 "Newtonsoft.Json" = "13.*"
 ```
 
-Highlights:
+## Learn by building
 
-- Ruby syntax: blocks, `&:sym`, heredocs, `%w[]`, regex literals, endless `def`, `attr_accessor`, `include`/`extend` mixins, `require`.
-- Crystal types: inference, sum types + exhaustive `case` (AL0201), records, generics with constraints.
-- Safety: null-safety errors, `val`, compile-time data-race errors (AL0202).
-- Speed: fused, vectorized (`Vector<T>`), SIMT and auto-parallel loops; `@[SoA]` stores with pass fusion; NativeAOT.
-- Tooling: cargo-style `alice.toml`, workspaces, `alice.lock`, `fmt`, `test`; two-way C# interop, MonoGame games ([Breakout](samples/Breakout/README.md)).
+| Example | Explore |
+|---|---|
+| [Hello](examples/basics/hello.al) | Classes, interpolation, blocks and SIMD |
+| [Practical examples](examples/README.md) | Data processing, JSON, concurrency and expected output |
+| [ASP.NET Core API](examples/web/aspnet/README.md) | Alice HTTP routes, validation and pricing logic |
+| [C# interop](samples/AliceApp/src/main.al) | Alice calling C#; [C# calling Alice](samples/CSharpApp/Program.cs) |
+| [Breakout](samples/Breakout/README.md) | A complete MonoGame game with headless logic tests |
 
-Benchmarks on .NET 10 ([run 5](benchmarks/README.md)): Alice beats idiomatic C# on every benchmark and is within ~10% of expert hand-optimized C#.
+## Performance you can inspect
 
-| benchmark | Alice ms | C# idiomatic ms | C# hand-opt ms |
-|---|---:|---:|---:|
-| particles | 2.3 | 139.2 | 2.3 |
-| pipeline | 2.1 | 31.3 | 2.0 |
-| wordfreq | 5.4 | 89.4 | 6.7 |
-| mandelbrot | 11.0 | 120.8 | 10.4 |
-| expr | 11.2 | 11.4 | 10.2 |
-| parallel | 39.9 | 45.1 | 39.2 |
-| nbody | 55.5 | 61.4 | 52.5 |
-| binarytrees | 93.3 | 166.0 | 95.3 |
+Alice optimizes eligible idiomatic code: fuse iterator chains, vectorize arithmetic and parallelize pure work. Results depend on the workload and hardware; parallel floating-point reductions can change addition order.
 
-- [Getting started](docs/getting-started.md)
-- [Language guide](docs/language.md)
-- [Performance model](docs/performance.md)
-- [Tooling](docs/tooling.md)
-- [Error codes](docs/errors.md)
-- [Benchmarks](benchmarks/README.md)
-- [Architecture](archicture/README.md)
-- [Changelog](CHANGELOG.md)
+The recorded [C# comparison (run 5)](benchmarks/README.md#run-5--vs-expert-hand-optimized-c-fusion-simt-load-balancing-2026-10-16) includes idiomatic and hand-optimized baselines, checksums and methodology. For example, the pipeline measured **2.1 ms** in Alice, **31.3 ms** in idiomatic C# and **2.0 ms** in hand-optimized C# on the documented laptop. Reproduce with `benchmarks/run.sh`.
 
-Version: 0.10.0.
+## Documentation
+
+[Getting started](docs/getting-started.md) · [Language](docs/language.md) · [Tooling](docs/tooling.md) · [Error codes](docs/errors.md) · [Performance](docs/performance.md) · [Architecture](archicture/README.md)
+
+## Development
+
+**0.10.0 · in development.** See the [changelog](CHANGELOG.md) and [contributing guide](CONTRIBUTING.md).
+
+```bash
+dotnet build Alice.sln --configuration Release
+dotnet test Alice.sln --configuration Release
+bash examples/verify.sh
+```
+
+CI runs the test suite and example checks. The [release workflow](docs/releases.md) tests and packages platform binaries before publishing a tagged release.

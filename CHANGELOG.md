@@ -2,6 +2,9 @@
 
 ## 0.10.0 - Unreleased
 
+- Docs: refreshed Alice introduction, quick start, practical example catalog and contribution guide.
+- Examples: organized basics, data, concurrency and web programs; ASP.NET Core API written in Alice, backed by an Alice pricing library.
+- Automation: cross-platform tests and gated binary release archives with package smoke checks and SHA-256 checksums (ADR 0009).
 - Compiler rewritten as Syntax -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + Roslyn Release IL) (ADR 0007).
 - Inference: Crystal-style return types across later defs; unresolvable -> `dynamic`; Ruby function-scoped locals.
 - Language: symbols, `send`/`respond_to?`, `yield` with `&block : A -> R`, `if`/`case` expressions, `val`, `Any` = dynamic.

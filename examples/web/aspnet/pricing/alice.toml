@@ -1,0 +1,4 @@
+[package]
+name = "Pricing"
+version = "0.10.0"
+kind = "lib"

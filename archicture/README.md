@@ -18,6 +18,7 @@
 | 0006 | Ownership as static layer on .NET GC (proposed) |
 | 0007 | HIR/MIR pipeline for allocation-free IL |
 | 0008 | Compile-time race safety (AL0202) |
+| 0009 | [Tested CLI distribution archives](adr/0009-release-distribution.md) |
 
 ## Projects
 
