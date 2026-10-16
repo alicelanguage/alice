@@ -51,14 +51,21 @@ public static class CompileCommands
     static Dictionary<string, string> Sources(List<SourceFile> files) => files.ToDictionary(f => f.Path, f => f.Text);
 
     /// <summary>Compile Alice sources to an in-memory IL image, rendering diagnostics on failure.</summary>
-    static byte[]? CompileFiles(List<SourceFile> files, string name, bool exe, List<string> refs)
+    static byte[]? CompileFiles(List<SourceFile> files, string name, bool exe, List<string> refs, string? nativeDir = null)
     {
         try
         {
             var sw = Stopwatch.StartNew();
             var image = UiH.Spin($"{T("compiling")} {name}…", () =>
             {
-                var cs = AliceCompiler.TranspileAll(files, refs);
+                var (cs, c) = AliceCompiler.TranspileFull(files, refs, name + "_native");
+                // @[Native] functions: clang -O3 -march=native; without a C compiler the managed bodies run instead
+                if (c != null)
+                {
+                    string dir = nativeDir ?? Path.Combine(Path.GetTempPath(), "alice-native-" + Guid.NewGuid().ToString("N"));
+                    if (AliceCompiler.BuildNativeLibrary(c, dir, name + "_native")) Alice.Runtime.NativeLibs.AddSearchPath(dir);
+                    else Console.Error.WriteLine("warning: no C compiler found; @[Native] functions use their managed fallback");
+                }
                 return AliceCompiler.Emit(cs, name, exe, refs);
             });
             UiH.Status(T("compiling"), $"{name} ({UiH.Elapsed(sw)})");
@@ -142,7 +149,7 @@ public static class CompileCommands
         if (o.Native) return NativeSingle(files, name, dir, o.Refs);
         var cs = AliceCompiler.TranspileAll(files, o.Refs);
         bool exe = cs.Any(c => c.Contains("public static void Main(string[] ARGV)"));
-        var image = CompileFiles(files, name, exe, o.Refs);
+        var image = CompileFiles(files, name, exe, o.Refs, dir);
         if (image == null) return 1;
         var dll = Path.Combine(dir, name + ".dll");
         File.WriteAllBytes(dll, image);
@@ -254,7 +261,9 @@ public static class CompileCommands
         try
         {
             var files = Read(o.Files);
-            var cs = AliceCompiler.TranspileAll(files, o.Refs);
+            string lib = o.Rest.FirstOrDefault(r => r.StartsWith("--native-lib="))?["--native-lib=".Length..] ?? "alice_native";
+            var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib);
+            if (csrc != null) File.WriteAllText(Path.Combine(o.Output, lib + ".c"), csrc);
             var used = new HashSet<string>();
             foreach (var old in Directory.GetFiles(o.Output, "*.g.cs")) File.Delete(old);
             for (int i = 0; i < files.Count; i++)

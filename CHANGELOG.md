@@ -29,3 +29,5 @@
 - Removed: `alice sln` (C# references `<pkg>/.alice/<pkg>.alproj`; Alice references C# via path deps).
 - Performance: SoA pass fusion + loop interchange (registers, fused `sum`); SIMT vectorization of loops with a data-dependent `while`; load-balanced heavy parallel loops; parallel word-count map-reduce with order-preserving merge. Benchmarks run 5: within ~10% of hand-optimized C#.
 - Samples: `samples/` is a workspace; MonoGame `Breakout`.
+- `@[Native]` functions: C via clang -O3 -march=native, function-pointer calls, automatic managed fallback (opt-in).
+- Floating-point contraction (FMA) by default, `@[StrictMath]` to opt out.

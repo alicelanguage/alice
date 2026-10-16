@@ -30,10 +30,19 @@
     </PropertyGroup>
     <MakeDir Directories="$(AliceGenDir)" />
     <WriteLinesToFile File="$(AliceGenDir)refs.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
-    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
+    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --native-lib=$(AssemblyName)_native @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
     <ItemGroup>
       <Compile Include="$(AliceGenDir)*.g.cs" />
       <FileWrites Include="$(AliceGenDir)*.g.cs" />
     </ItemGroup>
+  </Target>
+
+  <!-- @[Native] functions: compile the generated C with clang next to the assembly (optional; managed fallback otherwise) -->
+  <Target Name="AliceNative" AfterTargets="Build" Condition="Exists('$(AliceGenDir)$(AssemblyName)_native.c')">
+    <PropertyGroup>
+      <AliceNativeLib Condition="'$(OS)' == 'Windows_NT'">$(AssemblyName)_native.dll</AliceNativeLib>
+      <AliceNativeLib Condition="'$(OS)' != 'Windows_NT'">lib$(AssemblyName)_native.so</AliceNativeLib>
+    </PropertyGroup>
+    <Exec Command="clang -O3 -march=native -shared -fPIC -o &quot;$(OutDir)$(AliceNativeLib)&quot; &quot;$(AliceGenDir)$(AssemblyName)_native.c&quot; -lm" ContinueOnError="true" />
   </Target>
 </Project>

@@ -80,3 +80,15 @@ Like clang/gcc's default `-ffp-contract=on`, Alice fuses `a*b + c`, `c + a*b`, `
 `x -= a*b` on `Float64`/`Float32` into one fused multiply-add (`Prelude.fma`, hardware FMA3/ARM64; plain math
 otherwise). Results are the single-rounded value, as in C. `@[StrictMath]` on a method keeps separate rounding.
 Test: `FmaTests`. Measured: C's own nbody is 30 ms with FMA and 41.5 ms without; Alice went 47.2 -> 43.6 ms.
+
+### `@[Native]` functions (opt-in)
+
+`@[Native] def f(xs : Array(Float64), n : Int32) : Float64` compiles the function to C (`Backend/CEmitter.cs`) and,
+when clang/cc/gcc exists, to `lib<asm>_native.so` (`-O3 -march=native`); the C# side calls it through a function
+pointer and falls back to the managed body when the library is missing. Subset: numbers, Bool, `Array(number)`
+params (pointer + length), locals, if/while/for, `Math.*`, calls between native functions. Tests: `NativeTests`.
+
+nbody (`benchmarks/alice/nbody_native.al`, separate field arrays): 42.5 ms native vs 43.6 ms JIT vs 30 ms C.
+Measured why the C benchmark is faster: its 5 bodies are a stack-local array of structs (no aliasing, x/y/z adjacent
+for SLP). Experiments on the generated C: `restrict` 49 ms (worse), length versioning 44 ms, stack copies +
+versioning 39 ms. Native pays off for loops whose data layout clang can exploit; it is not a blanket speedup.

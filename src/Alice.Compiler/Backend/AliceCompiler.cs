@@ -11,13 +11,59 @@ public sealed record SourceFile(string Path, string Text);
 public static class AliceCompiler
 {
     /// <summary>Alice files -> AST -> bound HIR -> MIR -> C# (one unit per file).</summary>
-    public static List<string> TranspileAll(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs = null)
+    public static List<string> TranspileAll(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs = null) =>
+        TranspileFull(files, extraRefs, "alice_native").CSharp;
+
+    /// <summary>C# units plus the C source of all @[Native] functions (null when there are none).</summary>
+    public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib)
     {
         var asts = files.Select(f => Syntax.Parser.ParseFile(f.Text, f.Path)).ToList();
         var binder = new Semantics.Binder(asts, new Semantics.ClrTypes(extraRefs));
         binder.Bind();
-        var emitter = new Backend.Emitter(binder);
-        return asts.Select(emitter.EmitFile).ToList();
+        var emitter = new Backend.Emitter(binder) { NativeLib = nativeLib };
+        var cs = asts.Select(emitter.EmitFile).ToList();
+        return (cs, emitter.Native.IsEmpty ? null : emitter.Native.Source);
+    }
+
+    /// <summary>Compiles C to a shared library with clang -O3 -march=native; returns false (managed fallback) without clang.</summary>
+    public static bool BuildNativeLibrary(string cSource, string outDir, string libBase)
+    {
+        Directory.CreateDirectory(outDir);
+        string c = Path.Combine(outDir, libBase + ".c");
+        File.WriteAllText(c, cSource);
+        string lib = Path.Combine(outDir, OperatingSystem.IsWindows() ? libBase + ".dll" : OperatingSystem.IsMacOS() ? "lib" + libBase + ".dylib" : "lib" + libBase + ".so");
+        foreach (var cc in new[] { "clang", "cc", "gcc" })
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo(cc) { RedirectStandardError = true, RedirectStandardOutput = true };
+                foreach (var a in new[] { "-O3", "-march=native", "-shared", "-fPIC", "-o", lib, c, "-lm" }) psi.ArgumentList.Add(a);
+                using var p = System.Diagnostics.Process.Start(psi)!;
+                string err = p.StandardError.ReadToEnd();
+                p.WaitForExit();
+                if (p.ExitCode == 0) return true;
+                throw new CompileException($"{c}:1:1: native compilation failed ({cc}): {err.Trim()}");
+            }
+            catch (System.ComponentModel.Win32Exception) { }   // compiler not installed: try the next one
+        }
+        return false;
+    }
+
+    public sealed record NativeBuild(byte[] Image, string? NativeDir);
+
+    /// <summary>Single-file compile including @[Native] functions (library placed in a temp dir and registered).</summary>
+    public static NativeBuild CompileNative(string src, string name, bool buildNative, string file = "main.al")
+    {
+        var (cs, c) = TranspileFull([new SourceFile(file, src)], null, name + "_native");
+        var image = Emit(cs, name, exe: cs.Any(x => x.Contains("public static void Main(string[] ARGV)")));
+        string? dir = null;
+        if (buildNative && c != null)
+        {
+            dir = Path.Combine(Path.GetTempPath(), "alice-native-" + Guid.NewGuid().ToString("N"));
+            if (BuildNativeLibrary(c, dir, name + "_native")) Alice.Runtime.NativeLibs.AddSearchPath(dir);
+            else dir = null;
+        }
+        return new NativeBuild(image, dir);
     }
 
     static readonly System.Text.RegularExpressions.Regex RequireLine = new(@"^\s*require\s+""(?<p>[^""]+)""", System.Text.RegularExpressions.RegexOptions.Multiline);

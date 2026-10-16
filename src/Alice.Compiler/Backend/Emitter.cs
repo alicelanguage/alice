@@ -13,6 +13,9 @@ public sealed class Emitter
     readonly Lowerer lowerer;
     string file = "";
     bool moduleAttrsEmitted;
+    public readonly CEmitter Native = new();
+    public string NativeLib = "alice_native";
+    bool nativeProbeEmitted;
 
     public Emitter(Binder binder)
     {
@@ -40,6 +43,11 @@ public sealed class Emitter
         }
         var prog = new StringBuilder();
         Items(sb, prog, f.Items);
+        if (!Native.IsEmpty && !nativeProbeEmitted)
+        {
+            prog.Append($"public static bool __alice_native_loaded() => global::Alice.Runtime.NativeLibs.IsLoaded(\"{NativeLib}\");\n");
+            nativeProbeEmitted = true;
+        }
         sb.Append("public static partial class Program\n{\n").Append(prog);
         var main = f.Items.OfType<StmtItem>().Select(s => s.Stmt).ToList();
         if (main.Count > 0)
@@ -94,7 +102,7 @@ public sealed class Emitter
         var sb = new StringBuilder();
         foreach (var a in attrs)
         {
-            if (a is "Stack" or "Open" or "SoA" or "StrictMath" || a.StartsWith("__enumerable:")) continue;
+            if (a is "Stack" or "Open" or "SoA" or "StrictMath" or "Native" || a.StartsWith("__enumerable:")) continue;
             if (a == "Inline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             else if (a == "NoInline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]\n");
             else if (a == "Hot") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n");
@@ -263,6 +271,7 @@ public sealed class Emitter
     string Method(MethodDecl d, TypeSym owner)
     {
         var m = (MethodSym)d.Sym!;
+        if (CEmitter.IsNative(d)) return NativeMethod(d, owner, m);
         if (!m.HasInferredGenerics || !d.HasBody) return MethodVariant(d, owner, null);
         // Crystal-style: one typed specialization per call-site argument types; generic body only if still needed
         var sb = new StringBuilder();
@@ -277,6 +286,37 @@ public sealed class Emitter
             sb.Append(MethodVariant(d, owner, null));
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// @[Native]: C version (clang), a function pointer resolved at type init, and the managed body as fallback:
+    ///   name(args) => fp != null ? fp(pinned args) : __managed_name(args)
+    /// </summary>
+    string NativeMethod(MethodDecl d, TypeSym owner, MethodSym m)
+    {
+        Native.Add(d, m, file);
+        var cps = Native.Params(m, d);
+        string ret = Lowerer.TypeCs(m.Ret);
+        string fpType = "delegate* unmanaged<" + string.Join(", ", cps.SelectMany(p => p.Array ? new[] { p.Type.Elem!.Cs + "*", "int" } : new[] { p.Type.Cs }).Append(ret)) + ">";
+        string fp = "__np_" + m.CsName.TrimStart('@');
+        string cs = m.CsName;
+        m.CsName = "__managed_" + cs.TrimStart('@');
+        string managed = MethodVariant(d, owner, null);
+        m.CsName = cs;
+        string plist = string.Join(", ", m.Params.Select(p => $"{p.Type.Cs} {p.CsName}"));
+        string args = string.Join(", ", m.Params.Select(p => p.CsName));
+        var call = new StringBuilder();
+        foreach (var p in cps.Where(p => p.Array)) call.Append($"fixed ({p.Type.Elem!.Cs}* __p_{p.Name} = {p.Name}) ");
+        string nativeArgs = string.Join(", ", cps.SelectMany(p => p.Array ? new[] { "__p_" + p.Name, p.Name + ".Length" } : new[] { p.Name }));
+        string invoke = ret == "void" ? $"{{ {fp}({nativeArgs}); return; }}" : $"return {fp}({nativeArgs});";
+        var w = new StringBuilder();
+        w.Append($"private static readonly unsafe {fpType} {fp} = ({fpType})global::Alice.Runtime.NativeLibs.Export(\"{NativeLib}\", \"{CEmitter.Symbol(m)}\");\n");
+        w.Append($"#line {d.Line} \"{file}\"\n");
+        w.Append($"public static unsafe {ret} {cs}({plist})\n{{\n");
+        w.Append($"    if ({fp} != null)\n    {{\n        {call}{invoke}\n    }}\n");
+        w.Append($"    {(ret == "void" ? "" : "return ")}__managed_{cs.TrimStart('@')}({args});\n}}\n");
+        w.Append(managed);
+        return w.ToString();
     }
 
     string MethodVariant(MethodDecl d, TypeSym owner, Instance? inst)
