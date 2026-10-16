@@ -157,7 +157,7 @@ public sealed partial class Lowerer
         var ps = new List<string> { $"string {text}", $"global::System.Collections.Generic.Dictionary<string, {V}> {d}" };
         ps.AddRange(captured.Select(l => $"{TypeCs(l.Type)} {l.CsName}"));
         string body = $$"""
-                int parts = global::System.Math.Min(global::Alice.Runtime.Par.Workers * 4, {{text}}.Length / 16384 + 1);
+                int parts = global::System.Math.Min(global::Alice.Runtime.Par.Workers, {{text}}.Length / 16384 + 1);   // one partial dictionary per core keeps the merge small
                 var cuts = new global::System.Collections.Generic.List<int> { -1 };
                 for (int k = 1; k < parts; k++)
                 {
@@ -169,13 +169,17 @@ public sealed partial class Lowerer
                 var locals = new global::System.Collections.Generic.Dictionary<string, {{V}}>[cuts.Count - 1];
                 global::System.Threading.Tasks.Parallel.For(0, locals.Length, c =>
                 {
-                    var local = new global::System.Collections.Generic.Dictionary<string, {{V}}>();
+                    int len = cuts[c + 1] - cuts[c] - 1;
+                    var local = new global::System.Collections.Generic.Dictionary<string, {{V}}>(global::System.Math.Min(len / 64 + 16, 16384));   // pre-sized (bounded): few rehashes while counting
                     var alt = local.GetAlternateLookup<global::System.ReadOnlySpan<char>>();
                     var span = {{text}}.AsSpan(cuts[c] + 1, cuts[c + 1] - cuts[c] - 1);
                     foreach (var r in span.Split({{sep}}))
                         {{CM}}.GetValueRefOrAddDefault(alt, span[r], out _) {{op}} {{deltaCs}};
                     locals[c] = local;
                 });
+                int total = {{d}}.Count;
+                foreach (var local in locals) total += local.Count;
+                {{d}}.EnsureCapacity(total);
                 foreach (var local in locals)
                     foreach (var kv in local)
                         {{CM}}.GetValueRefOrAddDefault({{d}}, kv.Key, out _) += kv.Value;

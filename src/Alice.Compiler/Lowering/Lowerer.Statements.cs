@@ -162,6 +162,7 @@ public sealed partial class Lowerer
 
     MStmt SerialFor(ForStmt f)
     {
+        if (TrySimtFor(f) is MStmt simt) return simt;
         ctx.Add("loop");
         MStmt r;
         if (f.Iter is RangeExpr re)

@@ -194,6 +194,8 @@ public sealed partial class Lowerer
                     }
                     if (b.Op is "+" or "-" or "*" || (b.Op == "/" && isFloat))
                     {
+                        if (simtStrict && b.Op == "/" && b.L.Type.IsInteger && b.R.Type.IsInteger) return null;   // integer division
+                        if (simtStrict && (b.L.Type.Cs == "float" || b.R.Type.Cs == "float")) return null;
                         if (wantMask) return null;
                         var l = Vec(b.L, env, T, false, sc);
                         var r = Vec(b.R, env, T, false, sc);

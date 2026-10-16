@@ -11,7 +11,8 @@ public static class Par
     public static void Range(int n, Action<int, int> body, int grain = 1)
     {
         if (n <= 0) return;
-        int chunks = Math.Min(Math.Max(1, n / Math.Max(1, grain)), Workers * 8);
+        int cap = grain <= 1 ? Workers * 64 : Workers * 8;
+        int chunks = Math.Min(Math.Max(1, n / Math.Max(1, grain)), cap);
         if (chunks <= 1) { body(0, n); return; }
         Parallel.For(0, chunks, c => body((int)((long)n * c / chunks), (int)((long)n * (c + 1) / chunks)));
     }
@@ -19,7 +20,9 @@ public static class Par
     /// <summary>Chunked map-reduce over [0, n): `chunk(lo, hi)` runs in parallel, partials are combined in order.</summary>
     public static T Reduce<T>(int n, Func<int, int, T> chunk, Func<T, T, T> combine, int grain = 8192)
     {
-        int chunks = Math.Min(Math.Max(1, n / Math.Max(1, grain)), Workers * 8);
+        // grain 1 = expensive, uneven iterations: many small chunks so the scheduler balances the load
+        int cap = grain <= 1 ? Workers * 64 : Workers * 8;
+        int chunks = Math.Min(Math.Max(1, n / Math.Max(1, grain)), cap);
         if (chunks <= 1) return chunk(0, n);
         var partial = new T[chunks];
         Parallel.For(0, chunks, c => partial[c] = chunk((int)((long)n * c / chunks), (int)((long)n * (c + 1) / chunks)));
