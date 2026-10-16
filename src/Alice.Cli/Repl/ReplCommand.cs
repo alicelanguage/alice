@@ -28,6 +28,7 @@ public static class ReplCommand
         while (true)
         {
             var (prompt, width) = Prompt(mode);
+            ed.Highlight = mode is Mode.Alice or Mode.Help;
             var (sig, line) = ed.Read(prompt, width, mode == Mode.Alice ? "?;]" : "");
             if (sig == LineEditor.Signal.Eof) break;
             if (sig == LineEditor.Signal.ModeKey)
@@ -42,9 +43,9 @@ public static class ReplCommand
             if (mode == Mode.Alice && !line.TrimStart().StartsWith(':'))
                 while (!ReplSession.IsComplete(input))
                 {
-                    var (s2, more) = ed.Read("\u001b[90m     ⋮ \u001b[0m", 7, "");
+                    var (s2, more) = ed.Read("\u001b[90m     ⋮ \u001b[0m", 7, "", ReplSession.Indent(input));
                     if (s2 == LineEditor.Signal.Eof) break;
-                    if (s2 == LineEditor.Signal.LeaveMode) continue;
+                    if (s2 == LineEditor.Signal.LeaveMode) { input += "\n"; continue; }
                     input += "\n" + more;
                 }
             ed.History.Add(input.Replace("\n", "\n"));
@@ -91,15 +92,23 @@ public static class ReplCommand
     {
         Mode.Help => ("\u001b[1;33mhelp?> \u001b[0m", 7),
         Mode.Shell => ("\u001b[1;31mshell> \u001b[0m", 7),
-        Mode.Pkg => ("\u001b[1;34m(" + (File.Exists(Projects.Manifest.FileName) ? Path.GetFileName(Environment.CurrentDirectory) : "global") + ") pkg> \u001b[0m", 0),
+        Mode.Pkg => PkgPrompt(),
         _ => ("\u001b[1;35malice> \u001b[0m", 7),
     };
 
+    static (string, int) PkgPrompt()
+    {
+        string name = "(" + (File.Exists(Projects.Manifest.FileName) ? Path.GetFileName(Environment.CurrentDirectory) : "global") + ") pkg> ";
+        return ("\u001b[1;34m" + name + "\u001b[0m", name.Length);
+    }
+
     static void Banner()
     {
-        AnsiConsole.MarkupLine("[bold magenta]   ╱|  [/]  [bold]Alice[/] [grey]" + Markup.Escape(App.Version) + "[/]");
-        AnsiConsole.MarkupLine("[bold magenta]  ( ?) [/]  [grey]curiouser and faster — Ruby to write, C to run, all of .NET[/]");
-        AnsiConsole.MarkupLine("[bold magenta]  ╱ ◇[/]   [grey]? help · ; shell · ]] packages · :help · Ctrl-D exits[/]\n");
+        string channel = Toolchains.ToolchainVersion.TryParse(App.Version)?.Channel ?? "stable";
+        AnsiConsole.MarkupLine("[bold magenta]    ╱|    [/]  [bold]Alice[/] [grey]" + Markup.Escape(App.Version) + " (" + channel + ") · .NET " + Environment.Version + "[/]");
+        AnsiConsole.MarkupLine("[bold magenta]   ( ?)   [/]  [grey]curiouser and faster — Ruby to write, C to run, all of .NET[/]");
+        AnsiConsole.MarkupLine("[bold magenta]   ╱ ◇    [/]  [grey]Documentation: [/][link]https://github.com/kleeedolinux/alice[/]");
+        AnsiConsole.MarkupLine("[bold magenta]  ◇  ◇    [/]  [grey]? help · ; shell · ]] packages · :help · Tab completes · Ctrl-R searches · Ctrl-D exits[/]\n");
     }
 
     static void Show(ReplResult r)
@@ -135,6 +144,18 @@ public static class ReplCommand
                     AnsiConsole.MarkupLine($"[grey]{r.Elapsed.TotalMilliseconds:0.0} ms (compile + run)[/]");
                     break;
                 }
+            case ":type":
+                {
+                    var r = s.Eval(arg, null);
+                    if (r.Error != null) AnsiConsole.MarkupLine($"[red]{Markup.Escape(r.Error)}[/]");
+                    else AnsiConsole.MarkupLine($"[cyan]{Markup.Escape(Compiler.Diagnostics.AliceNames.Type(r.ValueType ?? "Nil"))}[/]");
+                    break;
+                }
+            case ":history":
+                for (int i = 0; i < s.Inputs.Count; i++)
+                    AnsiConsole.MarkupLine($"[grey]{i + 1,4}[/]  " + Markup.Escape(Clean(s.Inputs[i]).Replace("\n", "\n      ")));
+                break;
+            case ":clear": Console.Write("\u001b[2J\u001b[H"); break;
             case ":help" or ":h":
                 AnsiConsole.MarkupLine("""
                     [bold]modes[/] (type on an empty line; Backspace returns)
@@ -142,10 +163,12 @@ public static class ReplCommand
                       [red];[/]  shell: ;ls -la
                       [blue]]][/]  packages: ]]add Newtonsoft.Json  ]]remove X  ]]list  ]]search json
                     [bold]commands[/]
-                      :reset  :load FILE  :save FILE  :emit CODE (show generated C#)  :time EXPR  :quit
+                      :reset  :load FILE  :save FILE  :emit CODE (show generated C#)  :time EXPR
+                      :type EXPR (static type)  :history  :clear  :quit
                     [bold]values[/]
                       the last value is [green]ans[/]; definitions persist; earlier inputs re-run silently
-                    [bold]keys[/]  ↑↓ history  Tab complete  Ctrl-C clear  Ctrl-L clear screen  Ctrl-D exit
+                    [bold]keys[/]  ↑↓ history (prefix search)  → accept hint  Ctrl-R search  Tab complete
+                          Alt/Ctrl ←→ words  Ctrl-W/K/U kill  Ctrl-C clear  Ctrl-L clear screen  Ctrl-D exit
                     """);
                 break;
             default: AnsiConsole.MarkupLine($"[red]unknown command {Markup.Escape(cmd)}[/] (:help)"); break;

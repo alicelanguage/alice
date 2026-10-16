@@ -3,8 +3,16 @@ name: Release
 on:
   push:
     tags: ['v*']
+  schedule:
+    # Nightly build of main at 03:17 UTC (skipped when main has not moved since the last nightly).
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
+      channel:
+        description: Release channel (stable publishes vX.Y.Z; nightly replaces the rolling `nightly` prerelease)
+        type: choice
+        options: [stable, nightly]
+        default: stable
       skip_tests:
         description: Skip the full test stage (package smoke checks still run)
         type: boolean
@@ -29,6 +37,8 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      channel: ${{ steps.version.outputs.channel }}
+      changed: ${{ steps.changed.outputs.changed }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -38,14 +48,31 @@ jobs:
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          RELEASE_CHANNEL: ${{ github.event_name == 'schedule' && 'nightly' || inputs.channel || 'stable' }}
         run: |
-          $version = & ./.github/scripts/release-version.ps1 -Tag $env:RELEASE_TAG
+          $channel = $env:RELEASE_CHANNEL
+          $version = & ./.github/scripts/release-version.ps1 -Tag $env:RELEASE_TAG -Channel $channel
           "version=$version" >> $env:GITHUB_OUTPUT
-          "tag=v$version" >> $env:GITHUB_OUTPUT
+          "tag=$(if ($channel -eq 'nightly') { 'nightly' } else { "v$version" })" >> $env:GITHUB_OUTPUT
+          "channel=$channel" >> $env:GITHUB_OUTPUT
+      - name: Skip unchanged scheduled nightlies
+        id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          changed=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            last=$(gh release view nightly --json targetCommitish --jq .targetCommitish 2>/dev/null || true)
+            [ "$last" = "${{ github.sha }}" ] && changed=false
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "nightly up to date: $([ $changed = false ] && echo yes || echo no)"
 
   test:
     if: >-
-      ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_tests) &&
+      ${{ needs.version.outputs.changed == 'true' &&
+          !(github.event_name == 'workflow_dispatch' && inputs.skip_tests) &&
           !(github.event_name == 'push' && vars.RELEASE_SKIP_TESTS == 'true') }}
     needs: version
     uses: ./.github/workflows/ci.yml
@@ -54,7 +81,7 @@ jobs:
     name: Package (${{ matrix.rid }})
     needs: [version, test]
     if: >-
-      ${{ !cancelled() && needs.version.result == 'success' &&
+      ${{ !cancelled() && needs.version.result == 'success' && needs.version.outputs.changed == 'true' &&
           (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -94,8 +121,8 @@ jobs:
     name: Publish GitHub release
     if: >-
       ${{ !cancelled() &&
-          (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag')) &&
-          needs.version.result == 'success' && needs.package.result == 'success' &&
+          (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || (github.event_name == 'push' && github.ref_type == 'tag')) &&
+          needs.version.result == 'success' && needs.version.outputs.changed == 'true' && needs.package.result == 'success' &&
           (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     needs: [version, test, package]
     runs-on: ubuntu-24.04
@@ -103,6 +130,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           pattern: alice-*
@@ -115,9 +146,20 @@ jobs:
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
           RELEASE_COMMIT: ${{ github.sha }}
           RELEASE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RELEASE_CHANNEL: ${{ needs.version.outputs.channel }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
         run: |
+          cp scripts/install.sh scripts/install.ps1 dist/
           cd dist
           sha256sum --check *.sha256
-          gh release create "$RELEASE_TAG" ./*.tar.gz ./*.zip ./*.sha256 \
-            --target "$RELEASE_COMMIT" --title "Alice $RELEASE_TAG" --generate-notes \
-            --notes "Archives built from $RELEASE_COMMIT. Build and package checks: $RELEASE_RUN_URL"
+          if [ "$RELEASE_CHANNEL" = "nightly" ]; then
+            # one rolling prerelease: replace the previous nightly's assets and move its tag
+            gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+            gh release create nightly ./*.tar.gz ./*.zip ./*.sha256 ./install.sh ./install.ps1 \
+              --target "$RELEASE_COMMIT" --prerelease --title "Alice nightly $RELEASE_VERSION" \
+              --notes "Nightly $RELEASE_VERSION built from $RELEASE_COMMIT. Not for production. Install: \`alice toolchain install nightly\`. Build: $RELEASE_RUN_URL"
+          else
+            gh release create "$RELEASE_TAG" ./*.tar.gz ./*.zip ./*.sha256 ./install.sh ./install.ps1 \
+              --target "$RELEASE_COMMIT" --title "Alice $RELEASE_TAG" --generate-notes --latest \
+              --notes "Archives built from $RELEASE_COMMIT. Build and package checks: $RELEASE_RUN_URL"
+          fi

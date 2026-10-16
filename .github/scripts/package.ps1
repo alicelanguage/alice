@@ -10,7 +10,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $sourceVersion = & (Join-Path $PSScriptRoot 'release-version.ps1')
-if ($sourceVersion -cne $Version) { throw "Expected source version $sourceVersion, got $Version." }
+$nightlyBase = & (Join-Path $PSScriptRoot 'release-version.ps1') -Channel nightly -Stamp '00000000'
+$nightlyBase = $nightlyBase.Substring(0, $nightlyBase.IndexOf('-'))
+if ($sourceVersion -cne $Version -and $Version -notmatch "^$([regex]::Escape($nightlyBase))-nightly\.[0-9]{8}([0-9]{4})?$") {
+    throw "Expected source version $sourceVersion (or $nightlyBase-nightly.STAMP), got $Version."
+}
 
 # ReadyToRun assemblies and apphosts must be smoke-tested on the target OS/architecture.
 $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
@@ -35,7 +39,8 @@ try {
     & dotnet publish src/Alice.Cli/Alice.Cli.csproj --configuration Release --runtime $Runtime `
         --self-contained false --output $publish --artifacts-path (Join-Path $output 'build') `
         -p:UseAppHost=true -p:PublishSingleFile=false -p:PublishTrimmed=false `
-        -p:PublishAot=false -p:PublishReadyToRun=true -p:ContinuousIntegrationBuild=true
+        -p:PublishAot=false -p:PublishReadyToRun=true -p:ContinuousIntegrationBuild=true `
+        -p:Version=$Version
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed: $LASTEXITCODE" }
 
     Copy-Item (Join-Path $root 'docs/releases.md') (Join-Path $publish 'RELEASES.md')

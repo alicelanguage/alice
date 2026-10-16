@@ -2,6 +2,13 @@
 
 ## 0.11.0 - Unreleased
 
+- Toolchains (ADR 0010): `alice toolchain list|available|install|uninstall|default|pin|unpin|which|show`; versions side by side in `~/.alice/toolchains`, `alice-toolchain` pin files, `ALICE_TOOLCHAIN`, and `alice +VERSION <command>`.
+- Updates: `alice self update|check|uninstall`, `alice upgrade`; a daily background check prints a one-line notice when a newer stable exists (off in CI and with `ALICE_NO_UPDATE_CHECK=1`).
+- Installers: `scripts/install.sh` and `scripts/install.ps1` verify SHA-256, install the .NET 10 SDK per-user when missing (no admin rights, no Visual Studio), and set PATH. They are attached to every release and served by the site.
+- CLI: `alice doctor` checks the environment; `alice completions bash|zsh|fish|pwsh`.
+- REPL: live syntax highlighting, bracket matching, grey history hints (→ accepts), ↑/↓ prefix search, Ctrl-R reverse search, word motions and kills, a column completion menu, auto-indented continuation lines, `:type`, `:history`, `:clear`.
+- Release: nightly channel (manual `channel: nightly` or a daily schedule) publishes `X.Y.(Z+1)-nightly.YYYYMMDD` as the rolling `nightly` prerelease; unchanged commits are skipped. `alice version` reports the full informational version.
+
 ## 0.10.1 - 2026-10-16
 
 - Fix: escape package-mode brackets in the interactive REPL banner and `:help` so they render without Spectre.Console markup exceptions.

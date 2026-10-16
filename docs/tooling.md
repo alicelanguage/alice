@@ -167,8 +167,39 @@ Restores use `dotnet restore`, so packages live in the standard .NET global cach
 | `]` | package mode: `add`, `remove`, `list`, `search`, `install` |
 | Backspace (empty line) | back to `alice>` |
 | `:reset` `:load F` `:save F` `:emit CODE` `:time EXPR` `:help` `:quit` | session commands |
-| ↑↓ Tab Ctrl-C Ctrl-L Ctrl-D | history (`~/.alice_history`), completion, clear line, clear screen, exit |
+| `:type EXPR` `:history` `:clear` | static type, inputs so far, clear screen |
+| ↑↓ | history (`~/.alice_history`); with text typed, only entries starting with it (Julia) |
+| → / End / Ctrl-E at line end | accept the grey history hint |
+| Ctrl-R | reverse incremental search (Ctrl-R again: older; Enter accepts; Esc cancels) |
+| Tab | complete names, keywords, members (`Math.Sq`), `:commands`; several matches show a column menu |
+| Alt/Ctrl ←→, Alt-B/F, Ctrl-W/K/U, Alt-D | word motion and kills |
+| Ctrl-C Ctrl-L Ctrl-D | clear line, clear screen, exit |
+
+Input is highlighted as you type (keywords, types, strings with `#{}`, numbers, symbols, comments) and the bracket
+matching the cursor is underlined. Continuation lines are indented automatically; `end`/`else`/`when` dedent.
 
 Each input compiles together with the earlier ones: definitions persist, earlier statements re-run with output
 muted, so values keep static types. Side effects of earlier inputs (files, network) therefore repeat; use `:reset`.
 Inside a project the REPL compiles against its packages.
+
+## Toolchains
+
+Installed with the [install scripts](releases.md#install), Alice manages its own versions (rustup-style):
+
+```bash
+alice toolchain available          # releases on GitHub (stable and nightly)
+alice toolchain install nightly    # or stable, or 0.10.1; --no-default keeps the current default
+alice toolchain default 0.10.1
+alice toolchain pin 0.10.1         # writes ./alice-toolchain; applies to this directory tree
+alice +nightly run app.al          # one-off
+alice toolchain show               # active version and why
+alice self update                  # newest release on your channel; --nightly switches
+alice doctor                       # .NET SDK, PATH, toolchains, overrides, updates
+eval "$(alice completions bash)"   # zsh, fish, pwsh too
+```
+
+Layout: `~/.alice/toolchains/VERSION/`, `~/.alice/bin/alice` (shim to the default), `~/.alice/settings.json`.
+Selection order: `alice +VERSION`, `ALICE_TOOLCHAIN`, nearest `alice-toolchain` file, default. `ALICE_HOME` moves
+the root; `ALICE_RELEASES_REPO` points at a fork; `GITHUB_TOKEN` raises API limits. Once a day a background
+check caches the newest stable release and the next command prints a one-line notice; `ALICE_NO_UPDATE_CHECK=1`
+or `CI` disables it.

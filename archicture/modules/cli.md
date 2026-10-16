@@ -5,6 +5,8 @@ Path: `src/Alice.Cli`. Thin entrypoint; no compiler logic.
 |---|---|
 | `Commands/` | `CompileCommands` (build/run/check/emit/gen), `ProjectCommands` (new/add/clean/update), `TestCommand`, `FormatCommand`, `VersionCommand` |
 | `Projects/` | `TomlLite`, `Manifest` (alice.toml -> `.alice/<name>.alproj`), `Workspace` (members, topo sort), `Lockfile` (alice.lock), `DotNet` |
+| `Toolchains/` | `ToolchainVersion`, `Platform` (RIDs, archive names), `ReleaseFeed` (GitHub releases), `ToolchainHome` (~/.alice layout, overrides), `Installer` (verify + atomic extract), `UpdateNotifier` |
+| `Repl/` | `ReplCommand`, `ReplSession`, `LineEditor` (hints, search, menu), `Highlighter`, `ReplHelp` |
 | `Ui/`, `Localization/` | diagnostics rendering, en/pt/es strings |
 
 | Command | Action |
@@ -14,11 +16,13 @@ Path: `src/Alice.Cli`. Thin entrypoint; no compiler logic.
 | `alice build\|run` in a package/workspace | sync manifest(s), `dotnet build` members in dependency order |
 | `alice emit file.al` | print lowered C# |
 | `alice gen` | internal: called by `Alice.targets` |
+| `alice toolchain\|self\|doctor\|completions` | toolchains, updates, diagnostics (ADR 0010) |
 | `alice new\|check\|test\|fmt\|add\|clean\|update\|version` | see `docs/tooling.md` |
 
 Invariants:
 - Generated `.alproj` lives in `<pkg>/.alice/`; `alice.toml` is the only source of truth.
 - No `sln` command.
-- Tests: `Tooling/ManifestTests`, `Tooling/WorkspaceTests`, `Integration/SampleTests`.
+- `alice +VERSION`/overrides re-exec the selected toolchain with `ALICE_TOOLCHAIN_ACTIVE` set (no loops).
+- Tests: `Tooling/ToolchainTests`, `Tooling/ToolchainCliTests`, `Tooling/ReplEditorTests`, `Tooling/ManifestTests`, `Tooling/WorkspaceTests`, `Integration/SampleTests`.
 
 `bootstrap` removed; self-hosting deferred (ADR 0003 superseded).

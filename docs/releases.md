@@ -1,6 +1,25 @@
 # Releases
 
-## Install a release
+## Install
+
+```bash
+# Linux, macOS
+curl -fsSL https://github.com/kleeedolinux/alice/releases/latest/download/install.sh | sh
+curl -fsSL .../install.sh | sh -s -- --nightly       # or --version 0.10.1, --home DIR, --no-modify-path
+```
+
+```powershell
+# Windows (no administrator rights, no Visual Studio)
+irm https://github.com/kleeedolinux/alice/releases/latest/download/install.ps1 | iex
+```
+
+The scripts (`scripts/install.sh`, `scripts/install.ps1`, attached to every release and served by the site) pick the
+archive for the platform, verify its SHA-256, install it into `~/.alice/toolchains/VERSION`, make it the default,
+add `~/.alice/bin` to PATH, and install the .NET 10 SDK per-user with Microsoft's `dotnet-install` script when it is
+missing (`--no-dotnet` / `-NoDotnet` skips that). `--archive FILE` installs a downloaded archive offline. Afterwards
+use `alice toolchain` and `alice self update` ([toolchains](tooling.md#toolchains)).
+
+## Install a release manually
 
 Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), download the matching archive from the repository's GitHub Releases page, and extract it into a permanent directory. Add that directory to `PATH`, then run `alice version`.
 
@@ -44,6 +63,13 @@ To avoid repeating CI for an already tested commit:
 These options skip the full CI test stage inside Release. Version validation and all package smoke checks still run. Failed or canceled tests still block packaging and publishing. The standalone CI workflow is unchanged.
 
 Actions are pinned to commit SHAs. The SDK follows the latest stable `10.0.x` patch; this is a compatibility gate, not a bit-for-bit reproducible build guarantee. Hosted runners and NuGet access are required. Integration tests restore the sample workspace, including MonoGame, without launching graphical games.
+
+## Nightly builds
+
+**Release → Run workflow** with `channel: nightly`, or the daily schedule (03:17 UTC), builds `main` as
+`X.Y.(Z+1)-nightly.YYYYMMDD` (`release-version.ps1 -Channel nightly`), runs the same gates and package smoke tests,
+and replaces the rolling `nightly` prerelease and its tag. A scheduled run is skipped when `main` has not moved
+since the last nightly. Users get it with `alice toolchain install nightly`.
 
 ## Cut a release
 

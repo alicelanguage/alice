@@ -179,7 +179,12 @@ public sealed class ReplSession(IEnumerable<string>? refs = null)
     static readonly Regex DoBlock = new(@"\bdo(\s*\|[^|]*\|)?\s*(#.*)?$");
 
     /// <summary>True when the input forms complete statements (blocks closed, strings/brackets balanced).</summary>
-    public static bool IsComplete(string src)
+    public static bool IsComplete(string src) => Open(src) is var (depth, paren, pending) && depth <= 0 && paren <= 0 && !pending;
+
+    /// <summary>Indent for the next continuation line: two spaces per open block or bracket.</summary>
+    public static string Indent(string src) => Open(src) is var (depth, paren, pending) && !pending ? new string(' ', 2 * Math.Max(0, depth + paren)) : "";
+
+    static (int Depth, int Paren, bool Pending) Open(string src)
     {
         int depth = 0, paren = 0;
         string? heredoc = null;
@@ -189,7 +194,7 @@ public sealed class ReplSession(IEnumerable<string>? refs = null)
             var hd = Regex.Match(raw, @"<<[-~]?([A-Z_]+)");
             if (hd.Success) heredoc = hd.Groups[1].Value;
             string line = StripStrings(raw, out bool openString);
-            if (openString) return false;
+            if (openString) return (depth, paren, true);
             string code = line.Split('#')[0];
             bool endless = Regex.IsMatch(code, @"^\s*def\s+[\w?!]+(\([^)]*\))?\s*(:\s*\S+\s*)?=\s");
             bool modifier = Regex.IsMatch(code, @"\S.*\b(if|unless|while|until)\b") && !Regex.IsMatch(code, @"^\s*(if|unless|while|until)\b") && !Regex.IsMatch(code, @"=\s*(if|unless|case|begin)\b");
@@ -199,7 +204,7 @@ public sealed class ReplSession(IEnumerable<string>? refs = null)
             foreach (Match _ in Regex.Matches(code, @"(^|[\s;])end\b")) depth--;
             foreach (char ch in code) { if (ch is '(' or '[' or '{') paren++; else if (ch is ')' or ']' or '}') paren--; }
         }
-        return depth <= 0 && paren <= 0 && heredoc == null;
+        return (depth, paren, heredoc != null);
     }
 
     static string StripStrings(string line, out bool open)
@@ -229,8 +234,11 @@ public sealed class ReplSession(IEnumerable<string>? refs = null)
         "begin rescue ensure return break next yield self nil true false and or not require using include extend getter setter property " +
         "spawn async await val raise loop lambda proc describe context it expect").Split(' ');
 
+    public static readonly string[] ReplCommands = [":help", ":reset", ":load", ":save", ":emit", ":time", ":type", ":history", ":clear", ":quit"];
+
     public List<string> Complete(string prefix)
     {
+        if (prefix.StartsWith(':') && (prefix.Length == 1 || char.IsLetter(prefix[1]))) return ReplCommands.Where(c => c.StartsWith(prefix) && c != prefix).ToList();
         int dot = prefix.LastIndexOf('.');
         if (dot > 0 && ReplHelp.ResolveType(prefix[..dot]) is { } t)
         {
