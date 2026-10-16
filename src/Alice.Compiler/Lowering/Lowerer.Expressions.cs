@@ -195,6 +195,8 @@ public sealed partial class Lowerer
         {
             case "is": return new MIs { E = Expr(tt.E!), TypeCs = ((AType)tt.Sym!).Cs };
             case "as": return new MCast { TypeCs = ((AType)tt.Sym!).Cs, E = Expr(tt.E!) };
+            case "nil?" when tt.E!.Type is { IsKnown: true, Nullable: false } vt && vt.Kind is "prim" or "struct" or "enum":
+                return new MCode("false");   // a non-nullable value is never nil
             case "nil?": return new MIs { E = Expr(tt.E!), TypeCs = "null" };
             case "not_nil!": return new MUnary { Op = "!", E = Expr(tt.E!), Postfix = true };
             case "default": return new MCode($"default({tt.Type.Cs})");

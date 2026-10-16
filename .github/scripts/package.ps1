@@ -31,6 +31,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed: $LASTEXITCODE" }
 
     Copy-Item (Join-Path $root 'docs/releases.md') (Join-Path $publish 'RELEASES.md')
+    Copy-Item (Join-Path $root 'LICENSE') (Join-Path $publish 'LICENSE')
+    Copy-Item (Join-Path $root 'NOTICE') (Join-Path $publish 'NOTICE')
     if ($Runtime -eq 'win-x64') {
         $archive = Join-Path $dist "$name.zip"
         Compress-Archive -Path "$publish/*" -DestinationPath $archive

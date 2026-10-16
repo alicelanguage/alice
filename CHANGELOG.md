@@ -53,3 +53,4 @@
 - Fix: auto-parallel loop helpers in instance methods can read `@ivars` (were emitted static → C# error).
 - Constants holding array literals infer their type (`ROWS = ["a", "b"]`); `String#each_char_with_index`.
 - Sample `samples/life`: Game of Life (terminal animation, PPM frame export → `docs/media/life.gif`), specs.
+- Licensing: source code under Apache-2.0 (`LICENSE`, `NOTICE`); brand assets © Julia Klee, all rights reserved (`assets/brand/LICENSE.md`).

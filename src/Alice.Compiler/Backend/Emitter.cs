@@ -73,7 +73,7 @@ public sealed class Emitter
             lowerer.Type = binder.Program;
             lowerer.Method = null;
             var body = lowerer.LowerBody(main, Tail.None, f.HoistedLocals, main[0].Line);
-            sb.Append("public static void Main(string[] ARGV)\n{\nPrelude.init();\n").Append(Print(body, 1)).Append("}\n");
+            sb.Append("public static void Main(string[] ARGV)\n{\nPrelude.init();\nPrelude.ARGV = ARGV;\n").Append(Print(body, 1)).Append("}\n");
             sb.Append(string.Concat(lowerer.Extra));
             lowerer.Extra.Clear();
         }

@@ -1,3 +1,3 @@
 # Samples workspace: `alice build` here builds every Alice member (dependencies first).
 [workspace]
-members = ["AliceLib", "AliceApp", "BounceGame", "Breakout", "celeste", "life"]
+members = ["AliceLib", "AliceApp", "BounceGame", "Breakout", "celeste", "life", "raytracer"]

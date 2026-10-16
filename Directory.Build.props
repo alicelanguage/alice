@@ -6,5 +6,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Version>0.10.0</Version>
+    <Authors>Julia Klee</Authors>
+    <Copyright>© 2026 Julia Klee</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
   </PropertyGroup>
 </Project>

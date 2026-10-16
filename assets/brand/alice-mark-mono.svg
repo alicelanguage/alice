@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t">
   <title id="t">Alice</title>
+  <!-- © 2026 Julia Klee. All rights reserved. Not covered by the code license; see assets/brand/LICENSE.md -->
   <g transform="translate(-50 26)">
     <!-- straight ear: a lancet blade with a cherry core -->
     <polygon points="198,262 206,76 238,40 254,250" fill="#FFFFFF" stroke="#141210" stroke-width="12" stroke-linejoin="miter"/>

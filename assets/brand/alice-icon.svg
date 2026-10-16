@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t">
   <title id="t">Alice</title>
+  <!-- © 2026 Julia Klee. All rights reserved. Not covered by the code license; see assets/brand/LICENSE.md -->
   <rect x="16" y="16" width="480" height="480" rx="96" fill="#141210"/>
   <rect x="40" y="40" width="432" height="432" rx="76" fill="none" stroke="#F5EFE0" stroke-width="4" stroke-opacity=".35"/>
   <g transform="translate(256 262) scale(.86) translate(-256 -256)">

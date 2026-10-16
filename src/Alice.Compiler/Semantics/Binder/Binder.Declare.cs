@@ -298,6 +298,7 @@ public sealed partial class Binder
     void DeclareConst(ConstDecl c, TypeSym owner)
     {
         var t = c.Type != null ? ResolveType(c.Type) : LiteralType(c.Value);
+        if (!t.IsKnown && c.Type == null && c.Value != null) t = SyntacticType(c.Value, owner, _ => null) ?? t;   // X = Vec.new(...)
         if (!t.IsKnown) throw Err(c, $"constant {c.Name} needs a type: {c.Name} : Type = value");
         owner.Fields[c.Name] = new FieldSym { Name = c.Name, CsName = c.Name, Type = t, Kind = "const", IsStatic = true, Owner = owner };
         c.Sym = owner.Fields[c.Name];

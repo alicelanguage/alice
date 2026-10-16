@@ -37,6 +37,7 @@ public sealed partial class Binder
                 BindMultiAssign(ma);
                 break;
             case IfStmt i:
+                HoistBranchLocals(i.Bodies.Append(i.Else));
                 foreach (var c in i.Conds) BindExpr(c);
                 foreach (var b in i.Bodies) Scoped(b);
                 if (i.Else != null) Scoped(i.Else);
@@ -49,6 +50,7 @@ public sealed partial class Binder
                 BindFor(f);
                 break;
             case CaseStmt c:
+                HoistBranchLocals(c.Whens.Select(w => w.Body).Append(c.Else));
                 BindCase(c);
                 break;
             case BeginStmt b:
@@ -148,6 +150,16 @@ public sealed partial class Binder
         if (l.IsVal) throw Err(at, $"cannot assign to immutable '{l.Name}' (declared with val)");
         if (l.SpawnDepth < spawnDepth)
             throw Err(at, $"data race: spawned task writes captured variable '{l.Name}'; send it through a Channel or use an Actor");
+    }
+
+    /// <summary>Ruby: a local first assigned inside an if/case branch belongs to the method (visible after it).</summary>
+    void HoistBranchLocals(IEnumerable<List<Stmt>?> bodies)
+    {
+        if (lambdas.Count > 0) return;
+        foreach (var b in bodies)
+            if (b != null)
+                foreach (var st in b)
+                    if (st is Assign { Target: NameExpr n, Op: "=" } && FindLocal(n.Name) == null) Hoist(n.Name);
     }
 
     void Hoist(string name)

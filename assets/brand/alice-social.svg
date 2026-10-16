@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="t">
   <title id="t">Alice — curiouser and faster</title>
+  <!-- © 2026 Julia Klee. All rights reserved. Not covered by the code license; see assets/brand/LICENSE.md -->
   <rect width="1280" height="640" fill="#141210"/>
   <rect x="24" y="24" width="1232" height="592" rx="32" fill="none" stroke="#C2183C" stroke-width="3"/>
   <g transform="translate(80 70) scale(1)">

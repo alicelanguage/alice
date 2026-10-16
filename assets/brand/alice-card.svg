@@ -1,5 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 700" role="img" aria-labelledby="t">
   <title id="t">Alice — ace of rabbits</title>
+  <!-- © 2026 Julia Klee. All rights reserved. Not covered by the code license; see assets/brand/LICENSE.md -->
   <rect x="10" y="10" width="480" height="680" rx="40" fill="#F5EFE0" stroke="#141210" stroke-width="10"/>
   <rect x="44" y="44" width="412" height="612" rx="18" fill="none" stroke="#C2183C" stroke-width="3"/>
   <g font-family="Georgia, 'Times New Roman', serif" font-weight="bold" fill="#141210">

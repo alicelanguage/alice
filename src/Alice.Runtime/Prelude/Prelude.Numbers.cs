@@ -59,6 +59,20 @@ public static partial class Prelude
     public static int to_i(this long d) => (int)d;
     public static int to_i(this int d) => d;
     public static int to_i(this char c) => c;
+
+    // narrow conversions (wrapping, like Crystal's to_u8! etc.)
+    public static byte to_u8(this int v) => unchecked((byte)v);
+    public static byte to_u8(this long v) => unchecked((byte)v);
+    public static byte to_u8(this double v) => unchecked((byte)(int)v);
+    public static sbyte to_i8(this int v) => unchecked((sbyte)v);
+    public static short to_i16(this int v) => unchecked((short)v);
+    public static short to_i16(this long v) => unchecked((short)v);
+    public static ushort to_u16(this int v) => unchecked((ushort)v);
+    public static ushort to_u16(this long v) => unchecked((ushort)v);
+    public static uint to_u32(this int v) => unchecked((uint)v);
+    public static uint to_u32(this long v) => unchecked((uint)v);
+    public static ulong to_u64(this long v) => unchecked((ulong)v);
+    public static ulong to_u64(this int v) => unchecked((ulong)v);
     public static int to_i(this string s) => int.Parse(s.Trim(), Inv);
     public static long to_i64(this int d) => d;
     public static long to_i64(this double d) => (long)d;

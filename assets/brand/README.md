@@ -12,6 +12,8 @@ Solid angular forms, like a playing-card pip. One eye is a diamond, the other a 
 | `alice-card.svg` | "Ace of Rabbits" playing card |
 | `alice-social.svg` | 1280×640 social preview |
 | `alice.ico` | Windows icon (16–256 px), used by `alice.exe` |
+
+**License:** © 2026 Julia Klee, all rights reserved; not Apache-2.0. Use to refer to Alice is fine; commercial exploitation is not. See [LICENSE.md](LICENSE.md).
 | `png/` | rendered PNGs (icon 16–1024 px, logos, social, card) |
 
 | Color | Hex |

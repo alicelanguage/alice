@@ -14,6 +14,9 @@ public static partial class Prelude
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
+    /// <summary>Command-line arguments, visible everywhere like Ruby's ARGV (Main sets it).</summary>
+    public static string[] ARGV { get; set; } = [];
+
     /// <summary>Alice programs are culture-invariant (like Crystal/Ruby).</summary>
     public static void init()
     {
