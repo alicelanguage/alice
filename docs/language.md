@@ -483,4 +483,4 @@ Tests: `tests/Alice.Tests/Compiler/RubyDynamicTests.cs`.
 | `method_missing(name, args)` | same | static routing for direct calls; `send` falls back to it |
 | `obj.Event += block` | same | adapted to the CLR delegate type; `-=` removes the same handler |
 
-Limits: runtime-defined methods are reachable only dynamically (`send`), not as static calls; `instance_eval` does not swap `self` for `@ivars`.
+Limits: runtime-defined methods are reachable only dynamically (`send`), not as static calls; `@ivars` inside `instance_eval` are the receiver's (accessor, else reflection).

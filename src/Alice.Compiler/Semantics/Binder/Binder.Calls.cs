@@ -43,6 +43,11 @@ public sealed partial class Binder
         {
             CallExpr { Recv: null } call when !shadow.Contains(call.Name) && Owns(call.Name) && FindLocal(call.Name) == null =>
                 Redirect(call),
+            // Ruby: @ivars inside instance_eval belong to the receiver (via its accessor, or reflection otherwise)
+            IvarExpr { Name: [not '@', ..] } iv when ts.FindField(iv.Name) is { } fld && ts != curType =>
+                fld.Kind is "getter" or "property"
+                    ? new CallExpr { Recv = new NameExpr { Name = self, Line = iv.Line, Col = iv.Col }, Name = iv.Name, Line = iv.Line, Col = iv.Col }
+                    : new TypeTestExpr { Kind = "as", E = new CallExpr { Recv = new NameExpr { Name = self, Line = iv.Line }, Name = "instance_variable_get", Args = { new Arg { Value = new LitExpr { Kind = "str", Text = iv.Name } } }, Parens = true, Line = iv.Line }, Ref = TypeRefOf(fld.Type), Line = iv.Line },
             NameExpr ne when !shadow.Contains(ne.Name) && FindLocal(ne.Name) == null && Owns(ne.Name) =>
                 new CallExpr { Recv = new NameExpr { Name = self, Line = ne.Line, Col = ne.Col }, Name = ne.Name, Line = ne.Line, Col = ne.Col },
             _ => null,
@@ -62,6 +67,8 @@ public sealed partial class Binder
         c.Sym = inline;
         return BindExpr(inline);
     }
+
+    static TypeRef TypeRefOf(AType t) => new() { Name = t.Clr?.FullName ?? t.Cs };
 
     AType BindCallCore(CallExpr c, AType recv, bool conc)
     {
