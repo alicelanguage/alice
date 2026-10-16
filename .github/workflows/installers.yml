@@ -1,0 +1,68 @@
+name: Installers
+
+# Runs the one-line installers from a published release on clean runners and checks the installed CLI.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release to install (stable, nightly or a version)
+        default: nightly
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    name: Install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    env:
+      CHANNEL: ${{ inputs.channel || 'nightly' }}
+      ALICE_NO_UPDATE_CHECK: '1'
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: install.sh
+        if: runner.os != 'Windows'
+        run: |
+          sh scripts/install.sh --version "$CHANNEL"
+          export PATH="$HOME/.alice/bin:$HOME/.dotnet:$PATH"
+          alice --lang en version
+          alice --lang en toolchain list
+          printf 'puts "installed via script"\n' > hi.al
+          alice --lang en run hi.al | grep "installed via script"
+          alice --lang en doctor
+      - name: install.ps1
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & ./scripts/install.ps1 -Version $env:CHANNEL
+          $env:Path = "$HOME\.alice\bin;$env:Path"
+          alice --lang en version
+          if ($LASTEXITCODE -ne 0) { throw 'alice version failed' }
+          alice --lang en toolchain list
+          'puts "installed via script"' | Set-Content hi.al -Encoding utf8NoBOM
+          $out = alice --lang en run hi.al
+          if (-not ($out -join "`n").Contains('installed via script')) { throw "unexpected output: $out" }
+          alice --lang en doctor
+          if ($LASTEXITCODE -ne 0) { throw 'alice doctor failed' }
+      - name: install.ps1 in Windows PowerShell 5.1 (irm | iex path)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:ALICE_VERSION = $env:CHANNEL
+          $env:ALICE_HOME = "$env:RUNNER_TEMP\alice51"
+          Get-Content -Raw scripts/install.ps1 | Invoke-Expression
+          & "$env:ALICE_HOME\bin\alice.cmd" --lang en version
+          if ($LASTEXITCODE -ne 0) { throw 'alice version failed under PowerShell 5.1' }
