@@ -22,6 +22,7 @@ public sealed class TypeSym
     public List<string> FieldOrder = new();   // record / variant positional fields
     public TypeSym? SoaStore;         // @[SoA] struct -> its columnar store type
     public TypeSym? SoaOf;            // store -> element struct
+    public AType? EnumerableElem;     // `include Enumerable`: the type is an IEnumerable of this
     public readonly Dictionary<string, List<MethodSym>> Methods = new();
     public readonly Dictionary<string, FieldSym> Fields = new();
 

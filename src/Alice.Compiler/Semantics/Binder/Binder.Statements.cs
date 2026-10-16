@@ -198,6 +198,15 @@ public sealed partial class Binder
             PushScope();
             foreach (var p in w.Patterns)
             {
+                if (c.Subject != null && p is ArrayPatternExpr ap)
+                {
+                    var et = Builtins.ElemOf(subj);
+                    ap.Binds = ap.Names.Select(n => n == "_" ? null! : Declare(ap, n, et)).ToList();
+                    ap.RestSym = ap.Rest != null ? Declare(ap, ap.Rest, AType.Array(et)) : null;
+                    p.Res = "arraypat";
+                    p.Type = subj;
+                    continue;
+                }
                 if (c.Subject != null && p is NewExpr ne && ResolveType(ne.TypeRef) is AType dt && dt.Sym is { FieldOrder.Count: > 0 } ds)
                 {
                     if (ne.Args.Count != ds.FieldOrder.Count) throw Err(p, $"{ds.Name} has {ds.FieldOrder.Count} fields, pattern has {ne.Args.Count}");
@@ -248,6 +257,14 @@ public sealed partial class Binder
             var missing = names.Where(n => !hit.Contains(n)).ToList();
             if (missing.Count > 0 && hit.Count > 0) throw Err(c, $"non-exhaustive match on {enumSym.Name}: missing {string.Join(", ", missing)}");
             c.Exhaustive = missing.Count == 0;
+        }
+        // array patterns: exhaustive when every length below the shortest *rest pattern has its own pattern
+        var aps = c.Whens.SelectMany(w => w.Patterns).OfType<ArrayPatternExpr>().ToList();
+        if (c.Else == null && aps.Count > 0)
+        {
+            var withRest = aps.Where(a => a.Rest != null).Select(a => a.Names.Count).DefaultIfEmpty(-1).Min();
+            var exact = aps.Where(a => a.Rest == null).Select(a => a.Names.Count).ToHashSet();
+            if (withRest >= 0 && Enumerable.Range(0, withRest).All(exact.Contains)) c.Exhaustive = true;
         }
         if (c.Else == null && subj.Sym is { Kind: "adt" } adt)
         {

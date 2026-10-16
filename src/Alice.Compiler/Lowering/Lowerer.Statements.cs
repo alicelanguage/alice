@@ -235,6 +235,16 @@ public sealed partial class Lowerer
             }
             return cond;
         }
+        if (p.Res == "arraypat" && p is ArrayPatternExpr ap)
+        {
+            string len = ap.Type.Kind == "array" || ap.Type.IsString ? "Length" : "Count";
+            MExpr cond = new MBinary { Op = ap.Rest != null ? ">=" : "==", L = new MMember { Target = subj, Name = len }, R = new MCode(ap.Names.Count.ToString()) };
+            for (int i = 0; i < ap.Binds.Count; i++)
+                if (ap.Binds[i] != null) binds.Add(new MDecl { Name = ap.Binds[i].CsName, Init = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } } });
+            if (ap.RestSym != null)
+                binds.Add(new MDecl { Name = ap.RestSym.CsName, Init = new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "ToArray", Args = { new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "Skip", Args = { subj, new MCode(ap.Names.Count.ToString()) } } } } });
+            return cond;
+        }
         if (p.Res == "type") return new MIs { E = subj, TypeCs = p.Type.Cs };
         if (p is RangeExpr r)
             return new MBinary

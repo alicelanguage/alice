@@ -156,6 +156,7 @@ public sealed partial class Lowerer
             _ => null,
         };
         if (helper != null) return new MCall { Target = new MCode("Prelude"), Name = helper, Args = { l, r } };
+        if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
         return b.Op switch
         {
             "**" => new MCall { Target = new MCode("Prelude"), Name = "pow", Args = { l, r } },

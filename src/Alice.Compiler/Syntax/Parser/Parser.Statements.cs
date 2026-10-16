@@ -210,18 +210,19 @@ public sealed partial class Parser
         var s = At(new CaseStmt(), tok);
         if (t[p].Kind != "nl") s.Subject = Expression();
         SkipNl();
-        while (IsKw("when"))
+        while (IsKw("when") || IsKw("in"))
         {
+            bool rubyIn = Cur.Text == "in";
             var w = At(new When(), Next());
             while (true)
             {
-                w.Patterns.Add(Expression());
+                w.Patterns.Add(rubyIn && IsOp("[") ? ArrayPattern() : Expression());
                 if (!IsOp(",")) break;
                 Next();
                 SkipNl();
             }
             if (IsKw("then")) Next();
-            w.Body = Block(" when else end ");
+            w.Body = Block(" when in else end ");
             s.Whens.Add(w);
         }
         if (IsKw("else"))
@@ -231,6 +232,25 @@ public sealed partial class Parser
         }
         ExpectKw("end");
         return s;
+    }
+
+    ArrayPatternExpr ArrayPattern()
+    {
+        var ap = At(new ArrayPatternExpr(), Next());
+        while (!IsOp("]"))
+        {
+            if (IsOp("*")) { Next(); ap.Rest = Next().Text; DeclareLocal(ap.Rest); }
+            else
+            {
+                if (ap.Rest != null) throw Err("the *rest element must be last");
+                string n = Next().Text;
+                ap.Names.Add(n);
+                DeclareLocal(n);
+            }
+            if (IsOp(",")) Next();
+        }
+        Next();
+        return ap;
     }
 
     BeginStmt Begin()

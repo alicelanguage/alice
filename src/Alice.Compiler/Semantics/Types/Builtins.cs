@@ -66,6 +66,7 @@ public static class Builtins
     {
         if (t.Kind == "array" && t.Elem != null) return t.Elem;
         if (t.Sym?.SoaOf is TypeSym soaElem) return soaElem.Type;
+        if (t.Sym?.EnumerableElem is AType enumElem) return enumElem;
         if (t.IsString) return AType.Char;
         if (t.Clr != null)
         {

@@ -128,6 +128,15 @@ public sealed class InvokeExpr : Expr
     public List<Arg> Args = new();
 }
 
+/// <summary>`in [a, b]`, `in [first, *rest]`, `in []` (Ruby 3 array pattern).</summary>
+public sealed class ArrayPatternExpr : Expr
+{
+    public List<string> Names = new();
+    public string? Rest;
+    public List<Semantics.LocalSym> Binds = new();
+    public Semantics.LocalSym? RestSym;
+}
+
 public sealed class RegexExpr : Expr
 {
     public string Pattern = "";   // C#-escaped string literal body

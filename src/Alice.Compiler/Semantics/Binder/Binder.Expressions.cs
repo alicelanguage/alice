@@ -334,6 +334,7 @@ public sealed partial class Binder
                 if (l.Sym != null && b.Op is not ("&&" or "||") && l.Sym.FindMethod(b.Op, 1) is MethodSym om) return om.Ret;
                 return AType.Bool;
             case "<=>":
+                if (l.Sym?.FindMethod("<=>", 1) is MethodSym cmp) { b.Res = "usercmp"; return cmp.Ret; }
                 return AType.Int;
             case "**":
                 if (l.IsInteger && r.IsInteger) return l.Cs == "long" ? AType.Long : AType.Int;

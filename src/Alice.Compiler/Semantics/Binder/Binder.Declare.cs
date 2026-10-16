@@ -144,6 +144,12 @@ public sealed partial class Binder
     void DeclareType(TypeDecl d)
     {
         var s = (TypeSym)d.Sym!;
+        var en = d.Attrs.FirstOrDefault(a => a.StartsWith("__enumerable:"));
+        if (en != null)
+        {
+            var bt = d.Bases.FirstOrDefault(b => b.Name == "System.Collections.Generic.IEnumerable");
+            if (bt != null) { typeParams = s.TypeParams; s.EnumerableElem = ResolveType(bt.Args[0]); }
+        }
         if (s.Kind == "extension")
         {
             s.ExtTarget ??= ResolveType(new TypeRef { Name = d.Name });
@@ -289,7 +295,7 @@ public sealed partial class Binder
         var m = new MethodSym
         {
             Name = d.Name,
-            CsName = Mangle(d.Name),
+            CsName = d.Name == "<=>" ? "op_Cmp" : Mangle(d.Name),
             Owner = owner,
             Decl = d,
             IsStatic = d.IsStatic,

@@ -444,3 +444,13 @@ Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
 | Free functions | `puts print p gets rand exit format(fmt, ...) read_file write_file file_exists? read_lines sleep(sec) now env(name) to_json(obj) parse_json(text)` |
 
 `format`: `%d %i %s %f %.Nf %e %x %X %o %b %c %%`, flags `-0+ `, width. Tests: `Runtime/StdlibTests` (covers a subset of each row).
+
+## Ruby core mixins and `case ... in`
+
+| Form | You write | You get |
+|---|---|---|
+| `include Comparable` | `def <=>(o : T) : Int32` | `< > <= >= ==`, `between?`, `clamp`, `IComparable(T)` (so `sort`/`max`/`min` work) |
+| `include Enumerable` | `def each(&block : E ->)` | the class is an `IEnumerable(E)`: every iterator (`map`, `select`, `sum`, `sort`, `include?`, ...), LINQ, `for x in obj` |
+| `case x in ...` | `in Shape::Circle(r)`, `in [a, b]`, `in [first, *rest]`, `in []` | Ruby 3 pattern matching; array patterns check length and bind elements; a case is exhaustive when every length below the shortest `*rest` pattern is covered |
+
+Tests: `tests/Alice.Tests/Compiler/RubyMixinTests.cs`.

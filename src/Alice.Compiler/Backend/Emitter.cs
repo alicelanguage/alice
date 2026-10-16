@@ -94,7 +94,7 @@ public sealed class Emitter
         var sb = new StringBuilder();
         foreach (var a in attrs)
         {
-            if (a is "Stack" or "Open" or "SoA") continue;
+            if (a is "Stack" or "Open" or "SoA" || a.StartsWith("__enumerable:")) continue;
             if (a == "Inline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             else if (a == "NoInline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]\n");
             else if (a == "Hot") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n");
@@ -164,6 +164,8 @@ public sealed class Emitter
         if (ops.Contains("<") && !ops.Contains(">")) body.Append($"public static bool operator >({self} a, {self} b) => b < a;\n");
         if (ops.Contains("<=") && !ops.Contains(">=")) body.Append($"public static bool operator >=({self} a, {self} b) => b <= a;\n");
         if (s.SoaStore != null) body.Append(SoAStore.Emit(s));
+        if (s.EnumerableElem != null && d.Members.OfType<MethodDecl>().Any(m => m.Name == "GetEnumerator"))
+            body.Append("global::System.Collections.IEnumerator global::System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();\n");
         // leaf classes are sealed: the JIT devirtualizes and inlines calls and type checks get cheaper
         bool open = s.HasSubclass || d.IsAbstract || d.Attrs.Contains("Open");
         string head = d.Kind switch
@@ -250,6 +252,7 @@ public sealed class Emitter
         ["/"] = "op_Div",
         ["%"] = "op_Mod",
         ["=="] = "op_Eq",
+        ["<=>"] = "op_Cmp",
         ["!="] = "op_Ne",
         ["<"] = "op_Lt",
         [">"] = "op_Gt",
@@ -331,7 +334,8 @@ public sealed class Emitter
         {
             string self = owner.Name + (owner.TypeParams.Count > 0 ? "<" + string.Join(", ", owner.TypeParams) + ">" : "");
             string args = string.Join(", ", m.Params.Select(p => p.CsName));
-            return $"{attrs}{dir}public {ret} {opName}({plist})\n{{\n{code}}}\npublic static {ret} operator {d.Name}({self} self, {plist}) => self.{opName}({args});\n";
+            string op = d.Name == "<=>" ? "" : $"public static {ret} operator {d.Name}({self} self, {plist}) => self.{opName}({args});\n";   // C# has no <=> operator
+            return $"{attrs}{dir}public {ret} {opName}({plist})\n{{\n{code}}}\n{op}";
         }
         var (vis, virt) = Virtual(m, owner, d.Vis);
         string mods = vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + virt + (asyncKw != "" ? " async" : "");
