@@ -57,6 +57,7 @@ public sealed class When : Node
 {
     public List<Expr> Patterns = new();
     public List<Stmt> Body = new();
+    public Expr? Guard;          // `in pattern if cond`
 }
 
 public sealed class CaseStmt : Stmt

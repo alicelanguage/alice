@@ -137,6 +137,21 @@ public sealed class ArrayPatternExpr : Expr
     public Semantics.LocalSym? RestSym;
 }
 
+/// <summary>`in x` binds the subject; `in _` matches anything.</summary>
+public sealed class BindPatternExpr : Expr
+{
+    public string Name = "";
+    public Semantics.LocalSym? Local;
+}
+
+/// <summary>`in {"k" => v, "lang" => "pt"}`: keys must exist; names bind values, other values must be equal.</summary>
+public sealed class HashPatternExpr : Expr
+{
+    public List<Expr> Keys = new();
+    public List<Expr> Values = new();
+    public List<Semantics.LocalSym?> Binds = new();
+}
+
 public sealed class RegexExpr : Expr
 {
     public string Pattern = "";   // C#-escaped string literal body

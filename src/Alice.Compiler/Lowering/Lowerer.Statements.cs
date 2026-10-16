@@ -205,6 +205,7 @@ public sealed partial class Lowerer
                 MExpr one = Pattern(subj, p, binds);
                 cond = cond == null ? one : new MBinary { Op = "||", L = cond, R = one };
             }
+            if (w.Guard != null) cond = new MBinary { Op = "&&", L = cond!, R = Expr(w.Guard) };
             var node = new MIf { Cond = cond!, Then = binds };
             node.Then.AddRange(Stmts(w.Body, tail, target));
             if (first == null) first = node; else last!.Else = new List<MStmt> { node };
@@ -230,19 +231,35 @@ public sealed partial class Lowerer
             foreach (var (field, bind, eq) in d.Parts)
             {
                 var fe = new MMember { Target = new MCode(tmp), Name = field };
-                if (bind != null) binds.Add(new MDecl { Name = bind.CsName, Init = fe });
+                // `is var` binds inside the condition, so a guard (`in C(r) if r > 1`) can use the names
+                if (bind != null) cond = new MBinary { Op = "&&", L = cond, R = new MIs { E = fe, TypeCs = "var " + bind.CsName } };
                 else if (eq != null) cond = new MBinary { Op = "&&", L = cond, R = new MBinary { Op = "==", L = fe, R = Expr(eq) } };
             }
             return cond;
+        }
+        if (p.Res == "wild") return new MCode("true");
+        if (p.Res == "bindpat" && p is BindPatternExpr bp) return new MIs { E = subj, TypeCs = "var " + bp.Local!.CsName };
+        if (p.Res == "hashpat" && p is HashPatternExpr hp)
+        {
+            MExpr? hc = null;
+            for (int k = 0; k < hp.Keys.Count; k++)
+            {
+                string slot = hp.Binds[k]?.CsName ?? Temp("hv");
+                MExpr one = new MCall { Target = subj, Name = "TryGetValue", Args = { Expr(hp.Keys[k]), new MArg { Prefix = "out var ", E = new MCode(slot) } } };
+                if (hp.Binds[k] == null && hp.Values[k] is not BindPatternExpr)
+                    one = new MBinary { Op = "&&", L = one, R = new MBinary { Op = "==", L = new MCode(slot), R = Expr(hp.Values[k]) } };
+                hc = hc == null ? one : new MBinary { Op = "&&", L = hc, R = one };
+            }
+            return hc ?? new MCode("true");
         }
         if (p.Res == "arraypat" && p is ArrayPatternExpr ap)
         {
             string len = ap.Type.Kind == "array" || ap.Type.IsString ? "Length" : "Count";
             MExpr cond = new MBinary { Op = ap.Rest != null ? ">=" : "==", L = new MMember { Target = subj, Name = len }, R = new MCode(ap.Names.Count.ToString()) };
             for (int i = 0; i < ap.Binds.Count; i++)
-                if (ap.Binds[i] != null) binds.Add(new MDecl { Name = ap.Binds[i].CsName, Init = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } } });
+                if (ap.Binds[i] != null) cond = new MBinary { Op = "&&", L = cond, R = new MIs { E = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, TypeCs = "var " + ap.Binds[i].CsName } };
             if (ap.RestSym != null)
-                binds.Add(new MDecl { Name = ap.RestSym.CsName, Init = new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "ToArray", Args = { new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "Skip", Args = { subj, new MCode(ap.Names.Count.ToString()) } } } } });
+                cond = new MBinary { Op = "&&", L = cond, R = new MIs { TypeCs = "var " + ap.RestSym.CsName, E = new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "ToArray", Args = { new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "Skip", Args = { subj, new MCode(ap.Names.Count.ToString()) } } } } } };
             return cond;
         }
         if (p.Res == "type") return new MIs { E = subj, TypeCs = p.Type.Cs };

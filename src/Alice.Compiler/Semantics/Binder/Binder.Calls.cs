@@ -115,6 +115,14 @@ public sealed partial class Binder
                 c.Sym = f;
                 return f.Type;
             }
+            // Ruby method_missing: unknown calls on such a class are routed to it (statically, no reflection)
+            if (recv.Sym.FindMethod("method_missing", 2) is MethodSym mm && (recv.Clr == null || ClrTypes.Lookup(recv.Clr, c.Name, argc, hasArgs, false) == null)
+                && BaseClrOf(recv.Sym) is not Type bcl || (BaseClrOf(recv.Sym) is Type bcl2 && ClrTypes.Lookup(bcl2, c.Name, argc, hasArgs, false) == null && recv.Sym.FindMethod("method_missing", 2) != null))
+            {
+                c.Res = "missing";
+                c.Sym = recv.Sym.FindMethod("method_missing", 2);
+                return ((MethodSym)c.Sym!).Ret;
+            }
         }
 
         if (recv.Kind == "dynamic")
@@ -182,6 +190,8 @@ public sealed partial class Binder
         if (TypeByName(path, targs) == null) return null;
         return new NewExpr { TypeRef = new TypeRef { Name = path, Args = targs, Line = c.Line }, Args = c.Args, Block = c.Block, Line = c.Line };
     }
+
+    static Type? BaseClrOf(TypeSym t) => BaseClr(t);
 
     static bool HasMember(AType recv, string name, int argc)
     {

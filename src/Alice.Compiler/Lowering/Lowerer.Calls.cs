@@ -10,6 +10,11 @@ public sealed partial class Lowerer
     {
         if (c.Res == "fused") return new MCode((string)c.Sym!);
         if (c.Res == "asnew") return Expr((NewExpr)c.Sym!);
+        if (c.Res == "missing")
+        {
+            var argv = new MNewArray { ElemCs = "object", Items = Args(c.Args).Select(a => (MExpr)new MCast { TypeCs = "object", E = a }).ToList() };
+            return new MCall { Target = Expr(c.Recv!), Name = "method_missing", Args = { new MCode("\"" + c.Name + "\""), argv } };
+        }
         if (c.Res == "ext" && c.Block != null && TryInline(c) is MExpr inlined) return inlined;
         if (c.Res == "ext" && c.Block == null && TryFuseSink(c) is MExpr fused) return fused;
         // xs.size / s.length -> the Length/Count member itself (no call; the JIT sees the array length)

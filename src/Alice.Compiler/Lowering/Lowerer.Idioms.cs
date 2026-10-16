@@ -24,6 +24,8 @@ public sealed partial class Lowerer
 
     SpanKey? spanKey;
 
+    public static bool IsDict(AType t, out AType key, out AType val) => IsDictionary(t, out key, out val);
+
     static bool IsDictionary(AType t, out AType key, out AType val)
     {
         key = val = AType.Unknown;

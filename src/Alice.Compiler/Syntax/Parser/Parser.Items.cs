@@ -45,6 +45,7 @@ public sealed partial class Parser
             }
             else if (IsTypeStart()) into.Add(TypeItem());
             else if (IsDefStart()) into.Add(Def("program"));
+            else if (IsStructNew()) into.Add(StructNew());
             else if (IsConstDecl()) into.Add(Const());
             else
             {
@@ -95,6 +96,27 @@ public sealed partial class Parser
     }
 
     bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async")) && (Peek(1).Text == "def" || Peek(2).Text == "def"));
+
+    bool IsStructNew() => t[p].Kind == "const" && Peek(1).Text == "=" && Peek(2).Text == "Struct" && Peek(3).Text == "." && Peek(4).Text == "new";
+
+    /// <summary>Ruby `Point = Struct.new(:x, :y)`: a value-equality record whose fields are dynamically typed.</summary>
+    TypeDecl StructNew()
+    {
+        Token tok = Cur;
+        var d = At(new TypeDecl { Kind = "record", Name = Next().Text }, tok);
+        Next(); Next(); Next(); Next();
+        Expect("(");
+        while (!IsOp(")"))
+        {
+            if (t[p].Kind != "sym") throw Err("Struct.new expects :field names");
+            Token ft = Next();
+            d.RecordParams.Add(At(new Param { Name = ft.Text, Type = new TypeRef { Name = "Any" } }, ft));
+            if (IsOp(",")) Next();
+        }
+        Next();
+        EndStmt();
+        return d;
+    }
 
     bool IsConstDecl() => t[p].Kind == "const" && Peek(1).Kind == "op" && (Peek(1).Text == "=" || (Peek(1).Text == ":" && Peek(1).Space));
 
@@ -202,6 +224,24 @@ public sealed partial class Parser
                     if (!IsOp(",")) break;
                     Next();
                 }
+                EndStmt();
+            }
+            else if (t[p].Kind == "id" && Cur.Text == "define_method")
+            {
+                // `define_method :name do |a, b| ... end` -> an ordinary method (untyped params are specialized)
+                Next();
+                bool paren = IsOp("(");
+                if (paren) Next();
+                if (t[p].Kind != "sym") throw Err("define_method expects :name");
+                var m = At(new MethodDecl { Name = Next().Text, IsStatic = d.Kind == "module" }, tok);
+                if (paren) Expect(")");
+                var saved = locals;
+                locals = new List<HashSet<string>> { new() };
+                var lam = BlockLambda();
+                locals = saved;
+                m.Params = lam.Params;
+                m.Body = lam.Body;
+                d.Members.Add(m);
                 EndStmt();
             }
             else if (IsKw("alias"))

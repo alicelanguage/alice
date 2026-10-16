@@ -216,11 +216,17 @@ public sealed partial class Parser
             var w = At(new When(), Next());
             while (true)
             {
-                w.Patterns.Add(rubyIn && IsOp("[") ? ArrayPattern() : Expression());
+                if (rubyIn)
+                {
+                    w.Patterns.Add(InPattern());
+                    while (IsOp("|")) { Next(); w.Patterns.Add(InPattern()); }   // alternatives
+                }
+                else w.Patterns.Add(Expression());
                 if (!IsOp(",")) break;
                 Next();
                 SkipNl();
             }
+            if (rubyIn && IsKw("if")) { Next(); w.Guard = Expression(); }
             if (IsKw("then")) Next();
             w.Body = Block(" when in else end ");
             s.Whens.Add(w);
@@ -232,6 +238,52 @@ public sealed partial class Parser
         }
         ExpectKw("end");
         return s;
+    }
+
+    /// <summary>A Ruby 3 pattern: [..] array, {..} hash, `_`, a fresh name (binds), or a value/type/range below `|`.</summary>
+    Expr InPattern()
+    {
+        Token tok = Cur;
+        if (IsOp("[")) return ArrayPattern();
+        if (IsOp("{")) return HashPattern();
+        // Ruby: a bare name in a pattern always binds; `^name` pins (compares with) an existing value
+        if (IsOp("^") && Peek(1).Kind == "id") { Next(); return Binary(5); }
+        if (t[p].Kind == "id" && (Cur.Text == "_" || (!IsKeyword(Cur.Text) && Peek(1) is { } nx && (nx.Kind == "nl" || nx.Text is "then" or "if" or "|" or ","))))
+        {
+            string n = Next().Text;
+            if (n != "_") DeclareLocal(n);
+            return At(new BindPatternExpr { Name = n }, tok);
+        }
+        Expr e = Binary(5);   // above `|`, so `1 | 2` is an alternative, not a bitwise or
+        if (IsOp("..") || IsOp("..."))
+        {
+            bool excl = Next().Text == "...";
+            return At(new RangeExpr { A = e, B = Binary(5), Excl = excl }, tok);
+        }
+        return e;
+    }
+
+    HashPatternExpr HashPattern()
+    {
+        var hp = At(new HashPatternExpr(), Next());
+        SkipNl();
+        while (!IsOp("}"))
+        {
+            hp.Keys.Add(Binary(5));
+            Expect("=>");
+            if (IsOp("^") && Peek(1).Kind == "id") { Next(); hp.Values.Add(Binary(5)); }
+            else if (t[p].Kind == "id" && Peek(1).Text is "," or "}")
+            {
+                Token nt = Next();
+                DeclareLocal(nt.Text);
+                hp.Values.Add(At(new BindPatternExpr { Name = nt.Text }, nt));
+            }
+            else hp.Values.Add(Binary(5));
+            SkipNl();
+            if (IsOp(",")) { Next(); SkipNl(); }
+        }
+        Next();
+        return hp;
     }
 
     ArrayPatternExpr ArrayPattern()

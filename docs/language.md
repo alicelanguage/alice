@@ -454,3 +454,18 @@ Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
 | `case x in ...` | `in Shape::Circle(r)`, `in [a, b]`, `in [first, *rest]`, `in []` | Ruby 3 pattern matching; array patterns check length and bind elements; a case is exhaustive when every length below the shortest `*rest` pattern is covered |
 
 Tests: `tests/Alice.Tests/Compiler/RubyMixinTests.cs`.
+
+### More patterns and Ruby metaprogramming (compiled statically)
+
+| Form | Meaning |
+|---|---|
+| `in x` / `in _` | bind the subject / match anything (catch-all makes the case exhaustive) |
+| `in ^x` | pin: compare with the existing value of `x` |
+| `in 1 \| 2 \| 3` | alternatives |
+| `in Shape::Circle(r) if r > 10.0` | guard (bound names are visible in the guard) |
+| `in {"lang" => "pt", "name" => n}` | hash pattern: keys must exist, names bind, other values must be equal |
+| `define_method :name do \|a\| ... end` | defines a real method (untyped params are specialized per call site) |
+| `Point = Struct.new(:x, :y)` | value-equality record with dynamically typed fields |
+| `def method_missing(name : String, args : Array(Object))` | calls to undefined methods on the class are routed to it at compile time |
+
+Tests: `tests/Alice.Tests/Compiler/RubyDynamicTests.cs`.

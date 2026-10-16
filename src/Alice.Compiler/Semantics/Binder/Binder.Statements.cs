@@ -198,6 +198,31 @@ public sealed partial class Binder
             PushScope();
             foreach (var p in w.Patterns)
             {
+                if (c.Subject != null && p is BindPatternExpr bp)
+                {
+                    if (bp.Name == "_") p.Res = "wild";
+                    else { bp.Local = Declare(bp, bp.Name, subj); p.Res = "bindpat"; }
+                    p.Type = subj;
+                    continue;
+                }
+                if (c.Subject != null && p is HashPatternExpr hp)
+                {
+                    if (!Lowering.Lowerer.IsDict(subj, out var kt, out var vt)) throw Err(p, "hash patterns need a Dictionary subject");
+                    hp.Binds = new List<LocalSym?>();
+                    for (int k = 0; k < hp.Keys.Count; k++)
+                    {
+                        BindExpr(hp.Keys[k]);
+                        if (hp.Values[k] is BindPatternExpr hb && hb.Name != "_") hp.Binds.Add(Declare(hb, hb.Name, vt));
+                        else
+                        {
+                            if (hp.Values[k] is not BindPatternExpr) BindExpr(hp.Values[k]);
+                            hp.Binds.Add(null);
+                        }
+                    }
+                    p.Res = "hashpat";
+                    p.Type = subj;
+                    continue;
+                }
                 if (c.Subject != null && p is ArrayPatternExpr ap)
                 {
                     var et = Builtins.ElemOf(subj);
@@ -244,10 +269,12 @@ public sealed partial class Binder
                 }
                 else BindExpr(p);
             }
+            if (w.Guard != null) BindExpr(w.Guard);
             BindBlock(w.Body);
             PopScope();
         }
         if (c.Else != null) Scoped(c.Else);
+        if (c.Else == null && c.Whens.Any(w => w.Guard == null && w.Patterns.Any(p => p.Res is "wild" or "bindpat"))) { c.Exhaustive = true; return; }
         // Rust-style exhaustiveness for sum types
         c.Exhaustive = false;
         if (c.Else == null && subj.Sym is { Kind: "enum", Decl: null } en && Types.Values.FirstOrDefault(t => t == en) is { } enumSym)
