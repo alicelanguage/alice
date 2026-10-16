@@ -6,21 +6,78 @@ Run from source: `dotnet run --project src/Alice.Cli -- <command>`.
 
 | Command | Action |
 |---|---|
-| `alice new <name> [--lib\|--game]` | create project (exe, library, or MonoGame game) |
-| `alice build [proj\|files] [--release] [--native] [-o out] [-r ref.dll]` | compile to IL; `--native` = NativeAOT |
-| `alice run [proj\|file.al] [-- args]` | build and run |
+| `alice new <name> [--lib\|--game]` | create package (exe, library, or MonoGame game): `alice.toml`, `src/`, `test/`, `.gitignore`; inside a workspace it is added to `members` |
+| `alice new <name> --workspace` | create workspace root (`[workspace] members = []`) |
+| `alice build [dir\|files] [--release] [--native] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT |
+| `alice run [dir\|file.al] [member] [-- args]` | build and run; workspace with several exe members: `alice run <member>` |
 | `alice check` | type-check, no output |
-| `alice test` | run every `def test_*` in `test/*.al` |
+| `alice test [files]` | build the package, run every `def test_*` in `test/*.al` |
 | `alice fmt [--check] [paths]` | format `.al` files in place; `--check` lists unformatted files, exit 1 (CI) |
-| `alice add <package> [--version v]` | add NuGet package |
-| `alice clean` | remove build outputs |
+| `alice add <pkg> [--version v] [--path p]` | add dependency to `alice.toml` (default version `*`), regenerate, restore |
+| `alice update` | delete `alice.lock`, rebuild, lock newly resolved versions |
+| `alice clean [dir]` | remove `bin/` and `obj/` |
 | `alice emit file.al` | print lowered C# |
-| `alice sln add <sln> <proj>` | add `.alproj` to a solution |
 | `alice version` (`-V`) | version, runtime, SIMD capabilities |
+
+`alice gen` is internal (used by `Alice.targets`). There is no `sln` command: solutions are not needed.
 
 Global flags: `--lang en|pt|es` (or `ALICE_LANG`), `-q`/`--quiet`, `--no-color`.
 
 Diagnostics are rustc-style with AL codes and a `help:` hint. See [errors.md](errors.md).
+
+Single files: `alice run main.al` / `alice build main.al` follow `require` transitively; no manifest needed.
+
+## alice.toml
+
+```toml
+[package]
+name = "demo-app"
+version = "0.2.0"
+kind = "exe"                 # exe | lib | game (game adds MonoGame.Framework.DesktopGL 3.8.*)
+target = "net10.0"           # optional TargetFramework
+
+[dependencies]
+"Newtonsoft.Json" = "13.*"   # NuGet
+geo = { path = "../geo" }    # Alice package dir (has alice.toml)
+legacy = { path = "../legacy/Legacy.csproj" }   # C# project
+shared = { workspace = true }   # workspace member by name
+
+[build]
+native = true                # PublishAot
+```
+
+| Rule | Detail |
+|---|---|
+| Generated project | `<pkg>/.alice/<name>.alproj`, rewritten from `alice.toml` on every command; do not edit |
+| Outputs | `bin/`, `obj/` stay in the package dir |
+| Sources | `src/**/*.al` (+ `src/**/*.cs`) |
+| Path deps | Alice dirs are synced recursively; a dir without `alice.toml` uses its `*.*proj` |
+| `.gitignore` | `bin/ obj/ .alice/` (written by `alice new`) |
+| C# -> Alice | `<ProjectReference Include="../AliceLib/.alice/AliceLib.alproj" />` |
+| Alice -> C# | `CSharpLib = { path = "../CSharpLib/CSharpLib.csproj" }` |
+
+Tests: `Tooling/ManifestTests`.
+
+## Workspaces
+
+```toml
+# alice.toml at the root
+[workspace]
+members = ["geo", "apps/*"]   # trailing /* expands to every subdir with alice.toml
+```
+
+| Behavior | Detail |
+|---|---|
+| `alice build` at root | builds every member, dependencies first (topological) |
+| `alice run` at root | the single exe member, or `alice run <member>` |
+| `{ workspace = true }` | resolves to the member's generated project; unknown name is an error |
+| `alice new x` inside | registers `x` in `members` |
+
+Tests: `Tooling/WorkspaceTests`.
+
+## alice.lock
+
+Exact NuGet versions from the last restore (`obj/project.assets.json`), written at the workspace root or next to a standalone package. Later builds pin them (`Version="[13.0.3]"`). `alice update` refreshes. Commit it.
 
 ## fmt
 
@@ -36,36 +93,26 @@ def test_greet
 end
 ```
 
-`alice test` compiles `src/` + each test file and prints `test result: ok. N passed; 0 failed`.
+In a package, `alice test` first builds it, then compiles each test file with the package sources against the package's resolved references (NuGet, project refs, e.g. MonoGame). Prints `test result: ok. N passed; 0 failed`.
 
-## MSBuild / .alproj
+## MSBuild SDK
 
 | File | Role |
 |---|---|
-| `src/Alice.Sdk/Alice.props` | defaults: net10.0, nullable errors, TieredPGO, server + concurrent GC, `.alproj` -> C# targets |
+| `src/Alice.Sdk/Alice.props` | defaults: net10.0, nullable errors, TieredPGO, server + concurrent GC |
 | `src/Alice.Sdk/Alice.targets` | compiles `**/*.al` (excl. `bin/`, `obj/`) in any SDK project (.alproj or .csproj) |
-| `*.alproj` | ordinary SDK-style project (`Microsoft.NET.Sdk`) |
 
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="../CSharpLib/CSharpLib.csproj" />
-    <ProjectReference Include="../AliceLib/AliceLib.alproj" />
-  </ItemGroup>
-</Project>
-```
+`dotnet build` / `dotnet run` work on the generated `.alproj`. In-repo samples import the SDK via `samples/Directory.Build.props|targets`.
 
-`dotnet build` / `dotnet run` work on `.alproj`. In-repo projects import the SDK via `samples/Directory.Build.props|targets`; `alice new` projects import it next to `alice.dll`.
+## Samples (`samples/`, a workspace)
 
-## Interop (samples/)
-
-| Sample | Shows |
+| Member | Shows |
 |---|---|
 | `AliceLib` | Alice library: `Shape` sum type, `Point` record, `Geometry` module |
-| `CSharpApp` | C# consumes `AliceLib`, pattern-matches the sum type |
-| `CSharpLib` | C# library (`Stats`, `Counter`) |
-| `AliceApp` | Alice consumes `CSharpLib` + `AliceLib` |
-| `BounceGame` | MonoGame (`PackageReference`) game in Alice |
+| `AliceApp` | Alice consumes `CSharpLib` (path dep) + `AliceLib` (workspace dep) |
+| `BounceGame` | minimal MonoGame game |
+| `Breakout` | MonoGame Breakout with headless logic tests ([README](../samples/Breakout/README.md)) |
+| `CSharpLib` | C# library (`Stats`, `Counter`); not a member |
+| `CSharpApp` | C# consumes `AliceLib/.alice/AliceLib.alproj`; not a member |
 
-Alice -> C#: `using CSharpLib`, call by declared names (`Stats.Median(xs)`). C# -> Alice: Alice types are plain CLR types. Test: `SampleTests.Interop_samples_build_and_run` (BounceGame not test-covered).
+Alice -> C#: `using CSharpLib`, call by declared names (`Stats.Median(xs)`). C# -> Alice: Alice types are plain CLR types. Test: `Integration/SampleTests.Interop_samples_build_and_run` (builds the workspace, runs CSharpApp and AliceApp; games not run).

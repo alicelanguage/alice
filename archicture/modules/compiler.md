@@ -16,13 +16,16 @@ Lowering files (`Lowering/`):
 | `Lowerer.Vectorize` | `Vector<T>` numeric pipelines |
 | `Lowerer.Parallel` | pure pipelines -> `Par.Reduce`/`Par.Range` (n >= 65536) |
 | `Lowerer.LoopPar` | counted `for` loops: reduction, `arr[i]` writes, pure calls |
-| `Lowerer.Idioms` | span Split, alternate lookup, single-probe dict increment |
+| `Lowerer.Idioms` | span Split, alternate lookup, single-probe dict increment, parallel word count |
 | `Lowerer.SoA` | `@[SoA]` column loops (store: `Backend/SoAStore`) |
+| `Lowerer.SoAFusion` | fuse row-local SoA passes + loop interchange, registers, fused `sum` |
+| `Lowerer.Simt` | SIMT lanes for counted loops with a data-dependent `while` |
 
-`Semantics/Binder/Binder.Races`: AL0202 race check (ADR 0008). `Syntax/Formatter`: `alice fmt`.
+`Semantics/Binder/Binder.Races`: AL0202 race check (ADR 0008). `Semantics/Binder/Binder.Mixins`: `include`/`extend` (module `def x` = template, re-bound per class). `AliceCompiler.LoadWithRequires`: transitive `require`. `Syntax/Formatter`: `alice fmt`.
 
 Invariants:
 - Single IL backend (ADR 0001, 0007).
 - Literal-block iterator kernels allocate 0 bytes (`AllocationTests`).
 - Null-safety diagnostics are errors; `val` reassignment and data races in concurrent contexts are errors (ADR 0004, 0008).
 - Parallelization only for code proven pure; serial otherwise.
+- Optimized paths give the same results as serial/scalar code (integer exact; parallel float sums reassociate; SIMT bit-identical).

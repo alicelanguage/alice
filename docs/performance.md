@@ -17,8 +17,14 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | counted `for` writing `arr[i]` | `Par.Range` | `Lowerer.LoopPar` | `LoopParallelizeTests.Disjoint_array_writes_parallelize` |
 | loop body calls user methods proven pure (interprocedural) | parallel (nested-loop body: threshold 2) | `Lowerer.LoopPar` | `LoopParallelizeTests.Loops_calling_pure_user_methods_parallelize` |
 | impure call, `break`, list append, last-write, self-dependent `+=` | serial | `Lowerer.LoopPar` | `Loops_calling_impure_methods_stay_serial`, `Order_dependent_loops_stay_serial` |
+| loop body calls user methods / nested loops (heavy, uneven iterations) | grain 1: many small chunks (`Workers * 64`), scheduler load-balances | `Lowerer.LoopPar`, `Par.Range`/`Par.Reduce` | `LoopParallelizeTests.Loops_calling_pure_user_methods_parallelize` |
+| counted `for` whose body has a data-dependent `while` (escape loop) | SIMT: `Vector<double>.Count` iterations at once, per-lane locals, masked updates (`ConditionalSelect`); bit-identical to scalar | `Lowerer.Simt` | `SimtTests.Inner_while_runs_on_vector_lanes`, `Lanes_reproduce_scalar_results_exactly` |
+| SIMT candidate with integer division or `Float32` | scalar loop | `Lowerer.Simt` | `SimtTests.Integer_division_and_float32_stay_scalar` |
 | `@[SoA]` store `each/sum/count` | per-column loop, no struct gather; vectorized (`StoreUnsafe`) + `Par.Range` | `Lowerer.SoA`, `Backend/SoAStore` | `SoATests.Column_loops_touch_columns_and_vectorize`, `ParallelizeTests.Soa_each_update_runs_in_parallel_and_is_correct` |
+| consecutive row-local `ps.each` passes (optionally inside `for step`) + following `ps.sum` | pass fusion + loop interchange: one sweep, columns loaded once into registers, all passes/steps on registers, stored once, sum fused; parallel when large | `Lowerer.SoAFusion` | `SoAFusionTests.Passes_are_fused_into_one_sweep_with_registers`, `Fused_interchanged_loop_matches_pass_by_pass_semantics` |
+| SoA pass reads another row (`qs[0].a`) | not fused | `Lowerer.SoAFusion` | `SoAFusionTests.Cross_row_reads_prevent_fusion` |
 | `for w in s.Split(' ')` + `Dictionary(String, _)` | `AsSpan().Split(...)` + `GetAlternateLookup<ReadOnlySpan<char>>` | `Lowerer.Idioms` | `PatternOptTests.Word_count_uses_spans_and_one_probe` |
+| word-count loop (single counter update), text length >= threshold, >1 worker | parallel map-reduce: text cut at separators, one span-lookup dictionary per chunk, partials merged in chunk order (same iteration order as serial) | `Lowerer.Idioms` (`ParallelWordCount`) | serial path: `PatternOptTests`; parallel path: benchmark `wordfreq` only |
 | `d[k] = d.GetValueOrDefault(k) + 1`, `d[k] += x` | `CollectionsMarshal.GetValueRefOrAddDefault` (one probe); missing key with `+=` still throws | `Lowerer.Idioms` | `PatternOptTests.Dictionary_increment_single_probe`, `Missing_key_compound_assignment_still_throws` |
 | untyped params | one typed specialization per call-site type | Semantics | `LanguageTests.Duck_typing_emits_typed_specializations_not_dynamic` |
 | class without Alice subclass | `sealed`; module `[SkipLocalsInit]` | Backend | `LanguageTests.Leaf_classes_are_sealed_and_locals_skip_init` |
@@ -33,4 +39,17 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 
 ## Results
 
-See [benchmarks/README.md](../benchmarks/README.md), "Run 3": Alice/C# idiomatic ratio 0.07 (pipeline), 0.16 (particles), 0.18 (mandelbrot), 0.22 (wordfreq), 0.57 (binarytrees); nbody/parallel tie.
+[benchmarks/README.md](../benchmarks/README.md), "Run 5" (vs idiomatic and expert hand-optimized C#):
+
+| benchmark | Alice / hand-opt | Alice / idiomatic | main technique |
+|---|---:|---:|---|
+| particles | 1.00 | 0.02 | SoA fusion + interchange |
+| pipeline | 1.05 | 0.07 | fused + vector + parallel |
+| wordfreq | 0.81 | 0.06 | parallel span map-reduce |
+| mandelbrot | 1.06 | 0.09 | parallel rows + SIMT |
+| binarytrees | 0.98 | 0.56 | parallel pure calls, server GC |
+| parallel | 1.02 | 0.88 | - |
+| expr | 1.10 | 0.98 | sum-type dispatch |
+| nbody | 1.06 | 0.90 | sequential, same IL |
+
+Alice beats idiomatic C# everywhere and is within ~10% of hand-written C# (noise ±10-20%).

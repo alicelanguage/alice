@@ -4,7 +4,7 @@ namespace Alice.Cli.Projects;
 
 /// <summary>
 /// alice.toml is the project manifest (cargo-style). MSBuild needs XML, so `alice` generates
-/// `&lt;name&gt;.alproj` next to it on every command; solutions and C# projects reference that file.
+/// `.alice/&lt;name&gt;.alproj` on every command; C# projects reference that generated file.
 /// </summary>
 public static class Manifest
 {

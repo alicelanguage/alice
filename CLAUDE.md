@@ -17,19 +17,22 @@ dotnet run --project src/Alice.Cli -- emit file.al
 |---|---|
 | `src/Alice.Compiler/Syntax` | lexer, parser, AST |
 | `src/Alice.Compiler/Semantics` | binder (incl. `Binder.Races`, AL0202), symbols, types (HIR) |
-| `src/Alice.Compiler/Lowering` | AST/HIR -> MIR: Iterators, Vectorize, Parallel, LoopPar, Idioms, SoA |
+| `src/Alice.Compiler/Lowering` | AST/HIR -> MIR: Iterators, Vectorize, Parallel, LoopPar, Idioms, SoA, SoAFusion, Simt |
 | `src/Alice.Compiler/Mir` | MIR nodes |
 | `src/Alice.Compiler/Backend` | C# emitter/printer, Roslyn |
 | `src/Alice.Runtime` | runtime library (pure C#) |
-| `src/Alice.Cli` | `alice` entrypoint (thin) |
+| `src/Alice.Cli` | `alice` entrypoint (thin): `Commands/`, `Projects/` (alice.toml, workspace, lock) |
 | `src/Alice.Sdk` | MSBuild props/targets for `.alproj` |
-| `samples/` | C#<->Alice interop, MonoGame |
-| `tests/Alice.Tests` | xUnit |
+| `samples/` | workspace (`alice.toml`): interop, MonoGame (BounceGame, Breakout) |
+| `benchmarks/` | Alice vs idiomatic and hand-optimized C# (`README.md`, run 5) |
+| `tests/Alice.Tests` | xUnit: `Compiler/`, `Runtime/`, `Tooling/`, `Integration/`, `Architecture/` |
 
 ## Invariants
 
 - Single backend: Alice -> MIR -> C# -> Roslyn IL (ADR 0007). Priority: best .NET IL.
+- All tests stay green (`dotnet test`) before commit.
 - Allocation tests must stay at 0 bytes (`AllocationTests`).
+- `alice.toml` is the project source of truth; generated `.alproj` lives in `.alice/` (gitignored). No `sln` command.
 - Null-safety, `val` reassignment, data races in concurrent contexts (AL0202, ADR 0008) are compile errors.
 - Race checks and the purity gate decide parallelization: never parallelize code not proven pure.
 - Compiler and runtime are pure C#; no native code.

@@ -25,7 +25,8 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 - Newline ends a statement; `#` comments to end of line.
 - Blocks close with `end` (or `}` for brace blocks).
 - `namespace Demo ... end`; `Demo::Calc.go` (`::` -> `.`).
-- `using System.Text` imports a .NET namespace.
+- `using System.Text` imports a .NET namespace; `using Tools` (an Alice module) imports its functions (`using static`).
+- `require "./lib/math"` loads `lib/math.al` relative to the requiring file; transitive, each file once. Missing file: `cannot find` error. Works in single-file CLI mode (`alice run main.al`).
 
 ## 2. Literals
 
@@ -40,6 +41,10 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 | `[1, 2, 3]` | `Array(Int32)` (`int[]`) |
 | `{"a" => 1}` | `Hash(String, Int32)` |
 | `0...n` / `1..n` | range (exclusive / inclusive) |
+| `%w[a b]` / `%i[a b]` | `Array(String)` of words / symbols |
+| `/\d+/i` | regex literal, flags `i m x s`, compiled once and cached |
+| `<<~EOS ... EOS` | heredoc, common indent stripped, interpolates |
+| `<<-EOS ... EOS` | heredoc, indented terminator, text kept as is |
 
 ## 3. Types
 
@@ -52,6 +57,7 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 | `T?` | nullable |
 | `Array(T)` | `T[]` (`Array(Float64).new(4)` = `new double[4]`) |
 | `List(T)`, `Dictionary(K, V)` | BCL generics |
+| `Hash(K, V)` | `Dictionary<K, V>` |
 | `Channel(T)`, `Actor(T)`, `Mutex(T)`, `Atomic` | runtime concurrency |
 | `SoA(T)` | columnar store of an `@[SoA]` record struct |
 
@@ -102,8 +108,12 @@ k = 4              # compile error: immutable
 | Logical | `&& \|\| !`, `and or not` |
 | Assignment | `= += -= *= /=` |
 | Ternary | `c ? a : b` |
+| Regex | `s =~ /re/` (match index or `nil`), `s !~ /re/`, `s.match?(/re/)` |
+| Append | `xs << 1 << 2` on `List`/`StringBuilder` (chainable) |
+| Array | `a + b`, `a - b`, `a & b` (intersection), `a \| b` (union) |
+| String | `"%05d\|%.2f" % [42, 3.14]` (format), `"ab" * 3` (repeat) |
 
-Integer `/` on ints is integer division. User operators: `def +(o : V2) : V2`.
+Integer `/` on ints is integer division; `a/2` is division, not a regex. User operators: `def +(o : V2) : V2`.
 
 ## 5. Methods
 
@@ -126,6 +136,9 @@ def biggest(a : T, b : T) : T forall T where T : IComparable(T)
 end
 
 greet "bob"                         # command call, no parens
+
+def sq(x : Int32) : Int32 = x * x   # endless def
+def hi(n : String) = "hi #{n}"
 ```
 
 ### Blocks and yield
@@ -148,6 +161,9 @@ end
 sq = ->(x : Int32) { x * x }
 puts sq.call(7)
 puts sq.(3)
+cube = lambda { |x : Int32| x * x * x }
+inc = proc { |x : Int32| x + 1 }
+puts ["a", "b"].map(&:upcase).join  # &:sym -> { |x| x.upcase }
 ```
 
 ## 6. Control flow
@@ -168,7 +184,7 @@ else 0
 end
 ```
 
-Exceptions: `begin / rescue e : Exception / ensure / end`, `raise "msg"`.
+Exceptions: `begin / rescue e : Exception / ensure / end`, `raise "msg"`. `retry` inside `rescue` re-runs the `begin` body.
 
 ## 7. Dynamic (Ruby)
 
@@ -203,24 +219,27 @@ end
 | Form | Meaning |
 |---|---|
 | `getter` / `property` | read-only / read-write property |
+| `attr_reader :x` / `attr_accessor :x, :y` / `attr_writer :x` | Ruby forms of `getter` / `property` / `setter`; type inferred from `@x = ...` |
+| `@x = v` in a method | declares field `@x`, type inferred (Ruby style) |
+| `alias hi hello` | `hi` calls `hello` |
 | `def initialize(@x : T)` | constructor assigning field |
 | `def self.m` | static method |
 | `X.new(...)` | constructor call |
 | `struct S` | value type |
 | `@[Stack] struct S` | `ref struct` (stack only) |
-| `module M` | static class |
+| `module M` | static class; see [Modules](#modules) |
 | `interface I` + `class C < I` | interface implementation |
 | `enum Color ... end` | enum; `Color::Green` |
 | `record Point(x : Int32, y : Int32)` | `record` class: value equality, `Point { x = 1, y = 2 }` |
 | `record struct Vec(x : Float64, y : Float64) ... end` | `record struct`, body may add methods |
 | `class Box(T)` / `class Node(T) where T : IComparable(T)` | generic class + constraint |
-| `abstract`, `private`, `include` | parsed; not covered by tests |
+| `abstract`, `private` | parsed; not covered by tests |
 
 Leaf classes are `sealed`; methods are `virtual` only when the class has an Alice subclass.
 
 ### Sum types
 
-Enum variants with fields. `case` destructures; a missing variant without `else` is AL0201.
+Enum variants with fields. `case` destructures; a missing variant without `else` is AL0201. Plain enums (`enum S A B end`) are checked the same way.
 
 ```crystal
 enum Shape
@@ -240,6 +259,54 @@ puts Shape::Rect(1.0, 2.0) == Shape::Rect(1.0, 2.0)   # true
 ```
 
 Variants are constructed with `Type::Variant(args)` (lowered to sealed nested records). `Type(args)` sugar for ordinary classes **(planned)**.
+
+### Modules
+
+```crystal
+module Greeter                 # mixin: instance methods reference the host (`name`)
+  def greet : String
+    "hi #{name}"
+  end
+end
+
+module Factory
+  def make_default : String
+    "made"
+  end
+end
+
+class Person
+  include Greeter              # Person#greet
+  extend Factory               # Person.make_default
+  getter name : String
+  def initialize(@name : String)
+  end
+end
+
+module Geo
+  PI2 : Float64 = 6.28
+  module Units
+    def self.km(m : Float64) : Float64
+      m / 1000.0
+    end
+  end
+  def self.circle(r : Float64) : Float64
+    PI2 * r
+  end
+end
+puts Geo::Units.km(2500.0)     # 2.5
+```
+
+| Form | Meaning |
+|---|---|
+| `def self.f` in a module | module function: `M.f` |
+| `def f` in a module | mixin template: not compiled on the module; re-bound in each class that includes it |
+| `include M` | copies `M`'s instance methods into the class (may call class members) |
+| `extend M` | copies `M`'s methods as class (static) methods |
+| `using M` | call `M`'s functions unqualified |
+| `M::Inner` | nested module |
+
+Tests: `ModuleTests`.
 
 ### Reopening and monkey patching
 
@@ -369,11 +436,11 @@ Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
 
 | Type | Methods |
 |---|---|
-| String | `size center ljust rjust chomp chop strip squeeze count(set) index rindex start_with? end_with? includes? include? sub gsub(str\|Regex) tr delete lines each_line each_char chars scan(Regex\|pattern) match? repeat(n) to_sym succ bytes hex oct to_i to_f upcase downcase capitalize swapcase title reverse split` |
+| String | `size center ljust rjust chomp chop strip squeeze count(set) index rindex starts_with? ends_with? includes? include? sub gsub(str\|Regex) tr delete lines each_line each_char chars scan(Regex\|pattern) match? repeat(n) to_sym succ bytes hex oct to_i to_f upcase downcase capitalize swapcase title reverse split` |
 | Array / Enumerable | `each each_with_index map select reject find find_index count sum min max minmax min_by max_by sort sort{\|a,b\|} sort_by uniq uniq{} reverse reverse_each first(n) last(n) take drop take_while drop_while each_slice each_cons zip flatten compact group_by partition tally chunk_while flat_map product sample shuffle(Random?) rotate reduce inject each_with_object step(n) cycle(n) combination(k) permutation(k) join to_a to_h include? cover?` |
 | Hash | `each each_pair map select reject fetch dig merge key? has_key? value? keys values invert to_a min_by max_by sort_by transform_values transform_keys group_by sum count any? all?` (blocks get `\|k, v\|`) |
 | Int / Float | `gcd lcm digits divmod clamp between? round(n) floor(n) ceil(n) abs even? odd? zero? positive? negative? times upto downto step(limit, by) to_s(base) sqrt cbrt log log2 log10 truncate nan? infinite?` |
 | Range | Enumerable methods plus `step size include? cover? to_a sum` |
 | Free functions | `puts print p gets rand exit format(fmt, ...) read_file write_file file_exists? read_lines sleep(sec) now env(name) to_json(obj) parse_json(text)` |
 
-`format`: `%d %i %s %f %.Nf %e %x %X %o %b %c %%`, flags `-0+ `, width.
+`format`: `%d %i %s %f %.Nf %e %x %X %o %b %c %%`, flags `-0+ `, width. Tests: `Runtime/StdlibTests` (covers a subset of each row).

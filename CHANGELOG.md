@@ -16,5 +16,12 @@
 - Language: sum-type enums with fields + exhaustive `case` (AL0201); `record` / `record struct`; generic classes and `forall T where` constraints; reopening .NET types (extension methods); untyped params monomorphized; .NET base members + overriding .NET virtuals; `async def`/`await`; `@[SoA]` + `SoA(T)` store.
 - Safety: data races in all concurrent contexts are compile errors (AL0202, ADR 0008); `Mutex(T)`, `Atomic`, async `Channel`, async-mailbox `Actor`.
 - Performance: auto-vectorization (`Vector<T>`), auto-parallelization of pure pipelines and counted loops (interprocedural purity), idiom rewrites (span Split, alternate lookup, single-probe increment), sealed leaf classes, `SkipLocalsInit`, server+concurrent GC default. Parallel float sums reassociate.
-- Tooling: `alice new|build|run|check|test|fmt|add|clean|emit|sln add|version`; rustc-style diagnostics with AL codes and hints; en/pt/es (`ALICE_LANG`, `--lang`); MSBuild SDK (`src/Alice.Sdk`, `.alproj`); interop and MonoGame samples.
+- Tooling: `alice new|build|run|check|test|fmt|add|clean|update|emit|version`; rustc-style diagnostics with AL codes and hints; en/pt/es (`ALICE_LANG`, `--lang`); MSBuild SDK (`src/Alice.Sdk`, `.alproj`); interop and MonoGame samples.
 - Docs: `docs/errors.md`, `docs/performance.md`, `docs/tooling.md`.
+- Modules: `require "./path"` (transitive, single-file CLI too), `include`/`extend` mixins, `def self.x` module functions, nested modules, `using <Module>` (using static).
+- Syntax: heredocs (`<<~`, `<<-`), `%w[]`/`%i[]`, regex literals + `=~`/`!~`/`match?`, `&:sym`, `lambda {}`/`proc {}`, endless `def`, `attr_accessor/reader/writer`, inferred `@x` fields, `alias`, `retry`, `String#%`/`*`, chainable `<<`, array `+ - & |`, `Hash(K, V)`, exhaustive `case` over plain enums (AL0201).
+- Stdlib: Ruby/Crystal String, Enumerable, Hash, number, Range, file/time/env and JSON helpers in `Prelude`.
+- Tooling: `alice.toml` manifest (NuGet, path and workspace deps, `[build] native`); generated project hidden in `.alice/<name>.alproj`; cargo-style workspaces (globs, dependency-ordered builds, `alice run <member>`); `alice.lock` + `alice update`; `alice new --workspace` with auto member registration; `alice add --path`; `alice test` builds the package and uses its references.
+- Removed: `alice sln` (C# references `<pkg>/.alice/<pkg>.alproj`; Alice references C# via path deps).
+- Performance: SoA pass fusion + loop interchange (registers, fused `sum`); SIMT vectorization of loops with a data-dependent `while`; load-balanced heavy parallel loops; parallel word-count map-reduce with order-preserving merge. Benchmarks run 5: within ~10% of hand-optimized C#.
+- Samples: `samples/` is a workspace; MonoGame `Breakout`.

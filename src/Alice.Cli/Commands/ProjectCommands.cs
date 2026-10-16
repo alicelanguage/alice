@@ -5,7 +5,7 @@ using UiH = Alice.Cli.Ui.Ui;
 
 namespace Alice.Cli.Commands;
 
-/// <summary>new / add / clean / sln — project lifecycle, cargo style.</summary>
+/// <summary>new / add / update / clean — project lifecycle, cargo style.</summary>
 public static class ProjectCommands
 {
     public static int New(List<string> a)

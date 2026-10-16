@@ -16,21 +16,45 @@ end
 ```
 
 ```bash
-dotnet run --project src/Alice.Cli -- run hello.al
+dotnet run --project src/Alice.Cli -- run hello.al     # single file (follows require)
+alice new shop --workspace && cd shop
+alice new core --lib && alice new app                  # auto-registered members
+alice run app                                          # builds deps first, writes alice.lock
+cd app && alice add Newtonsoft.Json --version 13.*     # edits app/alice.toml
+alice test && alice fmt --check
 ```
 
-Highlights: sum types + exhaustive `case`, records, generics with constraints, `async`/`await`, compile-time data-race errors (AL0202), `@[SoA]` columnar stores. The compiler fuses, vectorizes (`Vector<T>`) and auto-parallelizes pure loops.
+```toml
+# app/alice.toml
+[package]
+name = "app"
+kind = "exe"          # exe | lib | game
 
-Benchmarks vs idiomatic C# on .NET 10 ([run 3](benchmarks/README.md)):
+[dependencies]
+core = { workspace = true }
+"Newtonsoft.Json" = "13.*"
+```
 
-| benchmark | Alice ms | C# ms | ratio |
+Highlights:
+
+- Ruby syntax: blocks, `&:sym`, heredocs, `%w[]`, regex literals, endless `def`, `attr_accessor`, `include`/`extend` mixins, `require`.
+- Crystal types: inference, sum types + exhaustive `case` (AL0201), records, generics with constraints.
+- Safety: null-safety errors, `val`, compile-time data-race errors (AL0202).
+- Speed: fused, vectorized (`Vector<T>`), SIMT and auto-parallel loops; `@[SoA]` stores with pass fusion; NativeAOT.
+- Tooling: cargo-style `alice.toml`, workspaces, `alice.lock`, `fmt`, `test`; two-way C# interop, MonoGame games ([Breakout](samples/Breakout/README.md)).
+
+Benchmarks on .NET 10 ([run 5](benchmarks/README.md)): Alice beats idiomatic C# on every benchmark and is within ~10% of expert hand-optimized C#.
+
+| benchmark | Alice ms | C# idiomatic ms | C# hand-opt ms |
 |---|---:|---:|---:|
-| pipeline | 2.0 | 28.1 | 0.07 |
-| particles | 25.3 | 159.1 | 0.16 |
-| mandelbrot | 21.8 | 118.5 | 0.18 |
-| wordfreq | 27.1 | 120.8 | 0.22 |
-| binarytrees | 103.7 | 182.2 | 0.57 |
-| nbody | 50.3 | 47.6 | 1.06 |
+| particles | 2.3 | 139.2 | 2.3 |
+| pipeline | 2.1 | 31.3 | 2.0 |
+| wordfreq | 5.4 | 89.4 | 6.7 |
+| mandelbrot | 11.0 | 120.8 | 10.4 |
+| expr | 11.2 | 11.4 | 10.2 |
+| parallel | 39.9 | 45.1 | 39.2 |
+| nbody | 55.5 | 61.4 | 52.5 |
+| binarytrees | 93.3 | 166.0 | 95.3 |
 
 - [Getting started](docs/getting-started.md)
 - [Language guide](docs/language.md)

@@ -58,3 +58,21 @@ public class PatternOptTests
         Assert.IsType<KeyNotFoundException>(ex.InnerException);
     }
 }
+
+public class ParallelWordCountTests
+{
+    [Fact]
+    public void Large_text_parallel_counts_match_serial_including_order()
+    {
+        var src = "def f(text : String) : String\n  counts = Dictionary(String, Int32).new\n  for w in text.Split(' ')\n    counts[w] = counts.GetValueOrDefault(w) + 1\n  end\n  out = StringBuilder.new\n  for k, v in counts\n    out.Append(k).Append('=').Append(v).Append(';')\n  end\n  out.ToString()\nend";
+        Assert.Contains("__parwords", AliceCompiler.Transpile(src + "\n"));
+        var m = AliceCompiler.Load(AliceCompiler.Emit([AliceCompiler.Transpile(src)], "pw", exe: false)).GetType("Program")!.GetMethod("f")!;
+        var rnd = new Random(7);
+        var words = Enumerable.Range(0, 120_000).Select(_ => "w" + rnd.Next(5000)).ToList();
+        words.Insert(500, "");   // empty entries (double spaces) must be kept like string.Split
+        var text = string.Join(' ', words) + " ";
+        var expected = new Dictionary<string, int>();
+        foreach (var w in text.Split(' ')) expected[w] = expected.GetValueOrDefault(w) + 1;
+        Assert.Equal(string.Concat(expected.Select(kv => $"{kv.Key}={kv.Value};")), m.Invoke(null, [text]));
+    }
+}
