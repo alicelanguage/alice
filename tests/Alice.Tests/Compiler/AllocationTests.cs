@@ -55,7 +55,9 @@ public class AllocationTests
     public void Inlined_chains_emit_no_lambdas()
     {
         var cs = AliceCompiler.Transpile("def f(xs : Array(Int32))\n  xs.map { |x| x * 2 }.select { |x| x > 2 }.sum\nend\n");
-        Assert.DoesNotContain("=>", cs);
+        int start = cs.IndexOf("int f(int[] xs)");
+        string body = cs.Substring(start, cs.IndexOf("\n}\n", start) - start);
+        Assert.DoesNotContain("=>", body);   // the serial path is a plain loop; only the parallel helper holds a lambda
     }
 
     [Fact]

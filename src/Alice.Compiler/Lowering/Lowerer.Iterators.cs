@@ -23,7 +23,7 @@ public sealed partial class Lowerer
         string name = Binder.Mangle(c.Name);
         if (noHoist > 0 || !BlockSinks.Contains(name) || c.Block == null || c.Recv == null) return null;
         if (name is "times" or "upto" or "downto") return CountedLoop(c, name);
-        return Pipeline(c, name);
+        return ParallelOrSerial(c, name);
     }
 
     MExpr? TryFuseSink(CallExpr c)
@@ -31,7 +31,7 @@ public sealed partial class Lowerer
         string name = Binder.Mangle(c.Name);
         if (noHoist > 0 || !PlainSinks.Contains(name) || c.Recv is not CallExpr inner || inner.Res != "ext" || inner.Block == null || !StageNames.Contains(inner.Name)) return null;
         if (c.Args.Count > 0) return null;
-        return Pipeline(c, name);
+        return ParallelOrSerial(c, name);
     }
 
     static bool Pure(LambdaExpr b) => !Contains(b.Body, s => s is ReturnStmt or NextStmt or BreakStmt);
@@ -220,7 +220,14 @@ public sealed partial class Lowerer
         {
             string idx = Temp("k");
             body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = srcExpr, Args = { new MCode(idx) } } });
-            loop = new MFor { Var = idx, Start = new MCode(vec?.Index ?? "0"), Cmp = "<", End = new MMember { Target = srcExpr, Name = src.Type.Kind == "array" || src.Type.IsString ? "Length" : "Count" }, Body = body };
+            loop = new MFor
+            {
+                Var = idx,
+                Start = new MCode(vec?.Index ?? boundLo ?? "0"),
+                Cmp = "<",
+                End = boundHi != null ? new MCode(boundHi) : new MMember { Target = srcExpr, Name = src.Type.Kind == "array" || src.Type.IsString ? "Length" : "Count" },
+                Body = body,
+            };
         }
         else loop = new MForeach { Vars = { loopVar }, Coll = srcExpr, Body = body };
 

@@ -35,7 +35,7 @@ public sealed partial class Lowerer
         if (val != null) pre.Add(new MDecl { Name = res, TypeCs = TypeCs(val), Init = new MCode($"default({TypeCs(val)})") });
 
         string vi = Temp("vi");
-        pre.Add(new MDecl { Name = vi, TypeCs = "int", Init = new MCode("0") });
+        pre.Add(new MDecl { Name = vi, TypeCs = "int", Init = new MCode(boundLo ?? "0") });
         if (VectorizeSoa(sinkName, sb, p, store, vi, res) is { } vec) pre.Add(vec);
 
         string idx = Temp("i");
@@ -53,7 +53,7 @@ public sealed partial class Lowerer
         }
         ctx.RemoveAt(ctx.Count - 1);
         soa = saved;
-        pre.Add(new MFor { Var = idx, Start = new MCode(vi), Cmp = "<", End = new MMember { Target = new MCode(store), Name = "Count" }, Body = body });
+        pre.Add(new MFor { Var = idx, Start = new MCode(vi), Cmp = "<", End = boundHi != null ? new MCode(boundHi) : new MMember { Target = new MCode(store), Name = "Count" }, Body = body });
         return sinkName == "each" ? MCode.Empty : new MCode(res);
     }
 
@@ -108,7 +108,7 @@ public sealed partial class Lowerer
             }
         }
         body.Add(new MAssign { Target = new MCode(vi), Op = "+=", Value = new MCode($"{vt}.Count") });
-        var block = new List<MStmt>(init) { new MWhile { Cond = new MCode($"{vi} <= {store}.Count - {vt}.Count"), Body = body } };
+        var block = new List<MStmt>(init) { new MWhile { Cond = new MCode($"{vi} <= {boundHi ?? store + ".Count"} - {vt}.Count"), Body = body } };
         block.AddRange(fin);
         return new MIf { Cond = new MCode($"{V}.IsHardwareAccelerated"), Then = block };
     }

@@ -49,12 +49,13 @@ public sealed partial class Parser
     }
 
     /// <summary>A record has a body when its next line starts a member; otherwise it is a one-line declaration.</summary>
-    bool RecordHasBody()
+    bool RecordHasBody(int recordCol)
     {
         int k = p;
         while (t[k].Kind == "nl") k++;
         if (k == p) return true;
         var x = t[k];
+        if (x.Col <= recordCol) return false;   // members must be indented under the record
         return (x.Kind == "id" && " def getter property setter include private protected abstract ".Contains(" " + x.Text + " ")) || (x.Kind == "op" && x.Text == "@[");
     }
 
@@ -162,7 +163,7 @@ public sealed partial class Parser
             while (IsOp(",")) { Next(); d.Bases.Add(Type()); }
         }
         if (IsKw("where")) d.Constraints = Where();
-        if (d.Kind.StartsWith("record") && !RecordHasBody()) { EndStmt(); return d; }
+        if (d.Kind.StartsWith("record") && !RecordHasBody(tok.Col)) { EndStmt(); return d; }
         Body(d);
         ExpectKw("end");
         return d;

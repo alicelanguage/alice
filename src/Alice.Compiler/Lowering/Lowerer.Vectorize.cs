@@ -137,15 +137,15 @@ public sealed partial class Lowerer
                 break;
         }
         body.Add(new MAssign { Target = new MCode(idx), Op = "+=", Value = new MCode($"{vt}.Count") });
-        var n = new MMember { Target = srcExpr, Name = "Length" };
+        MExpr n = boundHi != null ? new MCode(boundHi) : new MMember { Target = srcExpr, Name = "Length" };
         var block = new List<MStmt>();
         block.AddRange(init);
         block.Add(new MWhile { Cond = new MCode($"{idx} <= {Printer(n)} - {vt}.Count"), Body = body });
         block.AddRange(fin);
         var outp = new List<MStmt>
         {
-            new MDecl { Name = idx, TypeCs = "int", Init = new MCode("0") },
-            new MIf { Cond = new MCode($"{V}.IsHardwareAccelerated && {Printer(n)} >= {vt}.Count"), Then = block },
+            new MDecl { Name = idx, TypeCs = "int", Init = new MCode(boundLo ?? "0") },
+            new MIf { Cond = new MCode($"{V}.IsHardwareAccelerated && {Printer(n)} - {idx} >= {vt}.Count"), Then = block },
         };
         return (outp, idx);
     }

@@ -16,6 +16,18 @@ public static class Par
         Parallel.For(0, chunks, c => body((int)((long)n * c / chunks), (int)((long)n * (c + 1) / chunks)));
     }
 
+    /// <summary>Chunked map-reduce over [0, n): `chunk(lo, hi)` runs in parallel, partials are combined in order.</summary>
+    public static T Reduce<T>(int n, Func<int, int, T> chunk, Func<T, T, T> combine)
+    {
+        int chunks = Math.Min(Math.Max(1, n / 8192), Workers * 4);
+        if (chunks <= 1) return chunk(0, n);
+        var partial = new T[chunks];
+        Parallel.For(0, chunks, c => partial[c] = chunk((int)((long)n * c / chunks), (int)((long)n * (c + 1) / chunks)));
+        T acc = partial[0];
+        for (int i = 1; i < chunks; i++) acc = combine(acc, partial[i]);
+        return acc;
+    }
+
     public static void For(int n, Action<int> body) => Range(n, (lo, hi) => { for (int i = lo; i < hi; i++) body(i); });
 
     public static TOut[] Map<TIn, TOut>(TIn[] src, Func<TIn, TOut> f)

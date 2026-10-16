@@ -48,6 +48,8 @@ public sealed class Emitter
             lowerer.Method = null;
             var body = lowerer.LowerBody(main, Tail.None, f.HoistedLocals, main[0].Line);
             sb.Append("public static void Main(string[] ARGV)\n{\nPrelude.init();\n").Append(Print(body, 1)).Append("}\n");
+            sb.Append(string.Concat(lowerer.Extra));
+            lowerer.Extra.Clear();
         }
         sb.Append("}\n");
         return sb.ToString();
@@ -297,7 +299,9 @@ public sealed class Emitter
         bool returns = !retT.IsVoid && !m.IsCtor;
         var body = lowerer.LowerBody(d.Body, returns ? Tail.Return : Tail.None, d.HoistedLocals, d.Line);
         string code = Print(body, 1);
-        string attrs = Attrs(d.Attrs);
+        string extra = string.Concat(lowerer.Extra);
+        lowerer.Extra.Clear();
+        string attrs = extra + Attrs(d.Attrs);
         if (m.IsCtor)
         {
             string baseInit = "";

@@ -21,6 +21,10 @@ public sealed partial class Lowerer
     HashSet<LocalSym> hoisted = new();
     int tmpN;
     public MethodSym? Method;
+
+    /// <summary>Helper methods generated while lowering the current method (e.g. parallel kernels).</summary>
+    public readonly List<string> Extra = new();
+    int helperN;
     public TypeSym Type = null!;
 
     public Lowerer(Binder binder)
