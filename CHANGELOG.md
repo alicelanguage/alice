@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0 - Unreleased
+
+## 0.10.1 - 2026-10-16
+
+- Fix: escape package-mode brackets in the interactive REPL banner and `:help` so they render without Spectre.Console markup exceptions.
+
 ## 0.10.0 - 2026-10-16
 
 - Fix: manual Release runs publish the validated version's GitHub release after packaging, including when the full test stage is skipped.

@@ -99,7 +99,7 @@ public static class ReplCommand
     {
         AnsiConsole.MarkupLine("[bold magenta]   ╱|  [/]  [bold]Alice[/] [grey]" + Markup.Escape(App.Version) + "[/]");
         AnsiConsole.MarkupLine("[bold magenta]  ( ?) [/]  [grey]curiouser and faster — Ruby to write, C to run, all of .NET[/]");
-        AnsiConsole.MarkupLine("[bold magenta]  ╱ ◇[/]   [grey]? help · ; shell · ] packages · :help · Ctrl-D exits[/]\n");
+        AnsiConsole.MarkupLine("[bold magenta]  ╱ ◇[/]   [grey]? help · ; shell · ]] packages · :help · Ctrl-D exits[/]\n");
     }
 
     static void Show(ReplResult r)
@@ -140,7 +140,7 @@ public static class ReplCommand
                     [bold]modes[/] (type on an empty line; Backspace returns)
                       [yellow]?[/]  help: ?puts  ?Math.Sqrt  ?String  ?def
                       [red];[/]  shell: ;ls -la
-                      [blue]][/]  packages: ]add Newtonsoft.Json  ]remove X  ]list  ]search json
+                      [blue]]][/]  packages: ]]add Newtonsoft.Json  ]]remove X  ]]list  ]]search json
                     [bold]commands[/]
                       :reset  :load FILE  :save FILE  :emit CODE (show generated C#)  :time EXPR  :quit
                     [bold]values[/]

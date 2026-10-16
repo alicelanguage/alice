@@ -1,10 +1,51 @@
 using Alice.Cli.Repl;
+using Spectre.Console;
+using System.Reflection;
 
 namespace Alice.Tests.Tooling;
 
 [Collection("console")]
 public class ReplTests
 {
+    static string CaptureGuidance(Action render)
+    {
+        using var output = new StringWriter();
+        var saved = AnsiConsole.Console;
+        AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Out = new AnsiConsoleOutput(output),
+            ColorSystem = ColorSystemSupport.NoColors,
+            Interactive = InteractionSupport.No,
+        });
+        try
+        {
+            render();
+            return output.ToString();
+        }
+        finally { AnsiConsole.Console = saved; }
+    }
+
+    [Fact]
+    public void Banner_renders_the_package_mode_shortcut()
+    {
+        var output = CaptureGuidance(() => typeof(ReplCommand)
+            .GetMethod("Banner", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, null));
+        Assert.Contains("Alice", output);
+        Assert.Contains("] packages", output);
+        Assert.Contains("Ctrl-D exits", output);
+    }
+
+    [Fact]
+    public void Help_renders_the_package_mode_examples()
+    {
+        var output = CaptureGuidance(() => typeof(ReplCommand)
+            .GetMethod("Command", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [new ReplSession(), ":help"]));
+        Assert.Contains("]add Newtonsoft.Json", output);
+        Assert.Contains("]remove X", output);
+        Assert.Contains("]list", output);
+        Assert.Contains("]search json", output);
+    }
+
     [Fact]
     public void Values_definitions_ans_and_muted_replay()
     {
