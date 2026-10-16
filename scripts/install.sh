@@ -1,7 +1,7 @@
 #!/bin/sh
 # Alice installer for Linux and macOS.
 #
-#   curl -fsSL https://github.com/kleeedolinux/alice/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/alicelanguage/alice/releases/latest/download/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --nightly
 #
 # Installs a verified release into $ALICE_HOME/toolchains/VERSION (default ~/.alice), makes it the default,
@@ -12,7 +12,7 @@
 #   --archive FILE (offline install of a downloaded release archive)   --no-modify-path   --no-dotnet   -y/--yes   -h/--help
 set -eu
 
-REPO="${ALICE_RELEASES_REPO:-kleeedolinux/alice}"
+REPO="${ALICE_RELEASES_REPO:-alicelanguage/alice}"
 SPEC="${ALICE_VERSION:-stable}"
 ALICE_HOME="${ALICE_HOME:-$HOME/.alice}"
 ARCHIVE=""

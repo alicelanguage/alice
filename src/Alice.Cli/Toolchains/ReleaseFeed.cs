@@ -20,7 +20,7 @@ public interface IReleaseSource
 
 public static class ReleaseFeed
 {
-    public const string DefaultRepo = "kleeedolinux/alice";
+    public const string DefaultRepo = "alicelanguage/alice";
 
     /// <summary>Parses the GitHub `GET /repos/{repo}/releases` response; drafts and unversioned tags are skipped.</summary>
     public static List<Release> Parse(string json)

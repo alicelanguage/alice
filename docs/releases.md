@@ -4,13 +4,13 @@
 
 ```bash
 # Linux, macOS
-curl -fsSL https://github.com/kleeedolinux/alice/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/alicelanguage/alice/releases/latest/download/install.sh | sh
 curl -fsSL .../install.sh | sh -s -- --nightly       # or --version 0.10.1, --home DIR, --no-modify-path
 ```
 
 ```powershell
 # Windows (no administrator rights, no Visual Studio)
-irm https://github.com/kleeedolinux/alice/releases/latest/download/install.ps1 | iex
+irm https://github.com/alicelanguage/alice/releases/latest/download/install.ps1 | iex
 ```
 
 The scripts (`scripts/install.sh`, `scripts/install.ps1`, attached to every release and served by the site) pick the

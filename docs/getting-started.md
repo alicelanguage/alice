@@ -3,7 +3,7 @@
 Install the **.NET 10 SDK**. Use a [release archive](releases.md#install-a-release) or build from source:
 
 ```bash
-git clone https://github.com/kleeedolinux/alice.git
+git clone https://github.com/alicelanguage/alice.git
 cd alice
 dotnet build Alice.sln --configuration Release
 ```

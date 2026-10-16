@@ -107,7 +107,7 @@ public static class ReplCommand
         string channel = Toolchains.ToolchainVersion.TryParse(App.Version)?.Channel ?? "stable";
         AnsiConsole.MarkupLine("[bold magenta]    ╱|    [/]  [bold]Alice[/] [grey]" + Markup.Escape(App.Version) + " (" + channel + ") · .NET " + Environment.Version + "[/]");
         AnsiConsole.MarkupLine("[bold magenta]   ( ?)   [/]  [grey]curiouser and faster — Ruby to write, C to run, all of .NET[/]");
-        AnsiConsole.MarkupLine("[bold magenta]   ╱ ◇    [/]  [grey]Documentation: [/][link]https://github.com/kleeedolinux/alice[/]");
+        AnsiConsole.MarkupLine("[bold magenta]   ╱ ◇    [/]  [grey]Documentation: [/][link]https://github.com/alicelanguage/alice[/]");
         AnsiConsole.MarkupLine("[bold magenta]  ◇  ◇    [/]  [grey]? help · ; shell · ]] packages · :help · Tab completes · Ctrl-R searches · Ctrl-D exits[/]\n");
     }
 

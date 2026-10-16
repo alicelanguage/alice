@@ -1,6 +1,6 @@
 # Alice installer for Windows (PowerShell 5.1+ or 7+). No administrator rights, no Visual Studio.
 #
-#   irm https://github.com/kleeedolinux/alice/releases/latest/download/install.ps1 | iex
+#   irm https://github.com/alicelanguage/alice/releases/latest/download/install.ps1 | iex
 #   & ([scriptblock]::Create((irm .../install.ps1))) -Version nightly
 #
 # Installs a verified release into $env:ALICE_HOME\toolchains\VERSION (default ~\.alice), makes it the default,
@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is many times faster without the progress bar
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$Repo = if ($env:ALICE_RELEASES_REPO) { $env:ALICE_RELEASES_REPO } else { 'kleeedolinux/alice' }
+$Repo = if ($env:ALICE_RELEASES_REPO) { $env:ALICE_RELEASES_REPO } else { 'alicelanguage/alice' }
 
 function Say([string] $Verb, [string] $Detail, [string] $Color = 'Green') {
     Write-Host ('{0,12} ' -f $Verb) -ForegroundColor $Color -NoNewline

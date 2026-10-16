@@ -30,6 +30,7 @@ public class ToolchainCliTests : IDisposable
         var savedOut = Console.Out;
         var savedErr = Console.Error;
         AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(w), ColorSystem = ColorSystemSupport.NoColors, Interactive = InteractionSupport.No });
+        AnsiConsole.Console.Profile.Width = 4096;   // long temp paths (Windows, macOS) must not wrap
         Console.SetOut(w);
         Console.SetError(w);
         try { return (Alice.Cli.App.Run(["--lang", "en", .. args]), w.ToString()); }
