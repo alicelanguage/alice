@@ -11,7 +11,7 @@ class Camera
   def ray(px : Float64, py : Float64, w : Int32, h : Int32) : Ray
     forward = (@target - @eye).unit
     right = Vec.new(forward.z, 0.0, -forward.x).unit
-    up = Vec.new(right.y * forward.z - right.z * forward.y, right.z * forward.x - right.x * forward.z, right.x * forward.y - right.y * forward.x)
+    up = Vec.new(forward.y * right.z - forward.z * right.y, forward.z * right.x - forward.x * right.z, forward.x * right.y - forward.y * right.x)
     scale = Math.Tan(25.0 * Math::PI / 180.0)
     aspect = w.to_f / h
     u = (2.0 * (px + 0.5) / w - 1.0) * aspect * scale

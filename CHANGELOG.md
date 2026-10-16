@@ -54,3 +54,6 @@
 - Constants holding array literals infer their type (`ROWS = ["a", "b"]`); `String#each_char_with_index`.
 - Sample `samples/life`: Game of Life (terminal animation, PPM frame export → `docs/media/life.gif`), specs.
 - Licensing: source code under Apache-2.0 (`LICENSE`, `NOTICE`); brand assets © Julia Klee, all rights reserved (`assets/brand/LICENSE.md`).
+- Fix: diagnostics and stack traces inside lowered blocks map to the right Alice line (synthesized statements re-anchor `#line`).
+- `to_i`/`to_f` for UInt8/Int8/Int16/UInt16/UInt32/UInt64.
+- Sample `samples/raytracer`: parallel ray tracer (shadows, mirrors, supersampling), PNG and orbit GIF in `docs/media/`.

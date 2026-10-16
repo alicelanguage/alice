@@ -44,4 +44,12 @@ public class ErrorTranslationTests
     [Fact]
     public void Constant_array_literals_infer_their_type() =>
         Assert.Equal("3 b", AliceCompiler.Run("ROWS = [\"a\", \"b\", \"c\"]\nputs \"#{ROWS.size} #{ROWS[1]}\"\n").Trim());
+
+    [Fact]
+    public void Errors_inside_nested_blocks_point_at_their_alice_line()
+    {
+        var src = "xs = [1, 2, 3]\n[1].each do |i|\n  ys = xs.map { |x| x * 2 }\n  t = ys.sum { |y| y.nope_method }\n  puts t\nend\n";
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src) is var cs ? AliceCompiler.Emit([cs], "t", exe: true) : null);
+        Assert.Contains("main.al(4,", ex.Message);
+    }
 }

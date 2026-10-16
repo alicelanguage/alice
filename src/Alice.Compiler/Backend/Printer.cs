@@ -24,13 +24,23 @@ public sealed class Printer
     [ThreadStatic] static string? ambientFile;
     [ThreadStatic] static bool lineDirty;
 
+    int knownLine, dirEnd = -1;
+
+    /// <summary>
+    /// Maps the next statement to its Alice line. Statements the lowerer synthesized (line 0) map to the nearest
+    /// preceding source line, and every statement re-anchors: otherwise multi-line C# after one directive drifts
+    /// past the Alice file's end in diagnostics and stack traces.
+    /// </summary>
     void LineDir(int line)
     {
         if (file.Length > 0) ambientFile = file;
         if (lineDirty) { lineDirty = false; lastLine = -1; }
-        if (line <= 0 || line == lastLine || file.Length == 0) return;
-        sb.Append("#line ").Append(line).Append(" \"").Append(file).Append("\"\n");
-        lastLine = line;
+        if (line > 0) knownLine = line;
+        int target = line > 0 ? line : knownLine;
+        if (target <= 0 || file.Length == 0 || (target == lastLine && sb.Length == dirEnd)) return;
+        sb.Append("#line ").Append(target).Append(" \"").Append(file).Append("\"\n");
+        lastLine = target;
+        dirEnd = sb.Length;
     }
 
     public void Stmts(List<MStmt> list)

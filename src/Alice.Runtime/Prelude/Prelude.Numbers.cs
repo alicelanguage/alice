@@ -59,6 +59,13 @@ public static partial class Prelude
     public static int to_i(this long d) => (int)d;
     public static int to_i(this int d) => d;
     public static int to_i(this char c) => c;
+    public static int to_i(this byte v) => v;
+    public static int to_i(this sbyte v) => v;
+    public static int to_i(this short v) => v;
+    public static int to_i(this ushort v) => v;
+    public static int to_i(this uint v) => unchecked((int)v);
+    public static int to_i(this ulong v) => unchecked((int)v);
+    public static double to_f(this byte v) => v;
 
     // narrow conversions (wrapping, like Crystal's to_u8! etc.)
     public static byte to_u8(this int v) => unchecked((byte)v);
