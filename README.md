@@ -27,14 +27,17 @@ end
 
 ## What it looks like
 
-| Game of Life (`samples/life`) | Ray tracer (`samples/raytracer`) |
+| [Celeste Classic (`samples/celeste`)](samples/celeste) | Ray tracer (`samples/raytracer`) |
 |---|---|
-| ![life](docs/media/life.gif) | ![raytracer](docs/media/raytracer-orbit.gif) |
+| [![Celeste Classic gameplay in Alice](docs/media/celeste.gif)](samples/celeste) | ![raytracer](docs/media/raytracer-orbit.gif) |
 | **Mandelbrot zoom (`samples/fractal`)** | **The REPL (`alice`)** |
 | ![fractal](docs/media/fractal-zoom.gif) | ![repl](docs/media/repl.svg) |
 
 All of these are 100% Alice. The ray tracer renders 960×540 with shadows, mirrors and 4× supersampling in ~0.25 s;
 the 60-frame fractal zoom renders in ~1.5 s (i5-1235U).
+
+Celeste Classic is an unofficial educational rewrite of the game by Maddy Thorson and Noel Berry;
+see the sample's [run instructions and original credits](samples/celeste/README.md).
 
 ## Install and first steps
 
