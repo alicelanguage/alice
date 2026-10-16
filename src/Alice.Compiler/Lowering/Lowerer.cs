@@ -56,9 +56,35 @@ public sealed partial class Lowerer
     string Temp(string hint = "t") => $"__{hint}{++tmpN}";
 
     /// <summary>Lowers a method/Main/lambda body. Hoisted Ruby locals are declared up front.</summary>
+    /// <summary>Locals that always equal `arr.Length` (n = arr.size, neither reassigned): loop bounds use the length directly.</summary>
+    Dictionary<LocalSym, string> lengthAlias = new();
+
+    void FindLengthAliases(List<Stmt> body)
+    {
+        lengthAlias = new();
+        var written = new Dictionary<LocalSym, int>();
+        void Count(LocalSym l) => written[l] = written.GetValueOrDefault(l) + 1;
+        var all = WalkStmts(body).ToList();
+        foreach (var e in Walk(body))
+            if (e is LambdaExpr lam) all.AddRange(WalkStmts(lam.Body));
+            else if (e is CallExpr { Block: { } blk }) all.AddRange(WalkStmts(blk.Body));
+        foreach (var s in all)
+        {
+            if (s is Assign { Declares: { } d }) Count(d);
+            else if (s is Assign { Target: NameExpr { Sym: LocalSym l } }) Count(l);
+            else if (s is MultiAssign ma) foreach (var l2 in ma.Locals) Count(l2);
+            else if (s is ForStmt f) foreach (var l3 in f.Locals) Count(l3);
+        }
+        foreach (var s in all)
+            if (s is Assign { Declares: { } d, Value: CallExpr { Res: "ext", Args.Count: 0, Block: null, Recv: NameExpr { Res: "local", Sym: LocalSym arr, Type.Kind: "array" } } c }
+                && Binder.Mangle(c.Name) is "size" or "length" && written.GetValueOrDefault(d) == 1 && !written.ContainsKey(arr) && !arr.IsVal == !arr.IsVal)
+                lengthAlias[d] = arr.CsName + ".Length";
+    }
+
     public List<MStmt> LowerBody(List<Stmt> body, Tail tail, List<LocalSym> hoistedLocals, int line)
     {
         tmpN = 0;
+        FindLengthAliases(body);
         hoisted = new HashSet<LocalSym>(hoistedLocals);
         var outp = new List<MStmt>();
         foreach (var h in hoistedLocals)

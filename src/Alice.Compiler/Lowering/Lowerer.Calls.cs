@@ -12,6 +12,13 @@ public sealed partial class Lowerer
         if (c.Res == "asnew") return Expr((NewExpr)c.Sym!);
         if (c.Res == "ext" && c.Block != null && TryInline(c) is MExpr inlined) return inlined;
         if (c.Res == "ext" && c.Block == null && TryFuseSink(c) is MExpr fused) return fused;
+        // xs.size / s.length -> the Length/Count member itself (no call; the JIT sees the array length)
+        if (c.Res == "ext" && c.Block == null && c.Args.Count == 0 && c.Recv != null && Binder.Mangle(c.Name) is "size" or "length" or "count")
+        {
+            var rt = c.Recv.Type;
+            if (rt.Kind == "array" || rt.IsString) return new MMember { Target = Expr(c.Recv), Name = "Length" };
+            if (rt.Clr is { IsGenericType: true } lc && lc.GetGenericTypeDefinition() == typeof(List<>)) return new MMember { Target = Expr(c.Recv), Name = "Count" };
+        }
 
         var args = Args(c.Args);
         if (c.Block != null) args.Add(Lambda(c.Block));

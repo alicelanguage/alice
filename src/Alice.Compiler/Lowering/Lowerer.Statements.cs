@@ -167,7 +167,7 @@ public sealed partial class Lowerer
         MStmt r;
         if (f.Iter is RangeExpr re)
         {
-            var end = Expr(re.B);
+            var end = re.B is NameExpr { Sym: LocalSym bl } && lengthAlias.TryGetValue(bl, out var len) && re.Excl ? new MCode(len) : Expr(re.B);
             r = new MFor { Var = f.Locals[0].CsName, Start = Expr(re.A), Cmp = re.Excl ? "<" : "<=", End = end, Body = Stmts(f.Body, Tail.None, null) };
         }
         else

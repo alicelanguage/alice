@@ -76,3 +76,25 @@ public class ParallelWordCountTests
         Assert.Equal(string.Concat(expected.Select(kv => $"{kv.Key}={kv.Value};")), m.Invoke(null, [text]));
     }
 }
+
+public class BoundsCheckTests
+{
+    [Fact]
+    public void Size_lowers_to_length_and_loop_bounds_use_it()
+    {
+        var src = "def f(xs : Array(Float64)) : Float64\n  n = xs.size\n  s = 0.0\n  for i in 0...n\n    for j in (i + 1)...n\n      s += xs[i] * xs[j]\n    end\n  end\n  s + \"abc\".size + [1, 2].to_list.size\nend\n";
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("var n = xs.Length", cs);
+        Assert.Contains("< xs.Length;", cs);             // bound rewritten: the JIT can drop xs[j] range checks
+        Assert.DoesNotContain(".size()", cs);
+        var m = AliceCompiler.Load(AliceCompiler.Emit([cs], "bc", exe: false)).GetType("Program")!.GetMethod("f")!;
+        Assert.Equal(1.0 * 2 + 1 * 3 + 2 * 3 + 3.0 + 2, m.Invoke(null, [new[] { 1.0, 2.0, 3.0 }]));
+    }
+
+    [Fact]
+    public void Reassigned_bound_is_not_rewritten()
+    {
+        var cs = AliceCompiler.Transpile("def f(xs : Array(Int32)) : Int32\n  n = xs.size\n  n -= 1\n  s = 0\n  for i in 0...n\n    s += xs[i]\n  end\n  s\nend\n");
+        Assert.DoesNotContain("< xs.Length;", cs);
+    }
+}
