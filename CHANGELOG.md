@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0 - Unreleased
+## 0.10.0 - 2026-10-16
 
 - Tests: use platform-native math libraries, paths and newlines; account for ARM64 fused multiply-add support.
 - Docs: refreshed Alice introduction, quick start, practical example catalog and contribution guide.
