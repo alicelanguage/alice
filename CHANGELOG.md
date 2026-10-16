@@ -2,6 +2,7 @@
 
 ## 0.10.0 - Unreleased
 
+- Tests: use platform-native math libraries, paths and newlines; account for ARM64 fused multiply-add support.
 - Docs: refreshed Alice introduction, quick start, practical example catalog and contribution guide.
 - Examples: organized basics, data, concurrency and web programs; ASP.NET Core API written in Alice, backed by an Alice pricing library.
 - Automation: cross-platform tests and gated binary release archives with package smoke checks and SHA-256 checksums (ADR 0009).

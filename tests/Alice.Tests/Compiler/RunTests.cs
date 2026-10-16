@@ -7,6 +7,8 @@ namespace Alice.Tests.Compiler;
 public class RunTests
 {
     static string Run(string src) => AliceCompiler.Run(src).Trim().ReplaceLineEndings("\n");
+    static string MathLibrary => OperatingSystem.IsWindows() ? "ucrtbase.dll"
+        : OperatingSystem.IsMacOS() ? "/usr/lib/libSystem.B.dylib" : "libm.so.6";
 
     public static TheoryData<string, string, string> Programs => new()
     {
@@ -50,7 +52,7 @@ public class RunTests
         { "predicate and bang names", "def ok?(x : Int32) : Bool\n  x > 0\nend\nputs ok?(1)", "true" },
         { "namespace and entrypoint", "namespace Demo\n  class Calc\n    def self.go : Int32\n      7\n    end\n  end\nend\nputs Demo::Calc.go", "7" },
         { "runtime simd and sparse", "using Alice.Runtime\nxs = [1.0, 2.0, 3.0]\nputs Simd.Dot(xs, xs)\nputs xs.sum", "14\n6" },
-        { "full dotnet stdlib", "using System.Text.RegularExpressions\nusing System.Text.Json\nputs Regex.IsMatch(\"abc123\", \"[0-9]+\")\nputs JsonSerializer.Serialize([1, 2])\nputs [3, 1, 2].OrderBy(->(x : Int32) { x }).First()\nputs Path.Combine(\"a\", \"b\")\nputs DateTime.UnixEpoch.Year", "true\n[1,2]\n1\na/b\n1970" },
+        { "full dotnet stdlib", "using System.Text.RegularExpressions\nusing System.Text.Json\nputs Regex.IsMatch(\"abc123\", \"[0-9]+\")\nputs JsonSerializer.Serialize([1, 2])\nputs [3, 1, 2].OrderBy(->(x : Int32) { x }).First()\nputs Path.Combine(\"a\", \"b\")\nputs DateTime.UnixEpoch.Year", $"true\n[1,2]\n1\n{Path.Combine("a", "b")}\n1970" },
         { "paren-less static call on type path", "puts System.Diagnostics.Stopwatch.StartNew.IsRunning", "true" },
         { "paren-less LINQ extension", "puts [1, 2, 3].Sum\nputs [3, 1].Max\nputs [1, 2].Select(->(x : Int32) { x * 10 }).Sum", "6\n3\n30" },
         { "comments", "# a comment\nx = 1 # trailing\nputs x", "1" },
@@ -62,7 +64,7 @@ public class RunTests
         { "actor", "sum = Atomic.new(0)\na = Actor(Int32).new(->(m : Int32) { sum.add(m) })\nfor i in 1..100\n  a.send(i)\nend\na.stop\nputs sum", "5050" },
         { "spawn returns value", "t = spawn { 6 * 7 }\nputs t.wait", "42" },
         { "enum", "enum Color\n  Red\n  Green = 5\nend\nputs Color::Green", "Green" },
-        { "native lib", "@[Link(\"libm.so.6\")]\nlib LibM\n  fun cos(x : Float64) : Float64\nend\nputs LibM.cos(0.0)", "1" },
+        { "native lib", $"@[Link(\"{MathLibrary}\")]\nlib LibM\n  fun cos(x : Float64) : Float64\nend\nputs LibM.cos(0.0)", "1" },
         { "hash literal", "h = {\"a\" => 1, \"b\" => 2}\nputs h[\"b\"]\nfor k, v in h\n  print k, v\nend\nputs", "2\na1b2" },
         { "untyped generic param", "def ident(x)\n  puts x\nend\nident 5\nident \"s\"", "5\ns" },
         { "operator overload", "struct V2\n  getter x : Int32\n  def initialize(@x : Int32)\n  end\n  def +(o : V2) : V2\n    V2.new(@x + o.x)\n  end\nend\nputs (V2.new(1) + V2.new(2)).x", "3" },

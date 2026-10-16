@@ -85,7 +85,7 @@ public class LanguageTests
         { "override protected .NET virtual", "class MyStream < System.IO.MemoryStream\n  def Dispose(disposing : Bool)\n    puts \"disposed\"\n    super\n  end\nend\ns = MyStream.new\ns.Dispose", "disposed" },
         { "implicit members of .NET base", "class MyList < List(Int32)\n  def total : Int32\n    Add(5)\n    Add(6)\n    Count + Capacity * 0\n  end\nend\nputs MyList.new.total", "2" },
         { "array of mixed .NET subclasses unifies to base", "xs = [System.IO.MemoryStream.new, System.IO.BufferedStream.new(System.IO.MemoryStream.new)]\nputs xs.size\nputs xs.GetType().Name", "2\nStream[]" },
-        { "member named like its type (Color Color)", "class Holder < System.IO.StringWriter\n  def go : Int32\n    Encoding.WebName.Length + NewLine.Length\n  end\nend\nputs Holder.new.go", "7" },
+        { "member named like its type (Color Color)", "class Holder < System.IO.StringWriter\n  def go : Int32\n    Encoding.WebName.Length + NewLine.Length\n  end\nend\nputs Holder.new.go", (6 + Environment.NewLine.Length).ToString() },
         { "float32 conversions", "x = 2.7f32\nputs x.to_i\nputs x.to_f > 2.6", "2\ntrue" },
         { "generic .NET method return inference", "def k(xs : Array(Int32))\n  Par.Map(xs, ->(x : Int32) { x * 2 }).sum\nend\nputs k([1, 2])\nputs Array.IndexOf([5, 6], 6).even?", "6\nfalse" },
         { "declared return keeps an untyped tail", "def k(xs : Array(Int32)) : Int32\n  ys = Par.Map(xs, ->(x : Int32) { x * 2 })\n  ys.sum\nend\nputs k([1, 2])", "6" },

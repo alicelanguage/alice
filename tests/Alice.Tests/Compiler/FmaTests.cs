@@ -24,7 +24,8 @@ public class FmaTests
     {
         var m = AliceCompiler.Load(AliceCompiler.Emit([AliceCompiler.Transpile("def f(a : Float64, b : Float64, c : Float64) : Float64\n  a * b + c\nend\n")], "fma", exe: false)).GetType("Program")!.GetMethod("f")!;
         double a = 0.1, b = 10.0, c = -1.0;
-        double expected = System.Runtime.Intrinsics.X86.Fma.IsSupported ? Math.FusedMultiplyAdd(a, b, c) : a * b + c;
+        double expected = System.Runtime.Intrinsics.X86.Fma.IsSupported || System.Runtime.Intrinsics.Arm.AdvSimd.Arm64.IsSupported
+            ? Math.FusedMultiplyAdd(a, b, c) : a * b + c;
         Assert.Equal(expected, (double)m.Invoke(null, [a, b, c])!);
     }
 }
