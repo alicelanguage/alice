@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory)] [string] $PackageDirectory,
     [Parameter(Mandatory)] [string] $Version,
-    # Cross-architecture package (osx-x64 built on arm64): run the portable alice.dll instead of the apphost.
+    # Run via a matching-architecture .NET host instead of the apphost.
     [switch] $ViaDotnet
 )
 

@@ -8,6 +8,7 @@ Decision:
 
 - Distribute framework-dependent, RID-specific apphosts together with all published DLLs, runtime configuration and `sdk/` files. Installation requires the .NET 10 SDK.
 - Keep trimming, single-file bundling and NativeAOT disabled for the compiler distribution. Application publishing is a separate concern.
+- Publish ReadyToRun packages and smoke-test them on matching operating systems and process architectures, including a native Intel macOS packaging runner.
 - Run full CI on the supported operating systems before packaging by default; allow an explicit release test-stage opt-out through a manual input or repository variable. Always smoke-test the extracted archive with single-file compilation and a generated Alice project.
 - Match release tags to `Directory.Build.props`; publish versioned archives and SHA-256 checksums only after validation succeeds.
 - Keep write permissions in the final release job. Pull-request checks never publish releases.

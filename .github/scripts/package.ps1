@@ -12,6 +12,14 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $sourceVersion = & (Join-Path $PSScriptRoot 'release-version.ps1')
 if ($sourceVersion -cne $Version) { throw "Expected source version $sourceVersion, got $Version." }
 
+# ReadyToRun assemblies and apphosts must be smoke-tested on the target OS/architecture.
+$hostArch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant()
+$hostOS = if ($IsWindows) { 'win' } elseif ($IsMacOS) { 'osx' } elseif ($IsLinux) { 'linux' } else { 'unsupported' }
+$hostRuntime = "$hostOS-$hostArch"
+if ($Runtime -ne $hostRuntime) {
+    throw "Cannot smoke-test ReadyToRun package $Runtime with host $hostRuntime. Run packaging on a matching OS and architecture."
+}
+
 Push-Location $root
 try {
     $output = [IO.Path]::GetFullPath($OutputDirectory)
@@ -45,9 +53,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Archive extraction failed.' }
     }
 
-    $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-    $cross = -not $Runtime.EndsWith($hostArch)
-    & (Join-Path $PSScriptRoot 'smoke-package.ps1') -PackageDirectory $unpack -Version $Version -ViaDotnet:$cross
+    & (Join-Path $PSScriptRoot 'smoke-package.ps1') -PackageDirectory $unpack -Version $Version
     $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "$archive.sha256" -Encoding ascii
     Write-Host "Verified package: $archive"

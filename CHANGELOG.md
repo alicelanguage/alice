@@ -2,6 +2,7 @@
 
 ## 0.10.0 - 2026-10-16
 
+- Fix: build and smoke-test the ReadyToRun `osx-x64` package on `macos-15-intel`; reject mismatched packaging hosts before publishing.
 - Release: optional `skip_tests` checkbox for manual runs and `RELEASE_SKIP_TESTS=true` Actions variable for tag pushes; package smoke checks remain required.
 - Fix: package smoke checks recognize the current `alice test` summary (`2 examples, 0 failures`).
 - Docs: feature a captured Celeste Classic gameplay demo in the README gallery, with sample instructions and original credits.
@@ -48,7 +49,7 @@
 - Native calls: leaf `@[Native]` functions skip the GC transition; `@[Native(fast)]`, `lib` `@[Fast]` opt in; `Bool` marshals as 1-byte C bool.
 - `each` over a `List` iterates its backing span when the body provably can't modify the list. `benchmarks/run.sh`: interleaved rounds (ROUNDS, default 3; pass names to run a subset), median + spread, ratio vs hand-optimized C#.
 - `benchmarks/run.sh`: ~37 s for a full run (was 10+ min): incremental builds, ReadyToRun compiler (compile 1.8 s → 0.8 s per file), parallel compilation, 7 trials with 0.3 s warm-up.
-- CI: tests no longer run on Intel macOS; the `osx-x64` release package is cross-published on the arm64 runner. Release packages are ReadyToRun (faster compiler startup).
+- CI: the full test suite runs on ARM64 macOS; the `osx-x64` release package is built and smoke-tested on an Intel runner. Release packages are ReadyToRun (faster compiler startup).
 - CLI: every usage mistake is `error:` + `hint:` (exit 2) or a missing file/dir (exit 1) with "did you mean"; no stack traces (exit 70 + `--verbose` for internal errors); no more `.alproj` in messages.
 - Packages: `alice remove`, `list`, `search`, `install` (`--tool`), `cache`; restores share the standard .NET NuGet cache.
 - Errors from the generated C# are translated (AL0300–AL0315) with Alice type names; no `CS####` or `global::` in messages.

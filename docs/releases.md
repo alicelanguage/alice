@@ -10,7 +10,7 @@ Keep the complete extracted directory: the executable, DLLs and `sdk/` work toge
 |---|---|---|
 | `linux-x64.tar.gz` | Linux, x64, glibc | Ubuntu 24.04 |
 | `win-x64.zip` | Windows, x64 | Windows 2025 |
-| `osx-x64.tar.gz` | macOS, Intel | cross-published on macOS 15 ARM; smoke-tested with `dotnet alice.dll` |
+| `osx-x64.tar.gz` | macOS, Intel | macOS 15 Intel (`macos-15-intel`) |
 | `osx-arm64.tar.gz` | macOS, Apple silicon | macOS 15 ARM |
 
 Linux ARM64, Alpine/musl and Windows ARM64 are not included. macOS binaries are not notarized; archives are not signed installers. SHA-256 files verify download integrity, not publisher identity. NativeAOT and optional native compilation are not part of the binary release smoke test.
@@ -70,6 +70,6 @@ PowerShell 7 and the .NET 10 SDK are required. Run on the same OS and architectu
 ./.github/scripts/package.ps1 -Runtime linux-x64 -Version 0.10.0 -OutputDirectory /tmp/alice-package
 ```
 
-Use `win-x64` or `osx-arm64` on the respective host; `osx-x64` can be built on either macOS architecture. Choose a new output directory for each attempt. Successful output lives under `dist/`; `publish/`, `build/` and `smoke/` retain the build and extracted files for inspection. The script creates no tag and uploads nothing.
+Use `win-x64`, `osx-x64` or `osx-arm64` on the respective host. Packages use ReadyToRun: their DLLs contain architecture-specific code, so `dotnet alice.dll` cannot run an Intel package on an ARM64 host. The packaging script rejects mismatched hosts before publishing. Choose a new output directory for each attempt. Successful output lives under `dist/`; `publish/`, `build/` and `smoke/` retain the build and extracted files for inspection. The script creates no tag and uploads nothing.
 
 References: [.NET publishing](https://learn.microsoft.com/en-us/dotnet/core/deploying/), [GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), [GitHub CLI release creation](https://cli.github.com/manual/gh_release_create).
