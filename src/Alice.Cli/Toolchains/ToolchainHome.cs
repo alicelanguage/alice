@@ -66,10 +66,24 @@ public sealed class ToolchainHome(string root)
             File.WriteAllText(ShimPath, $"@echo off\r\n\"{exe}\" %*\r\n");
         else
         {
-            File.WriteAllText(ShimPath, $"#!/bin/sh\nexec \"{exe}\" \"$@\"\n");
+            File.WriteAllText(ShimPath, Shim.Replace("{exe}", exe));
             File.SetUnixFileMode(ShimPath, (UnixFileMode)0b111_101_101);
         }
     }
+
+    /// <summary>Unix shim (same as install.sh writes): sets DOTNET_ROOT from the dotnet on PATH when unset.</summary>
+    const string Shim = @"#!/bin/sh
+# Alice shim: the apphost only searches default .NET locations, so point it at the dotnet on PATH.
+if [ -z ""${DOTNET_ROOT:-}"" ]; then
+  if [ -x ""$HOME/.dotnet/dotnet"" ]; then DOTNET_ROOT=""$HOME/.dotnet""
+  elif d=""$(command -v dotnet 2>/dev/null)""; then
+    while [ -L ""$d"" ]; do l=""$(readlink ""$d"")""; case ""$l"" in /*) d=""$l"" ;; *) d=""$(dirname ""$d"")/$l"" ;; esac; done
+    DOTNET_ROOT=""$(cd ""$(dirname ""$d"")"" && pwd)""
+  fi
+  [ -n ""${DOTNET_ROOT:-}"" ] && export DOTNET_ROOT
+fi
+exec ""{exe}"" ""$@""
+";
 
     /// <summary>Which toolchain applies here: env > nearest `alice-toolchain` file > default.</summary>
     public (string Version, string Source) Resolve(string dir, string? env)

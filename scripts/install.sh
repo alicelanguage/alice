@@ -167,7 +167,20 @@ rm -rf "$DEST"; mv "$STAGE" "$DEST"
 if [ "$os" = osx ]; then xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true; fi
 
 printf '{\n  "default": "%s"\n}\n' "$VERSION" > "$ALICE_HOME/settings.json"
-printf '#!/bin/sh\nexec "%s" "$@"\n' "$DEST/alice" > "$ALICE_HOME/bin/alice"
+cat > "$ALICE_HOME/bin/alice" <<'SHIM'
+#!/bin/sh
+# Alice shim: the apphost only searches default .NET locations, so point it at the dotnet on PATH.
+if [ -z "${DOTNET_ROOT:-}" ]; then
+  if [ -x "$HOME/.dotnet/dotnet" ]; then DOTNET_ROOT="$HOME/.dotnet"
+  elif d="$(command -v dotnet 2>/dev/null)"; then
+    while [ -L "$d" ]; do l="$(readlink "$d")"; case "$l" in /*) d="$l" ;; *) d="$(dirname "$d")/$l" ;; esac; done
+    DOTNET_ROOT="$(cd "$(dirname "$d")" && pwd)"
+  fi
+  [ -n "${DOTNET_ROOT:-}" ] && export DOTNET_ROOT
+fi
+exec "__ALICE_EXE__" "$@"
+SHIM
+sed "s#__ALICE_EXE__#$DEST/alice#" "$ALICE_HOME/bin/alice" > "$ALICE_HOME/bin/alice.tmp" && mv "$ALICE_HOME/bin/alice.tmp" "$ALICE_HOME/bin/alice"
 chmod +x "$ALICE_HOME/bin/alice"
 say "Installed" "alice $VERSION → $DEST"
 
@@ -190,7 +203,7 @@ if [ "$MODIFY_PATH" = 1 ]; then
   fi
 fi
 
-"$DEST/alice" --no-color version >/dev/null 2>&1 || warn "alice did not start; run \`$DEST/alice doctor\` for details"
+"$ALICE_HOME/bin/alice" --no-color version >/dev/null 2>&1 || warn "alice did not start; run \`$DEST/alice doctor\` for details"
 
 printf '\n  %sAlice %s is installed.%s\n\n' "$G" "$VERSION" "$N"
 case ":$PATH:" in
