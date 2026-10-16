@@ -13,7 +13,7 @@ public static class App
     static readonly (string Name, string Key)[] Commands =
     [
         ("new", "cmd.new"), ("build", "cmd.build"), ("run", "cmd.run"), ("check", "cmd.check"), ("test", "cmd.test"),
-        ("add", "cmd.add"), ("remove", "cmd.remove"), ("search", "cmd.search"), ("list", "cmd.list"), ("install", "cmd.install"), ("cache", "cmd.cache"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
+        ("add", "cmd.add"), ("remove", "cmd.remove"), ("search", "cmd.search"), ("list", "cmd.list"), ("install", "cmd.install"), ("repl", "cmd.repl"), ("cache", "cmd.cache"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
     ];
 
     /// <summary>`--verbose`: show internal stack traces (otherwise every failure is a one-line error + hint).</summary>
@@ -30,6 +30,7 @@ public static class App
             else if (args[i] == "--verbose") { Verbose = true; args.RemoveAt(i); i--; }
             else if (args[i] == "--") break;
         }
+        if (args.Count == 0 && !Console.IsInputRedirected && !Console.IsOutputRedirected) return Repl.ReplCommand.Run([]);
         if (args.Count == 0 || args[0] is "-h" or "--help" or "help") { Help(); return args.Count == 0 ? 2 : 0; }
         if (args[0] is "-V" or "--version") args[0] = "version";
         var rest = args.Skip(1).ToList();
@@ -50,6 +51,7 @@ public static class App
                 "search" => PackageCommands.Search(rest),
                 "list" => PackageCommands.List(rest),
                 "install" => PackageCommands.Install(rest),
+                "repl" => Repl.ReplCommand.Run(rest),
                 "cache" => PackageCommands.Cache(rest),
                 "clean" => ProjectCommands.Clean(rest),
                 "update" => ProjectCommands.Update(rest),

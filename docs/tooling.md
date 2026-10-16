@@ -153,3 +153,22 @@ Restores use `dotnet restore`, so packages live in the standard .NET global cach
 | `alice install` | restore all dependencies (refreshes alice.lock) |
 | `alice install --tool <name>` | install/update a .NET global tool |
 | `alice cache [--clear]` | show or clear the shared package cache |
+
+## REPL
+
+`alice` (no arguments, in a terminal) or `alice repl`. Piped stdin evaluates non-interactively.
+
+| Input | Effect |
+|---|---|
+| `expr` | evaluates and prints `value :: Type`; the value is `ans` next time |
+| multi-line `def`/`class`/`do` blocks | continue with `⋮` until the block is closed |
+| `?` (empty line) | help mode: `?puts`, `?Math.Sqrt`, `?String`, `?def` |
+| `;` | shell mode |
+| `]` | package mode: `add`, `remove`, `list`, `search`, `install` |
+| Backspace (empty line) | back to `alice>` |
+| `:reset` `:load F` `:save F` `:emit CODE` `:time EXPR` `:help` `:quit` | session commands |
+| ↑↓ Tab Ctrl-C Ctrl-L Ctrl-D | history (`~/.alice_history`), completion, clear line, clear screen, exit |
+
+Each input compiles together with the earlier ones: definitions persist, earlier statements re-run with output
+muted, so values keep static types. Side effects of earlier inputs (files, network) therefore repeat; use `:reset`.
+Inside a project the REPL compiles against its packages.
