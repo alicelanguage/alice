@@ -2,6 +2,7 @@
 
 ## 0.10.0 - 2026-10-16
 
+- Fix: package smoke checks recognize the current `alice test` summary (`2 examples, 0 failures`).
 - Docs: feature a captured Celeste Classic gameplay demo in the README gallery, with sample instructions and original credits.
 - Tests: use the platform newline in REPL assertions and tolerate Windows assembly locks during temporary-directory cleanup.
 - Fix: generated-project type checking retains ASP.NET and other framework-pack references instead of dropping every SDK pack.

@@ -42,7 +42,7 @@ try {
     try {
         Invoke-Alice -Arguments @('build', '--release')
         Invoke-Alice -Arguments @('run') -Expected 'sum of squares: 385'
-        Invoke-Alice -Arguments @('test') -Expected '2 passed; 0 failed'
+        Invoke-Alice -Arguments @('test') -Expected '2 examples, 0 failures'
     } finally { Pop-Location }
 } finally {
     Pop-Location
