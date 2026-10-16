@@ -18,7 +18,9 @@ public class CliErrorTests : IDisposable
     public void Dispose()
     {
         Directory.SetCurrentDirectory(cwd);
-        try { Directory.Delete(dir, true); } catch (IOException) { }
+        // Reflection-loaded assemblies remain locked until process exit on Windows.
+        try { Directory.Delete(dir, true); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
     static (int Code, string Out) Cli(params string[] args)

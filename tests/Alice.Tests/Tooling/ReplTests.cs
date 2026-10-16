@@ -12,7 +12,7 @@ public class ReplTests
         Assert.Equal("2", s.Eval("x = 2").Value);
         Assert.Equal("42", s.Eval("x * 21").Value);
         var p = s.Eval("puts \"hi\"");
-        Assert.Equal("hi\n", p.Output);
+        Assert.Equal("hi" + Environment.NewLine, p.Output);
         Assert.Null(p.Value);
         Assert.Equal("", s.Eval("1").Output);                       // earlier `puts` is replayed silently
         Assert.Null(s.Eval("def sq(n : Int32) : Int32\n  n * n\nend").Error);
