@@ -43,3 +43,4 @@
 - Native calls: leaf `@[Native]` functions skip the GC transition; `@[Native(fast)]`, `lib` `@[Fast]` opt in; `Bool` marshals as 1-byte C bool.
 - `each` over a `List` iterates its backing span when the body provably can't modify the list. `benchmarks/run.sh`: interleaved rounds (ROUNDS, default 3; pass names to run a subset), median + spread, ratio vs hand-optimized C#.
 - `benchmarks/run.sh`: ~37 s for a full run (was 10+ min): incremental builds, ReadyToRun compiler (compile 1.8 s → 0.8 s per file), parallel compilation, 7 trials with 0.3 s warm-up.
+- CI: tests no longer run on Intel macOS; the `osx-x64` release package is cross-published on the arm64 runner. Release packages are ReadyToRun (faster compiler startup).

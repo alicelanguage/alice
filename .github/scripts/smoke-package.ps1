@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory)] [string] $PackageDirectory,
-    [Parameter(Mandatory)] [string] $Version
+    [Parameter(Mandatory)] [string] $Version,
+    # Cross-architecture package (osx-x64 built on arm64): run the portable alice.dll instead of the apphost.
+    [switch] $ViaDotnet
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,7 +20,7 @@ foreach ($asset in @('alice.dll', 'alice.deps.json', 'alice.runtimeconfig.json',
 
 function Invoke-Alice {
     param([string[]] $Arguments, [string] $Expected = '')
-    $output = & $executable --lang en @Arguments 2>&1
+    $output = if ($ViaDotnet) { & dotnet (Join-Path $package 'alice.dll') --lang en @Arguments 2>&1 } else { & $executable --lang en @Arguments 2>&1 }
     if ($LASTEXITCODE -ne 0) { throw "alice $Arguments failed ($LASTEXITCODE): $output" }
     $text = $output -join "`n"
     if ($Expected -and -not $text.Contains($Expected)) {

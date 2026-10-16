@@ -53,7 +53,7 @@ jobs:
             rid: linux-x64
           - os: windows-2025
             rid: win-x64
-          - os: macos-15-intel
+          - os: macos-15        # arm64 runner cross-publishes the Intel package (smoke-tested through `dotnet alice.dll`)
             rid: osx-x64
           - os: macos-15
             rid: osx-arm64

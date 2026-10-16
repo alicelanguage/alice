@@ -27,7 +27,7 @@ try {
     & dotnet publish src/Alice.Cli/Alice.Cli.csproj --configuration Release --runtime $Runtime `
         --self-contained false --output $publish --artifacts-path (Join-Path $output 'build') `
         -p:UseAppHost=true -p:PublishSingleFile=false -p:PublishTrimmed=false `
-        -p:PublishAot=false -p:ContinuousIntegrationBuild=true
+        -p:PublishAot=false -p:PublishReadyToRun=true -p:ContinuousIntegrationBuild=true
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed: $LASTEXITCODE" }
 
     Copy-Item (Join-Path $root 'docs/releases.md') (Join-Path $publish 'RELEASES.md')
@@ -43,7 +43,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Archive extraction failed.' }
     }
 
-    & (Join-Path $PSScriptRoot 'smoke-package.ps1') -PackageDirectory $unpack -Version $Version
+    $hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+    $cross = -not $Runtime.EndsWith($hostArch)
+    & (Join-Path $PSScriptRoot 'smoke-package.ps1') -PackageDirectory $unpack -Version $Version -ViaDotnet:$cross
     $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $([IO.Path]::GetFileName($archive))" | Set-Content "$archive.sha256" -Encoding ascii
     Write-Host "Verified package: $archive"
