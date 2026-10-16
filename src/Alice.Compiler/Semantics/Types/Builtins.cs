@@ -18,6 +18,30 @@ public static class Builtins
     /// <summary>Iteration methods whose literal blocks the lowerer may inline into loops.</summary>
     public static readonly HashSet<string> Iterators = new() { "each", "each_with_index", "map", "select", "reject", "sum", "count", "any_q", "all_q", "find", "reduce", "times", "upto", "downto", "each_char", "max_by", "min_by" };
 
+    static readonly HashSet<string> ClrExtNames = new[] { typeof(Enumerable), typeof(MemoryExtensions), typeof(System.Collections.Generic.CollectionExtensions) }
+        .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+        .Where(m => m.IsDefined(typeof(ExtensionAttribute)))
+        .Select(m => m.Name)
+        .ToHashSet();
+
+    public static bool IsClrExtension(string name) => ClrExtNames.Contains(name);
+
+    /// <summary>Result type of common LINQ terminals; Unknown lets C# infer the rest.</summary>
+    public static AType ClrExtReturn(string name, AType recv)
+    {
+        AType e = ElemOf(recv);
+        return name switch
+        {
+            "Count" or "LongCount" => name == "Count" ? AType.Int : AType.Long,
+            "Any" or "All" or "Contains" or "SequenceEqual" => AType.Bool,
+            "Sum" or "Max" or "Min" or "First" or "Last" or "Single" or "ElementAt" => e,
+            "Average" => e.Cs is "float" or "decimal" ? e : AType.Double,
+            "ToArray" => e.IsKnown ? AType.Array(e) : AType.Unknown,
+            "ToList" => e.IsKnown ? Generic(typeof(List<>), e) : AType.Unknown,
+            _ => AType.Unknown,
+        };
+    }
+
     public static AType FreeReturn(string name, List<AType> args) => name switch
     {
         "p" => args.Count > 0 ? args[0] : AType.Void,

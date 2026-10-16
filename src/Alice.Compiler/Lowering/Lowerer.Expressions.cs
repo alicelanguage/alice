@@ -111,6 +111,13 @@ public sealed partial class Lowerer
     MExpr Const(ConstExpr ce)
     {
         if (ce.Res == "type" && ce.Sym is AType t) return new MCode(t.Cs);
+        if (ce.Res == "path" && ce.Sym is ConstPath cp)
+        {
+            MExpr cur = new MCode(cp.Owner.Cs);
+            foreach (var (name, call) in cp.Members)
+                cur = call ? new MCall { Target = cur, Name = name } : new MMember { Target = cur, Name = name };
+            return cur;
+        }
         var segs = ce.Ref.Name.Split('.');
         segs[0] = Binder.PrimCs(segs[0]);
         return new MCode(string.Join(".", segs));

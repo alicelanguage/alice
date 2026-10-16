@@ -1,14 +1,13 @@
 # Getting started
 
-Requires .NET 10 SDK. Optional: clang (native kernels).
+Requires .NET 10 SDK. No native toolchain.
 
 ```bash
 dotnet build Alice.sln
 dotnet test
 dotnet run --project src/Alice.Cli -- run hello.al
-dotnet run --project src/Alice.Cli -- emit hello.al          # show C#
-dotnet run --project src/Alice.Cli -- build hello.al --native # NativeAOT
-dotnet run --project src/Alice.Cli -- bootstrap               # self-host check
+dotnet run --project src/Alice.Cli -- emit hello.al            # show lowered C#
+dotnet run --project src/Alice.Cli -- build hello.al --native  # NativeAOT
 ```
 
 `hello.al`:
@@ -16,11 +15,3 @@ dotnet run --project src/Alice.Cli -- bootstrap               # self-host check
 ```crystal
 puts "Hello, #{"Alice"}!"
 ```
-
-Native kernels (optional):
-
-```bash
-clang -O3 -march=native -shared -fPIC src/Alice.Runtime/Native/alice_native.c -o src/Alice.Runtime/libalice_native.so
-```
-
-Without the library, the runtime uses managed SIMD fallbacks.

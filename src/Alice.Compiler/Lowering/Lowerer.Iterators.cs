@@ -184,20 +184,27 @@ public sealed partial class Lowerer
         MExpr element = new MCode(loopVar);
         if (sinkName == "each_with_index") body.Add(new MExprStmt { E = new MUnary { Op = "++", E = new MCode(count!), Postfix = true } });
         ctx.Add("loop");
+        // Filters nest the rest of the body in `if (cond) { ... }` (not `continue`) so the JIT can if-convert to cmov.
+        var target = body;
         foreach (var s in stages)
         {
-            body.Add(new MDecl { Name = s.Block.ParamSyms[0].CsName, Init = element });
+            target.Add(new MDecl { Name = s.Block.ParamSyms[0].CsName, Init = element });
             var (stmts, v) = BlockValue(s.Block);
-            body.AddRange(stmts);
+            target.AddRange(stmts);
             if (s.Kind == "map")
             {
                 string m = Temp("m");
-                body.Add(new MDecl { Name = m, Init = v });
+                target.Add(new MDecl { Name = m, Init = v });
                 element = new MCode(m);
             }
-            else body.Add(new MIf { Cond = s.Kind == "select" ? new MUnary { Op = "!", E = Paren(v) } : v, Then = { new MContinue() } });
+            else
+            {
+                var gate = new MIf { Cond = s.Kind == "select" ? v : new MUnary { Op = "!", E = v } };
+                target.Add(gate);
+                target = gate.Then;
+            }
         }
-        Sink(body, sinkName, sb, element, res, count, preallocMap);
+        Sink(target, sinkName, sb, element, res, count, preallocMap);
         ctx.RemoveAt(ctx.Count - 1);
 
         // the loop itself
@@ -231,8 +238,6 @@ public sealed partial class Lowerer
     }
 
     static bool IsList(AType t) => t.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(List<>);
-
-    static MExpr Paren(MExpr e) => e;
 
     /// <summary>Lowers a block's leading statements and returns its tail value expression.</summary>
     (List<MStmt>, MExpr) BlockValue(LambdaExpr b)

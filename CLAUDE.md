@@ -8,26 +8,28 @@ Follow `AGENTS.md (workspace root)` process rules (TDD, ADR, CHANGELOG, commits)
 dotnet build Alice.sln
 dotnet test
 dotnet run --project src/Alice.Cli -- run file.al
-dotnet run --project src/Alice.Cli -- bootstrap
+dotnet run --project src/Alice.Cli -- emit file.al
 ```
 
 ## Layout
 
 | Path | Role |
 |---|---|
-| `src/Alice.Compiler` | stage0 compiler (C#) |
-| `src/Alice.Runtime` | runtime library |
+| `src/Alice.Compiler/Syntax` | lexer, parser, AST |
+| `src/Alice.Compiler/Semantics` | binder, symbols, types (HIR) |
+| `src/Alice.Compiler/Lowering` | AST/HIR -> MIR |
+| `src/Alice.Compiler/Mir` | MIR nodes |
+| `src/Alice.Compiler/Backend` | C# emitter/printer, Roslyn |
+| `src/Alice.Runtime` | runtime library (pure C#) |
 | `src/Alice.Cli` | `alice` entrypoint (thin) |
 | `tests/Alice.Tests` | xUnit |
-| `src/Alice.Runtime/Native/` | clang kernels + P/Invoke |
-| `selfhost/` | compiler in Alice |
 
 ## Invariants
 
-- Single backend: Alice -> C# -> Roslyn IL. No second backend.
-- Self-hostable: every stage0 feature is ported to `selfhost/` in the same change; `alice bootstrap` must reach fixed point (S1 == S2) and match stage0 output on the corpus.
-- Null-safety diagnostics are errors.
-- Native kernels keep a managed fallback.
+- Single backend: Alice -> MIR -> C# -> Roslyn IL (ADR 0007). Priority: best .NET IL.
+- Literal-block iterator kernels allocate 0 bytes (`AllocationTests`).
+- Null-safety, `val` reassignment, spawn data races are compile errors.
+- Compiler and runtime are pure C#; no native code.
 - TDD: failing test first.
 - Version stays `0.10.x`-`0.19.x`.
 - Never touch `archicture/user/`.

@@ -17,7 +17,6 @@ namespace Alice.Cli
                     [--native]            publish a NativeAOT executable instead
                     [-r ref.dll]...       reference extra .NET assemblies (NuGet, C# libs)
               emit <files>                print the lowered C# (debugging)
-              bootstrap [selfhost-dir]    self-host: stage0 -> stage1 -> stage2, check fixed point
             """;
 
         public static int Execute(string[] args)
@@ -30,7 +29,6 @@ namespace Alice.Cli
                     "run" => Run(args[1..]),
                     "build" => Build(args[1..]),
                     "emit" => Emit(args[1..]),
-                    "bootstrap" => Bootstrap.Run(args.Length > 1 ? args[1] : "selfhost"),
                     _ => Fail(Usage),
                 };
             }

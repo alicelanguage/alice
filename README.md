@@ -1,6 +1,6 @@
 # Alice
 
-A .NET language with Crystal/Ruby syntax. Ergonomic like Ruby, safe like Rust, fast like C, parallel like Elixir. Full C#/.NET interop. Compiles to IL via Roslyn; NativeAOT optional. Self-hosting.
+A .NET language with Crystal/Ruby syntax. Ergonomic like Ruby, safe like Rust, fast like C, parallel like Elixir. Full C#/.NET interop. Pure C# compiler emits optimized IL via Roslyn; NativeAOT optional.
 
 ```crystal
 class Greeter

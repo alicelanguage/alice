@@ -105,6 +105,14 @@ public sealed partial class Binder
             }
         }
 
+        // .NET extension methods (LINQ, MemoryExtensions): `xs.Sum`, `xs.Max` without parens are calls
+        if (char.IsUpper(c.Name[0]) && Builtins.IsClrExtension(c.Name))
+        {
+            if (c.Block != null) BindLambda(c.Block, new List<AType>());
+            c.Res = "clr";
+            return Builtins.ClrExtReturn(c.Name, recv);
+        }
+
         // Prelude extension methods (Ruby names)
         string cs = Mangle(c.Name);
         if (Builtins.ExtNames.Contains(cs))

@@ -1,556 +1,301 @@
 # Alice language reference
 
-Alice is a .NET language with Crystal/Ruby syntax. Source files use `.al`. The compiler lowers Alice to C# syntax; Roslyn emits IL. Everything below maps to plain C#/.NET constructs, so Alice code and C# code interoperate both ways.
+Alice is a .NET language with Crystal/Ruby syntax. Files use `.al`. The compiler (pure C#) parses, binds, lowers to MIR, prints C#, and Roslyn emits Release IL (ADR 0007). Alice types are ordinary CLR types.
 
-Status markers: unmarked = implemented in stage0; **(planned)** = designed, not yet guaranteed.
+Status: unmarked = implemented and covered by `tests/Alice.Tests/Compiler/`. **(planned)** = not implemented.
 
-## 0. Why Alice
+## 0. Goals
 
-Every popular language makes you pick a trade-off. Alice tries to drop it:
-
-| Goal | Borrowed from | How Alice does it |
+| Goal | From | How |
 |---|---|---|
-| Ergonomic, readable | Ruby | Ruby/Crystal syntax, blocks, `name?`, implicit return, type inference |
-| Optional typing | Crystal | annotate when you want; untyped params become generics |
-| Safe | Rust | static types, nullable refs enforced, null errors fail the build |
-| Fast | C | static dispatch, `Vector<T>` SIMD, parallel kernels, clang-built native code, NativeAOT |
-| Massively parallel | Elixir | `spawn`, typed channels, actors, `Par` data parallelism |
-| Huge ecosystem | C#/.NET | runs on the CLR; uses any NuGet package; C# can call Alice |
-
-Why .NET and not a new VM:
-- Mature JIT, GC, debugger, profiler, NativeAOT for free.
-- Zero-cost interop: Alice types are ordinary CLR types.
-- One backend (Alice -> C# -> Roslyn -> IL) keeps the compiler small and correct.
-
-Why self-hosting: writing the compiler in Alice proves the language is usable for large programs, and the bootstrap fixed point (stage1 == stage2) catches miscompilation.
-
-How it works end to end:
+| Readable | Ruby | blocks, `name?`, implicit return, symbols, `send` |
+| Typed | Crystal | local + return-type inference; annotate when you want |
+| Safe | Rust | null-safety errors, `val`, spawn data-race check |
+| Fast | C | inlined block loops, static dispatch, SIMD runtime, NativeAOT |
+| Parallel | Elixir | `spawn`, `Channel(T)`, `Actor(T)`, `par_map` |
+| Ecosystem | .NET | full BCL and NuGet; C# can call Alice |
 
 ```text
-file.al -> Lexer -> Translator -> C# syntax -> Roslyn -> IL (.dll/.exe) -> CLR (JIT or NativeAOT)
-                                                  \-> references Alice.Runtime (SIMD, Par, native kernels)
+file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #line) -> Roslyn -> IL
 ```
 
 ## 1. Program structure
 
-- A file is a sequence of top-level statements and declarations.
-- Top-level statements form the program entry point (like C# top-level statements).
-- Statements end at newline. `;` separates statements on one line.
-- Comments: `# to end of line`.
+- Top-level statements form the entry point.
+- Newline ends a statement; `#` comments to end of line.
 - Blocks close with `end` (or `}` for brace blocks).
+- `namespace Demo ... end`; `Demo::Calc.go` (`::` -> `.`).
+- `using System.Text` imports a .NET namespace.
 
-```crystal
-# hello.al
-name = "Alice"
-puts "Hello, #{name}!"
-```
+## 2. Literals
 
-## 2. Lexical rules
-
-| Element | Form | Example |
-|---|---|---|
-| Local / method | `snake_case` | `total_sum` |
-| Type / module / const | `CamelCase` | `HttpClient`, `MAX` |
-| Instance variable | `@name` | `@count` |
-| Predicate method | trailing `?` | `empty?` -> C# `empty_q` |
-| Symbol of .NET member | as declared | `sb.Append`, `list.Count` |
-
-Identifiers that are C# keywords are escaped automatically (`@class`).
-
-## 3. Literals
-
-| Literal | Type | C# |
-|---|---|---|
-| `42`, `1_000` | `Int32` | `int` |
-| `42_i64` | `Int64` | `long` |
-| `255_u8` | `UInt8` | `byte` |
-| `3.14`, `1e-3` | `Float64` | `double` |
-| `1.5_f32` | `Float32` | `float` |
-| `true`, `false` | `Bool` | `bool` |
-| `'a'` | `Char` | `char` |
-| `"text"` | `String` | `string` |
-| `nil` | nullable | `null` |
-| `[1, 2, 3]` | `Array(Int32)` | `int[]` |
-| `[] of Int32` | `List(Int32)` | `List<int>` |
-| `{"a" => 1}` | `Hash(String, Int32)` | `Dictionary<string,int>` |
-| `0...n` / `0..n` | range (exclusive / inclusive) | loop bounds |
-
-### String interpolation
-
-```crystal
-x = 3
-s = "x=#{x}, sq=#{x * x}"     # any expression inside #{}
-```
-
-Lowered to C# interpolated strings. Escapes: `\n \t \" \\ \#`.
-
-## 4. Types
-
-### 4.1 Built-in type names
-
-| Alice | C# |
+| Literal | Type |
 |---|---|
-| `Int8/16/32/64` | `sbyte/short/int/long` |
-| `UInt8/16/32/64` | `byte/ushort/uint/ulong` |
+| `42` | `Int32` |
+| `3.14` | `Float64` |
+| `true`, `false` | `Bool` |
+| `"text"`, `"x=#{x}"` | `String` (interpolation) |
+| `:name` | symbol (prints `name`; usable as hash key) |
+| `nil` | nullable |
+| `[1, 2, 3]` | `Array(Int32)` (`int[]`) |
+| `{"a" => 1}` | `Hash(String, Int32)` |
+| `0...n` / `1..n` | range (exclusive / inclusive) |
+
+## 3. Types
+
+| Alice | .NET |
+|---|---|
+| `Int8/16/32/64`, `UInt8/16/32/64` | integer types |
 | `Float32` / `Float64` | `float` / `double` |
-| `Bool` | `bool` |
-| `Char` | `char` |
-| `String` | `string` |
-| `Void` | `void` |
+| `Bool`, `Char`, `String`, `Void` | same |
 | `Any` | `dynamic` |
-| `T?` | `T?` (nullable) |
-| `Array(T)` | `T[]` |
-| `List(T)` | `List<T>` |
-| `Hash(K, V)` | `Dictionary<K,V>` |
-| `Channel(T)` | runtime channel **(planned)** |
+| `T?` | nullable |
+| `Array(T)` | `T[]` (`Array(Float64).new(4)` = `new double[4]`) |
+| `List(T)`, `Dictionary(K, V)` | BCL generics |
+| `Channel(T)`, `Actor(T)` | runtime concurrency |
 
-Any other .NET type is used by its name: `StringBuilder`, `System.IO.File`, `Task(Int32)`.
+Any other .NET type is used by name.
 
-### 4.2 Inference and annotation
+### Inference
+
+- Locals: from initializer. `s : String? = nil` annotates.
+- Method returns: inferred Crystal-style when `: Type` is omitted, including calls to defs declared later. Unresolvable -> `dynamic`.
+- Untyped params are generic: `def ident(x)` works for `5` and `"s"`.
+- Locals are Ruby function-scoped: a local first assigned inside `if`/loop is hoisted and visible after it.
+
+### Null safety
+
+Nullable reference types are on; null warnings are compile errors.
 
 ```crystal
-a = 10               # Int32
-b = a * 2.0          # Float64
-c : Int64 = 5        # annotated local
-d : String? = nil    # nullable, must be annotated
+s : String? = nil
+puts s.nil?        # ok
+puts s.Length      # error CS8602
 ```
 
-Rules:
-- Locals are inferred from their initializer (`var`).
-- A local without initializer needs a type.
-- Reassignment must keep the type.
-- `nil` alone cannot be inferred; annotate `T?`.
+`s.try &.Length` **(planned)**.
 
-### 4.3 Null safety
-
-Nullable reference types are on. Null-safety warnings are compile **errors**.
+### Any (dynamic)
 
 ```crystal
-s : String? = find_name
-puts s.Length          # error: s may be nil
-if s
-  puts s.Length        # ok: narrowed
+def len(x : Any)
+  x.Length         # bound at runtime
 end
-puts s.try &.Length    # (planned) safe navigation
+puts len("abcd")   # 4
+puts len([1, 2])   # 2
 ```
 
-### 4.4 Any (dynamic)
-
-`Any` is opt-in late binding. It is never inferred.
+### Immutables
 
 ```crystal
-x : Any = 5
-x = "now a string"
-puts x.Length          # resolved at runtime
+val k = 3
+k = 4              # compile error: immutable
 ```
 
-Cost: runtime binder; no compile-time checks. Use only at dynamic boundaries.
-
-## 5. Operators
+## 4. Operators
 
 | Group | Operators |
 |---|---|
-| Arithmetic | `+ - * / %` (`**` planned) |
+| Arithmetic | `+ - * / % **` |
 | Comparison | `== != < <= > >=` |
-| Logical | `&& \|\| !` (`and or not` planned) |
-| Bitwise | `& \| ^ ~ << >>` |
-| Assignment | `= += -= *= /= %=` |
-| Member | `.` instance, `::` namespace/static path |
+| Logical | `&& \|\| !`, `and or not` |
+| Assignment | `= += -= *= /=` |
+| Ternary | `c ? a : b` |
 
-Integer `/` on `Int32` is integer division (C# semantics).
+Integer `/` on ints is integer division. User operators: `def +(o : V2) : V2`.
 
-## 6. Methods
+## 5. Methods
 
 ```crystal
-def add(a : Int32, b : Int32 = 1) : Int32
-  a + b                 # last expression is returned
+def add(a : Int32, b : Int32 = 1)   # return type inferred: Int32
+  a + b
 end
 
-def log(msg : String)   # no return type -> Void
-  puts msg
+def sign(x : Int32) : Int32
+  return -1 if x < 0
+  1
 end
 
-def first(xs)           # untyped param -> generic T
-  xs[0]                 # error unless return type given
+def ok?(x : Int32) : Bool           # predicate names
+  x > 0
 end
 
-def ident(x) : Any      # explicit
-  x
+def first<T>(xs : Array(T)) : T     # generic def
+  xs[0]
 end
 
-def empty?(s : String) : Bool
-  s.Length == 0
+greet "bob"                         # command call, no parens
+```
+
+### Blocks and yield
+
+```crystal
+def apply(x : Int32, &f : Int32 -> Int32) : Int32
+  yield x
+end
+puts apply(3) { |v| v * 10 }        # 30
+
+def twice(&block : Int32 ->)        # no result
+  yield 1
+  yield 2
 end
 ```
 
-Rules:
-- Value-returning methods must declare `: Type`.
-- Implicit return of the last expression; `return expr` allowed.
-- Default parameters map to C# optional parameters.
-- Untyped parameters become generic type parameters (`def f(x)` -> `void f<T0>(T0 x)`).
-- `name?` methods emit as `name_q`; callers still write `name?`.
-- Calls without arguments may omit parens for Alice methods; .NET methods always need parens.
-
-## 7. Control flow
-
-All control-flow forms are statements; `if`/`case` as expressions are **(planned)**.
+### Lambdas
 
 ```crystal
-if x > 0
-  puts "pos"
-elsif x < 0
-  puts "neg"
-else
-  puts "zero"
-end
-
-unless ready
-  wait
-end
-
-puts "big" if x > 100       # postfix if
-return unless valid         # postfix unless
-
-while i < 10
-  i += 1
-end
-
-until i == 0
-  i -= 1
-end
-
-for i in 0...n              # 0..n-1
-  puts i
-end
-for i in 0..n               # 0..n
-end
-
-case code
-when 200 then puts "ok"
-when 404, 410 then puts "gone"
-else puts "other"
-end
-
-break / next                # loop control (next -> continue)
-```
-
-### Exceptions
-
-```crystal
-begin
-  risky
-rescue ex : IOException
-  puts ex.Message
-rescue
-  puts "other"
-ensure
-  cleanup                   # always runs (finally)
-end
-
-raise ArgumentException.new("bad")
-```
-
-`rescue` maps to `catch`, `ensure` to `finally`, `raise` to `throw`.
-
-## 8. Blocks and lambdas
-
-Blocks are passed as the last argument and lower to C# lambdas (`Action`/`Func`).
-
-```crystal
-[1, 2, 3].each { |x| puts x }
-
-list.each do |x|
-  puts x * 2
-end
-
 sq = ->(x : Int32) { x * x }
-puts sq.call(4)             # .call -> Invoke
-
-adder = ->(a : Int32, b : Int32) { a + b }
+puts sq.call(7)
+puts sq.(3)
 ```
 
-Lambda params need types unless inferable from context.
+## 6. Control flow
 
-## 9. Classes
+`if/elsif/else`, `unless`, postfix `if`/`unless`, `while`, `until`, `for x in xs`, `for i in 0...n`, `for k, v in hash`, `next`, `break`, `case/when/else` (multiple values per `when`, `then` form).
 
-```crystal
-class Animal
-  getter name : String          # read-only property
-  property age : Int32          # read/write property
-
-  def initialize(@name : String, @age : Int32)
-  end                           # @param = assign field
-
-  def speak : String
-    "..."
-  end
-
-  def self.create(n : String) : Animal   # static method
-    Animal.new(n, 0)
-  end
-end
-
-class Dog < Animal
-  def initialize(name : String)
-    super(name, 0)
-  end
-
-  def speak : String            # overrides (virtual by default)
-    "Woof"
-  end
-end
-
-d = Dog.new("Rex")
-puts d.name
-d.age = 3
-```
-
-| Alice | C# |
-|---|---|
-| `class B < A` | `class B : A` |
-| `def initialize` | constructor |
-| `@x` | private field `_x` / property backing |
-| `getter x : T` | `public T X { get; }` |
-| `property x : T` | `public T X { get; set; }` |
-| `def self.m` | `static` method |
-| `X.new(...)` | `new X(...)` |
-| `private def m` | `private` method |
-
-### Abstract
+`if` and `case` are expressions:
 
 ```crystal
-abstract class Shape
-  abstract def area : Float64
+y = if x > 3
+  "big"
+else
+  "small"
 end
-
-class Square < Shape
-  def initialize(@s : Float64)
-  end
-  def area : Float64
-    @s * @s
-  end
+z = case x
+when 5 then 1
+else 0
 end
 ```
 
-## 10. Structs
+Exceptions: `begin / rescue e : Exception / ensure / end`, `raise "msg"`.
 
-Value types; copied on assignment.
+## 7. Dynamic (Ruby)
 
 ```crystal
-struct Point
+puts "abc".respond_to?(:ToUpper)   # true
+puts "abc".send(:ToUpper)          # ABC
+puts "a-b".send(:Replace, "-", "+")
+```
+
+Implemented by `Prelude.Dynamic` via reflection.
+
+## 8. Types: classes, structs, modules
+
+```crystal
+class Point
   getter x : Int32
-  getter y : Int32
-  def initialize(@x : Int32, @y : Int32)
+  property v : Int32 = 1
+  def initialize(@x : Int32)
+  end
+  def to_s : String
+    "(#{x})"
+  end
+end
+
+class B < A
+  def hi : String
+    super + "B"
   end
 end
 ```
 
-Use for small immutable data and SIMD-friendly layouts.
+| Form | Meaning |
+|---|---|
+| `getter` / `property` | read-only / read-write property |
+| `def initialize(@x : T)` | constructor assigning field |
+| `def self.m` | static method |
+| `X.new(...)` | constructor call |
+| `struct S` | value type |
+| `@[Stack] struct S` | `ref struct` (stack only) |
+| `module M` | static class |
+| `interface I` + `class C < I` | interface implementation |
+| `enum Color ... end` | enum; `Color::Green` |
+| `abstract`, `private`, `protected`, `include` | parsed; not covered by tests |
 
-## 11. Modules
+Methods are `virtual` only when the class has an Alice subclass.
 
-A module is a static class (no instances).
+Generic classes `class Box(T)` and constraints **(planned)**.
 
-```crystal
-module MathUtil
-  PI2 = 6.283185
-  def self.half(x : Float64) : Float64
-    x / 2
-  end
-end
-puts MathUtil.half(3.0)
-```
+## 9. Attributes
 
-## 12. Interfaces
-
-```crystal
-interface IShape
-  def area : Float64
-end
-
-class Circle
-  include IShape        # implements
-  def initialize(@r : Float64)
-  end
-  def area : Float64
-    3.14159 * @r * @r
-  end
-end
-```
-
-`class Circle < IShape` is also accepted when it is the only base.
-
-## 13. Enums
-
-```crystal
-enum Color
-  Red
-  Green
-  Blue = 10
-end
-
-c = Color::Red
-puts c == Color::Red
-```
-
-## 14. Generics
-
-```crystal
-nums = List(Int32).new
-nums.Add(1)
-
-buf = Array(Float64).new(1024)   # new double[1024]
-map = Dictionary(String, Int32).new
-
-class Box(T)
-  getter value : T
-  def initialize(@value : T)
-  end
-end
-b = Box(String).new("x")
-```
-
-`Type(A, B)` -> `Type<A, B>`. Constraints **(planned)**: `class Box(T) where T : IComparable`.
-
-## 15. Collections
-
-```crystal
-arr = [1, 2, 3]          # int[]
-arr[0] = 9
-puts arr.Length
-
-list = [] of String      # List<string>
-list.Add("a")
-puts list.Count
-
-h = {"a" => 1, "b" => 2}
-h["c"] = 3
-puts h["a"]
-```
-
-Prelude adds Ruby-like helpers (`each`, `map`, `select`, `sum`, `size`, `empty?`, ...).
-
-## 16. Namespaces and using
-
-```crystal
-using System.Text
-using System.Collections.Generic
-
-namespace Demo
-  class Calc
-    def self.add(a : Int32, b : Int32) : Int32
-      a + b
-    end
-  end
-end
-
-puts Demo::Calc.add(1, 2)        # :: -> .
-```
-
-## 17. Attributes
-
-```crystal
-@[Obsolete("use NewApi")]
-def old_api
-end
-
-@[Serializable]
-class Dto
-end
-```
-
-`@[Name(args)]` -> `[Name(args)]`. Any .NET attribute works.
-
-## 18. Native interop (P/Invoke)
+| Attribute | Effect |
+|---|---|
+| `@[Inline]` | `MethodImplOptions.AggressiveInlining` |
+| `@[NoInline]` | `MethodImplOptions.NoInlining` |
+| `@[Hot]` | `MethodImplOptions.AggressiveOptimization` |
+| `@[Stack]` on struct | `ref struct` |
+| `@[Link("lib")]` on `lib` | P/Invoke (`fun` -> `DllImport`) |
+| any other `@[Name(args)]` | .NET attribute |
 
 ```crystal
 @[Link("libm.so.6")]
 lib LibM
   fun cos(x : Float64) : Float64
-  fun pow(x : Float64, y : Float64) : Float64
 end
-
-puts LibM.cos(0.0)
 ```
 
-`lib` -> static class; `fun` -> `[DllImport] static extern` method.
-
-## 19. .NET interop
-
-```crystal
-using System.Text
-
-sb = StringBuilder.new
-sb.Append("a").Append(1)     # .NET methods: parens required
-puts sb.Length               # properties: no parens
-puts Math.Max(3, 7)
-puts DateTime.Now.Year
-File.WriteAllText("out.txt", "hi")
-```
-
-- Any .NET assembly or NuGet package can be referenced.
-- C# projects can reference Alice-built assemblies; Alice types are normal CLR types.
-- Member names are used exactly as declared in .NET (PascalCase).
-
-## 20. Concurrency (planned; ADR 0005)
+## 10. Concurrency (ADR 0005)
 
 ```crystal
 ch = Channel(Int32).new
-
-spawn do                     # Task.Run
-  10.times { |i| ch.send(i) }
+spawn do
+  for i in 1..10
+    ch.send(i)
+  end
   ch.close
 end
+total = 0
+ch.each { |v| total += v }
 
-while v = ch.receive?
-  puts v
-end
+t = spawn { 6 * 7 }
+puts t.wait                          # 42
+
+a = Actor(Int32).new(->(m : Int32) { sum += m })
+a.send(1)
+a.stop                               # drains mailbox
+
+puts [1, 2, 3].par_map { |x| x + 1 }.sum
+r = Par.Map([1, 2, 3], ->(x : Int32) { x * 2 })
 ```
 
-| Construct | Lowering |
-|---|---|
-| `spawn { }` | `Task.Run` |
-| `Channel(T)` | `System.Threading.Channels` |
-| actor | object + mailbox channel + consumer task |
-| `Par.For/Map/Sum` | runtime data parallelism (available now) |
+Data-race check: a spawned block that assigns a captured local is a compile error (`data race`). Communicate via channels.
 
-## 21. Runtime library (Alice.Runtime)
+## 11. .NET interop
 
-```crystal
-xs = Array(Float64).new(1_000_000)
-Par.For(0, xs.Length) { |i| xs[i] = i * 0.5 }
+Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`, LINQ (`[3, 1, 2].OrderBy(->(x : Int32) { x }).First()`). .NET members use their declared names (`sb.Append`, `xs.Count`). Compile errors from .NET binding map back to `file.al(line)`.
 
-puts Simd.Sum(xs)
-puts Simd.Dot(xs, xs)
-Simd.Scale(xs, 2.0)
-
-puts AMath.Mean(xs)
-puts AMath.Variance(xs)
-c = AMath.MatMul(a, b, n)        # blocked, parallel, SIMD
-
-m = CsrMatrix(Float64).new(...)  # sparse
-y = m.Multiply(v)
-```
+## 12. Runtime library
 
 | Type | Use |
 |---|---|
-| `Simd` | Sum, Dot, Add, Multiply, Scale, Min, Max with `Vector<T>` |
-| `Par` | chunked parallel For, Map, Sum |
+| `Simd` | Sum, Dot, Add, Multiply, Scale, Min, Max (`Vector<T>`) |
+| `Par` | parallel For, Map, Sum |
 | `AMath` | MatMul, Mean, Variance, Norm, Axpy |
 | `CsrMatrix<T>`, `SparseVector<T>` | sparse linear algebra |
-| `Native` | clang kernels via P/Invoke; managed fallback |
-| `Prelude` | Ruby-style helpers, `puts` |
+| `Prelude` | Ruby helpers: `puts`, `each`, `map`, `sum`, `size`, `even?`, `to_s`, `to_i`, `send`, ... |
 
-## 22. Compilation
+## 13. Performance model
+
+| Source | Emitted IL shape |
+|---|---|
+| literal block on `each/map/select/reject/sum/count/any?/all?/find/reduce/times/upto/downto/each_with_index` | inlined `for` loop, no delegate |
+| `map/select/reject` chain | fused into one loop (0 allocations, `AllocationTests`) |
+| `map` over array | exact-size result array only |
+| capture-free lambda | `static` lambda |
+| Alice method | non-virtual unless subclassed |
+| `"#{x}"` | invariant-culture interpolation, no boxing |
+| `for i in a..b` | counted loop |
+| `if`/`case` value | typed temp, no closure |
+
+Inspect lowering with `alice emit file.al`.
+
+## 14. Commands
 
 | Command | Result |
 |---|---|
-| `alice run f.al` | compile in memory and run |
-| `alice emit f.al` | print generated C# |
-| `alice build f.al` | `.dll`/`.exe` |
+| `alice run f.al [-- args]` | compile in memory and run |
+| `alice emit f.al` | print lowered C# |
+| `alice build f.al [-o out.dll] [-r ref.dll]` | IL assembly |
 | `alice build f.al --native` | NativeAOT binary |
-| `alice bootstrap` | self-host fixed-point check |
-
-Use `alice emit` to see exactly how any construct lowers.
 
 See also: [Memory safety and ownership (proposed)](design/memory-safety.md).

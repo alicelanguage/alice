@@ -1,13 +1,13 @@
 # Alice.Runtime
-Path: `src/Alice.Runtime`. Depends on: nothing in-repo.
+Path: `src/Alice.Runtime`. Pure C#. Depends on nothing in-repo.
 
-| Type | Content |
+| Folder | Content |
 |---|---|
-| `Simd` | `Vector<T>` kernels: Sum, Dot, Add, Multiply, Scale, Min, Max |
-| `CsrMatrix<T>`, `SparseVector<T>` | sparse storage and ops (`Sparse.cs`) |
-| `Par` | chunked parallel For, Map, Sum |
-| `AMath` | MatMul (cache-blocked, parallel, SIMD), Mean, Variance, Norm, Axpy |
-| `Native` | P/Invoke to `libalice_native`; managed fallback |
-| `Prelude` | Ruby-like stdlib; `name?` -> `name_q` |
+| `Simd/` | `Vector<T>` kernels: Sum, Dot, Add, Multiply, Scale, Min, Max |
+| `Sparse/` | `CsrMatrix<T>`, `SparseVector<T>` |
+| `Parallel/` | `Par`: chunked For, Map, Sum |
+| `Math/` | `AMath`: MatMul (blocked, parallel, SIMD), Mean, Variance, Norm, Axpy |
+| `Concurrency/` | `Channel<T>`, `Actor<T>` |
+| `Prelude/` | Ruby helpers (`name?` -> `name_q`), formatting, IO, `Dynamic` (`send`, `respond_to?`) |
 
-Invariants: native and managed paths give equal results; no compiler dependency.
+Invariants: no native code, no compiler dependency.

@@ -189,34 +189,38 @@ public sealed partial class Binder
             var owner = TypeByName(string.Join(".", segs.Take(k)), new List<TypeRef>());
             if (owner == null) continue;
             ce.Res = "path";
+            var path = new ConstPath { Owner = owner };
             AType cur = owner;
             bool isStatic = true;
             for (int j = k; j < segs.Length; j++)
             {
-                cur = MemberType(cur, segs[j], isStatic);
+                bool call;
+                (cur, call) = MemberType(cur, segs[j], isStatic);
+                path.Members.Add((segs[j], call));
                 isStatic = false;
             }
+            ce.Sym = path;
             return cur;
         }
         ce.Res = "unknown";
         return AType.Unknown;
     }
 
-    AType MemberType(AType owner, string member, bool isStatic)
+    (AType, bool) MemberType(AType owner, string member, bool isStatic)
     {
         if (owner.Sym != null)
         {
             var f = owner.Sym.FindField(member);
-            if (f != null) return f.Type;
+            if (f != null) return (f.Type, false);
             var m = owner.Sym.FindMethod(member, 0);
-            if (m != null) return m.Ret;
+            if (m != null) return (m.Ret, true);
         }
         if (owner.Clr != null)
         {
             var mem = ClrTypes.Lookup(owner.Clr, member, 0, false, isStatic);
-            if (mem != null) return mem.Type;
+            if (mem != null) return (mem.Type, mem.Kind == "method");
         }
-        return AType.Unknown;
+        return (AType.Unknown, false);
     }
 
     AType BindIndex(IndexExpr ix)
