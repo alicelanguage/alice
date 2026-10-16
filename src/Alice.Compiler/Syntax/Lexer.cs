@@ -15,7 +15,7 @@ public sealed class Lexer
     readonly List<Token> toks = new();
 
     static readonly string[] Ops3 = { "**=", "<=>", "===", "...", "||=", "&&=", "<<=", ">>=" };
-    static readonly string[] Ops2 = { "..", "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "|=", "&=", "^=", "<<", ">>", "**", "&.", "@[" };
+    static readonly string[] Ops2 = { "..", "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "|=", "&=", "^=", "<<", ">>", "**", "&.", "@[", "=~", "!~" };
     const string Ops1 = "+-*/%=<>!&|^~.,:;?()[]{}";
     const string Cont = " , . :: + - * / % ** = == != < > <= >= && || -> => += -= *= /= %= |= &= ^= ||= &&= **= & ^ << >> ? : ";
 
@@ -44,10 +44,22 @@ public sealed class Lexer
 
     CompileException Err(string msg) => new($"{file}:{line}:{col}: {msg}");
 
+    int skipAt = -1, skipTo = -1;   // heredoc bodies: when reaching `skipAt` (end of the opener line) jump to `skipTo`
+
     public List<Token> Lex()
     {
         while (pos < src.Length)
         {
+            if (pos == skipAt)
+            {
+                // jump over the heredoc body; the newline ending the terminator line still ends the statement
+                int target = skipTo > 0 && skipTo <= src.Length && src[skipTo - 1] == '\n' ? skipTo - 1 : src.Length;
+                for (int k = skipAt; k < target; k++) if (src[k] == '\n') line++;
+                pos = target;
+                skipAt = -1;
+                col = 1;
+                if (pos >= src.Length) break;
+            }
             char c = src[pos];
             int l = line, cl = col;
             if (c == ' ' || c == '\t' || c == '\r') { Adv(); space = true; }
@@ -75,12 +87,97 @@ public sealed class Lexer
         return toks;
     }
 
+    /// <summary>`/re/` starts a regex only in prefix position (after an operator, `(`, `,`, a keyword or line start).</summary>
+    bool RegexContext()
+    {
+        if (At(1) == ' ' || At(1) == '=') return false;
+        Token? last = Last();
+        if (last == null || last.Kind == "nl") return true;
+        if (last.Kind == "op") return last.Text is not (")" or "]" or "}");
+        return last.Kind == "id" && space && " if unless when and or not return puts print p elsif while until in ".Contains(" " + last.Text + " ");
+    }
+
+    void Regex(int l, int c)
+    {
+        Adv();
+        var sb = new StringBuilder();
+        while (pos < src.Length && src[pos] != '/')
+        {
+            if (src[pos] == '\\') { sb.Append(src[pos]); Adv(); }
+            if (pos >= src.Length || src[pos] == '\n') throw Err("unterminated regex literal");
+            sb.Append(src[pos]);
+            Adv();
+        }
+        if (pos >= src.Length) throw Err("unterminated regex literal");
+        Adv();
+        int fs = pos;
+        while (pos < src.Length && "imxs".Contains(src[pos])) Adv();
+        Add("regex", sb.ToString() + "\u0000" + src.Substring(fs, pos - fs), l, c);
+    }
+
+    /// <summary>%w[a b c] -> ["a", "b", "c"] (and %i[] for symbols, which Alice represents as strings).</summary>
+    void WordArray(int l, int c)
+    {
+        Adv(); Adv();
+        char close = src[pos] == '[' ? ']' : ')';
+        Adv();
+        int s = pos;
+        while (pos < src.Length && src[pos] != close) Adv();
+        if (pos >= src.Length) throw Err("unterminated %w literal");
+        var words = src.Substring(s, pos - s).Split((char[])[' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
+        Adv();
+        Add("op", "[", l, c);
+        for (int i = 0; i < words.Length; i++)
+        {
+            if (i > 0) Add("op", ",", l, c);
+            Add("str", words[i].Replace("\\", "\\\\").Replace("\"", "\\\""), l, c);
+        }
+        Add("op", "]", l, c);
+    }
+
+    /// <summary>
+    /// <<~EOS (indentation stripped) / <<-EOS (terminator may be indented). The body is lifted out of the source:
+    /// the rest of the opener line keeps lexing, then lexing resumes after the terminator line.
+    /// </summary>
+    void Heredoc(int l, int c)
+    {
+        bool squiggly = At(2) == '~';
+        Adv(); Adv(); Adv();
+        int s = pos;
+        while (pos < src.Length && (char.IsLetterOrDigit(src[pos]) || src[pos] == '_')) Adv();
+        string id = src.Substring(s, pos - s);
+        int eol = src.IndexOf('\n', pos);
+        if (eol < 0) throw Err($"heredoc {id} has no body");
+        var lines = new List<string>();
+        int k = eol + 1;
+        int after = -1;
+        while (k <= src.Length)
+        {
+            int e = src.IndexOf('\n', k);
+            string ln = e < 0 ? src[k..] : src[k..e];
+            if (ln.Trim() == id) { after = e < 0 ? src.Length : e + 1; break; }
+            lines.Add(ln.TrimEnd('\r'));
+            if (e < 0) break;
+            k = e + 1;
+        }
+        if (after < 0) throw Err($"heredoc terminator {id} not found");
+        if (squiggly)
+        {
+            int indent = lines.Where(x => x.Trim().Length > 0).Select(x => x.Length - x.TrimStart().Length).DefaultIfEmpty(0).Min();
+            lines = lines.Select(x => x.Length >= indent ? x[indent..] : x.TrimStart()).ToList();
+        }
+        string body = string.Join("\n", lines) + "\n";
+        Add("str", body.Replace("\"", "\\\""), l, c);
+        skipAt = eol;
+        skipTo = after;
+    }
+
     /// <summary>`:name` is a symbol after whitespace or an opening/separator token (not `a ? b :c`, not `x: 1`).</summary>
     bool SymbolContext()
     {
         Token? last = Last();
         if (last == null || last.Kind == "nl") return true;
-        if (last.Kind == "op") return " ( [ { , => = == != << ".Contains(" " + last.Text + " ");
+        if (last.Kind == "op") return " ( [ { , => = == != << & ".Contains(" " + last.Text + " ");
         return space && last.Kind == "id";
     }
 
@@ -221,6 +318,9 @@ public sealed class Lexer
 
     void Op(int l, int c)
     {
+        if (src[pos] == '<' && At(1) == '<' && (At(2) == '~' || At(2) == '-') && char.IsUpper(At(3))) { Heredoc(l, c); return; }
+        if (src[pos] == '%' && (At(1) == 'w' || At(1) == 'i') && (At(2) == '[' || At(2) == '(') && SymbolContext()) { WordArray(l, c); return; }
+        if (src[pos] == '/' && RegexContext()) { Regex(l, c); return; }
         if (src[pos] == ':' && (char.IsLetter(At(1)) || At(1) == '_') && SymbolContext())
         {
             Adv();

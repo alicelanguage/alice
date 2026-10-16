@@ -362,3 +362,18 @@ See [performance.md](performance.md). Inspect lowering with `alice emit file.al`
 See [tooling.md](tooling.md). Error codes: [errors.md](errors.md).
 
 See also: [Memory safety and ownership (proposed)](design/memory-safety.md).
+
+## Standard library
+
+Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
+
+| Type | Methods |
+|---|---|
+| String | `size center ljust rjust chomp chop strip squeeze count(set) index rindex start_with? end_with? includes? include? sub gsub(str\|Regex) tr delete lines each_line each_char chars scan(Regex\|pattern) match? repeat(n) to_sym succ bytes hex oct to_i to_f upcase downcase capitalize swapcase title reverse split` |
+| Array / Enumerable | `each each_with_index map select reject find find_index count sum min max minmax min_by max_by sort sort{\|a,b\|} sort_by uniq uniq{} reverse reverse_each first(n) last(n) take drop take_while drop_while each_slice each_cons zip flatten compact group_by partition tally chunk_while flat_map product sample shuffle(Random?) rotate reduce inject each_with_object step(n) cycle(n) combination(k) permutation(k) join to_a to_h include? cover?` |
+| Hash | `each each_pair map select reject fetch dig merge key? has_key? value? keys values invert to_a min_by max_by sort_by transform_values transform_keys group_by sum count any? all?` (blocks get `\|k, v\|`) |
+| Int / Float | `gcd lcm digits divmod clamp between? round(n) floor(n) ceil(n) abs even? odd? zero? positive? negative? times upto downto step(limit, by) to_s(base) sqrt cbrt log log2 log10 truncate nan? infinite?` |
+| Range | Enumerable methods plus `step size include? cover? to_a sum` |
+| Free functions | `puts print p gets rand exit format(fmt, ...) read_file write_file file_exists? read_lines sleep(sec) now env(name) to_json(obj) parse_json(text)` |
+
+`format`: `%d %i %s %f %.Nf %e %x %X %o %b %c %%`, flags `-0+ `, width.

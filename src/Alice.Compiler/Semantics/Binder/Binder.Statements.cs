@@ -111,6 +111,22 @@ public sealed partial class Binder
             if (!l.Type.IsKnown && v.IsKnown && a.Op == "=") l.Type = v;
             return;
         }
+        if (a.Target is IvarExpr iv && curType.Kind is "class" or "struct" or "record" && a.Op == "=")
+        {
+            // Ruby: assigning @x declares the field; its type comes from the value (attr_accessor reuses it)
+            var vt0 = BindExpr(a.Value);
+            var f = curType.FindField(iv.Name);
+            if (f == null)
+            {
+                curType.Fields[iv.Name] = new FieldSym { Name = iv.Name, CsName = Mangle(iv.Name), Type = vt0.IsKnown ? vt0 : AType.Dynamic, Kind = "inferred", Owner = curType };
+                changed = true;
+            }
+            else if (!f.Type.IsKnown && vt0.IsKnown)
+            {
+                f.Type = vt0;
+                changed = true;
+            }
+        }
         BindExpr(a.Target);
         BindExpr(a.Value);
         if (curMethod != null && lambdas.Count == 0 && a.Target is IvarExpr or NameExpr { Res: "field" } or CallExpr { Res: "field", Recv: SelfExpr }) curMethod.Mutates = true;

@@ -190,6 +190,30 @@ public sealed partial class Parser
                 while (IsOp(",")) { Next(); d.Mixins.Add((Type(), ext)); }
                 EndStmt();
             }
+            else if (IsKw("attr_accessor") || IsKw("attr_reader") || IsKw("attr_writer"))
+            {
+                // Ruby style: types are inferred from the instance variable assignments
+                string kind = Next().Text switch { "attr_reader" => "getter", "attr_writer" => "setter", _ => "property" };
+                while (true)
+                {
+                    if (t[p].Kind != "sym") throw Err("expected :name");
+                    var a = At(new AccessorDecl { Kind = kind, Name = Next().Text, Untyped = true }, tok);
+                    d.Members.Add(a);
+                    if (!IsOp(",")) break;
+                    Next();
+                }
+                EndStmt();
+            }
+            else if (IsKw("alias"))
+            {
+                Next();
+                var al = At(new AliasDecl(), tok);
+                al.NewName = Next().Text;
+                if (IsOp(",")) Next();
+                al.OldName = Next().Text;
+                d.Members.Add(al);
+                EndStmt();
+            }
             else if (IsKw("getter") || IsKw("property") || IsKw("setter"))
             {
                 var a = At(new AccessorDecl { Kind = Next().Text, Attrs = TakeAttrs() }, tok);
@@ -355,6 +379,19 @@ public sealed partial class Parser
         {
             m.HasBody = false;
             EndStmt();
+            locals = saved;
+            return m;
+        }
+        if (IsOp("="))
+        {
+            // endless def: `def sq(x : Int32) : Int32 = x * x`
+            Token et = Next();
+            SkipNl();
+            m.Body = new List<Stmt> { At(new ExprStmt { Expr = Expression() }, et) };
+            EndStmt();
+            m.File = file;
+            int ln = m.Line - lineBase;
+            if (ln >= 0 && ln < srcLines.Length) m.SourceText = srcLines[ln];
             locals = saved;
             return m;
         }

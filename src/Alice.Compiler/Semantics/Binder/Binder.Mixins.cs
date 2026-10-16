@@ -31,6 +31,13 @@ public sealed partial class Binder
                 else d.Bases.Add(mref);
             }
             d.Mixins.Clear();
+            foreach (var al in d.Members.OfType<AliasDecl>().ToList())
+            {
+                var old = d.Members.OfType<MethodDecl>().FirstOrDefault(m => m.Name == al.OldName)
+                    ?? throw new CompileException($"{file}:{al.Line}:{al.Col}: alias {al.NewName}: no method '{al.OldName}' in {d.Name}");
+                var text = System.Text.RegularExpressions.Regex.Replace(old.SourceText, @"def\s+(self\.)?" + System.Text.RegularExpressions.Regex.Escape(al.OldName), m => "def " + m.Groups[1].Value + al.NewName, System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
+                d.Members.Add(Parser.ParseMethod(text, old.File, old.Line, d.Kind));
+            }
         }
     }
 

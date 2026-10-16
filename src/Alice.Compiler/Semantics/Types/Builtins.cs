@@ -6,7 +6,7 @@ namespace Alice.Compiler.Semantics;
 /// <summary>Static typing of Alice.Runtime.Prelude: free functions and Ruby-style extension methods.</summary>
 public static class Builtins
 {
-    public static readonly HashSet<string> FreeFunctions = new() { "puts", "print", "p", "gets", "rand", "exit" };
+    public static readonly HashSet<string> FreeFunctions = new() { "puts", "print", "p", "gets", "rand", "exit", "format", "read_file", "write_file", "file_exists?", "read_lines", "sleep", "now", "env", "to_json", "parse_json" };
 
     /// <summary>Extension method names exposed by the Prelude (discovered by reflection, so the runtime is the source of truth).</summary>
     public static readonly HashSet<string> ExtNames = typeof(Alice.Runtime.Prelude)
@@ -47,6 +47,12 @@ public static class Builtins
         "p" => args.Count > 0 ? args[0] : AType.Void,
         "gets" => AType.String.AsNullable(),
         "rand" => args.Count == 0 ? AType.Double : AType.Int,
+        "format" or "read_file" or "to_json" => AType.String,
+        "env" => AType.String.AsNullable(),
+        "file_exists?" => AType.Bool,
+        "read_lines" => AType.Array(AType.String),
+        "now" => ClrTypes.FromClr(typeof(DateTime)),
+        "parse_json" => ClrTypes.FromClr(typeof(System.Text.Json.Nodes.JsonNode)),
         _ => AType.Void,
     };
 
@@ -74,8 +80,41 @@ public static class Builtins
     public static List<AType> BlockParams(string name, AType recv, List<AType> args)
     {
         AType e = ElemOf(recv);
+        if (IsDict(recv))
+        {
+            switch (name)
+            {
+                case "each_pair":
+                case "map":
+                case "select":
+                case "reject":
+                case "max_by":
+                case "min_by":
+                case "sort_by":
+                case "group_by":
+                case "sum":
+                case "count":
+                case "any_q":
+                case "all_q":
+                    return new() { recv.Args[0], recv.Args[1] };
+                case "transform_values": return new() { recv.Args[1] };
+                case "transform_keys": return new() { recv.Args[0] };
+            }
+        }
         switch (name)
         {
+            case "each_slice":
+            case "each_cons":
+                return e.IsKnown ? new() { AType.Array(e) } : new() { AType.Unknown };
+            case "chunk_while":
+            case "sort":
+                return new() { e, e };
+            case "inject":
+                return args.Count > 0 ? new() { args[0], e } : new() { e, e };
+            case "each_with_object":
+                return args.Count > 0 ? new() { e, args[0] } : new() { e, AType.Unknown };
+            case "step" when recv.Cs is "int" or "double":
+                return new() { recv };
             case "times":
             case "upto":
             case "downto":
@@ -92,13 +131,129 @@ public static class Builtins
         return new() { e };
     }
 
+    static bool IsDict(AType t) =>
+        t.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(Dictionary<,>) && t.Args.Count == 2;
+
+    /// <summary>Hash (Dictionary) methods whose result differs from the Enumerable version; null falls through.</summary>
+    static AType? DictReturn(string name, AType d, AType br)
+    {
+        AType k = d.Args[0], v = d.Args[1];
+        AType kv = Generic(typeof(KeyValuePair<,>), k, v);
+        return name switch
+        {
+            "select" or "reject" or "merge" => d,
+            "map" => br.IsKnown && !br.IsVoid ? AType.Array(br) : AType.Unknown,
+            "fetch" => v,
+            "dig" => v.AsNullable(),
+            "invert" => Generic(typeof(Dictionary<,>), v, k),
+            "to_a" => AType.Array(Generic(typeof(ValueTuple<,>), k, v)),
+            "max_by" or "min_by" => kv,
+            "sort_by" => AType.Array(kv),
+            "transform_values" => br.IsKnown && !br.IsVoid ? Generic(typeof(Dictionary<,>), k, br) : AType.Unknown,
+            "transform_keys" => br.IsKnown && !br.IsVoid ? Generic(typeof(Dictionary<,>), br, v) : AType.Unknown,
+            "group_by" => br.IsKnown && !br.IsVoid ? Generic(typeof(Dictionary<,>), br, AType.Array(kv)) : AType.Unknown,
+            "sum" => br.IsKnown && !br.IsVoid ? br : AType.Unknown,
+            "each_pair" => AType.Void,
+            _ => null,
+        };
+    }
+
     public static AType? ExtReturn(string name, AType recv, List<AType> args, AType? blockRet)
     {
         if (!ExtNames.Contains(name)) return null;
         AType e = ElemOf(recv);
         AType br = blockRet ?? AType.Unknown;
+        if (IsDict(recv) && DictReturn(name, recv, br) is AType dr) return dr;
+        AType arr = e.IsKnown ? AType.Array(e) : AType.Unknown;
+        AType arr2 = e.IsKnown ? AType.Array(AType.Array(e)) : AType.Unknown;
         switch (name)
         {
+            case "each_slice" when blockRet == null:
+            case "each_cons" when blockRet == null:
+            case "chunk_while":
+            case "partition":
+            case "product":
+            case "combination":
+            case "permutation":
+                return arr2;
+            case "each_slice":
+            case "each_cons":
+            case "reverse_each":
+            case "cycle":
+            case "each_line":
+            case "each_pair":
+            case "step" when recv.Cs is "int" or "double":
+                return AType.Void;
+            case "first" when args.Count == 1:
+            case "last" when args.Count == 1:
+            case "compact":
+            case "minmax":
+            case "shuffle":
+            case "rotate":
+            case "take_while":
+            case "drop_while":
+            case "step":
+                return arr;
+            case "sample":
+                return e;
+            case "flatten":
+                return ElemOf(e) is { IsKnown: true } fe ? AType.Array(fe) : AType.Unknown;
+            case "flat_map":
+                return br.IsKnown && ElemOf(br) is { IsKnown: true } fb ? AType.Array(fb) : AType.Unknown;
+            case "group_by":
+                return e.IsKnown && br.IsKnown && !br.IsVoid ? Generic(typeof(Dictionary<,>), br, AType.Array(e)) : AType.Unknown;
+            case "tally":
+                return e.IsKnown ? Generic(typeof(Dictionary<,>), e, AType.Int) : AType.Unknown;
+            case "inject":
+                return args.Count > 0 ? args[0] : e;
+            case "each_with_object":
+                return args.Count > 0 ? args[0] : AType.Unknown;
+            case "find_index":
+            case "rindex":
+            case "hex":
+            case "oct":
+                return AType.Int;
+            case "index" when recv.IsString:
+            case "count" when recv.IsString:
+                return AType.Int;
+            case "gcd":
+            case "lcm":
+            case "clamp":
+                return recv;
+            case "digits":
+            case "bytes":
+                return AType.Array(AType.Int);
+            case "divmod":
+                return recv.IsKnown ? AType.Array(recv) : AType.Unknown;
+            case "scan":
+                return AType.Array(AType.String);
+            case "succ" when recv.IsString:
+            case "center":
+            case "chomp":
+            case "chop":
+            case "squeeze":
+            case "sub":
+            case "tr":
+            case "delete":
+            case "repeat":
+            case "to_sym":
+            case "swapcase":
+            case "title":
+            case "to_s":
+                return AType.String;
+            case "round" when args.Count == 1:
+            case "floor" when args.Count == 1:
+            case "ceil" when args.Count == 1:
+            case "cbrt":
+            case "log":
+            case "log2":
+            case "log10":
+            case "truncate":
+                return AType.Double;
+            case "zip" when e.IsKnown && args.Count == 1 && ElemOf(args[0]) is { IsKnown: true } ze:
+                return AType.Array(Generic(typeof(ValueTuple<,>), e, ze));
+            case "to_h" when e.Args.Count == 2:
+                return Generic(typeof(Dictionary<,>), e.Args[0], e.Args[1]);
             case "each":
             case "each_with_index":
             case "times":

@@ -2,7 +2,7 @@ namespace Alice.Compiler.Syntax;
 
 public sealed partial class Parser
 {
-    const string Levels = "|| ;&& ;== != === ;< > <= >= <=> ;| ;^ ;& ;<< >> ;+ - ;* / % ";
+    const string Levels = "|| ;&& ;== != === =~ !~ ;< > <= >= <=> ;| ;^ ;& ;<< >> ;+ - ;* / % ";
     static readonly string[] LevelOps = Levels.Split(';');
 
     public Expr Expression()
@@ -187,6 +187,15 @@ public sealed partial class Parser
         }
         else if (CanStartArg()) args.AddRange(CommandArgs());
         block = OptBlock();
+        // `&:name` argument: Ruby's symbol-to-proc, i.e. { |x| x.name }
+        int sp = args.FindIndex(a => a.Mod == "&sym");
+        if (sp >= 0)
+        {
+            var a = args[sp];
+            args.RemoveAt(sp);
+            var prm = new Param { Name = "__it", Line = a.Line };
+            block = new LambdaExpr { Line = a.Line, Params = { prm }, Body = { new ExprStmt { Line = a.Line, Expr = new CallExpr { Line = a.Line, Recv = new NameExpr { Name = "__it", Line = a.Line }, Name = ((LitExpr)a.Value!).Text } } } };
+        }
     }
 
     bool CanStartArg()
@@ -202,6 +211,7 @@ public sealed partial class Parser
             case "ivar":
             case "const":
             case "sym":
+            case "regex":
                 return true;
             case "id":
                 return c.Text == "not" || c.Text == "nil" || c.Text == "true" || c.Text == "false" || c.Text == "self" || !IsKeyword(c.Text);
@@ -249,6 +259,13 @@ public sealed partial class Parser
     Arg Argument()
     {
         var a = At(new Arg(), Cur);
+        if (IsOp("&") && Peek(1).Kind == "sym")
+        {
+            Next();
+            a.Mod = "&sym";
+            a.Value = At(new LitExpr { Kind = "str", Text = Next().Text }, t[p - 1]);
+            return a;
+        }
         if ((IsKw("out") || IsKw("ref")) && Peek(1).Kind == "id")
         {
             a.Mod = Next().Text;
@@ -280,6 +297,12 @@ public sealed partial class Parser
             case "sym":
                 Next();
                 return At(new LitExpr { Kind = "str", Text = c.Text }, c);
+            case "regex":
+                {
+                    Next();
+                    var parts = c.Text.Split('\u0000');
+                    return At(new RegexExpr { Pattern = parts[0].Replace("\\", "\\\\").Replace("\"", "\\\""), Flags = parts.Length > 1 ? parts[1] : "" }, c);
+                }
             case "str":
                 Next();
                 return StringLit(c);
@@ -357,6 +380,11 @@ public sealed partial class Parser
             case "spawn":
                 Next();
                 return At(new SpawnExpr { Body = LambdaBody(new List<Param>()) }, c);
+            case "lambda":
+            case "proc":
+                Next();
+                if (!BlockFollows()) throw Err($"{n} needs a block: {n} {{ |x| ... }}");
+                return BlockLambda();
             case "yield":
                 {
                     Next();

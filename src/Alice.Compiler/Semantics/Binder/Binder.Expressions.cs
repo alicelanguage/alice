@@ -108,6 +108,8 @@ public sealed partial class Binder
                     BindArgs(inv.Args);
                     return t.Kind == "func" && t.Args.Count > 0 ? t.Args[^1] : AType.Unknown;
                 }
+            case RegexExpr:
+                return ClrTypes.FromClr(typeof(System.Text.RegularExpressions.Regex));
             case AwaitExpr aw:
                 {
                     var t = BindExpr(aw.E);
@@ -301,8 +303,26 @@ public sealed partial class Binder
     {
         var l = BindExpr(b.L);
         var r = BindExpr(b.R);
+        b.Res = "";
+        bool listy(AType t) => t.Kind == "array" || t.Clr is { IsGenericType: true } g && g.GetGenericTypeDefinition() == typeof(List<>);
         switch (b.Op)
         {
+            case "=~" or "!~":
+                b.Res = b.Op == "=~" ? "match" : "nomatch";
+                return b.Op == "=~" ? AType.Int.AsNullable() : AType.Bool;
+            case "%" when l.IsString:
+                b.Res = "format";
+                return AType.String;
+            case "*" when l.IsString && r.IsInteger:
+                b.Res = "repeat";
+                return AType.String;
+            case "<<" when listy(l) || l.Clr == typeof(System.Text.StringBuilder):
+                b.Res = "append";
+                return l;
+            case "+" or "-" or "&" or "|" when listy(l) && listy(r):
+                b.Res = "set" + b.Op;
+                var el = Builtins.ElemOf(l);
+                return el.IsKnown ? AType.Array(el) : AType.Unknown;
             case "&&":
             case "||":
             case "==":

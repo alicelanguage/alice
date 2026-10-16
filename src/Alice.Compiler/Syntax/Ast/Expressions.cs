@@ -128,6 +128,12 @@ public sealed class InvokeExpr : Expr
     public List<Arg> Args = new();
 }
 
+public sealed class RegexExpr : Expr
+{
+    public string Pattern = "";   // C#-escaped string literal body
+    public string Flags = "";
+}
+
 public sealed class AwaitExpr : Expr { public Expr E = null!; }
 
 public sealed class SpawnExpr : Expr { public LambdaExpr Body = null!; }

@@ -174,7 +174,7 @@ public sealed partial class Binder
             {
                 case AccessorDecl a:
                     var at = a.Type != null ? ResolveType(a.Type) : LiteralType(a.Init);
-                    if (!at.IsKnown) throw Err(a, $"type required for {a.Kind} {a.Name}");
+                    if (!at.IsKnown && !a.Untyped) throw Err(a, $"type required for {a.Kind} {a.Name}");
                     s.Fields[a.Name] = new FieldSym { Name = a.Name, CsName = Mangle(a.Name), Type = at, Kind = a.Kind, IsStatic = s.Kind == "module", Owner = s };
                     a.Sym = s.Fields[a.Name];
                     break;

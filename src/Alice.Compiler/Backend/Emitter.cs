@@ -144,6 +144,12 @@ public sealed class Emitter
                 case EnumDecl e: body.Append(Enum(e)); break;
             }
         }
+        // Ruby-style fields introduced by `@x = value` (declared once, in the first declaration of the type)
+        foreach (var f in s.Fields.Values.Where(f => f.Kind == "inferred").ToList())
+        {
+            body.Append($"private {Lowerer.TypeCs(f.Type)} {f.CsName};\n");
+            f.Kind = "inferred-emitted";
+        }
         // fields introduced by `def initialize(@x : T)` in this declaration
         foreach (var m in d.Members.OfType<MethodDecl>())
             foreach (var p in m.Params.Where(p => p.Auto))
@@ -191,7 +197,7 @@ public sealed class Emitter
         if (owner.Kind == "interface") return $"{f.Type.Cs} {f.CsName} {(a.Kind == "getter" ? "{ get; }" : "{ get; set; }")}\n";
         string acc = a.Kind switch { "getter" => "{ get; private set; }", "setter" => "{ private get; set; }", _ => "{ get; set; }" };
         string init = a.Init != null ? " = " + Init(a.Init, owner) + ";" : "";
-        return $"{Attrs(a.Attrs)}public {st}{f.Type.Cs} {f.CsName} {acc}{init}\n";
+        return $"{Attrs(a.Attrs)}public {st}{Lowerer.TypeCs(f.Type)} {f.CsName} {acc}{init}\n";
     }
 
     string Const(ConstDecl c, TypeSym owner)

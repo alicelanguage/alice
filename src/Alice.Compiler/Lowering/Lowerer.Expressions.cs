@@ -75,6 +75,8 @@ public sealed partial class Lowerer
                 return TypeTest(tt);
             case InvokeExpr inv:
                 return new MInvoke { Target = Expr(inv.Target), Args = Args(inv.Args) };
+            case RegexExpr rx:
+                return new MCall { Target = new MCode("Prelude"), Name = "regex", Args = { new MCode("\"" + rx.Pattern + "\""), new MCode("\"" + rx.Flags + "\"") } };
             case AwaitExpr aw:
                 return new MUnary { Op = "await ", E = Expr(aw.E) };
             case SpawnExpr sp:
@@ -140,6 +142,20 @@ public sealed partial class Lowerer
         if (lazy) noHoist++;
         var r = Expr(b.R);
         if (lazy) noHoist--;
+        string? helper = b.Res switch
+        {
+            "match" => "match_index",
+            "nomatch" => "no_match",
+            "format" => "sprintf",
+            "repeat" => "str_mul",
+            "append" => "append_op",
+            "set+" => "arr_plus",
+            "set-" => "arr_minus",
+            "set&" => "arr_and",
+            "set|" => "arr_or",
+            _ => null,
+        };
+        if (helper != null) return new MCall { Target = new MCode("Prelude"), Name = helper, Args = { l, r } };
         return b.Op switch
         {
             "**" => new MCall { Target = new MCode("Prelude"), Name = "pow", Args = { l, r } },

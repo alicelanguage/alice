@@ -60,6 +60,7 @@ public sealed partial class Parser
             return At(new ReturnStmt { Value = AtStmtEnd() ? null : ExprList() }, tok);
         }
         if (IsKw("break")) { Next(); return At(new BreakStmt(), tok); }
+        if (IsKw("retry")) { Next(); return At(new RetryStmt(), tok); }
         if (IsKw("next"))
         {
             Next();

@@ -110,6 +110,7 @@ public sealed class AccessorDecl : Item
     public string Name = "";
     public TypeRef? Type;
     public Expr? Init;
+    public bool Untyped;         // Ruby attr_accessor: type inferred from @name assignments
 }
 
 public sealed class FieldDecl : Item
@@ -124,6 +125,12 @@ public sealed class ConstDecl : Item
     public string Name = "";
     public TypeRef? Type;
     public Expr Value = null!;
+}
+
+public sealed class AliasDecl : Item
+{
+    public string NewName = "";
+    public string OldName = "";
 }
 
 public sealed class IncludeDecl : Item { public TypeRef Type = new(); }

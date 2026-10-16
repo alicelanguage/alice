@@ -47,6 +47,21 @@ public sealed partial class Lowerer
             case CaseStmt c:
                 Case(o, c, tail, target);
                 break;
+            case RetryStmt:
+                o.Add(new MContinue());
+                break;
+            case BeginStmt b when b.Rescues.Any(r => Contains(r.Body, s => s is RetryStmt)):
+                {
+                    // `retry` re-runs the begin body: try { body; break; } catch { ... continue; } inside a loop
+                    var t = new MTry { Body = Stmts(b.Body, tail, target) };
+                    t.Body.Add(new MBreak());
+                    foreach (var r in b.Rescues)
+                        t.Catches.Add(new MCatch { TypeCs = r.Resolved.Cs, Name = r.Local?.CsName, Body = Stmts(r.Body, tail, target) });
+                    if (b.Ensure != null) t.Finally = Stmts(b.Ensure, Tail.None, null);
+                    foreach (var c in t.Catches) c.Body.Add(new MBreak());
+                    o.Add(new MWhile { Cond = new MCode("true"), Body = { t } });
+                    break;
+                }
             case BeginStmt b:
                 {
                     var t = new MTry { Body = Stmts(b.Body, tail, target) };

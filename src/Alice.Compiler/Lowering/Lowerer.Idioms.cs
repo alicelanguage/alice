@@ -129,7 +129,61 @@ public sealed partial class Lowerer
         body.AddRange(Stmts(f.Body, Tail.None, null));
         ctx.RemoveAt(ctx.Count - 1);
         spanKey = saved;
-        return new MForeach { Vars = { range }, Coll = new MCode($"{s}.AsSpan().Split({sep})"), Body = body };
+        MStmt serial = new MForeach { Vars = { range }, Coll = new MCode($"{s}.AsSpan().Split({sep})"), Body = body };
+        if (spanOnly && f.Body.Count == 1 && counters.Count == 1 && ParallelWordCount(counters[0], s, sep) is { } par)
+            return new MIf { Cond = new MCode($"{s}.Length >= {Threshold} && global::Alice.Runtime.Par.Workers > 1"), Then = { par }, Else = new List<MStmt> { serial } };
+        return serial;
+    }
+
+    /// <summary>
+    /// Parallel word count: the text is cut at separator positions (so every chunk splits exactly like the whole
+    /// string), each worker counts into its own dictionary via the span lookup, and partials are merged in chunk
+    /// order, which reproduces the serial insertion (and therefore iteration) order.
+    /// </summary>
+    MStmt? ParallelWordCount(Assign counter, string s, string sep)
+    {
+        if (inParallelGen || ctx.Contains("lambda") || Method is { TypeParams.Count: > 0 }) return null;
+        var cu = CounterUpdate(counter);
+        if (cu == null || cu.Value.Ix.Target is not NameExpr { Sym: LocalSym dict }) return null;
+        var (_, op, delta) = cu.Value;
+        if (!PureExpr(delta, new()) || WalkExpr(delta).Any(e => e is NameExpr { Sym: LocalSym l } && l == spanKey?.Word)) return null;
+        var captured = WalkExpr(delta).OfType<NameExpr>().Where(n => n is { Res: "local" }).Select(n => (LocalSym)n.Sym!).Distinct().ToList();
+        if (captured.Any(l => !l.Type.IsKnown) || captured.Contains(dict)) return null;
+        IsDictionary(dict.Type, out _, out var vt);
+        string V = TypeCs(vt);
+        string helper = $"__parwords_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
+        string d = "__dict", text = "__text";
+        string deltaCs = Backend.Printer.E(Expr(delta));
+        var ps = new List<string> { $"string {text}", $"global::System.Collections.Generic.Dictionary<string, {V}> {d}" };
+        ps.AddRange(captured.Select(l => $"{TypeCs(l.Type)} {l.CsName}"));
+        string body = $$"""
+                int parts = global::System.Math.Min(global::Alice.Runtime.Par.Workers * 4, {{text}}.Length / 16384 + 1);
+                var cuts = new global::System.Collections.Generic.List<int> { -1 };
+                for (int k = 1; k < parts; k++)
+                {
+                    int at = {{text}}.IndexOf({{sep}}, (int)((long){{text}}.Length * k / parts));
+                    if (at < 0) break;
+                    if (at > cuts[^1]) cuts.Add(at);
+                }
+                cuts.Add({{text}}.Length);
+                var locals = new global::System.Collections.Generic.Dictionary<string, {{V}}>[cuts.Count - 1];
+                global::System.Threading.Tasks.Parallel.For(0, locals.Length, c =>
+                {
+                    var local = new global::System.Collections.Generic.Dictionary<string, {{V}}>();
+                    var alt = local.GetAlternateLookup<global::System.ReadOnlySpan<char>>();
+                    var span = {{text}}.AsSpan(cuts[c] + 1, cuts[c + 1] - cuts[c] - 1);
+                    foreach (var r in span.Split({{sep}}))
+                        {{CM}}.GetValueRefOrAddDefault(alt, span[r], out _) {{op}} {{deltaCs}};
+                    locals[c] = local;
+                });
+                foreach (var local in locals)
+                    foreach (var kv in local)
+                        {{CM}}.GetValueRefOrAddDefault({{d}}, kv.Key, out _) += kv.Value;
+            """;
+        Extra.Add($"private static void {helper}({string.Join(", ", ps)})\n{{\n{body}\n}}\n");
+        var args = new List<string> { s, dict.CsName };
+        args.AddRange(captured.Select(l => l.CsName));
+        return new MExprStmt { E = new MCode($"{helper}({string.Join(", ", args)})") };
     }
 
     static void Collect(List<Stmt> body, LocalSym w, List<NameExpr> into)

@@ -92,5 +92,6 @@ public sealed class BeginStmt : Stmt
 
 public sealed class ReturnStmt : Stmt { public Expr? Value; }
 public sealed class BreakStmt : Stmt { }
+public sealed class RetryStmt : Stmt { }
 public sealed class NextStmt : Stmt { public Expr? Value; }
 public sealed class RaiseStmt : Stmt { public Expr Value = null!; }
