@@ -66,6 +66,7 @@ public sealed class LibDecl : Item
 
 public sealed class FunDecl : Node
 {
+    public List<string> Attrs = new();   // @[Fast]: no GC transition (short, non-blocking, no callbacks)
     public string Name = "";
     public string Entry = "";
     public List<Param> Params = new();

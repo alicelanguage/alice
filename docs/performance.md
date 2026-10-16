@@ -99,3 +99,18 @@ copied back); larger inputs use the generic worker; the C# wrapper uses the mana
 twice (so copies never change semantics). With bodies packed as one array (x, y, z, vx, vy, vz, mass per body),
 `benchmarks/alice/nbody_native.al` runs at **31.8-32.9 ms vs 33.4-34.5 ms for clang C** in the same session
 (identical checksum): C speed. Test: `NativeSpecializationTests`.
+
+### Native call overhead
+
+Measured (i5-1235U, trivial C `int add1(int)`): DllImport 2.36 ns/call, function pointer 2.28, either with
+`SuppressGCTransition` ~1.9, managed 0.28. What Alice does:
+
+| Case | Emitted |
+|---|---|
+| `@[Native]` straight-line function (no loops, no native calls) | `delegate* unmanaged[SuppressGCTransition]` (bounded, leaf, no callbacks) |
+| `@[Native]` with loops | normal transition (a long call must not stall GC); `@[Native(fast)]` opts in |
+| `lib` `fun` with `@[Fast]` | `[SuppressGCTransition]` |
+| `Bool` in `lib` `fun` | `MarshalAs(U1)`: 1-byte C `bool`, no 4-byte BOOL conversion |
+| array parameters | pinned with `fixed` (no copy), pointer + length |
+
+The biggest lever stays batching: one call over an array (`@[Native] def f(xs : Array(Float64))`) instead of one call per element.

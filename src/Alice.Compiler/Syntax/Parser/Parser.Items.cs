@@ -356,9 +356,10 @@ public sealed partial class Parser
         {
             SkipNl();
             if (IsKw("end")) break;
+            while (IsOp("@[")) { Attr(); SkipNl(); }
             Token ft = Cur;
             ExpectKw("fun");
-            var f = At(new FunDecl { Name = Next().Text }, ft);
+            var f = At(new FunDecl { Name = Next().Text, Attrs = TakeAttrs() }, ft);
             f.Entry = f.Name;
             if (IsOp("=")) { Next(); f.Entry = Next().Text; }
             if (IsOp("("))

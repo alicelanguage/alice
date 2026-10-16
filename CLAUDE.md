@@ -35,7 +35,7 @@ dotnet run --project src/Alice.Cli -- emit file.al
 - `alice.toml` is the project source of truth; generated `.alproj` lives in `.alice/` (gitignored). No `sln` command.
 - Null-safety, `val` reassignment, data races in concurrent contexts (AL0202, ADR 0008) are compile errors.
 - Race checks and the purity gate decide parallelization: never parallelize code not proven pure.
-- Compiler and runtime are pure C#; no native code.
+- Compiler and runtime are pure C#. Native code only where the user opts in: `@[Native]` functions (C via clang, managed fallback) and `lib`/`fun` imports.
 - TDD: failing test first.
 - Version stays `0.10.x`-`0.19.x`.
 - Never touch `archicture/user/`.

@@ -109,3 +109,24 @@ public class NativeSpecializationTests
         Assert.Equal(new[] { 3.0, 6.0, 9.0 }, same);
     }
 }
+
+public class NativeCallOverheadTests
+{
+    [Fact]
+    public void Leaf_native_functions_skip_the_gc_transition_loops_do_not()
+    {
+        var cs = AliceCompiler.Transpile("@[Native]\ndef hyp(a : Float64, b : Float64) : Float64\n  Math.Sqrt(a * a + b * b)\nend\n@[Native]\ndef total(xs : Array(Float64)) : Float64\n  s = 0.0\n  for i in 0...xs.size\n    s += xs[i]\n  end\n  s\nend\n@[Native(fast)]\ndef total2(xs : Array(Float64)) : Float64\n  s = 0.0\n  for i in 0...xs.size\n    s += xs[i]\n  end\n  s\nend\n");
+        Assert.Contains("delegate* unmanaged[SuppressGCTransition]<double, double, double> __np_hyp", cs);
+        Assert.Contains("delegate* unmanaged<double*, int, double> __np_total ", cs);
+        Assert.Contains("delegate* unmanaged[SuppressGCTransition]<double*, int, double> __np_total2", cs);
+    }
+
+    [Fact]
+    public void Lib_funs_fast_attribute_and_one_byte_bools()
+    {
+        var cs = AliceCompiler.Transpile("lib LibX\n  @[Fast]\n  fun add1(x : Int32) : Int32\n  fun flag(b : Bool) : Bool\nend\n");
+        Assert.Contains("[global::System.Runtime.InteropServices.SuppressGCTransition]", cs);
+        Assert.Matches(@"MarshalAs\(global::System\.Runtime\.InteropServices\.UnmanagedType\.U1\)\]\s*public static extern bool flag\(\[global::System\.Runtime\.InteropServices\.MarshalAs\(global::System\.Runtime\.InteropServices\.UnmanagedType\.U1\)\] bool b\)", cs);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(cs, "SuppressGCTransition"));
+    }
+}

@@ -38,7 +38,25 @@ public sealed class CEmitter
         _ => null,
     };
 
-    public static bool IsNative(MethodDecl d) => d.Attrs.Contains("Native");
+    public static bool IsNative(MethodDecl d) => d.Attrs.Any(a => a == "Native" || a.StartsWith("Native("));
+
+    /// <summary>
+    /// Safe to call without a GC transition: straight-line code (no loops, no calls to other native functions),
+    /// so it is short and never blocks or calls back. `@[Native(fast)]` asserts it for loop functions.
+    /// </summary>
+    public static bool SkipsGcTransition(MethodDecl d) =>
+        d.Attrs.Contains("Native(fast)") || !AstWalk_HasLoopOrNativeCall(d);
+
+    static bool AstWalk_HasLoopOrNativeCall(MethodDecl d)
+    {
+        bool found = false;
+        AstWalk.Each(d.Body, n =>
+        {
+            if (n is WhileStmt or ForStmt) found = true;
+            if (n is CallExpr { Sym: MethodSym { Decl: { } md } } && IsNative(md)) found = true;
+        });
+        return found;
+    }
 
     CompileException Unsupported(Node n, string what) => new($"{file}:{n.Line}:{Math.Max(1, n.Col)}: @[Native] {current.Name}: {what} is not supported in native code (use plain Alice for it)");
 

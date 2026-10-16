@@ -120,7 +120,7 @@ public sealed class Emitter
         var sb = new StringBuilder();
         foreach (var a in attrs)
         {
-            if (a is "Stack" or "Open" or "SoA" or "StrictMath" or "Native" || a.StartsWith("__enumerable:")) continue;
+            if (a is "Stack" or "Open" or "SoA" or "StrictMath" or "Native" || a.StartsWith("Native(") || a.StartsWith("__enumerable:")) continue;
             if (a == "Inline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             else if (a == "NoInline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]\n");
             else if (a == "Hot") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n");
@@ -261,11 +261,16 @@ public sealed class Emitter
     {
         var s = (TypeSym)l.Sym!;
         var sb = new StringBuilder();
+        // Bool is a 1-byte C bool (not the 4-byte Win32 BOOL default); @[Fast] drops the GC transition (~20% per call)
+        const string U1 = "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.U1)]";
         foreach (var f in l.Funs)
         {
             var m = s.Methods[f.Name][0];
-            string ps = string.Join(", ", m.Params.Select(p => p.Type.Cs + " " + p.CsName));
-            sb.Append($"[global::System.Runtime.InteropServices.DllImport(\"{l.LibName}\", EntryPoint = \"{f.Entry}\")]\npublic static extern {m.Ret.Cs} {m.CsName}({ps});\n");
+            string ps = string.Join(", ", m.Params.Select(p => (p.Type.Cs == "bool" ? U1 + " " : "") + p.Type.Cs + " " + p.CsName));
+            sb.Append($"[global::System.Runtime.InteropServices.DllImport(\"{l.LibName}\", EntryPoint = \"{f.Entry}\")]\n");
+            if (f.Attrs.Contains("Fast")) sb.Append("[global::System.Runtime.InteropServices.SuppressGCTransition]\n");
+            if (m.Ret.Cs == "bool") sb.Append("[return: global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.U1)]\n");
+            sb.Append($"public static extern {m.Ret.Cs} {m.CsName}({ps});\n");
         }
         return $"public static unsafe partial class {l.Name}\n{{\n{sb}}}\n";
     }
@@ -315,7 +320,7 @@ public sealed class Emitter
         Native.Add(d, m, file);
         var cps = Native.Params(m, d);
         string ret = Lowerer.TypeCs(m.Ret);
-        string fpType = "delegate* unmanaged<" + string.Join(", ", cps.SelectMany(p => p.Array ? new[] { p.Type.Elem!.Cs + "*", "int" } : new[] { p.Type.Cs }).Append(ret)) + ">";
+        string fpType = (CEmitter.SkipsGcTransition(d) ? "delegate* unmanaged[SuppressGCTransition]<" : "delegate* unmanaged<") + string.Join(", ", cps.SelectMany(p => p.Array ? new[] { p.Type.Elem!.Cs + "*", "int" } : new[] { p.Type.Cs }).Append(ret)) + ">";
         string fp = "__np_" + m.CsName.TrimStart('@');
         string cs = m.CsName;
         m.CsName = "__managed_" + cs.TrimStart('@');
