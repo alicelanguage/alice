@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: Skip the full test stage (package smoke checks still run)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,12 +42,18 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
 
   test:
+    if: >-
+      ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_tests) &&
+          !(github.event_name == 'push' && vars.RELEASE_SKIP_TESTS == 'true') }}
     needs: version
     uses: ./.github/workflows/ci.yml
 
   package:
     name: Package (${{ matrix.rid }})
     needs: [version, test]
+    if: >-
+      ${{ !cancelled() && needs.version.result == 'success' &&
+          (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -79,7 +90,10 @@ jobs:
 
   release:
     name: Publish GitHub release
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: >-
+      ${{ !cancelled() && github.event_name == 'push' && github.ref_type == 'tag' &&
+          needs.version.result == 'success' && needs.package.result == 'success' &&
+          (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     needs: [version, test, package]
     runs-on: ubuntu-24.04
     timeout-minutes: 5

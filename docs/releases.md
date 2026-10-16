@@ -34,7 +34,14 @@ Get-Content .\alice-0.10.0-win-x64.zip.sha256
 
 [`CI`](../.github/workflows/ci.yml) runs on pull requests, pushes to `main`, and manual dispatch. Each platform restores, builds in Release mode and runs the entire xUnit suite, including `AllocationTests` and sample integration tests. The examples verifier checks console output and live ASP.NET HTTP routes. TRX results are kept for 14 days, including failed runs when results exist. No test categories are excluded.
 
-[`Release`](../.github/workflows/release.yml) validates the version, calls the same CI workflow, then packages all four targets. Each archive is extracted and its CLI tested outside the checkout: version, a loose Alice program, `alice new`, project build, project run and `alice test`. Required compiler/runtime assemblies and SDK imports are checked explicitly. A GitHub release is created only after every test and package job passes.
+[`Release`](../.github/workflows/release.yml) validates the version, calls the same CI workflow by default, then packages all four targets. Each archive is extracted and its CLI tested outside the checkout: version, a loose Alice program, `alice new`, project build, project run and `alice test`. Required compiler/runtime assemblies and SDK imports are checked explicitly. A GitHub release is created only after version validation, successful or explicitly skipped tests, and successful package jobs.
+
+To avoid repeating CI for an already tested commit:
+
+- **Manual runs:** select **Release → Run workflow → Skip the full test stage** (`skip_tests`). The checkbox defaults to off. You can also run `gh workflow run release.yml --ref main -f skip_tests=true`.
+- **Tag pushes:** set the repository Actions variable **`RELEASE_SKIP_TESTS`** to **`true`** in **Settings → Secrets and variables → Actions → Variables** before pushing the release tag. This applies to tag-triggered releases until you remove the variable or set it to `false`.
+
+These options skip the full CI test stage inside Release. Version validation and all package smoke checks still run. Failed or canceled tests still block packaging and publishing. The standalone CI workflow is unchanged.
 
 Actions are pinned to commit SHAs. The SDK follows the latest stable `10.0.x` patch; this is a compatibility gate, not a bit-for-bit reproducible build guarantee. Hosted runners and NuGet access are required. Integration tests restore the sample workspace, including MonoGame, without launching graphical games.
 
@@ -49,7 +56,7 @@ Actions are pinned to commit SHAs. The SDK follows the latest stable `10.0.x` pa
    git push origin v0.10.0
    ```
 
-4. The tag run repeats the gates and publishes the four archives plus four `.sha256` files with generated release notes. Review the release page and add highlights from the changelog.
+4. The tag run repeats the gates (unless `RELEASE_SKIP_TESTS=true` skips the full test stage) and publishes the four archives plus four `.sha256` files with generated release notes. Review the release page and add highlights from the changelog.
 
 The tag must exactly match `v` plus the source version. Malformed or mismatched tags fail before testing or publishing. Only the final release job gets `contents: write`; pull requests and manual builds cannot publish. GitHub Actions must be allowed to write repository contents for that job. No signing secrets or third-party release service are required.
 
