@@ -79,9 +79,39 @@ public sealed class ClrTypes
         return null;
     }
 
+    // Alice types used as CLR generic arguments (List(Entity)) get an empty stand-in CLR type, so the closed
+    // generic exists and reflection lookups (Count, indexer, Add, IEnumerable<T>) work; FromClr maps it back.
+    static readonly System.Reflection.Emit.ModuleBuilder ProxyModule =
+        System.Reflection.Emit.AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("AliceTypeProxies"), System.Reflection.Emit.AssemblyBuilderAccess.RunAndCollect).DefineDynamicModule("proxies");
+    static readonly Dictionary<Type, AType> ProxyToAlice = new();
+    static readonly Dictionary<string, Type> AliceToProxy = new();
+    static int proxyN;
+
+    /// <summary>The stand-in CLR type for an Alice-declared type (null for types that can't be proxied).</summary>
+    public static Type? Proxy(AType a)
+    {
+        if (a.Clr != null) return a.Clr;
+        if (a.Sym == null || a.Kind is not ("class" or "struct")) return null;
+        lock (ProxyToAlice)
+        {
+            if (AliceToProxy.TryGetValue(a.Cs, out var p)) return p;
+            var tb = a.Kind == "struct"
+                ? ProxyModule.DefineType("AliceProxy" + proxyN++, TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout, typeof(ValueType))
+                : ProxyModule.DefineType("AliceProxy" + proxyN++, TypeAttributes.Public | TypeAttributes.Class);
+            p = tb.CreateType();
+            AliceToProxy[a.Cs] = p;
+            ProxyToAlice[p] = a;
+            return p;
+        }
+    }
+
+    static bool HasProxy(Type t) =>
+        ProxyToAlice.ContainsKey(t) || (t.HasElementType && HasProxy(t.GetElementType()!)) || (t.IsGenericType && t.GetGenericArguments().Any(HasProxy));
+
     public static AType FromClr(Type t)
     {
         if (t == typeof(void)) return AType.Void;
+        lock (ProxyToAlice) if (ProxyToAlice.TryGetValue(t, out var alice)) return alice;
         foreach (var pr in AType.Prims) if (pr.Clr == t) return pr;
         if (t.IsGenericParameter || t.IsByRef || t.IsPointer && t.GetElementType() is { IsGenericParameter: true }) return AType.Unknown;
         if (t.IsArray && t.GetArrayRank() == 1) return AType.Array(FromClr(t.GetElementType()!));
@@ -100,6 +130,7 @@ public sealed class ClrTypes
     static string CsName(Type t)
     {
         if (t.IsGenericParameter) return t.Name;
+        lock (ProxyToAlice) if (ProxyToAlice.TryGetValue(t, out var alice)) return alice.Cs;
         foreach (var pr in AType.Prims) if (pr.Clr == t) return pr.Cs;
         if (t.IsArray) return CsName(t.GetElementType()!) + "[]";
         string name = t.Name;
@@ -115,8 +146,9 @@ public sealed class ClrTypes
     public static Type? Close(Type open, List<AType> args)
     {
         if (!open.IsGenericTypeDefinition) return open;
-        if (args.Any(a => a.Clr == null)) return null;
-        try { return open.MakeGenericType(args.Select(a => a.Clr!).ToArray()); }
+        var clrArgs = args.Select(a => a.Clr ?? Proxy(a)).ToArray();
+        if (clrArgs.Any(a => a == null)) return null;
+        try { return open.MakeGenericType(clrArgs!); }
         catch (ArgumentException) { return null; }
     }
 

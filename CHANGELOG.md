@@ -39,3 +39,4 @@
 - `alice test`: RSpec-style specs, matchers, hooks, focus/skip/pending, xUnit `@[Test]`/`@[Cases]`, `file:LINE`/`-e`/`--seed`/`--fail-fast`/`--profile`, doc/progress/JUnit output; app top-level code is not run in test builds.
 - Block bodies carry `#line` (stack traces and caller lines point at Alice source); block values passed to `Action` parameters are discarded; Prelude zero-arg functions callable without parens; `include` is no longer reserved outside type bodies.
 - Block iteration over generic collections of Alice types (`List(Entity)`) now lowers to loops instead of closure calls; `benchmarks/alice/celeste_update.al` (headless Celeste update benchmark).
+- CLR generics over Alice types (`List(Entity)`, `Dictionary(String, Entity)`) are fully typed via stand-in proxy types: members, indexers and element types resolve (was untyped, e.g. `Count()` via LINQ). Celeste update benchmark 3.5 → ~1.9 ms.
