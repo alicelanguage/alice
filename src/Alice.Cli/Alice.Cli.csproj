@@ -4,6 +4,10 @@
     <ProjectReference Include="..\Alice.Compiler\Alice.Compiler.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>alice</AssemblyName>
@@ -12,4 +16,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Include="../Alice.Sdk/Alice.props;../Alice.Sdk/Alice.targets" Link="sdk/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

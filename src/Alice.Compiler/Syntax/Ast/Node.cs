@@ -3,6 +3,7 @@ namespace Alice.Compiler.Syntax;
 public abstract class Node
 {
     public int Line;
+    public int Col;
 }
 
 /// <summary>Alice-spelled type reference; resolved to an AType by the binder.</summary>

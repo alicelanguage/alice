@@ -1,0 +1,10 @@
+<Project>
+  <!-- Samples use the in-repo compiler/runtime. Installed projects (alice new) import the SDK next to alice.dll instead. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AliceCliProject>$(MSBuildThisFileDirectory)../src/Alice.Cli/Alice.Cli.csproj</AliceCliProject>
+    <AliceRuntimeProject>$(MSBuildThisFileDirectory)../src/Alice.Runtime/Alice.Runtime.csproj</AliceRuntimeProject>
+  </PropertyGroup>
+  <Import Project="../src/Alice.Sdk/Alice.props" Condition="'$(MSBuildProjectExtension)' == '.alproj'" />
+</Project>

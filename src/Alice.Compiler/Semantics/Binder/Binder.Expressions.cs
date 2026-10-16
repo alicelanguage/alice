@@ -195,6 +195,24 @@ public sealed partial class Binder
     AType BindConst(ConstExpr ce)
     {
         string name = ce.Ref.Name;
+        // C# "Color Color" rule: an inherited instance member wins over a type of the same name
+        var head = name.Split('.')[0];
+        if (ce.Ref.Args.Count == 0 && curMethod is { IsStatic: false } && BaseClr(curType) is Type bt
+            && ClrTypes.Lookup(bt, head, 0, false, false) is { Kind: not "method" } mem)
+        {
+            UseThis();
+            var path = new ConstPath { Owner = mem.Type, OwnerText = head };
+            AType cur = mem.Type;
+            foreach (var seg in name.Split('.').Skip(1))
+            {
+                bool call;
+                (cur, call) = MemberType(cur, seg, false);
+                path.Members.Add((seg, call));
+            }
+            ce.Res = "path";
+            ce.Sym = path;
+            return cur;
+        }
         var f = curType.FindField(name) ?? Program.FindField(name);
         if (f != null && ce.Ref.Args.Count == 0)
         {

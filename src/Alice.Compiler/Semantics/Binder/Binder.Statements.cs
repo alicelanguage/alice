@@ -102,7 +102,7 @@ public sealed partial class Binder
                 n.Res = "unknown";
                 return;
             }
-            CheckWrite(a, l);
+            CheckWrite(n, l);
             n.Sym = l;
             n.Res = "local";
             n.Type = l.Type;

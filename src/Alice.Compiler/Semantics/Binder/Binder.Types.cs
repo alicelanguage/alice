@@ -71,6 +71,18 @@ public sealed partial class Binder
         return new AType("class", args.Count > 0 ? cs + "<" + string.Join(", ", args.Select(a => a.Cs)) + ">" : cs) { Args = args };
     }
 
+    /// <summary>Nearest shared base class (Alice or .NET), e.g. two sum-type variants -> their enum.</summary>
+    static AType? CommonBase(AType a, AType b)
+    {
+        for (var x = a.Sym; x != null; x = x.BaseClass ?? x.Parent)
+            for (var y = b.Sym; y != null; y = y.BaseClass ?? y.Parent)
+                if (x == y) return x.Type;
+        if (a.Clr == null || b.Clr == null || a.Clr.IsValueType || b.Clr.IsValueType) return null;
+        for (var x = a.Clr; x != null && x != typeof(object); x = x.BaseType)
+            if (x.IsAssignableFrom(b.Clr)) return ClrTypes.FromClr(x);
+        return null;
+    }
+
     static string GenericBase(Type open)
     {
         string n = open.FullName ?? open.Name;
@@ -124,7 +136,7 @@ public sealed partial class Binder
             if (pr != null && pr == pt && pr.Kind == "adt") { r = pr.Type; continue; }
             if (r.IsNumeric && t.IsNumeric) { r = r.NumericRank >= t.NumericRank ? r : t; continue; }
             if (r.Kind == "dynamic" || t.Kind == "dynamic") { r = AType.Dynamic; continue; }
-            r = AType.Object;
+            r = CommonBase(r, t) ?? AType.Object;
         }
         if (r == null) return sawNull ? AType.Null : AType.Unknown;
         return sawNull ? r.AsNullable() : r;

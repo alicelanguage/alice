@@ -1,0 +1,34 @@
+<Project>
+  <!--
+    Compiles *.al sources inside any SDK-style project (.alproj or .csproj).
+    Two layouts:
+      repo:      AliceCliProject + AliceRuntimeProject point at the source projects
+      installed: AliceHome points at the folder holding alice.dll and Alice.Runtime.dll
+  -->
+  <PropertyGroup>
+    <AliceHome Condition="'$(AliceHome)' == ''">$(MSBuildThisFileDirectory)../</AliceHome>
+    <AliceCompiler Condition="'$(AliceCompiler)' == '' and '$(AliceCliProject)' != ''">$([System.IO.Path]::GetDirectoryName($(AliceCliProject)))/bin/$(Configuration)/net10.0/alice.dll</AliceCompiler>
+    <AliceCompiler Condition="'$(AliceCompiler)' == ''">$(AliceHome)alice.dll</AliceCompiler>
+    <AliceGenDir>$(IntermediateOutputPath)alice/</AliceGenDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AliceSource Include="**/*.al" Exclude="bin/**;obj/**;$(DefaultItemExcludes)" />
+    <ProjectReference Include="$(AliceRuntimeProject)" Condition="'$(AliceRuntimeProject)' != ''" />
+    <Reference Include="Alice.Runtime" Condition="'$(AliceRuntimeProject)' == ''">
+      <HintPath>$(AliceHome)Alice.Runtime.dll</HintPath>
+    </Reference>
+    <ProjectReference Include="$(AliceCliProject)" Condition="'$(AliceCliProject)' != ''"
+                      ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+
+  <Target Name="AliceGenerate" BeforeTargets="CoreCompile" DependsOnTargets="ResolveReferences" Condition="'@(AliceSource)' != ''">
+    <MakeDir Directories="$(AliceGenDir)" />
+    <WriteLinesToFile File="$(AliceGenDir)refs.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
+    <ItemGroup>
+      <Compile Include="$(AliceGenDir)*.g.cs" />
+      <FileWrites Include="$(AliceGenDir)*.g.cs" />
+    </ItemGroup>
+  </Target>
+</Project>

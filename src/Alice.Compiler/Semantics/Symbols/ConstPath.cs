@@ -4,5 +4,6 @@ namespace Alice.Compiler.Semantics;
 public sealed class ConstPath
 {
     public AType Owner = AType.Unknown;
+    public string? OwnerText;          // instance member start (`GraphicsDevice` property), emitted as-is
     public List<(string Name, bool IsCall)> Members = new();
 }

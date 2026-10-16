@@ -76,6 +76,7 @@ public sealed partial class Parser
     T At<T>(T node, Token tok) where T : Node
     {
         node.Line = tok.Line;
+        node.Col = tok.Col;
         return node;
     }
 

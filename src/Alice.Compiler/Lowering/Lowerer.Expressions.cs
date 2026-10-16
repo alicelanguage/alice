@@ -119,7 +119,7 @@ public sealed partial class Lowerer
             return new MCode(t.Sym is { Kind: "variant", FieldOrder.Count: 0 } ? t.Cs + ".Value" : t.Cs);
         if (ce.Res == "path" && ce.Sym is ConstPath cp)
         {
-            MExpr cur = new MCode(cp.Owner.Cs);
+            MExpr cur = new MCode(cp.OwnerText ?? cp.Owner.Cs);
             foreach (var (name, call) in cp.Members)
                 cur = call ? new MCall { Target = cur, Name = name } : new MMember { Target = cur, Name = name };
             return cur;

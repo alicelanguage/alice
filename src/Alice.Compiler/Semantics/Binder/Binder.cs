@@ -50,7 +50,7 @@ public sealed partial class Binder
         BindAll();
     }
 
-    CompileException Err(Node n, string msg) => new($"{file}:{n.Line}: {msg}");
+    CompileException Err(Node n, string msg) => new($"{file}:{n.Line}:{Math.Max(1, n.Col)}: {msg}");
 
     public static string Mangle(string n)
     {

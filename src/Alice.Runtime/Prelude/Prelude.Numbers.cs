@@ -43,6 +43,10 @@ public static partial class Prelude
     public static T succ<T>(this T n) where T : INumber<T> => n + T.One;
     public static T pred<T>(this T n) where T : INumber<T> => n - T.One;
     public static int to_i(this double d) => (int)d;
+    public static int to_i(this float d) => (int)d;
+    public static double to_f(this float d) => d;
+    public static float to_f32(this float d) => d;
+    public static float to_f32(this long d) => d;
     public static int to_i(this long d) => (int)d;
     public static int to_i(this int d) => d;
     public static int to_i(this char c) => c;

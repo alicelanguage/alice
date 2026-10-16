@@ -1,6 +1,5 @@
 namespace Alice.Compiler;
 
-public sealed class CompileException(string message) : Exception(message);
 
 public sealed class Token
 {
