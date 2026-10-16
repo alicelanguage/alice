@@ -10,6 +10,12 @@ public sealed partial class Lowerer
     {
         switch (s)
         {
+            case ExprStmt { Expr: CallExpr { Res: "inline", Sym: StmtExpr inl } }:
+                Into(o, inl.Stmt, tail, target);
+                break;
+            case BeginStmt { Rescues.Count: 0, Ensure: null } plain:
+                o.Add(new MBlock { Body = Stmts(plain.Body, tail, target) });
+                break;
             case ExprStmt es:
                 {
                     // a declared/inferred non-void result means the tail IS the value, even when its static type is unknown
@@ -28,6 +34,9 @@ public sealed partial class Lowerer
                 break;
             case Assign a:
                 AssignStmt(o, a);
+                // Ruby: an assignment's value is the assigned value (`def cache; @@c ||= List.new; end`)
+                if (a.Declares == null && a.Target is IvarExpr && tail == Tail.Return && Method is { RetDeclared: true, Ret: { IsVoid: false, IsKnown: true } })
+                    o.Add(new MReturn { Value = Expr(a.Target) });
                 break;
             case MultiAssign ma:
                 {

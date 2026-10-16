@@ -205,8 +205,35 @@ public sealed partial class Binder
                     break;
             }
         }
+        DeclareClassVars(d, s);
         typeParams = new List<string>();
     }
+
+    /// <summary>Ruby `@@name`: a static field of the class, typed from its first assignment.</summary>
+    void DeclareClassVars(TypeDecl d, TypeSym s)
+    {
+        foreach (var m in d.Members.OfType<MethodDecl>().ToList())
+            AstWalk.Each(m.Body, n =>
+            {
+                if (n is not Assign { Target: IvarExpr { Name: ['@', ..] name } } a || s.Fields.ContainsKey(name)) return;
+                var t = SyntacticType(a.Value, s, _ => null) ?? throw Err(a, $"cannot infer the type of @{name}; declare it: @{name} : T = value");
+                var fs = new FieldSym { Name = name, CsName = "__cv_" + name[1..], Type = t, Kind = "field", IsStatic = true, Owner = s };
+                s.Fields[name] = fs;
+                d.Members.Add(new FieldDecl { Name = name, Sym = fs, Line = a.Line });
+            });
+    }
+
+    /// <summary>Declaration-time type of simple expressions (self, @ivars, T.new, literals); null when unknown.</summary>
+    AType? SyntacticType(Expr e, TypeSym owner, Func<string, AType?> name) => e switch
+    {
+        SelfExpr => owner.Type,
+        IvarExpr iv when owner.FindField(iv.Name) is { } f => f.Type,
+        NameExpr n => name(n.Name),
+        NewExpr ne => ResolveType(ne.TypeRef),
+        CallExpr { Name: "new", Recv: ConstExpr ce } => ResolveType(ce.Ref),
+        _ when LiteralType(e) is { IsKnown: true } lt => lt,
+        _ => null,
+    };
 
     void DeclareEnum(EnumDecl e)
     {
@@ -319,6 +346,11 @@ public sealed partial class Binder
             if (p.Auto && owner.FindField(p.Name) == null)
                 owner.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ps.Type, Kind = "auto", Owner = owner };
         }
+        if (!m.Params.Any(p => p.Block) && ImplicitBlock(d, owner) is { } bt)
+        {
+            m.Params.Add(new ParamSym { Name = "__block", CsName = "__block", Block = true, Type = bt });
+            d.Params.Add(new Param { Name = "__block", Block = true, Line = d.Line });
+        }
         if (d.Ret != null)
         {
             m.Ret = ResolveType(d.Ret);
@@ -329,6 +361,28 @@ public sealed partial class Binder
         d.Sym = m;
         owner.AddMethod(m);
         typeParams = saved;
+    }
+
+    /// <summary>
+    /// Ruby `yield` without `&block`: an implicit block parameter typed from the yield arguments
+    /// (self, @ivars, `x = T.new` locals, literals); its result is the yield expression's value.
+    /// </summary>
+    AType? ImplicitBlock(MethodDecl d, TypeSym owner)
+    {
+        var yields = new List<YieldExpr>();
+        var locals = new Dictionary<string, Expr>();
+        AstWalk.Each(d.Body, n =>
+        {
+            if (n is YieldExpr y) yields.Add(y);
+            if (n is Assign { Target: NameExpr ln, Op: "=" } la) locals.TryAdd(ln.Name, la.Value);
+        });
+        if (yields.Count == 0) return null;
+        AType ArgType(Expr e) => SyntacticType(e, owner, n =>
+                d.Params.FirstOrDefault(p => p.Name == n) is { Type: { } pt } ? ResolveType(pt)
+                : locals.TryGetValue(n, out var v) ? ArgType(v) : null)
+            ?? throw Err(e, "cannot infer this yield argument's type; declare the block: def name(&block : A -> R)");
+        var ps = yields[0].Args.Select(a => ArgType(a.Value!)).ToList();
+        return Func(ps, AType.Void);
     }
 
     static AType LiteralType(Expr? e) => e switch

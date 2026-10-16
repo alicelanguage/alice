@@ -16,6 +16,8 @@ public sealed partial class Lowerer
                 return new MInterp { Chunks = ie.Chunks, Holes = ie.Holes.Select(Hole).ToList() };
             case NameExpr n:
                 return Name(n);
+            case IvarExpr { Sym: FieldSym { IsStatic: true } cv }:
+                return new MMember { Target = new MCode(cv.Owner.Type.Cs), Name = cv.CsName };
             case IvarExpr iv:
                 return new MMember { Target = new MCode("this"), Name = Binder.Mangle(iv.Name) };
             case SelfExpr:

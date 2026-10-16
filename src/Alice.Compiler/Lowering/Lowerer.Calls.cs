@@ -10,6 +10,9 @@ public sealed partial class Lowerer
     {
         if (c.Res == "fused") return new MCode((string)c.Sym!);
         if (c.Res == "asnew") return Expr((NewExpr)c.Sym!);
+        if (c.Res == "inline") return Expr((StmtExpr)c.Sym!);
+        if (c.Res == "defmethod")
+            return new MCall { Target = new MCode("global::Alice.Runtime.Prelude"), Name = "define_method", Args = { new MCode($"typeof({Type.Type.Cs})"), Expr(c.Args[0].Value!), new MCast { TypeCs = "global::System.Delegate", E = Expr(c.Block!) } } };
         if (c.Res == "missing")
         {
             var argv = new MNewArray { ElemCs = "object", Items = Args(c.Args).Select(a => (MExpr)new MCast { TypeCs = "object", E = a }).ToList() };

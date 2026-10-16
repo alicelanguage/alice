@@ -16,12 +16,51 @@ public sealed partial class Binder
             return BindExpr(ne);
         }
         AType recv = BindExpr(c.Recv);
+        if (c.Name is "instance_eval" or "instance_exec" && c.Block != null && recv.Sym is TypeSym its) return BindInstanceEval(c, its);
         bool conc = IsConcurrentCall(c, recv);
         if (conc) MarkConcurrentArgs(c.Args);
         bool savedRef = refAllowed;
         refAllowed = c.Recv is ConstExpr { Sym: AType { Clr: Type ic } } && (ic == typeof(Interlocked) || ic == typeof(Volatile) && false);
         try { return BindCallCore(c, recv, conc); }
         finally { refAllowed = savedRef; }
+    }
+
+    int ievalN;
+
+    /// <summary>
+    /// `obj.instance_eval { ... }` / `obj.instance_exec(a) { |x| ... }`: the block runs once with obj as the
+    /// implicit receiver — inlined as `begin __self = obj; x = a; body end` with receiverless calls on obj's
+    /// methods redirected to __self (static resolution; no runtime self swap).
+    /// </summary>
+    AType BindInstanceEval(CallExpr c, TypeSym ts)
+    {
+        if (c.Sym is StmtExpr done) return BindExpr(done);   // re-bind passes reuse the rewrite
+        var blk = c.Block!;
+        string self = "__self" + ievalN++;
+        var shadow = blk.Params.Select(p => p.Name).ToHashSet();
+        bool Owns(string name) => ts.FindMethod(name, 0) != null || ts.FindField(name) != null || ts.FindMethod(name + "=", 1) != null;
+        AstRewrite.Each(blk.Body, n => n switch
+        {
+            CallExpr { Recv: null } call when !shadow.Contains(call.Name) && Owns(call.Name) && FindLocal(call.Name) == null =>
+                Redirect(call),
+            NameExpr ne when !shadow.Contains(ne.Name) && FindLocal(ne.Name) == null && Owns(ne.Name) =>
+                new CallExpr { Recv = new NameExpr { Name = self, Line = ne.Line, Col = ne.Col }, Name = ne.Name, Line = ne.Line, Col = ne.Col },
+            _ => null,
+        });
+        CallExpr Redirect(CallExpr call)
+        {
+            AstRewrite.Each(call.Args.Select(a => (Stmt)new ExprStmt { Expr = a.Value! }).ToList(), _ => null);
+            call.Recv = new NameExpr { Name = self, Line = call.Line, Col = call.Col };
+            return call;
+        }
+        var body = new List<Stmt> { new Assign { Target = new NameExpr { Name = self, Line = c.Line }, Value = c.Recv!, Line = c.Line } };
+        for (int i = 0; i < blk.Params.Count; i++)
+            body.Add(new Assign { Target = new NameExpr { Name = blk.Params[i].Name, Line = c.Line }, Value = i == 0 && c.Name == "instance_eval" ? c.Recv! : c.Args[i].Value!, Line = c.Line });
+        body.AddRange(blk.Body);
+        var inline = new StmtExpr { Stmt = new BeginStmt { Body = body, Line = c.Line }, Line = c.Line };
+        c.Res = "inline";
+        c.Sym = inline;
+        return BindExpr(inline);
     }
 
     AType BindCallCore(CallExpr c, AType recv, bool conc)
@@ -234,6 +273,14 @@ public sealed partial class Binder
 
     AType BindSelfCall(CallExpr c)
     {
+        if (c.Name == "define_method" && c.Block != null && c.Args.Count == 1 && curType != Program)
+        {
+            // runtime define_method (e.g. in a class-body loop): registered per class, reached via send/respond_to?
+            BindArgs(c.Args);
+            BindLambda(c.Block, c.Block.Params.Select(_ => AType.Object).ToList());
+            c.Res = "defmethod";
+            return AType.Void;
+        }
         var argTypes = BindArgTypes(c.Args);
         var m = curType.FindMethod(c.Name, c.Args.Count) ?? Program.FindMethod(c.Name, c.Args.Count);
         if (m != null)

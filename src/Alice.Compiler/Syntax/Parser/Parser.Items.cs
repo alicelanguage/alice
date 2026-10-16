@@ -276,9 +276,26 @@ public sealed partial class Parser
             else if (IsConstDecl()) d.Members.Add(Const());
             else if (IsTypeStart()) d.Members.Add(TypeItem());
             else if (IsDefStart()) d.Members.Add(Def(d.Kind));
+            else if (d.Kind is "class" or "module" or "struct")
+            {
+                // Ruby: executable class body (macros like `field "name"`, loops calling define_method) —
+                // collected into a static __class_body run when the module loads, in declaration order
+                var cb = d.Members.OfType<MethodDecl>().FirstOrDefault(m => m.Name == "__class_body");
+                if (cb == null)
+                {
+                    cb = At(new MethodDecl { Name = "__class_body", IsStatic = true, Ret = new TypeRef { Name = "Nil" } }, tok);
+                    d.Members.Add(cb);
+                }
+                var saved = locals;
+                locals = cbLocals.TryGetValue(d, out var l) ? l : cbLocals[d] = new List<HashSet<string>> { new() };
+                cb.Body.Add(Statement());
+                locals = saved;
+            }
             else throw Err("unexpected token in type body");
         }
     }
+
+    readonly Dictionary<TypeDecl, List<HashSet<string>>> cbLocals = new();
 
     Expr FreshExpr()
     {

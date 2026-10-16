@@ -71,10 +71,12 @@ public sealed class Lexer
             else if (c == '@' && At(1) != '[')
             {
                 Adv();
+                bool cvar = pos < src.Length && src[pos] == '@';   // @@class_var -> ivar "@name" (a static field)
+                if (cvar) Adv();
                 int s = pos;
                 while (pos < src.Length && (char.IsLetterOrDigit(src[pos]) || src[pos] == '_')) Adv();
                 if (pos == s) throw Err("expected instance variable name after '@'");
-                Add("ivar", src.Substring(s, pos - s), l, cl);
+                Add("ivar", (cvar ? "@" : "") + src.Substring(s, pos - s), l, cl);
             }
             else if (c == '"') Str(l, cl);
             else if (c == '\'') Chr(l, cl);

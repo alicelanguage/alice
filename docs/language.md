@@ -469,3 +469,18 @@ Tests: `tests/Alice.Tests/Compiler/RubyMixinTests.cs`.
 | `def method_missing(name : String, args : Array(Object))` | calls to undefined methods on the class are routed to it at compile time |
 
 Tests: `tests/Alice.Tests/Compiler/RubyDynamicTests.cs`.
+
+## Ruby DSL support
+
+| Ruby | Alice | How it compiles |
+|---|---|---|
+| `def tag(n); yield; end` | same (no `&block` needed) | implicit block param typed from `yield` args |
+| `obj.instance_eval { name "x" }` | same | inlined; receiverless calls go to `obj` (static type must be known) |
+| `obj.instance_exec(4) { \|k\| v * k }` | same | same, block params bound to args |
+| `field "name"` in a class body | same | statements → static `__class_body`, run by a module initializer in declaration order |
+| `@@registry ||= []` | same | static field, type from first assignment |
+| `[...].each { \|r\| define_method("#{r}_path") { ... } }` | same | runtime registry; call via `send`/`public_send`, seen by `respond_to?` |
+| `method_missing(name, args)` | same | static routing for direct calls; `send` falls back to it |
+| `obj.Event += block` | same | adapted to the CLR delegate type; `-=` removes the same handler |
+
+Limits: runtime-defined methods are reachable only dynamically (`send`), not as static calls; `instance_eval` does not swap `self` for `@ivars`.

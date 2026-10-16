@@ -39,11 +39,29 @@ public static partial class Prelude
 
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Dynamic dispatch is opt-in Ruby semantics.")]
     public static bool respond_to_q(object? target, string name) =>
-        target != null && target.GetType().GetMember(name).Length > 0;
+        target != null && (target.GetType().GetMember(name).Length > 0 || DefinedMethod(target.GetType(), name) != null);
 
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, string), Delegate> Defined = new();
+
+    /// <summary>Runtime `define_method name { ... }`: callable through send / public_send, visible to respond_to?.</summary>
+    public static void define_method(Type owner, string name, Delegate body) => Defined[(owner, name)] = body;
+
+    static Delegate? DefinedMethod(Type t, string name)
+    {
+        for (var ty = t; ty != null; ty = ty.BaseType)
+            if (Defined.TryGetValue((ty, name), out var d)) return d;
+        return null;
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Dynamic dispatch is opt-in Ruby semantics.")]
     public static dynamic? send(object target, string name, params object?[] args)
     {
-        var m = Resolve(target.GetType(), name, args) ?? throw new MissingMethodException(target.GetType().Name, name);
-        return m.Invoke(target, args);
+        var m = Resolve(target.GetType(), name, args);
+        if (m != null) return m.Invoke(target, args);
+        if (DefinedMethod(target.GetType(), name) is { } dm) return dm.DynamicInvoke(args);
+        // Ruby: unknown messages go to method_missing(name, args) when the class defines it
+        var mm = target.GetType().GetMethod("method_missing", [typeof(string), typeof(object?[])]);
+        if (mm != null) return mm.Invoke(target, [name, args]);
+        throw new MissingMethodException(target.GetType().Name, name);
     }
 }

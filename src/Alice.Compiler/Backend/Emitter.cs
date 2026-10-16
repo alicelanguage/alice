@@ -29,6 +29,20 @@ public sealed class Emitter
         "#pragma warning disable CS0105, CS0162, CS0164, CS0168, CS0219, CS0618, CS0660, CS0661, CS8618, CS8632, CS1717, CS8981\n" +
         "using System;\nusing System.Collections.Generic;\nusing System.Linq;\nusing System.Text;\nusing System.IO;\nusing System.Threading;\nusing System.Threading.Tasks;\nusing Alice.Runtime;\nusing static Alice.Runtime.Prelude;\nusing static Program;\n";
 
+    int classBodyN;
+
+    /// <summary>Types with executable class bodies, in declaration order (nested and namespaced included).</summary>
+    static IEnumerable<TypeSym> ClassBodies(IEnumerable<Item> items)
+    {
+        foreach (var it in items)
+        {
+            if (it is NamespaceItem ns) foreach (var t in ClassBodies(ns.Items)) yield return t;
+            if (it is not TypeDecl { Sym: TypeSym ts } td) continue;
+            if (td.Members.Any(m => m is MethodDecl { Name: "__class_body" })) yield return ts;
+            foreach (var t in ClassBodies(td.Members)) yield return t;
+        }
+    }
+
     public string EmitFile(FileNode f)
     {
         file = f.Path;
@@ -43,6 +57,10 @@ public sealed class Emitter
         }
         var prog = new StringBuilder();
         Items(sb, prog, f.Items);
+        var bodies = ClassBodies(f.Items).ToList();
+        if (bodies.Count > 0)
+            prog.Append($"[global::System.Runtime.CompilerServices.ModuleInitializer]\ninternal static void __alice_class_bodies{classBodyN++}()\n{{\n")
+                .Append(string.Concat(bodies.Select(t => $"    {t.Type.Cs}.__class_body();\n"))).Append("}\n");
         if (!Native.IsEmpty && !nativeProbeEmitted)
         {
             prog.Append($"public static bool __alice_native_loaded() => global::Alice.Runtime.NativeLibs.IsLoaded(\"{NativeLib}\");\n");
