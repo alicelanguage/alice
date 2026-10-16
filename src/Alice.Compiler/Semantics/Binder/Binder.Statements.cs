@@ -185,6 +185,14 @@ public sealed partial class Binder
             if (!elem.IsKnown) elem = AType.Int;
             r.Type = elem;
         }
+        else if (f.Await)
+        {
+            var st = BindExpr(f.Iter);
+            var ae = st.Clr?.GetInterfaces().Append(st.Clr).FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>));
+            if (ae == null && st.IsKnown) throw Err(f, $"for await needs an IAsyncEnumerable (got {st.Cs})");
+            if (curMethod != null && !curMethod.IsAsync) throw Err(f, "for await is only allowed inside an async def");
+            elem = ae != null ? ClrTypes.FromClr(ae.GetGenericArguments()[0]) : AType.Unknown;
+        }
         else elem = Builtins.ElemOf(BindExpr(f.Iter));
         PushScope();
         f.Locals = new List<LocalSym>();

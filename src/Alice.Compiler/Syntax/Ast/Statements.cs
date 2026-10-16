@@ -51,6 +51,7 @@ public sealed class ForStmt : Stmt
     public Expr Iter = null!;
     public List<Stmt> Body = new();
     public List<LocalSym> Locals = new();
+    public bool Await;           // `for await x in stream` (IAsyncEnumerable)
 }
 
 public sealed class When : Node

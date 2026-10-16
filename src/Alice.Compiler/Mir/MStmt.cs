@@ -58,6 +58,7 @@ public sealed class MFor : MStmt
 
 public sealed class MForeach : MStmt
 {
+    public bool Await;
     public List<string> Vars = new();
     public MExpr Coll = null!;
     public List<MStmt> Body = new();

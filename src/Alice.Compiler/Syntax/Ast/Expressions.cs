@@ -46,6 +46,7 @@ public sealed class CallExpr : Expr
     public bool Parens;
     public bool Safe;
     public List<TypeRef> TypeArgs = new();
+    public List<Semantics.AType> TypeArgTypes = new();   // resolved explicit type arguments
 }
 
 public sealed class NewExpr : Expr

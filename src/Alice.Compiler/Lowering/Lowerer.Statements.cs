@@ -183,6 +183,7 @@ public sealed partial class Lowerer
 
     MStmt For(ForStmt f)
     {
+        if (f.Await) return SerialFor(f);
         if (TrySplitLoop(f) is MStmt split) return split;
         if (TryParallelFor(f) is MStmt par) return par;
         return SerialFor(f);
@@ -190,6 +191,13 @@ public sealed partial class Lowerer
 
     MStmt SerialFor(ForStmt f)
     {
+        if (f.Await)
+        {
+            ctx.Add("loop");
+            var af = new MForeach { Await = true, Vars = f.Locals.Select(l => l.CsName).ToList(), Coll = Expr(f.Iter), Body = Stmts(f.Body, Tail.None, null) };
+            ctx.RemoveAt(ctx.Count - 1);
+            return af;
+        }
         if (TrySimtFor(f) is MStmt simt) return simt;
         ctx.Add("loop");
         MStmt r;

@@ -56,7 +56,7 @@ public sealed partial class Lowerer
                 return new MMember { Target = recv!, Name = c.Sym is FieldSym f ? f.CsName : c.Name, Safe = c.Safe };
             case "clr":
             case "dyncall":
-                return new MCall { Target = recv, Name = Binder.Mangle(c.Name), Args = args, Safe = c.Safe };
+                return new MCall { Target = recv, Name = Binder.Mangle(c.Name) + TypeArgList(c), Args = args, Safe = c.Safe };
             case "ext":
             case "free":
                 return new MCall { Target = recv, Name = cs, Args = args, Safe = c.Safe };
@@ -64,6 +64,8 @@ public sealed partial class Lowerer
                 if (zeroArg.Contains(cs) && !props.Contains(cs)) return new MCall { Target = recv, Name = cs, Safe = c.Safe };
                 return new MMember { Target = recv!, Name = cs, Safe = c.Safe };
         }
-        return new MCall { Target = recv, Name = cs, Args = args, Safe = c.Safe };
+        return new MCall { Target = recv, Name = cs + TypeArgList(c), Args = args, Safe = c.Safe };
     }
+
+    static string TypeArgList(CallExpr c) => c.TypeArgTypes.Count == 0 ? "" : "<" + string.Join(", ", c.TypeArgTypes.Select(TypeCs)) + ">";
 }

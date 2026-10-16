@@ -35,3 +35,4 @@
 - Ruby reflection: `instance_variable_get/set`, `instance_variables`, `methods`, `public_send`.
 - CLR events accept Alice blocks/Func values (`obj.Event += block`, `-=` unsubscribes the same handler).
 - Ruby DSLs: implicit `yield` blocks, `instance_eval`/`instance_exec`, executable class bodies (macros), `@@class_vars`, runtime `define_method`, `send` → `method_missing` fallback (`RubyDslTests`).
+- `for await x in stream` (IAsyncEnumerable); explicit generic method arguments on member calls (`Channel.CreateUnbounded<Int32>()`).

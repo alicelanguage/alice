@@ -77,7 +77,7 @@ public sealed class Printer
                 Block(f.Body);
                 break;
             case MForeach fe:
-                Line(fe.Vars.Count == 1 ? $"foreach (var {fe.Vars[0]} in {E(fe.Coll)})" : $"foreach (var ({string.Join(", ", fe.Vars)}) in {E(fe.Coll)})");
+                Line((fe.Await ? "await " : "") + (fe.Vars.Count == 1 ? $"foreach (var {fe.Vars[0]} in {E(fe.Coll)})" : $"foreach (var ({string.Join(", ", fe.Vars)}) in {E(fe.Coll)})"));
                 Block(fe.Body);
                 break;
             case MReturn r:

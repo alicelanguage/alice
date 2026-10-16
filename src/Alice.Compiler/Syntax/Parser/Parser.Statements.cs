@@ -194,6 +194,7 @@ public sealed partial class Parser
     {
         Token tok = Next();
         var f = At(new ForStmt(), tok);
+        if (IsKw("await")) { Next(); f.Await = true; }
         f.Names.Add(Next().Text);
         while (IsOp(",")) { Next(); f.Names.Add(Next().Text); }
         ExpectKw("in");

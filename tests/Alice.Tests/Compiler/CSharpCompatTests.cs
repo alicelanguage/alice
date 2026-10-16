@@ -12,6 +12,7 @@ public class CSharpCompatTests
     {
         { "events", "timer = System.Timers.Timer.new(1000.0)\nfired = Atomic.new(0)\ntimer.Elapsed += ->(s : Object?, e : System.Timers.ElapsedEventArgs) { fired.add(1) }\ntimer.Dispose\nputs fired.get", "0" },
         { "event handler from block and variable, unsubscribe", "class Src\n  def fire\n    @log.Add(\"x\")\n  end\n  def initialize(@log : List(String))\n  end\nend\nlog = [] of String\nn = Atomic.new(0)\nh = ->(s : Object?, e : EventArgs) { n.add(1) }\nsrc = System.ComponentModel.Component.new\nsrc.Disposed += h\nsrc.Disposed += ->(s : Object?, e : EventArgs) { n.add(10) }\nsrc.Disposed -= h\nsrc.Dispose\nputs n.get", "10" },
+        { "await each over IAsyncEnumerable", "async def total : Int32\n  sum = 0\n  ch = System.Threading.Channels.Channel.CreateUnbounded<Int32>()\n  ch.Writer.TryWrite(2)\n  ch.Writer.TryWrite(5)\n  ch.Writer.Complete\n  for await x in ch.Reader.ReadAllAsync\n    sum += x\n  end\n  sum\nend\nputs total.wait", "7" },
         { "delegates Func and Action", "f = ->(x : Int32) { x * 3 }\ng : Func(Int32, Int32) = f\nacc = [] of Int32\na : Action(Int32) = ->(x : Int32) { acc.Add(x) }\na.Invoke(g.Invoke(2))\nputs acc[0]", "6" },
         { "nullable value types", "x : Int32? = nil\nputs x.nil?\ny = x || 7\nputs y\nx = 3\nputs x.not_nil! + 1", "true\n7\n4" },
         { "tuples and deconstruction", "def pair : {Int32, String}\n  {1, \"one\"}\nend\nn, s = pair\nputs \"#{n}=#{s}\"\nt = pair\nputs t.Item2", "1=one\none" },

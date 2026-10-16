@@ -130,7 +130,8 @@ public sealed partial class Parser
                     e = n;
                     continue;
                 }
-                if (e is ConstExpr ce2 && nt.Kind == "const" && ce2.Ref.Args.Count == 0 && !(IsOp("(") && !Cur.Space))
+                bool generic = IsOp("<") && !Cur.Space && Peek(1).Kind == "const" && GenericCallAhead();
+                if (e is ConstExpr ce2 && nt.Kind == "const" && ce2.Ref.Args.Count == 0 && !(IsOp("(") && !Cur.Space) && !generic)
                 {
                     ce2.Ref.Name += "." + name;
                     if (IsOp("(") && !Cur.Space) ce2.Ref = TypeFromName(ce2.Ref.Name, tok);
@@ -152,6 +153,13 @@ public sealed partial class Parser
                     continue;
                 }
                 var call = At(new CallExpr { Recv = e, Name = name, Safe = safe }, tok);
+                if (generic)
+                {
+                    Next();
+                    call.TypeArgs.Add(Type());
+                    while (IsOp(",")) { Next(); call.TypeArgs.Add(Type()); }
+                    Expect(">");
+                }
                 call.Parens = IsOp("(") && !Cur.Space;
                 CallTail(call.Args, out call.Block);
                 e = call;

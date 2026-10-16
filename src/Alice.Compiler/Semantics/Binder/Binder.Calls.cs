@@ -65,6 +65,21 @@ public sealed partial class Binder
 
     AType BindCallCore(CallExpr c, AType recv, bool conc)
     {
+        if (c.TypeArgs.Count > 0)
+        {
+            // explicit generic method arguments: `Channel.CreateUnbounded<Int32>()`
+            c.TypeArgTypes = c.TypeArgs.Select(ResolveType).ToList();
+            var targs = c.TypeArgTypes.Select(t => t.Clr).ToList();
+            if (recv.Clr is { } rc && targs.All(t => t != null))
+            {
+                BindArgs(c.Args);
+                var gm = rc.GetMethods().FirstOrDefault(m => m.Name == c.Name && m.IsGenericMethodDefinition
+                    && m.GetGenericArguments().Length == targs.Count && m.GetParameters().Count(p => !p.IsOptional) <= c.Args.Count && m.GetParameters().Length >= c.Args.Count)
+                    ?? throw Err(c, $"{rc.Name} has no generic method {c.Name}<{targs.Count}> taking {c.Args.Count} argument(s)");
+                c.Res = "clr";
+                return ClrTypes.FromClr(gm.MakeGenericMethod(targs.ToArray()!).ReturnType);
+            }
+        }
         int argc = c.Args.Count;
         bool hasArgs = c.Parens || argc > 0;
         bool dynSpecial = c.Name is "send" or "respond_to?";
