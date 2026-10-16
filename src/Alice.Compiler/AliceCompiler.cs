@@ -1,0 +1,81 @@
+using System.Reflection;
+using System.Runtime.Loader;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+
+namespace Alice.Compiler;
+
+public sealed record SourceFile(string Path, string Text);
+
+/// <summary>Front door: Alice source -> lowered C# -> Roslyn -> IL assembly on the CLR.</summary>
+public static class AliceCompiler
+{
+    /// <summary>Lowers one or more files sharing global facts (virtual dispatch, zero-arg calls).</summary>
+    public static List<string> TranspileAll(IReadOnlyList<SourceFile> files)
+    {
+        var g = new Globals();
+        var raw = new List<string>();
+        foreach (var f in files) raw.Add(new Translator(g, f.Path).TranslateFile(f.Text));
+        var outp = new List<string>();
+        foreach (var r in raw) outp.Add(g.Resolve(r));
+        return outp;
+    }
+
+    public static string Transpile(string src, string file = "main.al") => TranspileAll([new SourceFile(file, src)])[0];
+
+    static readonly CSharpParseOptions Parse = new(LanguageVersion.Preview);
+
+    static IEnumerable<MetadataReference> References()
+    {
+        var tpa = (string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!;
+        var set = new HashSet<string>(tpa.Split(Path.PathSeparator));
+        set.Add(typeof(Alice.Runtime.Prelude).Assembly.Location);
+        set.Add(typeof(AliceCompiler).Assembly.Location);
+        foreach (var p in set) if (p.Length > 0 && File.Exists(p)) yield return MetadataReference.CreateFromFile(p);
+    }
+
+    static readonly Lazy<List<MetadataReference>> Refs = new(() => References().ToList());
+
+    // Null-safety diagnostics are errors in Alice (ADR 0004).
+    static readonly string[] NullErrors = ["CS8600", "CS8601", "CS8602", "CS8603", "CS8604", "CS8625"];
+
+    /// <summary>Compiles lowered C# to an IL image. Throws CompileException with Alice file:line diagnostics.</summary>
+    public static byte[] Emit(IReadOnlyList<string> csharp, string assemblyName, bool exe, IEnumerable<string>? extraRefs = null)
+    {
+        var trees = csharp.Select((c, i) => CSharpSyntaxTree.ParseText(c, Parse, path: $"{assemblyName}.{i}.g.cs")).ToList();
+        var diag = NullErrors.ToDictionary(x => x, _ => ReportDiagnostic.Error);
+        var opts = new CSharpCompilationOptions(exe ? OutputKind.ConsoleApplication : OutputKind.DynamicallyLinkedLibrary)
+            .WithOptimizationLevel(OptimizationLevel.Release)
+            .WithAllowUnsafe(true)
+            .WithNullableContextOptions(NullableContextOptions.Enable)
+            .WithSpecificDiagnosticOptions(diag);
+        var refs = Refs.Value.Concat((extraRefs ?? []).Select(r => (MetadataReference)MetadataReference.CreateFromFile(Path.GetFullPath(r))));
+        var comp = CSharpCompilation.Create(assemblyName, trees, refs, opts);
+        using var ms = new MemoryStream();
+        var res = comp.Emit(ms);
+        if (!res.Success)
+        {
+            var errs = res.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(20).Select(d => d.ToString());
+            throw new CompileException(string.Join("\n", errs));
+        }
+        return ms.ToArray();
+    }
+
+    public static Assembly Load(byte[] image) => new AssemblyLoadContext("alice", isCollectible: true).LoadFromStream(new MemoryStream(image));
+
+    /// <summary>Runs an assembly's entry point, capturing stdout.</summary>
+    public static string Invoke(Assembly asm, string[] args)
+    {
+        var entry = asm.EntryPoint ?? throw new CompileException("program has no top-level statements (no entry point)");
+        var old = Console.Out;
+        var sw = new StringWriter();
+        Console.SetOut(sw);
+        try { entry.Invoke(null, [args]); }
+        catch (TargetInvocationException e) when (e.InnerException != null) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerException).Throw(); }
+        finally { Console.SetOut(old); }
+        return sw.ToString();
+    }
+
+    public static string Run(string src, string file = "main.al", params string[] args)
+        => Invoke(Load(Emit([Transpile(src, file)], "main", exe: true)), args);
+}

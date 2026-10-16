@@ -14,7 +14,7 @@
     <NativeOut>$(IntermediateOutputPath)libalice_native.so</NativeOut>
   </PropertyGroup>
   <Target Name="BuildAliceNative" BeforeTargets="AssignTargetPaths" Condition="'$(OS)' != 'Windows_NT'">
-    <Exec Command="cc -O3 -march=native -fPIC -shared -o &quot;$(NativeOut)&quot; &quot;$(NativeSrc)&quot;" ContinueOnError="true" Condition="!Exists('$(NativeOut)')" />
+    <Exec Command="clang -O3 -march=native -ffast-math -fPIC -shared -o &quot;$(NativeOut)&quot; &quot;$(NativeSrc)&quot;" ContinueOnError="true" Condition="!Exists('$(NativeOut)')" />
     <ItemGroup Condition="Exists('$(NativeOut)')">
       <None Include="$(NativeOut)" Link="libalice_native.so" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
