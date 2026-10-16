@@ -107,6 +107,8 @@ public static class Builtins
             case "push":
             case "par_each":
                 return AType.Void;
+            case "par_sum":
+                return br.IsKnown && !br.IsVoid ? br : AType.Unknown;
             case "map":
             case "map_with_index":
             case "par_map":

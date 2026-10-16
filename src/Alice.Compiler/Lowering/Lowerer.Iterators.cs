@@ -207,6 +207,10 @@ public sealed partial class Lowerer
         Sink(target, sinkName, sb, element, res, count, preallocMap);
         ctx.RemoveAt(ctx.Count - 1);
 
+        // SIMD prologue for numeric arrays; the scalar loop below finishes the remaining tail
+        var vec = src is RangeExpr ? null : TryVectorize(src, srcExpr, elem, stages, sinkName, sb, res, count, preallocMap);
+        if (vec != null) before.AddRange(vec.Value.Stmts);
+
         // the loop itself
         MStmt loop;
         if (src is RangeExpr r)
@@ -215,7 +219,7 @@ public sealed partial class Lowerer
         {
             string idx = Temp("k");
             body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = srcExpr, Args = { new MCode(idx) } } });
-            loop = new MFor { Var = idx, Start = new MCode("0"), Cmp = "<", End = new MMember { Target = srcExpr, Name = src.Type.Kind == "array" || src.Type.IsString ? "Length" : "Count" }, Body = body };
+            loop = new MFor { Var = idx, Start = new MCode(vec?.Index ?? "0"), Cmp = "<", End = new MMember { Target = srcExpr, Name = src.Type.Kind == "array" || src.Type.IsString ? "Length" : "Count" }, Body = body };
         }
         else loop = new MForeach { Vars = { loopVar }, Coll = srcExpr, Body = body };
 

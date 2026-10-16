@@ -29,7 +29,7 @@ public sealed partial class Binder
         // static access on a type: Util.twice, Simd.Dot, LibM.cos, Color.Green
         if (c.Recv is ConstExpr ce && ce.Res == "type" && ce.Sym is AType owner)
         {
-            BindArgs(c.Args);
+            var staticArgs = BindArgTypes(c.Args);
             if (owner.Sym != null)
             {
                 var m = owner.Sym.FindMethod(c.Name, argc);
@@ -50,7 +50,7 @@ public sealed partial class Binder
             }
             if (owner.Clr != null)
             {
-                var mem = ClrTypes.Lookup(owner.Clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true);
+                var mem = ClrTypes.Lookup(owner.Clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs);
                 if (mem != null)
                 {
                     c.Res = mem.Kind == "method" ? "clr" : "field";
@@ -108,7 +108,7 @@ public sealed partial class Binder
         Type? clr = recv.Clr ?? recv.Sym?.Bases.Select(b => b.Clr).FirstOrDefault(b => b != null && !b.IsInterface);
         if (clr != null)
         {
-            var mem = ClrTypes.Lookup(clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, false);
+            var mem = ClrTypes.Lookup(clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, false, argTypes);
             if (mem != null)
             {
                 c.Res = mem.Kind == "method" ? "clr" : "field";

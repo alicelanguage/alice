@@ -123,7 +123,7 @@ public sealed class ClrTypes
     public sealed record Member(string Kind, AType Type, bool IsStatic, MethodInfo? Method = null);
 
     /// <summary>Instance or static member lookup: property, field, or method with a compatible arity.</summary>
-    public static Member? Lookup(Type t, string name, int argc, bool hasArgs, bool wantStatic)
+    public static Member? Lookup(Type t, string name, int argc, bool hasArgs, bool wantStatic, List<AType>? args = null)
     {
         var flags = BindingFlags.Public | BindingFlags.FlattenHierarchy | (wantStatic ? BindingFlags.Static : BindingFlags.Instance);
         var types = new List<Type> { t };
@@ -149,12 +149,55 @@ public sealed class ClrTypes
             }
             if (best != null)
             {
-                var ret = best.ReturnType.ContainsGenericParameters ? AType.Unknown : FromClr(best.ReturnType);
+                var ret = best.ReturnType.ContainsGenericParameters ? InferGeneric(best, args) : FromClr(best.ReturnType);
                 return new Member("method", ret, wantStatic, best);
             }
         }
         if (t.IsInterface && !wantStatic) return Lookup(typeof(object), name, argc, hasArgs, false);
         return null;
+    }
+
+    /// <summary>Infers a generic method's type arguments from argument types (arrays, generic types, lambdas as Func/Action).</summary>
+    static AType InferGeneric(MethodInfo m, List<AType>? args)
+    {
+        if (args == null || !m.IsGenericMethodDefinition) return AType.Unknown;
+        var map = new Dictionary<Type, Type>();
+        var ps = m.GetParameters();
+        for (int i = 0; i < ps.Length && i < args.Count; i++) Match(ps[i].ParameterType, args[i], map);
+        var targs = m.GetGenericArguments();
+        if (!targs.All(map.ContainsKey)) return AType.Unknown;
+        try
+        {
+            var closed = m.MakeGenericMethod(targs.Select(g => map[g]).ToArray());
+            return closed.ReturnType.ContainsGenericParameters ? AType.Unknown : FromClr(closed.ReturnType);
+        }
+        catch (ArgumentException) { return AType.Unknown; }
+    }
+
+    static void Match(Type p, AType a, Dictionary<Type, Type> map)
+    {
+        if (p.IsGenericParameter)
+        {
+            if (a.Clr != null && !map.ContainsKey(p)) map[p] = a.Clr;
+            return;
+        }
+        if (p.IsArray && a.Kind == "array" && a.Elem != null) { Match(p.GetElementType()!, a.Elem, map); return; }
+        if (!p.IsGenericType) return;
+        var pargs = p.GetGenericArguments();
+        if (a.Kind == "func")
+        {
+            // Func<A.., R> / Action<A..> against a bound lambda (Args = params..., result)
+            for (int i = 0; i < pargs.Length && i < a.Args.Count; i++) Match(pargs[i], a.Args[i], map);
+            return;
+        }
+        if (a.Kind == "array" && a.Elem != null && pargs.Length == 1) { Match(pargs[0], a.Elem, map); return; }
+        if (a.Clr is { IsGenericType: true } ac)
+        {
+            var src = ac.GetGenericTypeDefinition() == p.GetGenericTypeDefinition() ? ac
+                : ac.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == p.GetGenericTypeDefinition());
+            if (src != null)
+                for (int i = 0; i < pargs.Length; i++) Match(pargs[i], FromClr(src.GetGenericArguments()[i]), map);
+        }
     }
 
     /// <summary>Element type of a CLR enumerable (IEnumerable&lt;T&gt;), or null.</summary>

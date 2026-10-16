@@ -25,6 +25,29 @@ public static class Par
         return dst;
     }
 
+    /// <summary>Parallel map-reduce without materializing the mapped array: per-chunk partial sums.</summary>
+    public static R MapSum<T, R>(T[] src, Func<T, R> f) where R : INumber<R>
+    {
+        int chunks = Math.Min(Math.Max(1, src.Length / 4096), Workers * 4);
+        if (chunks <= 1)
+        {
+            R s = R.Zero;
+            foreach (var x in src) s += f(x);
+            return s;
+        }
+        var partial = new R[chunks];
+        Parallel.For(0, chunks, c =>
+        {
+            int lo = (int)((long)src.Length * c / chunks), hi = (int)((long)src.Length * (c + 1) / chunks);
+            R s = R.Zero;
+            for (int i = lo; i < hi; i++) s += f(src[i]);
+            partial[c] = s;
+        });
+        R total = R.Zero;
+        foreach (var p in partial) total += p;
+        return total;
+    }
+
     public static T Sum<T>(T[] src) where T : unmanaged, INumber<T>
     {
         if (src.Length < 65_536) return Simd.Sum<T>(src);

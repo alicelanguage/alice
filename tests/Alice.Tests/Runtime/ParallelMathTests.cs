@@ -26,6 +26,13 @@ public class ParallelMathTests
         Assert.Equal(src.Sum(), Par.Sum<double>(src), 1);
     }
 
+    [Fact]
+    public void Par_map_sum_matches_serial()
+    {
+        var src = Enumerable.Range(0, 1_000_003).ToArray();
+        Assert.Equal(src.Sum(x => (long)x * 3), Par.MapSum(src, x => (long)x * 3));
+    }
+
     [Theory]
     [InlineData(1, 1, 1)]
     [InlineData(3, 5, 7)]

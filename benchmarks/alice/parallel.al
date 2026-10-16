@@ -1,6 +1,5 @@
 def kernel(xs : Array(Float64)) : Float64
-  ys : Array(Float64) = Par.Map(xs, ->(x : Float64) { Math.Sqrt(x) * Math.Sin(x) + Math.Cos(x * 0.5) })
-  ys.sum
+  xs.par_sum { |x| Math.Sqrt(x) * Math.Sin(x) + Math.Cos(x * 0.5) }
 end
 
 def measure(xs : Array(Float64), check : Int64) : Float64

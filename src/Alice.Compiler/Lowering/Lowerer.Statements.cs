@@ -12,7 +12,8 @@ public sealed partial class Lowerer
         {
             case ExprStmt es:
                 {
-                    bool value = tail != Tail.None && Binder.ValueOf(es.Expr) != null;
+                    // a declared/inferred non-void result means the tail IS the value, even when its static type is unknown
+                    bool value = tail != Tail.None && (Binder.ValueOf(es.Expr) != null || (tail == Tail.Return && es.Expr.Type.IsUnknown));
                     var e = Expr(es.Expr);
                     if (value)
                     {
