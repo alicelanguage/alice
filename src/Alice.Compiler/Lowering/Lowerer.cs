@@ -44,6 +44,7 @@ public sealed partial class Lowerer
             var ps = m.GetParameters();
             if (ps.Length >= 1 && ps.Skip(1).All(p => p.IsOptional)) zeroArg.Add(m.Name);
         }
+        zeroArg.UnionWith(Builtins.PreludeZeroArg.Keys);
     }
 
     public static string TypeCs(AType t) => t.Kind switch

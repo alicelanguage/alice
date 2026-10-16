@@ -5,7 +5,8 @@ using Microsoft.CodeAnalysis.CSharp;
 
 namespace Alice.Compiler;
 
-public sealed record SourceFile(string Path, string Text);
+/// <summary>An Alice source. LibraryOnly drops top-level statements (test builds reuse app files without running them).</summary>
+public sealed record SourceFile(string Path, string Text, bool LibraryOnly = false);
 
 /// <summary>Front door: Alice source -> lowered C# -> Roslyn -> IL assembly on the CLR.</summary>
 public static class AliceCompiler
@@ -17,7 +18,12 @@ public static class AliceCompiler
     /// <summary>C# units plus the C source of all @[Native] functions (null when there are none).</summary>
     public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib)
     {
-        var asts = files.Select(f => Syntax.Parser.ParseFile(f.Text, f.Path)).ToList();
+        var asts = files.Select(f =>
+        {
+            var ast = Syntax.Parser.ParseFile(f.Text, f.Path);
+            if (f.LibraryOnly) ast.Items.RemoveAll(i => i is Syntax.StmtItem);
+            return ast;
+        }).ToList();
         var binder = new Semantics.Binder(asts, new Semantics.ClrTypes(extraRefs));
         binder.Bind();
         var emitter = new Backend.Emitter(binder) { NativeLib = nativeLib };

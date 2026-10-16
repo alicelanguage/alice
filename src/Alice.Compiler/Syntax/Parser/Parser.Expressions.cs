@@ -422,6 +422,7 @@ public sealed partial class Parser
         }
         call.Parens = IsOp("(") && !Cur.Space;
         CallTail(call.Args, out call.Block);
+        if (call.Name == "expect" && call.Args.Count == 0 && call.Block != null) call.Name = "expect_block";
         if (!call.Parens && call.Args.Count == 0 && call.Block == null && call.TypeArgs.Count == 0)
             return At(new NameExpr { Name = n }, c);
         return call;

@@ -116,3 +116,26 @@ In a package, `alice test` first builds it, then compiles each test file with th
 | `CSharpApp` | C# consumes `AliceLib/.alice/AliceLib.alproj`; not a member |
 
 Alice -> C#: `using CSharpLib`, call by declared names (`Stats.Median(xs)`). C# -> Alice: Alice types are plain CLR types. Test: `Integration/SampleTests.Interop_samples_build_and_run` (builds the workspace, runs CSharpApp and AliceApp; games not run).
+
+## `alice test`
+
+Finds `test/**/*.al` (or `spec/`), compiles each with the project sources (their top-level code is not run).
+
+| Style | Syntax |
+|---|---|
+| RSpec | `describe`/`context`, `it "x" do ... end`, `before`/`after`/`before_all`/`after_all`, `fit`/`fdescribe` focus, `xit`/`xdescribe` skip, `it "todo"` pending, `pending`/`skip` |
+| Expectations | `expect(x).to eq(y)`, `not_to`, `expect { ... }.to raise_error(typeof(E), "msg")`, `.and`/`.or` |
+| Matchers | `eq be be_nil be_true be_false be_truthy be_falsy be_empty be_gt be_ge be_lt be_le be_between be_within(d).of(x) be_a be_instance_of have_size include contain_exactly start_with end_with match satisfy all respond_to raise_error` |
+| xUnit | `@[Test]`, `@[Test("name")]`, `@[Cases(1, 2, 3)]` (one per row); class tests get a fresh instance plus `setup`/`teardown` |
+| Legacy | `def test_*` with `assert`, `assert_equal` |
+
+| Option | Effect |
+|---|---|
+| `file.al:LINE` | that example, or every example in the group declared on LINE |
+| `-e TEXT` | full name contains TEXT |
+| `--seed N` / `--order random` | deterministic shuffle |
+| `--fail-fast` | stop at first failure |
+| `--format doc\|progress\|junit` | tree (default), dots, JUnit XML for CI |
+| `--profile` | 10 slowest examples |
+
+Failures print expected/got, the Alice source line, and a `alice test file.al:LINE` rerun command. Exit code 1 on failure.

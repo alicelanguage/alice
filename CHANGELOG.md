@@ -36,3 +36,5 @@
 - CLR events accept Alice blocks/Func values (`obj.Event += block`, `-=` unsubscribes the same handler).
 - Ruby DSLs: implicit `yield` blocks, `instance_eval`/`instance_exec`, executable class bodies (macros), `@@class_vars`, runtime `define_method`, `send` → `method_missing` fallback (`RubyDslTests`).
 - `for await x in stream` (IAsyncEnumerable); explicit generic method arguments on member calls (`Channel.CreateUnbounded<Int32>()`).
+- `alice test`: RSpec-style specs, matchers, hooks, focus/skip/pending, xUnit `@[Test]`/`@[Cases]`, `file:LINE`/`-e`/`--seed`/`--fail-fast`/`--profile`, doc/progress/JUnit output; app top-level code is not run in test builds.
+- Block bodies carry `#line` (stack traces and caller lines point at Alice source); block values passed to `Action` parameters are discarded; Prelude zero-arg functions callable without parens; `include` is no longer reserved outside type bodies.

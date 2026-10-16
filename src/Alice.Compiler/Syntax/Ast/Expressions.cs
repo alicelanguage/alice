@@ -114,6 +114,7 @@ public sealed class LambdaExpr : Expr
     public AType Result = AType.Void;
     public bool ReturnsValue;
     public bool Captures;
+    public bool DiscardValue;   // passed where an Action is expected: the tail value is dropped
 }
 
 public sealed class TypeTestExpr : Expr

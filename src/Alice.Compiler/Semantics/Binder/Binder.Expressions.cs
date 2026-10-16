@@ -177,6 +177,11 @@ public sealed partial class Binder
             n.Res = "call";
             return Builtins.FreeReturn(n.Name, new List<AType>());
         }
+        if (Builtins.PreludeZeroArg.TryGetValue(n.Name, out var pz))
+        {
+            n.Res = "call";
+            return ClrTypes.FromClr(pz);
+        }
         if (BaseClr(curType) is Type bc && ClrTypes.Lookup(bc, n.Name, 0, false, false) is { } inherited)
         {
             UseThis();

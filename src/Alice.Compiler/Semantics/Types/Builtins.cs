@@ -8,6 +8,12 @@ public static class Builtins
 {
     public static readonly HashSet<string> FreeFunctions = new() { "puts", "print", "p", "gets", "rand", "exit", "format", "read_file", "write_file", "file_exists?", "read_lines", "sleep", "now", "env", "to_json", "parse_json" };
 
+    /// <summary>Prelude functions (non-extension) callable with no arguments: `be_nil`, `raise_error`; name -> return type.</summary>
+    public static readonly Dictionary<string, Type> PreludeZeroArg = typeof(Alice.Runtime.Prelude)
+        .GetMethods(BindingFlags.Public | BindingFlags.Static)
+        .Where(m => !m.IsDefined(typeof(ExtensionAttribute)) && !m.IsGenericMethodDefinition && m.GetParameters().All(p => p.IsOptional) && m.ReturnType != typeof(void))
+        .GroupBy(m => m.Name).ToDictionary(g => g.Key, g => g.First().ReturnType);
+
     /// <summary>Extension method names exposed by the Prelude (discovered by reflection, so the runtime is the source of truth).</summary>
     public static readonly HashSet<string> ExtNames = typeof(Alice.Runtime.Prelude)
         .GetMethods(BindingFlags.Public | BindingFlags.Static)

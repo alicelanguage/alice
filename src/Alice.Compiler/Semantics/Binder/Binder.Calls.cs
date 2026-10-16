@@ -326,7 +326,15 @@ public sealed partial class Binder
             c.Res = "clr";
             return inherited.Type;
         }
-        if (c.Block != null) BindLambda(c.Block, new List<AType>());
+        if (c.Block != null)
+        {
+            BindLambda(c.Block, new List<AType>());
+            // Prelude function taking Action: the block's value is discarded (`expect { 1 + 1 }`, `it "x" do ... end`)
+            var slots = typeof(Alice.Runtime.Prelude).GetMethods().Where(m => m.Name == c.Name && m.GetParameters().Length > c.Args.Count)
+                .Select(m => m.GetParameters()[c.Args.Count].ParameterType).ToList();
+            if (slots.Count > 0 && slots.All(t => typeof(Delegate).IsAssignableFrom(t) && t.GetMethod("Invoke")?.ReturnType == typeof(void)))
+                c.Block.DiscardValue = true;
+        }
         if (Builtins.FreeFunctions.Contains(c.Name))
         {
             c.Res = "free";

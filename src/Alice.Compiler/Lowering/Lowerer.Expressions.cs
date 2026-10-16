@@ -237,7 +237,9 @@ public sealed partial class Lowerer
         if (lam.Body.Count == 1 && lam.Body[0] is ExprStmt es)
         {
             var body = Expr(es.Expr);
-            if (pre.Count == 0) ml.ExprBody = body;
+            if (lam.DiscardValue && !es.Expr.Type.IsVoid && es.Expr.Type.IsKnown)
+                ml.Body = [.. pre, new MAssign { Target = new MCode("_"), Value = body }];
+            else if (pre.Count == 0) ml.ExprBody = body;
             else
             {
                 ml.Body = new List<MStmt>(pre);

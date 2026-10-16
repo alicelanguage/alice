@@ -21,8 +21,13 @@ public sealed class Printer
 
     void Line(string text) => sb.Append(' ', ind * 4).Append(text).Append('\n');
 
+    [ThreadStatic] static string? ambientFile;
+    [ThreadStatic] static bool lineDirty;
+
     void LineDir(int line)
     {
+        if (file.Length > 0) ambientFile = file;
+        if (lineDirty) { lineDirty = false; lastLine = -1; }
         if (line <= 0 || line == lastLine || file.Length == 0) return;
         sb.Append("#line ").Append(line).Append(" \"").Append(file).Append("\"\n");
         lastLine = line;
@@ -151,12 +156,14 @@ public sealed class Printer
                 {
                     string head = (l.Static ? "static " : "") + "(" + string.Join(", ", l.Params) + ") => ";
                     if (l.ExprBody != null) return head + E(l.ExprBody);
-                    var pr = new Printer("", 0) { lastLine = int.MaxValue };
+                    // block bodies map back to Alice lines too (stack traces, CallerLineNumber, debugger)
+                    var pr = new Printer(ambientFile ?? "", 0) { lastLine = int.MaxValue };
                     pr.Line("{");
                     pr.ind++;
                     pr.Stmts(l.Body!);
                     pr.ind--;
                     pr.sb.Append('}');
+                    lineDirty = true;   // the rest of the enclosing statement maps to the lambda's last line: re-emit ours next
                     return head + "\n" + pr.sb;
                 }
             case MCast c:
