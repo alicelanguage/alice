@@ -48,17 +48,17 @@ Actions are pinned to commit SHAs. The SDK follows the latest stable `10.0.x` pa
 ## Cut a release
 
 1. Set `Version` in `Directory.Build.props` to an unused `0.10.x`–`0.19.x` version. Update `CHANGELOG.md`, run `dotnet build Alice.sln` and `dotnet test`, and commit the release changes.
-2. Run **Release → Run workflow** for that commit. Manual runs produce the four downloadable workflow artifacts without creating a GitHub release. Review the test and package jobs.
-3. Tag the reviewed commit and push the tag:
+2. Run **Release → Run workflow** for that commit. Select **Skip the full test stage** to reuse earlier CI validation. After all four package smoke checks pass, the workflow publishes a GitHub release named `v<Version>` with the archives and checksums. If the tag does not exist, it is created at the selected commit; an existing tag is reused without moving it. Release notes record the exact build commit and workflow run.
+3. Alternatively, tag the reviewed commit and push the tag to start a release:
 
    ```bash
    git tag -a v0.10.0 <reviewed-commit> -m "Alice 0.10.0"
    git push origin v0.10.0
    ```
 
-4. The tag run repeats the gates (unless `RELEASE_SKIP_TESTS=true` skips the full test stage) and publishes the four archives plus four `.sha256` files with generated release notes. Review the release page and add highlights from the changelog.
+4. A tag-triggered run repeats the gates (unless `RELEASE_SKIP_TESTS=true` skips the full test stage) and publishes the four archives plus four `.sha256` files with generated release notes. Choose either manual dispatch or a tag push for a release. Review the release page and add highlights from the changelog.
 
-The tag must exactly match `v` plus the source version. Malformed or mismatched tags fail before testing or publishing. Only the final release job gets `contents: write`; pull requests and manual builds cannot publish. GitHub Actions must be allowed to write repository contents for that job. No signing secrets or third-party release service are required.
+The tag must exactly match `v` plus the source version. Malformed or mismatched tags fail before testing or publishing. Only the final release job gets `contents: write`; pull requests cannot publish. GitHub Actions must be allowed to write repository contents for that job. No signing secrets or third-party release service are required.
 
 Failed tests or packaging leave the release unpublished. Inspect the workflow logs and TRX artifacts, fix the problem in a new commit, and prepare a new reviewed tag. Existing releases are not overwritten; rerunning an already published tag fails at release creation.
 

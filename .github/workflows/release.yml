@@ -28,6 +28,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -40,6 +41,7 @@ jobs:
         run: |
           $version = & ./.github/scripts/release-version.ps1 -Tag $env:RELEASE_TAG
           "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
 
   test:
     if: >-
@@ -91,7 +93,8 @@ jobs:
   release:
     name: Publish GitHub release
     if: >-
-      ${{ !cancelled() && github.event_name == 'push' && github.ref_type == 'tag' &&
+      ${{ !cancelled() &&
+          (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag')) &&
           needs.version.result == 'success' && needs.package.result == 'success' &&
           (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     needs: [version, test, package]
@@ -109,9 +112,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           cd dist
           sha256sum --check *.sha256
           gh release create "$RELEASE_TAG" ./*.tar.gz ./*.zip ./*.sha256 \
-            --verify-tag --title "Alice $RELEASE_TAG" --generate-notes
+            --target "$RELEASE_COMMIT" --title "Alice $RELEASE_TAG" --generate-notes \
+            --notes "Archives built from $RELEASE_COMMIT. Build and package checks: $RELEASE_RUN_URL"

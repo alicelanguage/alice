@@ -2,6 +2,7 @@
 
 ## 0.10.0 - 2026-10-16
 
+- Fix: manual Release runs publish the validated version's GitHub release after packaging, including when the full test stage is skipped.
 - Fix: build and smoke-test the ReadyToRun `osx-x64` package on `macos-15-intel`; reject mismatched packaging hosts before publishing.
 - Release: optional `skip_tests` checkbox for manual runs and `RELEASE_SKIP_TESTS=true` Actions variable for tag pushes; package smoke checks remain required.
 - Fix: package smoke checks recognize the current `alice test` summary (`2 examples, 0 failures`).

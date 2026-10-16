@@ -11,6 +11,7 @@ Decision:
 - Publish ReadyToRun packages and smoke-test them on matching operating systems and process architectures, including a native Intel macOS packaging runner.
 - Run full CI on the supported operating systems before packaging by default; allow an explicit release test-stage opt-out through a manual input or repository variable. Always smoke-test the extracted archive with single-file compilation and a generated Alice project.
 - Match release tags to `Directory.Build.props`; publish versioned archives and SHA-256 checksums only after validation succeeds.
+- Publish from both manual release runs and tag pushes. Manual runs derive the release tag from the validated version; new tags target the selected commit, existing tags are retained, and release notes identify the exact package build.
 - Keep write permissions in the final release job. Pull-request checks never publish releases.
 
 Consequences: Users install a complete directory rather than one executable. Release archives exercise the same SDK assets used by project builds. New platforms need a runner and an archive smoke test before inclusion.
