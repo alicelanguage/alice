@@ -5,7 +5,10 @@ using Alice.Compiler.Syntax;
 namespace Alice.Compiler.Lowering;
 
 /// <summary>Block parameter bound to row `Idx` of an SoA store: `p.f` lowers to `Store.f[Idx]` (no struct gather).</summary>
-public sealed record SoaCtx(LocalSym P, string Store, string Idx);
+public sealed record SoaCtx(HashSet<LocalSym> Ps, string Store, string Idx, Dictionary<string, string>? Regs = null)
+{
+    public SoaCtx(LocalSym p, string store, string idx) : this(new HashSet<LocalSym> { p }, store, idx) { }
+}
 
 /// <summary>
 /// Loops over `SoA(T)` stores. `ps.each { |p| p.x += p.v * dt }` touches only the x and v columns; when every
@@ -75,7 +78,7 @@ public sealed partial class Lowerer
         {
             foreach (var s in sb.Body)
             {
-                if (s is not Assign { Target: CallExpr { Res: "field" } tc } a || tc.Recv is not NameExpr { Sym: LocalSym rp } || rp != p) return null;
+                if (s is not Assign { Target: CallExpr { Res: "field" } tc } a || tc.Recv is not NameExpr { Sym: LocalSym rp } || !sc.Ps.Contains(rp)) return null;
                 if (a.Op is not ("=" or "+=" or "-=" or "*=") && !(a.Op == "/=" && T is "float" or "double")) return null;
                 var v = Vec(a.Value, env, T, false, sc);
                 if (v == null) return null;

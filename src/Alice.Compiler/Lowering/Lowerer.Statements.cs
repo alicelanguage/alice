@@ -66,6 +66,9 @@ public sealed partial class Lowerer
                 if (InLambda) o.Add(new MReturn { Value = n.Value != null ? Expr(n.Value) : null });
                 else o.Add(new MContinue());
                 break;
+            case FusedSoaStmt fs:
+                LowerFusedSoa(o, fs);
+                break;
             case RaiseStmt rs:
                 {
                     var v = Expr(rs.Value);

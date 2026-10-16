@@ -69,6 +69,7 @@ public sealed partial class Lowerer
 
     List<MStmt> Stmts(List<Stmt> body, Tail tail, string? target)
     {
+        if (!inParallelGen && soa == null) body = FuseSoa(body);
         var outp = new List<MStmt>();
         for (int i = 0; i < body.Count; i++) Into(outp, body[i], i == body.Count - 1 ? tail : Tail.None, target);
         return outp;

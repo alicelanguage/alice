@@ -208,9 +208,10 @@ public sealed partial class Lowerer
                     var bb = Vec(t.B, env, T, false, sc);
                     return c != null && a != null && bb != null ? $"{V}.ConditionalSelect({c}, {a}, {bb})" : null;
                 }
-            case CallExpr { Res: "field" } fc when !wantMask && sc != null && fc.Recv is NameExpr { Sym: LocalSym fp } && fp == sc.P:
+            case CallExpr { Res: "field" } fc when !wantMask && sc != null && fc.Recv is NameExpr { Sym: LocalSym fp } && sc.Ps.Contains(fp):
                 {
                     var f = (FieldSym)fc.Sym!;
+                    if (sc.Regs != null) return sc.Regs.TryGetValue(f.CsName, out var reg) ? reg : null;
                     return f.Type.Cs == T ? $"{V}.LoadUnsafe(ref {MM}.GetArrayDataReference({sc.Store}.{f.CsName}), (nuint){sc.Idx})" : null;
                 }
             case CallExpr c when !wantMask:

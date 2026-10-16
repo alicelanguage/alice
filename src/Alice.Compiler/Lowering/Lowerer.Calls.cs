@@ -8,6 +8,7 @@ public sealed partial class Lowerer
 {
     MExpr Call(CallExpr c)
     {
+        if (c.Res == "fused") return new MCode((string)c.Sym!);
         if (c.Res == "ext" && c.Block != null && TryInline(c) is MExpr inlined) return inlined;
         if (c.Res == "ext" && c.Block == null && TryFuseSink(c) is MExpr fused) return fused;
 
@@ -33,7 +34,7 @@ public sealed partial class Lowerer
                     if (m.IsStatic && recv == null && m.Owner != Type && m.Owner.Kind != "program") recv = new MCode(m.Owner.Type.Cs);
                     return new MCall { Target = recv, Name = m.CsName, Args = args, Safe = c.Safe };
                 }
-            case "field" when soa != null && c.Recv is NameExpr { Sym: LocalSym ps } && ps == soa.P:
+            case "field" when soa != null && c.Recv is NameExpr { Sym: LocalSym ps } && soa.Ps.Contains(ps):
                 return new MIndex { Target = new MMember { Target = new MCode(soa.Store), Name = ((FieldSym)c.Sym!).CsName }, Args = { new MCode(soa.Idx) } };
             case "field":
                 return new MMember { Target = recv!, Name = c.Sym is FieldSym f ? f.CsName : c.Name, Safe = c.Safe };

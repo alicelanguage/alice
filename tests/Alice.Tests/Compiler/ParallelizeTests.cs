@@ -56,7 +56,7 @@ public class ParallelizeTests
         double expected = Enumerable.Range(0, n).Sum(i => i + 2.0 * Math.Sqrt(2.0));
         double got = (double)m.Invoke(null, [n])!;
         Assert.True(Math.Abs(got - expected) <= Math.Abs(expected) * 1e-9, $"{got} vs {expected}");   // parallel sums reassociate
-        Assert.Contains("Par.Range", AliceCompiler.Transpile(src + "\n"));
+        Assert.Contains("global::Alice.Runtime.Par.", AliceCompiler.Transpile(src + "\n"));   // fused update+sum sweep runs in parallel
     }
 }
 
