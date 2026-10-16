@@ -138,3 +138,17 @@ Gaps Alice would need to close:
 | particles | 2.3 | 139.2 | 2.3 | 1.00 | SoA pass fusion + interchange, registers, parallel |
 
 Alice beats idiomatic C# on every benchmark (0.02x–0.98x) and is within ~10% of expert hand-written C# everywhere (laptop noise ±10–20%), from plain idiomatic Alice source.
+
+## Run 6 — vs C (clang 22 -O3 -march=native) (2026-10-16)
+
+`c/bench.c`: idiomatic C for 5 benchmarks, serial and pthreads-parallel (no OpenMP on this machine). Build: `clang -O3 -march=native -o c/bench c/bench.c -lm -lpthread`; run: `c/bench <name> <serial|parallel>`. Same checksums as Alice/C#.
+
+| benchmark | Alice ms | C serial ms | C parallel ms | Alice vs best C |
+|---|---:|---:|---:|---|
+| binarytrees | 90.1 | 300.6 | 320.5 | 3.3x faster (GC bump allocation vs malloc/free) |
+| pipeline | 2.5 | 15.3 | 4.0 | 1.6x faster (fused + vector + parallel) |
+| mandelbrot | 9.8 | 102.0 | 15.3 | 1.6x faster (parallel rows + SIMT lanes) |
+| particles | 2.4 | 22.4 | 2.9 | 1.2x faster (pass fusion + interchange) |
+| nbody | 47.2 | 29.9 | - | C 1.6x faster |
+
+nbody is a .NET code-generation limit, not an Alice lowering gap: expert hand-optimized C# is also ~50 ms. clang fully unrolls the fixed 5-body pair loop and SLP-vectorizes the x/y/z arithmetic; RyuJIT does neither.
