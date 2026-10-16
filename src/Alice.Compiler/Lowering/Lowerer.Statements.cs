@@ -105,6 +105,12 @@ public sealed partial class Lowerer
         }
         var target = Expr(a.Target);
         var value = Expr(a.Value);
+        // x += a*b / x -= a*b on floats -> x = fma(+-a, b, x)
+        if (!StrictMath && a.Op is "+=" or "-=" && IsFloat(a.Target.Type) && a.Value is BinaryExpr { Op: "*" } vb && IsFloat(vb.L.Type) && IsFloat(vb.R.Type) && value is MBinary { Op: "*" } mv)
+        {
+            o.Add(new MAssign { Target = target, Value = Fma(a.Op == "+=" ? mv.L : new MUnary { Op = "-", E = mv.L }, mv.R, target) });
+            return;
+        }
         switch (a.Op)
         {
             case "**=":

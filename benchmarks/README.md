@@ -152,3 +152,14 @@ Alice beats idiomatic C# on every benchmark (0.02x–0.98x) and is within ~10% o
 | nbody | 47.2 | 29.9 | - | C 1.6x faster |
 
 nbody is a .NET code-generation limit, not an Alice lowering gap: expert hand-optimized C# is also ~50 ms. clang fully unrolls the fixed 5-body pair loop and SLP-vectorizes the x/y/z arithmetic; RyuJIT does neither.
+
+## Run 6b — after floating-point contraction (FMA), nbody only
+
+| variant | ms |
+|---|---:|
+| Alice (FMA contraction) | 43.6 |
+| C clang -O3 -march=native (FMA + vectorization) | 30.3 |
+| C clang -O3 -march=native -ffp-contract=off | 41.5 |
+
+C's default FMA contraction explained most of the gap; Alice now contracts too (checksum unchanged). The rest is
+clang's vectorization/scheduling of the fixed 5-body loop, which RyuJIT does not reproduce (see docs/performance.md).

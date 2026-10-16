@@ -61,11 +61,22 @@ Measured on the same machine (median ms, identical checksums):
 | variant | ms |
 |---|---:|
 | clang -O3 -march=native (C, serial) | 29.9 |
-| Alice (JIT) | 47.2 |
+| Alice (JIT, before FP contraction) | 47.2 |
+| Alice (JIT, with FP contraction / FMA) | 43.6 |
+| C, clang with `-ffp-contract=off` (no FMA) | 41.5 |
+| C, no FMA, no vectorization | 45.0 |
 | Alice NativeAOT (`alice build --native`) | 45.7 |
 | expert C# (SoA spans, unrolled pairs) | ~50 |
 | C#: x/y/z in `Vector256<double>` (SLP by hand) | 43.9 |
+| C#: `Vector256` + FMA | 42.4 |
 | C#: fully unrolled, all fields in scalar locals | 65.6 (register spills) |
 
 The step is a serial chain of div/sqrt over 10 pairs; clang interleaves the pairs with better register allocation.
 RyuJIT cannot (unrolling makes it spill), so no Alice lowering produces C speed here. Every other benchmark beats C (benchmarks/README.md run 6).
+
+### Floating-point contraction (FMA)
+
+Like clang/gcc's default `-ffp-contract=on`, Alice fuses `a*b + c`, `c + a*b`, `a*b - c`, `c - a*b` and `x += a*b` /
+`x -= a*b` on `Float64`/`Float32` into one fused multiply-add (`Prelude.fma`, hardware FMA3/ARM64; plain math
+otherwise). Results are the single-rounded value, as in C. `@[StrictMath]` on a method keeps separate rounding.
+Test: `FmaTests`. Measured: C's own nbody is 30 ms with FMA and 41.5 ms without; Alice went 47.2 -> 43.6 ms.

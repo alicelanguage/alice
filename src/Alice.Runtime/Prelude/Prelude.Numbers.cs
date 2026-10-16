@@ -11,6 +11,15 @@ public static partial class Prelude
     public static long pow(long b, int e) { long r = 1; while (e-- > 0) r *= b; return r; }
     public static double pow(double b, double e) => Math.Pow(b, e);
 
+    /// <summary>a*b+c with one rounding when the CPU has FMA (x64 FMA3 / ARM64), else plain a*b+c. Inlined; the check folds away.</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static double fma(double a, double b, double c) =>
+        System.Runtime.Intrinsics.X86.Fma.IsSupported || System.Runtime.Intrinsics.Arm.AdvSimd.Arm64.IsSupported ? Math.FusedMultiplyAdd(a, b, c) : a * b + c;
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static float fma(float a, float b, float c) =>
+        System.Runtime.Intrinsics.X86.Fma.IsSupported || System.Runtime.Intrinsics.Arm.AdvSimd.Arm64.IsSupported ? MathF.FusedMultiplyAdd(a, b, c) : a * b + c;
+
     public static double rand() => Random.Shared.NextDouble();
     public static int rand(int n) => Random.Shared.Next(n);
 

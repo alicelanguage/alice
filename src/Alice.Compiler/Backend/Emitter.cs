@@ -94,7 +94,7 @@ public sealed class Emitter
         var sb = new StringBuilder();
         foreach (var a in attrs)
         {
-            if (a is "Stack" or "Open" or "SoA" || a.StartsWith("__enumerable:")) continue;
+            if (a is "Stack" or "Open" or "SoA" or "StrictMath" || a.StartsWith("__enumerable:")) continue;
             if (a == "Inline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             else if (a == "NoInline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]\n");
             else if (a == "Hot") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n");

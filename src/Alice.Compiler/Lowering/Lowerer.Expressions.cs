@@ -157,12 +157,33 @@ public sealed partial class Lowerer
         };
         if (helper != null) return new MCall { Target = new MCode("Prelude"), Name = helper, Args = { l, r } };
         if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
+        if (Contract(b, l, r) is MExpr fused) return fused;
         return b.Op switch
         {
             "**" => new MCall { Target = new MCode("Prelude"), Name = "pow", Args = { l, r } },
             "<=>" => new MCall { Target = l, Name = "CompareTo", Args = { r } },
             _ => new MBinary { Op = b.Op, L = l, R = r },
         };
+    }
+
+    bool StrictMath => Method?.Decl?.Attrs.Contains("StrictMath") == true;
+
+    static bool IsFloat(AType t) => t.Cs is "double" or "float";
+
+    static MExpr Fma(MExpr a, MExpr b, MExpr c) => new MCall { Target = new MCode("Prelude"), Name = "fma", Args = { a, b, c } };
+
+    /// <summary>
+    /// Floating-point contraction, like clang's default -ffp-contract=on: a*b+c, c+a*b, a*b-c, c-a*b become one
+    /// fused multiply-add (single rounding, ~2x throughput on the dependency chain). `@[StrictMath]` opts out.
+    /// </summary>
+    MExpr? Contract(BinaryExpr b, MExpr l, MExpr r)
+    {
+        if (StrictMath || b.Op is not ("+" or "-") || !IsFloat(b.Type) || !IsFloat(b.L.Type) || !IsFloat(b.R.Type)) return null;
+        if (l is MBinary { Op: "*" } ml && b.L is BinaryExpr { Op: "*" } bl && IsFloat(bl.L.Type) && IsFloat(bl.R.Type))
+            return Fma(ml.L, ml.R, b.Op == "+" ? r : new MUnary { Op = "-", E = r });
+        if (r is MBinary { Op: "*" } mr && b.R is BinaryExpr { Op: "*" } br && IsFloat(br.L.Type) && IsFloat(br.R.Type))
+            return Fma(b.Op == "+" ? mr.L : new MUnary { Op = "-", E = mr.L }, mr.R, l);
+        return null;
     }
 
     MExpr TypeTest(TypeTestExpr tt)
