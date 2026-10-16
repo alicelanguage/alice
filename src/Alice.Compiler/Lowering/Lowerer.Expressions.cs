@@ -156,6 +156,7 @@ public sealed partial class Lowerer
             _ => null,
         };
         if (helper != null) return new MCall { Target = new MCode("Prelude"), Name = helper, Args = { l, r } };
+        if (b.Res == "coalesce") return new MBinary { Op = "??", L = l, R = r };
         if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
         if (Contract(b, l, r) is MExpr fused) return fused;
         return b.Op switch

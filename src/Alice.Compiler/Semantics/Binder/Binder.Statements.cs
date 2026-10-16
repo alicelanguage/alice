@@ -78,6 +78,15 @@ public sealed partial class Binder
                 break;
             case BreakStmt:
                 break;
+            case UsingStmt us:
+                {
+                    var vt = BindExpr(us.Value);
+                    PushScope();
+                    us.Local = Declare(us, us.Name, vt);
+                    BindBlock(us.Body);
+                    PopScope();
+                    break;
+                }
         }
     }
 

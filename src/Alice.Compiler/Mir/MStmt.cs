@@ -83,3 +83,10 @@ public sealed class MTry : MStmt
 }
 
 public sealed class MBlock : MStmt { public List<MStmt> Body = new(); }
+
+public sealed class MUsing : MStmt
+{
+    public string Name = "";
+    public MExpr Value = null!;
+    public List<MStmt> Body = new();
+}

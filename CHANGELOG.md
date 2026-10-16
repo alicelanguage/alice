@@ -31,3 +31,5 @@
 - Samples: `samples/` is a workspace; MonoGame `Breakout`.
 - `@[Native]` functions: C via clang -O3 -march=native, function-pointer calls, automatic managed fallback (opt-in); small-data specialization (per-length workers on stack copies) — nbody at C speed.
 - Floating-point contraction (FMA) by default, `@[StrictMath]` to opt out.
+- C# compatibility suite (`CSharpCompatTests`, 17 programs): events, delegates, nullable `||`, tuples, flags, out/ref, `using r = ... end`, constrained generics (`where T : I` members), spans, LINQ, async WhenAll.
+- Ruby reflection: `instance_variable_get/set`, `instance_variables`, `methods`, `public_send`.

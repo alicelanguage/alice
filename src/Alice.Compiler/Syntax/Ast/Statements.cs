@@ -94,5 +94,14 @@ public sealed class BeginStmt : Stmt
 public sealed class ReturnStmt : Stmt { public Expr? Value; }
 public sealed class BreakStmt : Stmt { }
 public sealed class RetryStmt : Stmt { }
+
+/// <summary>`using r = expr ... end`: deterministic disposal (C# using).</summary>
+public sealed class UsingStmt : Stmt
+{
+    public string Name = "";
+    public Expr Value = null!;
+    public List<Stmt> Body = new();
+    public LocalSym? Local;
+}
 public sealed class NextStmt : Stmt { public Expr? Value; }
 public sealed class RaiseStmt : Stmt { public Expr Value = null!; }

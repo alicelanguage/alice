@@ -109,6 +109,10 @@ public sealed class Printer
             case MBlock b:
                 Block(b.Body);
                 break;
+            case MUsing u:
+                Line($"using (var {u.Name} = {E(u.Value)})");
+                Block(u.Body);
+                break;
         }
     }
 

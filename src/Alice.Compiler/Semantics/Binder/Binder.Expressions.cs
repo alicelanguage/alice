@@ -307,6 +307,10 @@ public sealed partial class Binder
         bool listy(AType t) => t.Kind == "array" || t.Clr is { IsGenericType: true } g && g.GetGenericTypeDefinition() == typeof(List<>);
         switch (b.Op)
         {
+            case "||" when !l.IsBool && l.Kind is not ("unknown" or "dynamic"):
+                // Ruby `a || b` on a nil-able value: the first non-nil (C# ??)
+                b.Res = "coalesce";
+                return r.IsKnown ? r : ResolveNonNull(l);
             case "=~" or "!~":
                 b.Res = b.Op == "=~" ? "match" : "nomatch";
                 return b.Op == "=~" ? AType.Int.AsNullable() : AType.Bool;

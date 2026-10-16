@@ -125,6 +125,21 @@ public sealed partial class Binder
             }
         }
 
+        // a constrained type parameter: members come from its `where T : I` constraints
+        if (recv.Kind == "param" && ConstraintTypes(recv.Cs) is { Count: > 0 } cts)
+        {
+            foreach (var ct in cts)
+            {
+                if (ct.Sym?.FindMethod(c.Name, argc) is MethodSym cm) { c.Res = "alice"; c.Sym = cm; BindBlockFor(c, cm); return cm.Ret; }
+                if (ct.Clr != null && ClrTypes.Lookup(ct.Clr, c.Name, argc, hasArgs, false, argTypes) is { } mem)
+                {
+                    c.Res = mem.Kind == "method" ? "clr" : "field";
+                    if (c.Block != null) BindLambda(c.Block, new List<AType>());
+                    return mem.Type;
+                }
+            }
+        }
+
         if (recv.Kind == "dynamic")
         {
             if (c.Block != null) BindLambda(c.Block, new List<AType>());
@@ -192,6 +207,18 @@ public sealed partial class Binder
     }
 
     static Type? BaseClrOf(TypeSym t) => BaseClr(t);
+
+    /// <summary>Constraint types of a type parameter in the current method/type (`where T : IArea`).</summary>
+    List<AType> ConstraintTypes(string param)
+    {
+        var r = new List<AType>();
+        var cs = new List<Constraint>();
+        if (curMethod?.Decl != null) cs.AddRange(curMethod.Decl.Constraints);
+        if (curType.Decl != null) cs.AddRange(curType.Decl.Constraints);
+        foreach (var c in cs.Where(c => c.Param == param))
+            foreach (var t in c.Types) r.Add(ResolveType(t));
+        return r;
+    }
 
     static bool HasMember(AType recv, string name, int argc)
     {

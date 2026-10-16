@@ -45,6 +45,7 @@ public static partial class Prelude
     public static T reduce<T>(this IEnumerable<T> a, Func<T, T, T> f) => a.Aggregate(f);
     public static T sum<T>(this T[] a) where T : unmanaged, INumber<T> => Simd.Sum<T>(a);
     public static T sum<T>(this IEnumerable<T> a) where T : INumber<T> { T s = T.Zero; foreach (var x in a) s += x; return s; }
+    public static R sum<T, R>(this IEnumerable<T> a, Func<T, R> f) where R : INumber<R> { R s = R.Zero; foreach (var x in a) s += f(x); return s; }
     public static T max<T>(this T[] a) where T : unmanaged, INumber<T> => Simd.Max<T>(a);
     public static T max<T>(this IEnumerable<T> a) => a.Max()!;
     public static T min<T>(this T[] a) where T : unmanaged, INumber<T> => Simd.Min<T>(a);

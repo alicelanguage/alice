@@ -21,7 +21,7 @@ public sealed partial class Parser
             SkipNl();
             if (t[p].Kind == "eof" || IsKw("end")) return;
             Token tok = Cur;
-            if (IsKw("using"))
+            if (IsKw("using") && !(Peek(1).Kind == "id" && Peek(2).Text == "="))
             {
                 Next();
                 into.Add(At(new UsingItem { Name = DottedName() }, tok));

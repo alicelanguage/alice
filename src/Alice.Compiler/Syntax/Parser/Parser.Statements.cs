@@ -35,6 +35,7 @@ public sealed partial class Parser
         else if (IsKw("case")) s = Case();
         else if (IsKw("begin")) s = Begin();
         else if (IsKw("loop") && (Peek(1).Text == "do" || Peek(1).Text == "{")) s = Loop();
+        else if (IsKw("using") && Peek(1).Kind == "id" && Peek(2).Text == "=") s = UsingResource();
         else s = Simple();
         s.Line = tok.Line;
         while (IsKw("if") || IsKw("unless"))
@@ -284,6 +285,18 @@ public sealed partial class Parser
         }
         Next();
         return hp;
+    }
+
+    UsingStmt UsingResource()
+    {
+        var u = At(new UsingStmt(), Next());
+        u.Name = Next().Text;
+        Expect("=");
+        u.Value = Expression();
+        DeclareLocal(u.Name);
+        u.Body = Block(" end ");
+        ExpectKw("end");
+        return u;
     }
 
     ArrayPatternExpr ArrayPattern()
