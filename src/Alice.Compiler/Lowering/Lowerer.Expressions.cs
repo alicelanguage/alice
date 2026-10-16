@@ -29,6 +29,8 @@ public sealed partial class Lowerer
                 return Const(ce);
             case CallExpr c:
                 return Call(c);
+            case NewExpr { AsCall: not null } nc:
+                return Expr(nc.AsCall);
             case NewExpr ne:
                 {
                     var args = Args(ne.Args);

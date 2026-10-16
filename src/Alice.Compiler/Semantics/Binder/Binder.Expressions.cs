@@ -48,6 +48,11 @@ public sealed partial class Binder
                 return BindCall(c);
             case NewExpr ne:
                 {
+                    if (ne.TypeRef.Args.Count == 0 && !ne.TypeRef.Name.Contains('.') && TypeByName(ne.TypeRef.Name, ne.TypeRef.Args) == null)
+                    {
+                        ne.AsCall ??= new CallExpr { Name = ne.TypeRef.Name, Args = ne.Args, Block = ne.Block, Parens = true, Line = ne.Line };
+                        return BindExpr(ne.AsCall);
+                    }
                     var t = ResolveType(ne.TypeRef);
                     BindArgs(ne.Args);
                     if (ne.Block != null) BindLambda(ne.Block, new List<AType>());
@@ -160,6 +165,12 @@ public sealed partial class Binder
             n.Res = "call";
             return Builtins.FreeReturn(n.Name, new List<AType>());
         }
+        if (BaseClr(curType) is Type bc && ClrTypes.Lookup(bc, n.Name, 0, false, false) is { } inherited)
+        {
+            UseThis();
+            n.Res = inherited.Kind == "method" ? "call" : "field";
+            return inherited.Type;
+        }
         if (curType.Kind == "extension")
         {
             var self = new CallExpr { Recv = new SelfExpr { Line = n.Line }, Name = n.Name, Line = n.Line };
@@ -170,6 +181,15 @@ public sealed partial class Binder
         if (closed.ContainsKey(n.Name)) Hoist(n.Name);
         n.Res = "unknown";
         return AType.Unknown;
+    }
+
+    /// <summary>The .NET base class of an Alice class (`class Game1 &lt; Game`), if any.</summary>
+    static Type? BaseClr(TypeSym t)
+    {
+        for (var s = t; s != null; s = s.BaseClass)
+            foreach (var b in s.Bases)
+                if (b.Clr != null && !b.Clr.IsInterface) return b.Clr;
+        return null;
     }
 
     AType BindConst(ConstExpr ce)

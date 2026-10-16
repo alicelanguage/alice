@@ -53,6 +53,7 @@ public sealed class NewExpr : Expr
     public TypeRef TypeRef = new();
     public List<Arg> Args = new();
     public LambdaExpr? Block;
+    public CallExpr? AsCall;     // `Add(5)`: not a type, so it is a (C#-style capitalized) method call
 }
 
 public sealed class IndexExpr : Expr

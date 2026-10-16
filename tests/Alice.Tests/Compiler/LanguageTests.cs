@@ -82,6 +82,8 @@ public class LanguageTests
         { "monkey patch String", "class String\n  def shout : String\n    upcase + \"!\"\n  end\nend\nputs \"hey\".shout", "HEY!" },
         { "monkey patch Int32", "struct Int32\n  def double : Int32\n    self * 2\n  end\nend\nputs 21.double", "42" },
         { "reopen alice class", "class Dog\n  def name : String\n    \"rex\"\n  end\nend\nclass Dog\n  def bark : String\n    name + \" woof\"\n  end\nend\nputs Dog.new.bark", "rex woof" },
+        { "override protected .NET virtual", "class MyStream < System.IO.MemoryStream\n  def Dispose(disposing : Bool)\n    puts \"disposed\"\n    super\n  end\nend\ns = MyStream.new\ns.Dispose", "disposed" },
+        { "implicit members of .NET base", "class MyList < List(Int32)\n  def total : Int32\n    Add(5)\n    Add(6)\n    Count + Capacity * 0\n  end\nend\nputs MyList.new.total", "2" },
         { "duck typing is monomorphized", "def len(x)\n  x.Length\nend\nputs len(\"abcd\")\nputs len([1, 2])", "4\n2" },
         { "duck typed arithmetic", "def twice(x)\n  x * 2\nend\nputs twice(2)\nputs twice(1.5)", "4\n3" },
     };

@@ -311,16 +311,26 @@ public sealed class Emitter
             string args = string.Join(", ", m.Params.Select(p => p.CsName));
             return $"{attrs}{dir}public {ret} {opName}({plist})\n{{\n{code}}}\npublic static {ret} operator {d.Name}({self} self, {plist}) => self.{opName}({args});\n";
         }
-        string mods = d.Vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + Virtual(m, owner);
+        var (vis, virt) = Virtual(m, owner, d.Vis);
+        string mods = vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + virt;
         return $"{attrs}{dir}{mods} {ret} {m.CsName}{gen}({plist}){where}\n{{\n{code}}}\n";
     }
 
     /// <summary>Alice dispatch is virtual only where the program needs it, so the JIT can devirtualize/inline the rest.</summary>
-    static string Virtual(MethodSym m, TypeSym owner)
+    static (string Vis, string Mod) Virtual(MethodSym m, TypeSym owner, string vis)
     {
-        if (m.IsStatic || owner.Kind != "class" || m.Decl?.Vis == "private") return "";
+        if (m.IsStatic || owner.Kind != "class" || vis == "private") return (vis, "");
         for (var b = owner.BaseClass; b != null; b = b.BaseClass)
-            if (b.Methods.ContainsKey(m.Name)) return " override";
-        return owner.HasSubclass ? " virtual" : "";
+            if (b.Methods.ContainsKey(m.Name)) return (vis, " override");
+        // overriding a .NET virtual: keep the base accessibility (e.g. MonoGame's protected Update/Draw)
+        for (var s = owner; s != null; s = s.BaseClass)
+            foreach (var b in s.Bases)
+            {
+                if (b.Clr == null || b.Clr.IsInterface) continue;
+                foreach (var bm in b.Clr.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic))
+                    if (bm.Name == m.CsName && bm.IsVirtual && !bm.IsFinal && bm.GetParameters().Length == m.Params.Count && !bm.IsPrivate && !bm.IsAssembly)
+                        return (bm.IsPublic ? "public" : "protected", " override");
+            }
+        return (vis, owner.HasSubclass ? " virtual" : "");
     }
 }

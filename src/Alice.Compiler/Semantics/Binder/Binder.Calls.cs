@@ -174,6 +174,13 @@ public sealed partial class Binder
             c.Recv = new SelfExpr { Line = c.Line };
             return BindCall(c);
         }
+        if (BaseClr(curType) is Type bc && ClrTypes.Lookup(bc, c.Name, c.Args.Count + (c.Block != null ? 1 : 0), true, false) is { } inherited)
+        {
+            UseThis();
+            if (c.Block != null) BindLambda(c.Block, new List<AType>());
+            c.Res = "clr";
+            return inherited.Type;
+        }
         if (c.Block != null) BindLambda(c.Block, new List<AType>());
         if (Builtins.FreeFunctions.Contains(c.Name))
         {
