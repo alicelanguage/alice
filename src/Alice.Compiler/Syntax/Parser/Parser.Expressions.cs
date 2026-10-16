@@ -158,7 +158,8 @@ public sealed partial class Parser
                 if (e is ConstExpr ce)
                 {
                     ce.Ref.Name += "." + seg;
-                    if (IsOp("(") && !Cur.Space) ce.Ref = TypeFromName(ce.Ref.Name, tok);
+                    if (IsCtorCall()) e = CtorCall(ce.Ref, tok);
+                    else if (IsOp("(") && !Cur.Space) ce.Ref = TypeFromName(ce.Ref.Name, tok);
                 }
                 else throw Err("'::' needs a type on the left");
             }
@@ -282,6 +283,7 @@ public sealed partial class Parser
                 return At(new IvarExpr { Name = c.Text }, c);
             case "const":
                 Next();
+                if (IsCtorCall()) return CtorCall(new TypeRef { Name = c.Text, Line = c.Line }, c);
                 return At(new ConstExpr { Ref = TypeFromName(c.Text, c) }, c);
             case "id":
                 return IdPrimary();
@@ -382,6 +384,22 @@ public sealed partial class Parser
         if (!call.Parens && call.Args.Count == 0 && call.Block == null && call.TypeArgs.Count == 0)
             return At(new NameExpr { Name = n }, c);
         return call;
+    }
+
+    /// <summary>`Name(expr, ...)` constructs (Rust tuple-struct style) unless the parens hold type arguments.</summary>
+    bool IsCtorCall()
+    {
+        if (!IsOp("(") || Cur.Space) return false;
+        var n = Peek(1);
+        if (n.Kind == "op" && n.Text == ")") return true;
+        if (n.Kind == "const") return Peek(2).Kind == "op" && (Peek(2).Text == "." || Peek(2).Text == "::") && Peek(3).Kind != "const";
+        return !(n.Kind == "op" && n.Text == "{");
+    }
+
+    Expr CtorCall(TypeRef type, Token tok)
+    {
+        Next();
+        return At(new NewExpr { TypeRef = type, Args = Args(")") }, tok);
     }
 
     bool GenericCallAhead()

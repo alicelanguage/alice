@@ -119,6 +119,9 @@ public sealed partial class Binder
             if (t.IsUnknown) continue;
             if (r == null) { r = t; continue; }
             if (r.Same(t)) continue;
+            var pr = r.Sym?.Parent ?? r.Sym;
+            var pt = t.Sym?.Parent ?? t.Sym;
+            if (pr != null && pr == pt && pr.Kind == "adt") { r = pr.Type; continue; }
             if (r.IsNumeric && t.IsNumeric) { r = r.NumericRank >= t.NumericRank ? r : t; continue; }
             if (r.Kind == "dynamic" || t.Kind == "dynamic") { r = AType.Dynamic; continue; }
             r = AType.Object;

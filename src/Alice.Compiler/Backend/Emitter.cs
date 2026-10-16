@@ -12,6 +12,7 @@ public sealed class Emitter
     readonly Binder binder;
     readonly Lowerer lowerer;
     string file = "";
+    bool moduleAttrsEmitted;
 
     public Emitter(Binder binder)
     {
@@ -31,6 +32,12 @@ public sealed class Emitter
         var sb = new StringBuilder(Header);
         foreach (var it in f.Items)
             if (it is UsingItem u) sb.Append("using ").Append(u.Name).Append(";\n");
+        if (!moduleAttrsEmitted)
+        {
+            // Alice guarantees definite assignment, so zero-initialising locals/stackalloc is wasted work.
+            sb.Append("[module: global::System.Runtime.CompilerServices.SkipLocalsInit]\n");
+            moduleAttrsEmitted = true;
+        }
         var prog = new StringBuilder();
         Items(sb, prog, f.Items);
         sb.Append("public static partial class Program\n{\n").Append(prog);
@@ -81,7 +88,7 @@ public sealed class Emitter
         var sb = new StringBuilder();
         foreach (var a in attrs)
         {
-            if (a == "Stack") continue;
+            if (a is "Stack" or "Open") continue;
             if (a == "Inline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             else if (a == "NoInline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]\n");
             else if (a == "Hot") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n");
@@ -90,9 +97,28 @@ public sealed class Emitter
         return sb.ToString();
     }
 
+    string Constraints(List<Constraint> cs)
+    {
+        var sb = new StringBuilder();
+        foreach (var c in cs)
+        {
+            var parts = c.Keywords.Select(k => k == "new" ? "new()" : k).ToList();
+            parts.AddRange(c.Types.Select(t => binder.ResolveType(t).Cs));
+            parts = parts.OrderBy(x => x is "struct" or "class" or "unmanaged" or "notnull" ? 0 : x == "new()" ? 2 : 1).ToList();
+            sb.Append(" where ").Append(c.Param).Append(" : ").Append(string.Join(", ", parts));
+        }
+        return sb.ToString();
+    }
+
     string Type(TypeDecl d)
     {
         var s = (TypeSym)d.Sym!;
+        if (s.Kind == "extension")
+        {
+            var ext = new StringBuilder();
+            foreach (var m in d.Members.OfType<MethodDecl>()) ext.Append(Method(m, s));
+            return $"public static partial class {s.Name}\n{{\n{ext}}}\n";
+        }
         var body = new StringBuilder();
         foreach (var it in d.Members)
         {
@@ -124,15 +150,22 @@ public sealed class Emitter
         if (ops.Contains("==") && !ops.Contains("!=")) body.Append($"public static bool operator !=({self} a, {self} b) => !(a == b);\n");
         if (ops.Contains("<") && !ops.Contains(">")) body.Append($"public static bool operator >({self} a, {self} b) => b < a;\n");
         if (ops.Contains("<=") && !ops.Contains(">=")) body.Append($"public static bool operator >=({self} a, {self} b) => b <= a;\n");
+        // leaf classes are sealed: the JIT devirtualizes and inlines calls and type checks get cheaper
+        bool open = s.HasSubclass || d.IsAbstract || d.Attrs.Contains("Open");
         string head = d.Kind switch
         {
             "module" => "public static partial class",
             "interface" => "public partial interface",
             "struct" => s.IsStack ? "public ref partial struct" : "public partial struct",
-            _ => d.IsAbstract ? "public abstract partial class" : "public partial class",
+            "record" => open ? "public partial record" : "public sealed partial record",
+            "record struct" => "public readonly partial record struct",
+            _ => d.IsAbstract ? "public abstract partial class" : open ? "public partial class" : "public sealed partial class",
         };
+        string prm = d.RecordParams.Count > 0 ? "(" + string.Join(", ", s.FieldOrder.Select(f => s.Fields[f].Type.Cs + " " + s.Fields[f].CsName)) + ")" : "";
         string bases = s.Bases.Count > 0 ? " : " + string.Join(", ", s.Bases.Select(b => b.Cs)) : "";
-        return $"{Attrs(d.Attrs)}{head} {self}{bases}\n{{\n{body}}}\n";
+        string where = Constraints(d.Constraints);
+        if (d.Kind.StartsWith("record") && body.Length == 0) return $"{Attrs(d.Attrs)}{head} {self}{prm}{bases}{where};\n";
+        return $"{Attrs(d.Attrs)}{head} {self}{prm}{bases}{where}\n{{\n{body}}}\n";
     }
 
     string Init(Expr e, TypeSym owner)
@@ -161,6 +194,20 @@ public sealed class Emitter
 
     string Enum(EnumDecl e)
     {
+        if (e.IsAdt)
+        {
+            // Rust-style sum type: closed hierarchy of sealed records (value equality, pattern matching)
+            var es = (TypeSym)e.Sym!;
+            var v = new StringBuilder();
+            foreach (var vs in es.Variants)
+            {
+                if (vs.FieldOrder.Count == 0)
+                    v.Append($"    public sealed record {vs.Name} : {e.Name} {{ public static readonly {vs.Name} Value = new(); }}\n");
+                else
+                    v.Append($"    public sealed record {vs.Name}({string.Join(", ", vs.FieldOrder.Select(f => vs.Fields[f].Type.Cs + " " + vs.Fields[f].CsName))}) : {e.Name};\n");
+            }
+            return $"{Attrs(e.Attrs)}public abstract partial record {e.Name}\n{{\n    private {e.Name}() {{ }}\n{v}}}\n";
+        }
         var items = new List<string>();
         for (int i = 0; i < e.Names.Count; i++)
             items.Add(e.Values[i] != null ? e.Names[i] + " = " + Init(e.Values[i]!, binder.Program) : e.Names[i]);
@@ -199,23 +246,48 @@ public sealed class Emitter
     string Method(MethodDecl d, TypeSym owner)
     {
         var m = (MethodSym)d.Sym!;
+        if (!m.HasInferredGenerics || !d.HasBody) return MethodVariant(d, owner, null);
+        // Crystal-style: one typed specialization per call-site argument types; generic body only if still needed
+        var sb = new StringBuilder();
+        foreach (var inst in m.Instances.Values.Where(i => i.Seen))
+        {
+            binder.Rebind(d, owner, inst);
+            sb.Append(MethodVariant(d, owner, inst));
+        }
+        if (m.NeedsGeneric || sb.Length == 0)
+        {
+            binder.Rebind(d, owner, null);
+            sb.Append(MethodVariant(d, owner, null));
+        }
+        return sb.ToString();
+    }
+
+    string MethodVariant(MethodDecl d, TypeSym owner, Instance? inst)
+    {
+        var m = (MethodSym)d.Sym!;
         string dir = $"#line {d.Line} \"{file}\"\n";
-        string ret = Lowerer.TypeCs(m.Ret);
-        string gen = m.TypeParams.Count > 0 ? "<" + string.Join(", ", m.TypeParams) + ">" : "";
+        AType retT = inst?.Ret ?? m.Ret;
+        if (inst != null && retT.IsUnknown) retT = AType.Dynamic;
+        string ret = Lowerer.TypeCs(retT);
+        var tps = inst == null ? m.TypeParams : m.TypeParams.Where(tp => !m.Params.Any(p => p.Inferred && p.Type.Cs == tp)).ToList();
+        string gen = tps.Count > 0 ? "<" + string.Join(", ", tps) + ">" : "";
         var ps = new List<string>();
+        if (owner.Kind == "extension") ps.Add($"this {owner.ExtTarget!.Cs} self");
         for (int i = 0; i < m.Params.Count; i++)
         {
             var p = m.Params[i];
+            var pt = inst != null ? inst.Args[i] : p.Type;
             string def = d.Params[i].Default != null ? " = " + Init(d.Params[i].Default!, owner) : "";
-            ps.Add(p.Splat ? $"params {p.Type.Cs}[] {p.CsName}" : $"{p.Type.Cs} {p.CsName}{def}");
+            ps.Add(p.Splat ? $"params {pt.Cs}[] {p.CsName}" : $"{pt.Cs} {p.CsName}{def}");
         }
         string plist = string.Join(", ", ps);
-        if (owner.Kind == "interface") return $"{dir}{ret} {m.CsName}{gen}({plist});\n";
-        if (d.IsAbstract) return $"{dir}{d.Vis} abstract {ret} {m.CsName}{gen}({plist});\n";
+        string where = Constraints(d.Constraints);
+        if (owner.Kind == "interface") return $"{dir}{ret} {m.CsName}{gen}({plist}){where};\n";
+        if (d.IsAbstract) return $"{dir}{d.Vis} abstract {ret} {m.CsName}{gen}({plist}){where};\n";
 
         lowerer.Type = owner;
         lowerer.Method = m;
-        bool returns = !m.Ret.IsVoid && !m.IsCtor;
+        bool returns = !retT.IsVoid && !m.IsCtor;
         var body = lowerer.LowerBody(d.Body, returns ? Tail.Return : Tail.None, d.HoistedLocals, d.Line);
         string code = Print(body, 1);
         string attrs = Attrs(d.Attrs);
@@ -239,8 +311,8 @@ public sealed class Emitter
             string args = string.Join(", ", m.Params.Select(p => p.CsName));
             return $"{attrs}{dir}public {ret} {opName}({plist})\n{{\n{code}}}\npublic static {ret} operator {d.Name}({self} self, {plist}) => self.{opName}({args});\n";
         }
-        string mods = d.Vis + (m.IsStatic ? " static" : "") + Virtual(m, owner);
-        return $"{attrs}{dir}{mods} {ret} {m.CsName}{gen}({plist})\n{{\n{code}}}\n";
+        string mods = d.Vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + Virtual(m, owner);
+        return $"{attrs}{dir}{mods} {ret} {m.CsName}{gen}({plist}){where}\n{{\n{code}}}\n";
     }
 
     /// <summary>Alice dispatch is virtual only where the program needs it, so the JIT can devirtualize/inline the rest.</summary>

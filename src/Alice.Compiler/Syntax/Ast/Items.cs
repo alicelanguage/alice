@@ -32,6 +32,16 @@ public sealed class TypeDecl : Item
     public List<string> TypeParams = new();
     public List<TypeRef> Bases = new();
     public List<Item> Members = new();
+    public List<Constraint> Constraints = new();
+    public List<Param> RecordParams = new();    // record Point(x : Int32, y : Int32)
+}
+
+/// <summary>`where T : IComparable(T), struct, new` (Rust/C# style generic constraint).</summary>
+public sealed class Constraint : Node
+{
+    public string Param = "";
+    public List<TypeRef> Types = new();
+    public List<string> Keywords = new();      // struct class unmanaged notnull new
 }
 
 public sealed class EnumDecl : Item
@@ -40,6 +50,8 @@ public sealed class EnumDecl : Item
     public TypeRef? Underlying;
     public List<string> Names = new();
     public List<Expr?> Values = new();
+    public List<List<Param>?> Fields = new();   // sum type: Circle(r : Float64); null for unit variants
+    public bool IsAdt => Fields.Any(f => f != null);
 }
 
 public sealed class LibDecl : Item
@@ -78,6 +90,7 @@ public sealed class MethodDecl : Item
     public TypeRef? Ret;
     public List<Stmt> Body = new();
     public List<Arg>? SuperInit;
+    public List<Constraint> Constraints = new();
     public bool HasBody = true;
     public HashSet<string> Hoisted = new();      // Ruby function-scoped locals first assigned in a nested block
     public List<LocalSym> HoistedLocals = new();

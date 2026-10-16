@@ -64,6 +64,14 @@ public sealed class CaseStmt : Stmt
     public Expr? Subject;
     public List<When> Whens = new();
     public List<Stmt>? Else;
+    public bool Exhaustive;      // covers every variant of a sum type
+}
+
+/// <summary>Bound form of `when Shape::Circle(r, 0.0)`: type test, field bindings, field equality checks.</summary>
+public sealed class Destructure
+{
+    public AType Type = AType.Unknown;
+    public List<(string Field, Semantics.LocalSym? Bind, Expr? Eq)> Parts = new();
 }
 
 public sealed class Rescue : Node

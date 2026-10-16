@@ -171,12 +171,14 @@ public sealed partial class Lowerer
         foreach (var w in c.Whens)
         {
             MExpr? cond = null;
+            var binds = new List<MStmt>();
             foreach (var p in w.Patterns)
             {
-                MExpr one = Pattern(subj, p);
+                MExpr one = Pattern(subj, p, binds);
                 cond = cond == null ? one : new MBinary { Op = "||", L = cond, R = one };
             }
-            var node = new MIf { Cond = cond!, Then = Stmts(w.Body, tail, target) };
+            var node = new MIf { Cond = cond!, Then = binds };
+            node.Then.AddRange(Stmts(w.Body, tail, target));
             if (first == null) first = node; else last!.Else = new List<MStmt> { node };
             last = node;
         }
@@ -185,12 +187,26 @@ public sealed partial class Lowerer
             if (last == null) { o.AddRange(Stmts(c.Else, tail, target)); return; }
             last.Else = Stmts(c.Else, tail, target);
         }
+        else if (c.Exhaustive && last != null)
+            last.Else = new List<MStmt> { new MThrow { Value = new MNew { TypeCs = "global::System.Diagnostics.UnreachableException" } } };
         if (first != null) o.Add(first);
     }
 
-    MExpr Pattern(MExpr? subj, Syntax.Expr p)
+    MExpr Pattern(MExpr? subj, Syntax.Expr p, List<MStmt> binds)
     {
         if (subj == null) return Expr(p);
+        if (p.Res == "destructure" && p.Sym is Destructure d)
+        {
+            string tmp = Temp("p");
+            MExpr cond = new MIs { E = subj, TypeCs = d.Type.Cs + " " + tmp };
+            foreach (var (field, bind, eq) in d.Parts)
+            {
+                var fe = new MMember { Target = new MCode(tmp), Name = field };
+                if (bind != null) binds.Add(new MDecl { Name = bind.CsName, Init = fe });
+                else if (eq != null) cond = new MBinary { Op = "&&", L = cond, R = new MBinary { Op = "==", L = fe, R = Expr(eq) } };
+            }
+            return cond;
+        }
         if (p.Res == "type") return new MIs { E = subj, TypeCs = p.Type.Cs };
         if (p is RangeExpr r)
             return new MBinary

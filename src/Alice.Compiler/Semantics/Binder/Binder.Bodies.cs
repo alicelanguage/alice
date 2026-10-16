@@ -6,6 +6,13 @@ public sealed partial class Binder
 {
     void BindAll()
     {
+        foreach (var t in Types.Values.Distinct().Concat(Extensions).Append(Program))
+            foreach (var list in t.Methods.Values)
+                foreach (var m in list)
+                {
+                    m.NeedsGeneric = false;
+                    foreach (var inst in m.Instances.Values) inst.Seen = false;
+                }
         foreach (var f in Files)
         {
             file = f.Path;
@@ -32,7 +39,9 @@ public sealed partial class Binder
                     BindItems(d.Members, (TypeSym)d.Sym!);
                     break;
                 case MethodDecl m:
-                    BindMethod(m, owner);
+                    BindMethod(m, owner, null);
+                    var ms = (MethodSym)m.Sym!;
+                    foreach (var inst in ms.Instances.Values.ToList()) BindMethod(m, owner, inst);
                     break;
                 case AccessorDecl a when a.Init != null:
                     BindInit(a.Init, owner);
@@ -58,15 +67,30 @@ public sealed partial class Binder
         BindExpr(e);
     }
 
-    void BindMethod(MethodDecl d, TypeSym owner)
+    /// <summary>Re-binds a method body (generic form or one specialization) right before it is lowered.</summary>
+    public void Rebind(MethodDecl d, TypeSym owner, Instance? inst)
     {
+        bool saved = changed;
+        file = FileOf(d);
+        BindMethod(d, owner, inst);
+        changed = saved;
+    }
+
+    readonly Dictionary<MethodDecl, string> methodFiles = new();
+    string FileOf(MethodDecl d) => methodFiles.TryGetValue(d, out var f) ? f : file;
+
+    void BindMethod(MethodDecl d, TypeSym owner, Instance? inst)
+    {
+        methodFiles[d] = file;
         var m = (MethodSym)d.Sym!;
         BeginBody(owner, m, d.Hoisted);
         typeParams = new List<string>(owner.TypeParams);
         typeParams.AddRange(m.TypeParams);
-        foreach (var ps in m.Params)
+        for (int i = 0; i < m.Params.Count; i++)
         {
-            var l = Declare(d, ps.Name, ps.Splat ? AType.Array(ps.Type) : ps.Type);
+            var ps = m.Params[i];
+            var pt = inst != null ? inst.Args[i] : ps.Type;
+            var l = Declare(d, ps.Name, ps.Splat ? AType.Array(pt) : pt);
             l.CsName = ps.CsName;
         }
         foreach (var p in d.Params)
@@ -75,6 +99,12 @@ public sealed partial class Binder
         if (!d.HasBody) return;
         BindBlock(d.Body);
         d.HoistedLocals = hoisted;
+        if (inst != null)
+        {
+            var r = m.RetDeclared ? m.Ret : InferRet(d.Body);
+            if (!r.Same(inst.Ret)) { inst.Ret = r; changed = true; }
+            return;
+        }
         if (!m.RetDeclared)
         {
             var inferred = InferRet(d.Body);
@@ -121,7 +151,7 @@ public sealed partial class Binder
                 {
                     if (c.Else == null) return null;
                     var ts = new List<AType>();
-                    foreach (var b in c.Whens.Select(w => w.Body).Append(c.Else))
+                    foreach (var b in c.Else == null ? c.Whens.Select(w => w.Body) : c.Whens.Select(w => w.Body).Append(c.Else))
                     {
                         var t = TailType(b);
                         if (t == null) return null;

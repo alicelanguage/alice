@@ -19,7 +19,7 @@ public sealed partial class Lowerer
             case IvarExpr iv:
                 return new MMember { Target = new MCode("this"), Name = Binder.Mangle(iv.Name) };
             case SelfExpr:
-                return new MCode("this");
+                return new MCode(Type.Kind == "extension" ? "self" : "this");
             case SuperExpr sup:
                 {
                     var args = sup.Args != null ? Args(sup.Args) : Method?.Params.Select(p => (MExpr)new MCode(p.CsName)).ToList() ?? new List<MExpr>();
@@ -102,7 +102,10 @@ public sealed partial class Lowerer
             case "field":
                 return new MCode(((FieldSym)n.Sym!).CsName);
             case "call":
+                if (n.Sym is MethodSym em && em.Owner.Kind == "extension") return new MCall { Target = new MCode("self"), Name = em.CsName };
                 return new MCall { Name = n.Sym is MethodSym m ? m.CsName : Binder.Mangle(n.Name) };
+            case "selfcall":
+                return Expr((CallExpr)n.Sym!);
         }
         string cs = Binder.Mangle(n.Name);
         return zeroArg.Contains(cs) && !props.Contains(cs) ? new MCall { Name = cs } : new MCode(cs);
@@ -110,7 +113,8 @@ public sealed partial class Lowerer
 
     MExpr Const(ConstExpr ce)
     {
-        if (ce.Res == "type" && ce.Sym is AType t) return new MCode(t.Cs);
+        if (ce.Res == "type" && ce.Sym is AType t)
+            return new MCode(t.Sym is { Kind: "variant", FieldOrder.Count: 0 } ? t.Cs + ".Value" : t.Cs);
         if (ce.Res == "path" && ce.Sym is ConstPath cp)
         {
             MExpr cur = new MCode(cp.Owner.Cs);

@@ -12,6 +12,7 @@ public sealed partial class Binder
     public readonly ClrTypes Clr;
     public readonly Dictionary<string, TypeSym> Types = new();
     public readonly TypeSym Program = new() { Name = "Program", Kind = "program" };
+    public readonly List<TypeSym> Extensions = new();
     readonly HashSet<string> usings = new();
 
     // per-body state

@@ -10,7 +10,7 @@ public sealed partial class Parser
     bool noDo;
     readonly List<string> attrs = new();
 
-    const string Keywords = " if unless while until for in do end then else elsif case when begin rescue ensure return break next and or not def class struct module interface enum lib fun namespace using require getter property setter include abstract private protected self nil true false super yield loop raise of forall spawn val ";
+    const string Keywords = " if unless while until for in do end then else elsif case when begin rescue ensure return break next and or not def class struct module interface enum lib fun namespace using require getter property setter include abstract private protected self nil true false super yield loop raise of forall spawn val where record ";
 
     public Parser(string src, string file)
     {

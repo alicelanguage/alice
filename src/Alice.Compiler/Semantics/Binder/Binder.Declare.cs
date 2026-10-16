@@ -8,12 +8,28 @@ public sealed partial class Binder
     void Collect()
     {
         Types["Program"] = Program;
+        foreach (var f in Files) CollectUsings(f.Items);
         foreach (var f in Files)
         {
             file = f.Path;
             CollectItems(f.Items, "");
         }
     }
+
+    void CollectUsings(List<Item> items)
+    {
+        foreach (var it in items)
+        {
+            if (it is UsingItem u) usings.Add(u.Name);
+            else if (it is NamespaceItem n) CollectUsings(n.Items);
+        }
+    }
+
+    /// <summary>`class String ... end` with only methods reopens a .NET type: Ruby monkey patching as extension methods.</summary>
+    bool IsMonkeyPatch(TypeDecl d) =>
+        d.Kind is "class" or "struct" && !Types.ContainsKey(d.Name) && d.Bases.Count == 0 && d.TypeParams.Count == 0
+        && d.Members.Count > 0 && d.Members.All(m => m is MethodDecl md && md.Name != "initialize")
+        && ((PrimNames.TryGetValue(d.Name, out var pt) && pt.Kind is "prim" or "class") || Clr.Find(d.Name, 0, usings) != null);
 
     void CollectItems(List<Item> items, string ns)
     {
@@ -27,13 +43,35 @@ public sealed partial class Binder
                 case NamespaceItem n:
                     CollectItems(n.Items, ns == "" ? n.Name : ns + "." + n.Name);
                     break;
+                case TypeDecl d when IsMonkeyPatch(d):
+                    {
+                        var x = new TypeSym { Name = d.Name.Replace(".", "_") + "_AliceExt", Kind = "extension", Namespace = ns, Decl = d };
+                        d.Sym = x;
+                        Extensions.Add(x);
+                        break;
+                    }
                 case TypeDecl d:
                     RegisterType(d.Name, d.Kind, ns, d);
                     CollectItems(d.Members, ns == "" ? d.Name : ns + "." + d.Name);
                     break;
                 case EnumDecl e:
-                    RegisterType(e.Name, "enum", ns, e);
-                    break;
+                    {
+                        RegisterType(e.Name, e.IsAdt ? "adt" : "enum", ns, e);
+                        var es = (TypeSym)e.Sym!;
+                        if (!e.IsAdt) break;
+                        es.Type.Kind = "class";
+                        for (int i = 0; i < e.Names.Count; i++)
+                        {
+                            string vn = e.Names[i];
+                            if (es.Variants.Any(v => v.Name == vn)) continue;
+                            var vs = new TypeSym { Name = vn, Kind = "variant", Parent = es, Namespace = ns };
+                            vs.Type = new AType("class", es.Type.Cs + "." + vn) { Sym = vs };
+                            es.Variants.Add(vs);
+                            Types[e.Name + "." + vn] = vs;
+                            Types.TryAdd(vn, vs);
+                        }
+                        break;
+                    }
                 case LibDecl l:
                     RegisterType(l.Name, "lib", ns, l);
                     break;
@@ -46,7 +84,7 @@ public sealed partial class Binder
         if (!Types.TryGetValue(name, out var s))
         {
             s = new TypeSym { Name = name, Kind = kind, Namespace = ns };
-            string tk = kind switch { "struct" => "struct", "interface" => "iface", "enum" => "enum", _ => "class" };
+            string tk = kind switch { "struct" or "record struct" => "struct", "interface" => "iface", "enum" => "enum", _ => "class" };
             s.Type = new AType(tk, ns == "" ? name : "global::" + ns + "." + name) { Sym = s };
             Types[name] = s;
             if (ns != "") Types[ns + "." + name] = s;
@@ -86,8 +124,7 @@ public sealed partial class Binder
                     DeclareType(d);
                     break;
                 case EnumDecl e:
-                    var es = (TypeSym)e.Sym!;
-                    foreach (var n in e.Names) es.Fields[n] = new FieldSym { Name = n, CsName = n, Type = es.Type, Kind = "const", IsStatic = true, Owner = es };
+                    DeclareEnum(e);
                     break;
                 case LibDecl l:
                     DeclareLib(l);
@@ -105,7 +142,24 @@ public sealed partial class Binder
     void DeclareType(TypeDecl d)
     {
         var s = (TypeSym)d.Sym!;
+        if (s.Kind == "extension")
+        {
+            s.ExtTarget ??= ResolveType(new TypeRef { Name = d.Name });
+            s.Type = s.ExtTarget;
+            foreach (var m in d.Members.OfType<MethodDecl>())
+            {
+                m.IsStatic = false;
+                DeclareMethod(m, s);
+            }
+            return;
+        }
         typeParams = s.TypeParams;
+        if (s.FieldOrder.Count == 0)
+            foreach (var p in d.RecordParams)
+            {
+                s.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = s };
+                s.FieldOrder.Add(p.Name);
+            }
         foreach (var b in d.Bases)
         {
             var bt = ResolveType(b);
@@ -137,12 +191,31 @@ public sealed partial class Binder
                     typeParams = s.TypeParams;
                     break;
                 case EnumDecl e:
-                    var es = (TypeSym)e.Sym!;
-                    foreach (var n in e.Names) es.Fields[n] = new FieldSym { Name = n, CsName = n, Type = es.Type, Kind = "const", IsStatic = true, Owner = es };
+                    DeclareEnum(e);
                     break;
             }
         }
         typeParams = new List<string>();
+    }
+
+    void DeclareEnum(EnumDecl e)
+    {
+        var es = (TypeSym)e.Sym!;
+        if (!e.IsAdt)
+        {
+            foreach (var n in e.Names) es.Fields[n] = new FieldSym { Name = n, CsName = n, Type = es.Type, Kind = "const", IsStatic = true, Owner = es };
+            return;
+        }
+        for (int i = 0; i < e.Names.Count; i++)
+        {
+            var vs = es.Variants.First(v => v.Name == e.Names[i]);
+            if (vs.FieldOrder.Count > 0) continue;
+            foreach (var p in e.Fields[i] ?? new List<Param>())
+            {
+                vs.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = vs };
+                vs.FieldOrder.Add(p.Name);
+            }
+        }
     }
 
     void DeclareConst(ConstDecl c, TypeSym owner)
@@ -188,6 +261,8 @@ public sealed partial class Binder
                 string tp = "T" + char.ToUpperInvariant(p.Name[0]) + p.Name.Substring(1);
                 m.TypeParams.Add(tp);
                 ps.Type = new AType("param", tp);
+                ps.Inferred = true;
+                m.HasInferredGenerics = true;
             }
             m.Params.Add(ps);
             if (p.Auto && owner.FindField(p.Name) == null)

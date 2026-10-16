@@ -99,6 +99,7 @@ public sealed class ClrTypes
 
     static string CsName(Type t)
     {
+        if (t.IsGenericParameter) return t.Name;
         foreach (var pr in AType.Prims) if (pr.Clr == t) return pr.Cs;
         if (t.IsArray) return CsName(t.GetElementType()!) + "[]";
         string name = t.Name;

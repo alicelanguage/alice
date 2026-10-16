@@ -65,8 +65,20 @@ public sealed partial class Binder
 
         var argTypes = BindArgTypes(c.Args);
 
+        // monkey patches of .NET types
+        foreach (var x in Extensions)
+        {
+            if (x.ExtTarget == null || x.ExtTarget.Cs != recv.Cs.TrimEnd('?')) continue;
+            var xm = x.FindMethod(c.Name, argc);
+            if (xm == null) continue;
+            c.Res = "alice";
+            c.Sym = xm;
+            BindBlockFor(c, xm);
+            return CallRet(xm, argTypes);
+        }
+
         // Alice instance members
-        if (recv.Sym != null && recv.Sym.Kind is "class" or "struct" or "interface")
+        if (recv.Sym != null && recv.Sym.Kind is not ("module" or "program" or "lib" or "enum"))
         {
             var m = recv.Sym.FindMethod(c.Name, argc);
             if (m != null)
@@ -74,7 +86,7 @@ public sealed partial class Binder
                 c.Res = "alice";
                 c.Sym = m;
                 BindBlockFor(c, m);
-                return m.Ret;
+                return CallRet(m, argTypes);
             }
             var f = recv.Sym.FindField(c.Name);
             if (f != null && !hasArgs && c.Block == null)
@@ -154,7 +166,13 @@ public sealed partial class Binder
             c.Res = "alice";
             c.Sym = m;
             BindBlockFor(c, m);
-            return m.Ret;
+            return CallRet(m, argTypes);
+        }
+        if (curType.Kind == "extension")
+        {
+            // implicit receiver inside a monkey patch is `self`
+            c.Recv = new SelfExpr { Line = c.Line };
+            return BindCall(c);
         }
         if (c.Block != null) BindLambda(c.Block, new List<AType>());
         if (Builtins.FreeFunctions.Contains(c.Name))
@@ -164,6 +182,33 @@ public sealed partial class Binder
         }
         c.Res = "call";
         return AType.Unknown;
+    }
+
+    /// <summary>Crystal-style monomorphization: untyped parameters get one typed specialization per argument-type tuple.</summary>
+    AType CallRet(MethodSym m, List<AType> argTypes)
+    {
+        if (!m.HasInferredGenerics) return m.Ret;
+        var args = new List<AType>();
+        for (int i = 0; i < m.Params.Count; i++)
+        {
+            var p = m.Params[i];
+            if (p.Inferred)
+            {
+                var a = i < argTypes.Count ? argTypes[i] : AType.Unknown;
+                if (!a.IsKnown || a.Kind == "null" || a.Kind == "param") { m.NeedsGeneric = true; return AType.Unknown; }
+                args.Add(a);
+            }
+            else args.Add(p.Type);
+        }
+        string key = string.Join("|", args.Select(a => a.Cs));
+        if (!m.Instances.TryGetValue(key, out var inst))
+        {
+            inst = new Instance { Args = args };
+            m.Instances[key] = inst;
+            changed = true;
+        }
+        inst.Seen = true;
+        return inst.Ret;
     }
 
     /// <summary>A block passed to an Alice method binds with the parameter types of its `&block : A -> R`.</summary>

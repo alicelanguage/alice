@@ -16,6 +16,10 @@ public sealed class TypeSym
     public bool IsStack;
     public bool IsAbstract;
     public AType Type = AType.Unknown;
+    public AType? ExtTarget;          // monkey patch of a .NET type (lowered to extension methods)
+    public TypeSym? Parent;           // sum-type variant -> its enum
+    public List<TypeSym> Variants = new();
+    public List<string> FieldOrder = new();   // record / variant positional fields
     public readonly Dictionary<string, List<MethodSym>> Methods = new();
     public readonly Dictionary<string, FieldSym> Fields = new();
 
@@ -53,6 +57,7 @@ public sealed class ParamSym
     public string CsName = "";
     public AType Type = AType.Unknown;
     public bool HasDefault;
+    public bool Inferred;             // untyped: specialized per call site
     public bool Splat;
     public bool Block;
     public bool Auto;
@@ -71,6 +76,9 @@ public sealed class MethodSym
     public bool IsStatic;
     public bool IsCtor;
     public bool UsesYield;
+    public bool HasInferredGenerics;  // untyped params: monomorphized per call-site types
+    public bool NeedsGeneric;         // some call site had unknown argument types
+    public readonly Dictionary<string, Instance> Instances = new();
 
     public int Required => Params.Count(p => !p.HasDefault && !p.Splat && !p.Block);
 
@@ -79,6 +87,14 @@ public sealed class MethodSym
         int max = Params.Count(p => !p.Block);
         return argc >= Required && (argc <= max || Params.Any(p => p.Splat));
     }
+}
+
+/// <summary>A Crystal-style specialization of a method with untyped parameters.</summary>
+public sealed class Instance
+{
+    public List<AType> Args = new();
+    public AType Ret = AType.Unknown;
+    public bool Seen;                 // reached in the latest binding pass
 }
 
 public sealed class FieldSym

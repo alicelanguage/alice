@@ -160,6 +160,13 @@ public sealed partial class Binder
             n.Res = "call";
             return Builtins.FreeReturn(n.Name, new List<AType>());
         }
+        if (curType.Kind == "extension")
+        {
+            var self = new CallExpr { Recv = new SelfExpr { Line = n.Line }, Name = n.Name, Line = n.Line };
+            n.Res = "selfcall";
+            n.Sym = self;
+            return BindExpr(self);
+        }
         if (closed.ContainsKey(n.Name)) Hoist(n.Name);
         n.Res = "unknown";
         return AType.Unknown;

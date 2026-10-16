@@ -173,15 +173,42 @@ public sealed partial class Binder
 
     void BindCase(CaseStmt c)
     {
-        if (c.Subject != null) BindExpr(c.Subject);
+        AType subj = c.Subject != null ? BindExpr(c.Subject) : AType.Unknown;
+        var covered = new HashSet<TypeSym>();
         foreach (var w in c.Whens)
         {
+            PushScope();
             foreach (var p in w.Patterns)
             {
-                if (c.Subject != null && p is ConstExpr ce && ce.Ref.Args.Count == 0 && TypeByName(ce.Ref.Name, ce.Ref.Args) is AType pt && !IsConstValue(ce))
+                if (c.Subject != null && p is NewExpr ne && ResolveType(ne.TypeRef) is AType dt && dt.Sym is { FieldOrder.Count: > 0 } ds)
+                {
+                    if (ne.Args.Count != ds.FieldOrder.Count) throw Err(p, $"{ds.Name} has {ds.FieldOrder.Count} fields, pattern has {ne.Args.Count}");
+                    var d = new Destructure { Type = dt };
+                    bool total = true;
+                    for (int i = 0; i < ne.Args.Count; i++)
+                    {
+                        var field = ds.Fields[ds.FieldOrder[i]];
+                        var arg = ne.Args[i].Value!;
+                        if (arg is NameExpr n && n.Name == "_") d.Parts.Add((field.CsName, null, null));
+                        else if (arg is NameExpr bn && FindLocal(bn.Name) == null) d.Parts.Add((field.CsName, Declare(arg, bn.Name, field.Type), null));
+                        else
+                        {
+                            BindExpr(arg);
+                            d.Parts.Add((field.CsName, null, arg));
+                            total = false;
+                        }
+                    }
+                    if (w.Patterns.Count > 1 && d.Parts.Any(x => x.Bind != null)) throw Err(p, "a `when` with several patterns cannot bind variables");
+                    p.Res = "destructure";
+                    p.Sym = d;
+                    p.Type = dt;
+                    if (total) covered.Add(ds);
+                }
+                else if (c.Subject != null && p is ConstExpr ce && TypeByName(ce.Ref.Name, ce.Ref.Args) is AType pt && !IsConstValue(ce))
                 {
                     p.Res = "type";
                     p.Type = pt;
+                    if (pt.Sym != null) covered.Add(pt.Sym);
                 }
                 else if (p is RangeExpr r)
                 {
@@ -190,9 +217,18 @@ public sealed partial class Binder
                 }
                 else BindExpr(p);
             }
-            Scoped(w.Body);
+            BindBlock(w.Body);
+            PopScope();
         }
         if (c.Else != null) Scoped(c.Else);
+        // Rust-style exhaustiveness for sum types
+        c.Exhaustive = false;
+        if (c.Else == null && subj.Sym is { Kind: "adt" } adt)
+        {
+            var missing = adt.Variants.Where(v => !covered.Contains(v)).Select(v => v.Name).ToList();
+            if (missing.Count > 0) throw Err(c, $"non-exhaustive match on {adt.Name}: missing {string.Join(", ", missing)}");
+            c.Exhaustive = true;
+        }
     }
 
     bool IsConstValue(ConstExpr ce) => curType.FindField(ce.Ref.Name) != null || Program.Fields.ContainsKey(ce.Ref.Name);

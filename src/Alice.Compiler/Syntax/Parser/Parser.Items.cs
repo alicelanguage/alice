@@ -48,10 +48,43 @@ public sealed partial class Parser
         }
     }
 
+    /// <summary>A record has a body when its next line starts a member; otherwise it is a one-line declaration.</summary>
+    bool RecordHasBody()
+    {
+        int k = p;
+        while (t[k].Kind == "nl") k++;
+        if (k == p) return true;
+        var x = t[k];
+        return (x.Kind == "id" && " def getter property setter include private protected abstract ".Contains(" " + x.Text + " ")) || (x.Kind == "op" && x.Text == "@[");
+    }
+
+    List<Constraint> Where()
+    {
+        Next();
+        var list = new List<Constraint>();
+        while (true)
+        {
+            var c = At(new Constraint { Param = Next().Text }, t[p - 1]);
+            Expect(":");
+            while (true)
+            {
+                if (t[p].Kind == "id" && " struct class unmanaged notnull new ".Contains(" " + Cur.Text + " ")) c.Keywords.Add(Next().Text);
+                else c.Types.Add(Type());
+                if (!IsOp(",")) break;
+                if (Peek(1).Kind == "const" && Peek(2).Kind == "op" && Peek(2).Text == ":") break;
+                Next();
+            }
+            list.Add(c);
+            if (!IsOp(",")) break;
+            Next();
+        }
+        return list;
+    }
+
     bool IsTypeStart()
     {
         if (IsKw("abstract") && Peek(1).Kind == "id" && Peek(1).Text != "def") return true;
-        return t[p].Kind == "id" && " class struct module interface enum lib ".Contains(" " + t[p].Text + " ");
+        return t[p].Kind == "id" && " class struct module interface enum lib record ".Contains(" " + t[p].Text + " ");
     }
 
     bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract")) && Peek(1).Text == "def");
@@ -98,17 +131,29 @@ public sealed partial class Parser
         bool isAbstract = false;
         if (IsKw("abstract")) { Next(); isAbstract = true; }
         string kw = Next().Text;
+        if (kw == "record" && IsKw("struct")) { Next(); kw = "record struct"; }
         if (kw == "lib") return Lib(tok);
         if (kw == "enum") return Enum(tok);
         if (t[p].Kind != "const") throw Err("expected type name");
         var d = At(new TypeDecl { Kind = kw, Name = Next().Text, IsAbstract = isAbstract }, tok);
         d.Attrs = TakeAttrs();
-        if (IsOp("(") && !Cur.Space)
+        if (IsOp("(") && !Cur.Space && !d.Kind.StartsWith("record"))
         {
             Next();
             d.TypeParams.Add(Next().Text);
             while (IsOp(",")) { Next(); d.TypeParams.Add(Next().Text); }
             Expect(")");
+        }
+        if (d.Kind.StartsWith("record"))
+        {
+            Expect("(");
+            SkipNl();
+            while (!IsOp(")"))
+            {
+                d.RecordParams.Add(Param());
+                if (IsOp(",")) { Next(); SkipNl(); }
+            }
+            Next();
         }
         if (IsOp("<"))
         {
@@ -116,6 +161,8 @@ public sealed partial class Parser
             d.Bases.Add(Type());
             while (IsOp(",")) { Next(); d.Bases.Add(Type()); }
         }
+        if (IsKw("where")) d.Constraints = Where();
+        if (d.Kind.StartsWith("record") && !RecordHasBody()) { EndStmt(); return d; }
         Body(d);
         ExpectKw("end");
         return d;
@@ -189,6 +236,19 @@ public sealed partial class Parser
             SkipNl();
             if (IsKw("end")) break;
             e.Names.Add(Next().Text);
+            List<Param>? fields = null;
+            if (IsOp("(") && !Cur.Space)
+            {
+                Next();
+                fields = new List<Param>();
+                while (!IsOp(")"))
+                {
+                    fields.Add(Param());
+                    if (IsOp(",")) Next();
+                }
+                Next();
+            }
+            e.Fields.Add(fields);
             Expr? v = null;
             if (IsOp("=")) { Next(); v = FreshExpr(); }
             e.Values.Add(v);
@@ -277,8 +337,9 @@ public sealed partial class Parser
         {
             Next();
             m.TypeParams.Add(Next().Text);
-            while (IsOp(",")) { Next(); m.TypeParams.Add(Next().Text); }
+            while (IsOp(",") && Peek(1).Kind == "const" && !(Peek(2).Kind == "op" && Peek(2).Text == ":")) { Next(); m.TypeParams.Add(Next().Text); }
         }
+        if (IsKw("where")) m.Constraints = Where();
         if (m.IsAbstract || ownerKind == "interface")
         {
             m.HasBody = false;
