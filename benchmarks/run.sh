@@ -5,7 +5,9 @@ export LC_ALL=C
 cd "$(dirname "$0")"
 ROOT=..
 OUT=out
+# Usage: benchmarks/run.sh [bench...]   (default: all); ROUNDS=N (default 3)
 BENCHES=(nbody binarytrees pipeline expr wordfreq mandelbrot parallel particles)
+(( $# > 0 )) && BENCHES=("$@")
 
 dotnet build "$ROOT/src/Alice.Cli" -c Release -v q -nologo >/dev/null
 ALICE="$ROOT/src/Alice.Cli/bin/Release/net10.0/alice.dll"
@@ -17,9 +19,9 @@ done
 # RESULT <name> <ms> <checksum> -> "ms checksum"; "-" when the variant does not exist.
 result() { "$@" | awk '/^RESULT/ {print $3, $4; f=1} END {if (!f) print "- -"}'; }
 
-# Variants run interleaved for ROUNDS rounds (default 5) and report the median: thermal throttling or
+# Variants run interleaved for ROUNDS rounds (default 3) and report the median: thermal throttling or
 # background load then hits all variants alike instead of whichever benchmark happens to be running.
-ROUNDS="${ROUNDS:-5}"
+ROUNDS="${ROUNDS:-3}"
 declare -A T C
 for ((r = 0; r < ROUNDS; r++)); do
   for b in "${BENCHES[@]}"; do
