@@ -71,7 +71,7 @@ public sealed partial class Binder
             if (closed != null) return ClrTypes.FromClr(closed);
             var open = ClrTypes.FromClr(clr.IsGenericTypeDefinition ? clr : clr);
             string baseName = clr.IsGenericTypeDefinition ? GenericBase(clr) : open.Cs;
-            return new AType(clr.IsValueType ? "struct" : "class", args.Count > 0 ? baseName + "<" + string.Join(", ", args.Select(a => a.Cs)) + ">" : baseName) { Args = args };
+            return new AType(clr.IsValueType ? "struct" : "class", args.Count > 0 ? baseName + "<" + string.Join(", ", args.Select(a => a.Cs)) + ">" : baseName) { Args = args, OpenClr = clr.IsGenericTypeDefinition ? clr : null };
         }
         string cs = name.Replace("::", ".");
         return new AType("class", args.Count > 0 ? cs + "<" + string.Join(", ", args.Select(a => a.Cs)) + ">" : cs) { Args = args };

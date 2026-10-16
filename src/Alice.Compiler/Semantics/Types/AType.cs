@@ -12,6 +12,8 @@ public sealed class AType
     public TypeSym? Sym;
     public List<AType> Args = new();
     public AType? Elem;
+    /// <summary>Open generic CLR definition when the type can't be closed (Alice type arguments: List(Entity)).</summary>
+    public Type? OpenClr;
     public bool Nullable;
 
     public AType(string kind, string cs, Type? clr = null)

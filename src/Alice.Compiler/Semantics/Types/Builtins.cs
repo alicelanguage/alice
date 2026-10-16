@@ -80,6 +80,9 @@ public static class Builtins
             var e = ClrTypes.ElementOf(t.Clr);
             if (e != null) return ClrTypes.FromClr(e);
         }
+        // List(Entity), HashSet(Entity)...: the open definition's element parameter maps to an Alice type argument
+        if (t.OpenClr != null && ClrTypes.ElementOf(t.OpenClr) is { IsGenericParameter: true } gp && gp.GenericParameterPosition < t.Args.Count)
+            return t.Args[gp.GenericParameterPosition];
         return AType.Unknown;
     }
 
