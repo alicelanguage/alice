@@ -271,7 +271,10 @@ public static class CompileCommands
             var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib);
             if (csrc != null) File.WriteAllText(Path.Combine(o.Output, lib + ".c"), csrc);
             // type-check here (in-process Roslyn) so errors are reported in Alice terms, never as raw csc output
-            var checkRefs = o.Refs.Where(r => !r.Replace('\\', '/').Contains("/packs/") && !Path.GetFileName(r).StartsWith("Alice.Runtime") && File.Exists(r)).ToList();
+            // Emit already references the running framework. Keep other framework packs (e.g. ASP.NET).
+            var runtimeRefs = (((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")) ?? "")
+                .Split(Path.PathSeparator).Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var checkRefs = o.Refs.Where(r => !runtimeRefs.Contains(Path.GetFileName(r)) && !Path.GetFileName(r).StartsWith("Alice.Runtime") && File.Exists(r)).ToList();
             AliceCompiler.Emit(cs, "check", cs.Any(c => c.Contains("public static void Main(string[] ARGV)")), checkRefs);
             var used = new HashSet<string>();
             foreach (var old in Directory.GetFiles(o.Output, "*.g.cs")) File.Delete(old);

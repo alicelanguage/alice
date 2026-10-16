@@ -58,6 +58,22 @@ public class CliErrorTests : IDisposable
     }
 
     [Fact]
+    public void Gen_keeps_framework_pack_references()
+    {
+        string pack = Path.Combine(dir, "packs", "Example.Framework.Ref", "1.0", "ref", "net10.0");
+        Directory.CreateDirectory(pack);
+        string reference = Path.Combine(pack, "Example.Framework.dll");
+        File.WriteAllBytes(reference, Alice.Compiler.AliceCompiler.Emit(
+            ["namespace Example.Framework; public static class Api { public static int Answer() => 42; }"],
+            "Example.Framework", exe: false));
+        File.WriteAllText("refs.txt", reference);
+        File.WriteAllText("main.al", "using Example.Framework\nputs Api.Answer()\n");
+
+        Assert.Equal(0, Cli("gen", "-o", "generated", "--refs-file", "refs.txt", "main.al").Code);
+        Assert.True(File.Exists(Path.Combine("generated", "main.al.g.cs")));
+    }
+
+    [Fact]
     public void Missing_file_suggests_a_close_name()
     {
         File.WriteAllText("hello.al", "puts 1\n");

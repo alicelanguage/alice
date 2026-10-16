@@ -2,6 +2,7 @@
 
 ## 0.10.0 - 2026-10-16
 
+- Fix: generated-project type checking retains ASP.NET and other framework-pack references instead of dropping every SDK pack.
 - Tests: use platform-native math libraries, paths and newlines; account for ARM64 fused multiply-add support.
 - Docs: refreshed Alice introduction, quick start, practical example catalog and contribution guide.
 - Examples: organized basics, data, concurrency and web programs; ASP.NET Core API written in Alice, backed by an Alice pricing library.
