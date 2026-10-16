@@ -76,6 +76,7 @@ public sealed class MethodSym
     public bool IsStatic;
     public bool IsCtor;
     public bool UsesYield;
+    public bool IsAsync;
     public bool HasInferredGenerics;  // untyped params: monomorphized per call-site types
     public bool NeedsGeneric;         // some call site had unknown argument types
     public readonly Dictionary<string, Instance> Instances = new();

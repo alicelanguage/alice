@@ -250,6 +250,7 @@ public sealed partial class Binder
             Decl = d,
             IsStatic = d.IsStatic,
             IsCtor = d.Name == "initialize",
+            IsAsync = d.IsAsync,
             TypeParams = new List<string>(d.TypeParams),
         };
         foreach (var p in d.Params)

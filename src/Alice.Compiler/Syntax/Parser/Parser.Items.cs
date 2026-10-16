@@ -87,7 +87,7 @@ public sealed partial class Parser
         return t[p].Kind == "id" && " class struct module interface enum lib record ".Contains(" " + t[p].Text + " ");
     }
 
-    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract")) && Peek(1).Text == "def");
+    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async")) && (Peek(1).Text == "def" || Peek(2).Text == "def"));
 
     bool IsConstDecl() => t[p].Kind == "const" && Peek(1).Kind == "op" && (Peek(1).Text == "=" || (Peek(1).Text == ":" && Peek(1).Space));
 
@@ -296,10 +296,12 @@ public sealed partial class Parser
     MethodDecl Def(string ownerKind)
     {
         var m = At(new MethodDecl(), Cur);
-        while (IsKw("private") || IsKw("protected") || IsKw("abstract"))
+        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async"))
         {
             string mod = Next().Text;
-            if (mod == "abstract") m.IsAbstract = true; else m.Vis = mod;
+            if (mod == "abstract") m.IsAbstract = true;
+            else if (mod == "async") m.IsAsync = true;
+            else m.Vis = mod;
         }
         ExpectKw("def");
         m.Attrs = TakeAttrs();

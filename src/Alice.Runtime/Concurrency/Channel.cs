@@ -24,11 +24,17 @@ public sealed class Channel<T>
     /// <summary>Blocks until a value arrives. Throws InvalidOperationException when closed and drained.</summary>
     public T receive()
     {
-        if (_ch.Reader.TryRead(out var v)) return v;
+        if (_ch.Reader.TryRead(out var ready)) return ready;
         return _ch.Reader.ReadAsync().AsTask().GetAwaiter().GetResult();
     }
 
     public bool try_receive(out T v) => _ch.Reader.TryRead(out v!);
+
+    // non-blocking variants for `async def` code: no thread is parked while waiting
+    public ValueTask send_async(T v) => _ch.Writer.WriteAsync(v);
+    public ValueTask<T> receive_async() => _ch.Reader.ReadAsync();
+    /// <summary>True when a value is ready, false once closed and drained.</summary>
+    public ValueTask<bool> wait_async() => _ch.Reader.WaitToReadAsync();
 
     public void close() => _ch.Writer.TryComplete();
 

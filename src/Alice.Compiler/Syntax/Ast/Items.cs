@@ -85,6 +85,7 @@ public sealed class MethodDecl : Item
     public string Vis = "public";
     public bool IsStatic;
     public bool IsAbstract;
+    public bool IsAsync;
     public List<string> TypeParams = new();
     public List<Param> Params = new();
     public TypeRef? Ret;

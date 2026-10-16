@@ -79,6 +79,11 @@ public sealed partial class Parser
                 return At(new LitExpr { Kind = lit.Kind, Text = "-" + lit.Text }, tok);
             return At(new UnaryExpr { Op = op, E = e }, tok);
         }
+        if (IsKw("await"))
+        {
+            Next();
+            return At(new AwaitExpr { E = Unary() }, tok);
+        }
         if (IsOp("&") && Peek(1).Kind == "id")
         {
             Next();

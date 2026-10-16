@@ -106,6 +106,14 @@ public sealed partial class Binder
                     BindArgs(inv.Args);
                     return t.Kind == "func" && t.Args.Count > 0 ? t.Args[^1] : AType.Unknown;
                 }
+            case AwaitExpr aw:
+                {
+                    var t = BindExpr(aw.E);
+                    if (t.Clr is { IsGenericType: true } g && (g.GetGenericTypeDefinition() == typeof(Task<>) || g.GetGenericTypeDefinition() == typeof(ValueTask<>)))
+                        return t.Args.Count == 1 ? t.Args[0] : ClrTypes.FromClr(g.GetGenericArguments()[0]);
+                    if (t.Clr == typeof(Task) || t.Clr == typeof(ValueTask)) return AType.Void;
+                    return t.Kind == "dynamic" ? AType.Dynamic : AType.Unknown;
+                }
             case SpawnExpr sp:
                 {
                     spawnDepth++;
@@ -158,7 +166,7 @@ public sealed partial class Binder
             if (!m.IsStatic) UseThis();
             n.Res = "call";
             n.Sym = m;
-            return m.Ret;
+            return Async(m, m.Ret);
         }
         if (Builtins.FreeFunctions.Contains(n.Name))
         {

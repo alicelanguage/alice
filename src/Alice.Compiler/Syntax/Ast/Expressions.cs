@@ -128,6 +128,8 @@ public sealed class InvokeExpr : Expr
     public List<Arg> Args = new();
 }
 
+public sealed class AwaitExpr : Expr { public Expr E = null!; }
+
 public sealed class SpawnExpr : Expr { public LambdaExpr Body = null!; }
 public sealed class YieldExpr : Expr { public List<Arg> Args = new(); }
 

@@ -77,6 +77,7 @@ public sealed partial class Lowerer
 
     void AssignStmt(List<MStmt> o, Assign a)
     {
+        if (a.Declares == null && TryCounterUpdate(o, a)) return;
         if (a.Declares != null)
         {
             var v = Expr(a.Value);
@@ -136,6 +137,7 @@ public sealed partial class Lowerer
 
     MStmt For(ForStmt f)
     {
+        if (TrySplitLoop(f) is MStmt split) return split;
         ctx.Add("loop");
         MStmt r;
         if (f.Iter is RangeExpr re)

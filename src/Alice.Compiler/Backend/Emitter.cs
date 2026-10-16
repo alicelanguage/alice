@@ -269,6 +269,12 @@ public sealed class Emitter
         AType retT = inst?.Ret ?? m.Ret;
         if (inst != null && retT.IsUnknown) retT = AType.Dynamic;
         string ret = Lowerer.TypeCs(retT);
+        string asyncKw = "";
+        if (m.IsAsync)
+        {
+            asyncKw = "async ";
+            ret = retT.IsVoid ? "global::System.Threading.Tasks.Task" : $"global::System.Threading.Tasks.Task<{ret}>";
+        }
         var tps = inst == null ? m.TypeParams : m.TypeParams.Where(tp => !m.Params.Any(p => p.Inferred && p.Type.Cs == tp)).ToList();
         string gen = tps.Count > 0 ? "<" + string.Join(", ", tps) + ">" : "";
         var ps = new List<string>();
@@ -312,7 +318,7 @@ public sealed class Emitter
             return $"{attrs}{dir}public {ret} {opName}({plist})\n{{\n{code}}}\npublic static {ret} operator {d.Name}({self} self, {plist}) => self.{opName}({args});\n";
         }
         var (vis, virt) = Virtual(m, owner, d.Vis);
-        string mods = vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + virt;
+        string mods = vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + virt + (asyncKw != "" ? " async" : "");
         return $"{attrs}{dir}{mods} {ret} {m.CsName}{gen}({plist}){where}\n{{\n{code}}}\n";
     }
 

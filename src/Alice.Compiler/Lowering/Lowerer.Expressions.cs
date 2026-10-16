@@ -75,6 +75,8 @@ public sealed partial class Lowerer
                 return TypeTest(tt);
             case InvokeExpr inv:
                 return new MInvoke { Target = Expr(inv.Target), Args = Args(inv.Args) };
+            case AwaitExpr aw:
+                return new MUnary { Op = "await ", E = Expr(aw.E) };
             case SpawnExpr sp:
                 return new MCall { Target = new MCode("Prelude"), Name = "spawn", Args = { Lambda(sp.Body) } };
             case YieldExpr y:
