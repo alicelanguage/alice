@@ -152,6 +152,52 @@ public sealed partial class Binder
             throw Err(at, $"data race: spawned task writes captured variable '{l.Name}'; send it through a Channel or use an Actor");
     }
 
+    /// <summary>
+    /// Blocks: a local first assigned inside an if/case branch is declared (untyped) just before the statement,
+    /// so it is visible after it like in Ruby; the first assignment gives it its type.
+    /// </summary>
+    static void PromoteBranchLocals(List<Stmt> body, HashSet<string> known)
+    {
+        for (int i = 0; i < body.Count; i++)
+        {
+            var s = body[i];
+            if (s is Assign { Target: NameExpr an, Op: "=" }) known.Add(an.Name);
+            if (s is MultiAssign mm) known.UnionWith(mm.Names);
+            if (s is LocalDecl ld) known.Add(ld.Name);
+            IEnumerable<List<Stmt>?> branches = s switch
+            {
+                IfStmt f => f.Bodies.Append(f.Else),
+                CaseStmt c => c.Whens.Select(w => w.Body).Append(c.Else),
+                _ => [],
+            };
+            var fresh = new List<string>();
+            foreach (var b in branches)
+                if (b != null)
+                    foreach (var st in b)
+                    {
+                        if (st is Assign { Target: NameExpr n, Op: "=" } && !known.Contains(n.Name) && !fresh.Contains(n.Name)) fresh.Add(n.Name);
+                        if (st is MultiAssign ma) foreach (var name in ma.Names) if (!known.Contains(name) && !fresh.Contains(name)) fresh.Add(name);
+                    }
+            foreach (var name in fresh)
+            {
+                body.Insert(i, new LocalDecl { Name = name, Line = s.Line, Col = s.Col });
+                known.Add(name);
+                i++;
+            }
+            // nested statement lists (loop bodies, branches) get the same treatment; nested blocks do it themselves
+            IEnumerable<List<Stmt>?> nested = s switch
+            {
+                ForStmt fo => [fo.Body],
+                WhileStmt wh => [wh.Body],
+                IfStmt f => f.Bodies.Append(f.Else),
+                CaseStmt c => c.Whens.Select(w => w.Body).Append(c.Else),
+                BeginStmt bs => bs.Rescues.Select(r => r.Body).Append(bs.Body).Append(bs.Ensure),
+                _ => [],
+            };
+            foreach (var nb in nested) if (nb != null) PromoteBranchLocals(nb, new HashSet<string>(known));
+        }
+    }
+
     /// <summary>Ruby: a local first assigned inside an if/case branch belongs to the method (visible after it).</summary>
     void HoistBranchLocals(IEnumerable<List<Stmt>?> bodies)
     {
@@ -160,6 +206,7 @@ public sealed partial class Binder
             if (b != null)
                 foreach (var st in b)
                     if (st is Assign { Target: NameExpr n, Op: "=" } && FindLocal(n.Name) == null) Hoist(n.Name);
+                    else if (st is MultiAssign ma) foreach (var name in ma.Names) if (FindLocal(name) == null) Hoist(name);
     }
 
     void Hoist(string name)
@@ -177,6 +224,7 @@ public sealed partial class Binder
         if (existing.All(e => e != null))
         {
             foreach (var l in existing) { CheckWrite(ma, l!); UseLocal(l!); }
+            for (int i = 0; i < existing.Count && i < vts.Count; i++) if (!existing[i]!.Type.IsKnown && vts[i].IsKnown) existing[i]!.Type = vts[i];
             ma.Locals = existing.Select(e => e!).ToList();
             return;
         }

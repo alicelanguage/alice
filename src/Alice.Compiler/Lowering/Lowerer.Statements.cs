@@ -30,7 +30,7 @@ public sealed partial class Lowerer
                     break;
                 }
             case LocalDecl d:
-                o.Add(new MDecl { Name = d.Local!.CsName, TypeCs = d.Type != null ? TypeCs(d.Local.Type) : null, Init = d.Value != null ? Expr(d.Value) : new MCode("default!") });
+                o.Add(new MDecl { Name = d.Local!.CsName, TypeCs = d.Type != null || d.Value == null ? TypeCs(d.Local.Type) : null, Init = d.Value != null ? Expr(d.Value) : new MCode("default!") });
                 break;
             case Assign a:
                 AssignStmt(o, a);

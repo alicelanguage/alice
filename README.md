@@ -1,96 +1,115 @@
-# Alice
+<p align="center">
+  <img src="assets/brand/alice-logo-dark.svg" alt="Alice" width="560">
+</p>
 
-**Ruby's rhythm. Crystal-style types. The .NET ecosystem.**
+<p align="center"><b>Curiouser and faster.</b> Write it like Ruby, run it like C, on all of .NET.</p>
 
-[![Tests](https://github.com/kleeedolinux/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/kleeedolinux/alice/actions/workflows/ci.yml)
-[![Release](https://github.com/kleeedolinux/alice/actions/workflows/release.yml/badge.svg)](https://github.com/kleeedolinux/alice/actions/workflows/release.yml)
+---
 
-Alice is a statically typed language for .NET. Write expressive `.al` programs with blocks, records and pattern matching; use .NET libraries and share ordinary CLR types with C#.
+Alice is a programming language for .NET. You write Ruby/Crystal-style code (blocks, `case/in`, DSLs, `yield`,
+`instance_eval`), the compiler infers static types, rejects data races, and lowers your loops into vectorized,
+parallel, allocation-free C# — which Roslyn compiles to IL. Every .NET library and NuGet package works as is.
 
-```crystal
-record Item(name : String, cents : Int32, quantity : Int32)
+```ruby
+record struct Vec(x : Float64, y : Float64)
+  def +(o : Vec) : Vec = Vec.new(x + o.x, y + o.y)
+end
 
-items = [
-  Item.new("Coffee", 450, 2),
-  Item.new("Tea", 300, 1)
-]
+total = (1..1_000_000).map { |i| i.to_i64 * i }.select { |x| x % 2 == 0 }.sum   # one fused, parallel loop
+puts "total=#{total}"
 
-val total = items.map { |item| item.cents * item.quantity }.sum
-puts "Total: #{total} cents"   # Total: 1200 cents
+describe "Vec" do
+  it "adds" do
+    expect(Vec.new(1.0, 2.0) + Vec.new(3.0, 4.0)).to eq(Vec.new(4.0, 6.0))
+  end
+end
 ```
 
-| What makes it Alice | What you get |
+## What it looks like
+
+| Game of Life (`samples/life`) | Ray tracer (`samples/raytracer`) |
 |---|---|
-| Expressive syntax | Implicit returns, string interpolation, blocks, `&:method`, mixins and `require` |
-| Types with less ceremony | Type inference, generics, records and sum types with exhaustive matching |
-| Safety at compile time | Null-safety errors, immutable `val` bindings and data-race diagnostics (`AL0202`) |
-| Optimizing compiler | Iterator fusion, SIMD, structure-of-arrays and automatic parallelization when proven pure |
-| Concurrency | `spawn`, `async`/`await`, channels, actors, mutexes and atomics |
-| Native to .NET | BCL and NuGet libraries, C# interop, ASP.NET Core hosts and MonoGame |
-| Project tooling | `alice.toml`, workspaces, dependency locks, formatting and tests |
+| ![life](docs/media/life.gif) | ![raytracer](docs/media/raytracer-orbit.gif) |
+| **Mandelbrot zoom (`samples/fractal`)** | **The REPL (`alice`)** |
+| ![fractal](docs/media/fractal-zoom.gif) | ![repl](docs/media/repl.svg) |
 
-Alice lowers through MIR to C#, then uses Roslyn to emit .NET IL. The compiler and runtime are written in C#. Inspect the generated C# with `alice emit`.
+All of these are 100% Alice. The ray tracer renders 960×540 with shadows, mirrors and 4× supersampling in ~0.25 s;
+the 60-frame fractal zoom renders in ~1.5 s (i5-1235U).
 
-## Start here
+## Install and first steps
 
-Requires the **.NET 10 SDK**.
+Download an archive from [Releases](../../releases) (Linux x64, Windows x64, macOS x64/arm64; needs the .NET 10
+runtime), or build from source:
 
 ```bash
-git clone https://github.com/kleeedolinux/alice.git
-cd alice
-dotnet build Alice.sln --configuration Release
-dotnet src/Alice.Cli/bin/Release/net10.0/alice.dll run examples/basics/hello.al
+git clone https://github.com/kleeedolinux/alice && cd alice
+dotnet build src/Alice.Cli -c Release
+alias alice="dotnet $PWD/src/Alice.Cli/bin/Release/net10.0/alice.dll"
+
+alice                      # REPL
+alice run hello.al         # run a file
+alice new app && cd app    # project (alice.toml)
+alice add Newtonsoft.Json  # NuGet package (shared .NET cache)
+alice test                 # specs and tests
 ```
 
-Run any CLI command from this checkout with `dotnet run --project src/Alice.Cli -- <command>`. With a [release archive](https://github.com/kleeedolinux/alice/releases), extract the entire archive and add its directory to `PATH` to use `alice` directly. See [installation and checksums](docs/releases.md).
+## How it works
 
-```bash
-alice new shop
-cd shop
-alice run
-alice test
-alice fmt --check
+```
+.al source ─▶ Lexer/Parser ─▶ AST ─▶ Binder (types, races, purity) ─▶ HIR
+          ─▶ Lowering: iterators → loops, fusion, SIMD, auto-parallel, SoA, FMA ─▶ MIR
+          ─▶ C# (with #line → your .al lines) ─▶ Roslyn ─▶ IL  (+ optional C via clang for @[Native])
 ```
 
-`alice.toml` is the source of truth. The CLI generates MSBuild projects under `.alice/`.
+| Part | Where | What it does |
+|---|---|---|
+| Syntax | `src/Alice.Compiler/Syntax` | Ruby/Crystal grammar: blocks, `do…end`, heredocs, `%w`, `case/in` patterns, endless defs |
+| Binder | `src/Alice.Compiler/Semantics` | type inference, generics, nil-safety, **data-race errors (AL0202)**, purity analysis |
+| Lowering | `src/Alice.Compiler/Lowering` | `map/select/sum` chains → one loop; vectorization; parallel loops only when proven pure; SoA layout; FMA |
+| Backend | `src/Alice.Compiler/Backend` | C# emitter with `#line`, Roslyn compile, error translation to Alice terms, C emitter for `@[Native]` |
+| Runtime | `src/Alice.Runtime` | Ruby-style Prelude, SIMD, sparse matrices, `Par`, channels/actors, spec framework, REPL host |
+| CLI | `src/Alice.Cli` | `alice` command, projects (`alice.toml`, workspaces, `alice.lock`), REPL, packages, localized output (en/pt/es) |
 
-```toml
-[package]
-name = "shop"
-kind = "exe"
+## What you can do
 
-[dependencies]
-"Newtonsoft.Json" = "13.*"
-```
+- **Everything .NET**: namespaces, generics, interfaces, events, `async/await`, `for await`, LINQ, spans, NuGet, ASP.NET,
+  MonoGame, raylib. C# projects can reference Alice libraries and vice versa (`samples/CSharpApp`).
+- **Ruby ergonomics**: blocks, `yield`, `instance_eval`/`instance_exec`, class-body macros, `define_method`,
+  `method_missing`, `send`, `@@class_vars`, `attr_accessor`, monkey patching, `Comparable`/`Enumerable`, `case/in`.
+- **Safety**: static types everywhere, nil-safety, immutable `val`, compile-time data-race detection.
+- **Speed**: auto-vectorized and auto-parallel loops, fused pipelines, SoA records, FMA contraction, `@[Native]`
+  functions compiled by clang. See [benchmarks](benchmarks/README.md): Alice beats idiomatic C# on all 8 and
+  matches or beats C on the 5 C benchmarks.
+- **Tooling**: REPL with help/shell/package modes, RSpec + xUnit style tests, formatter, readable errors
+  (`AL0303 undefined name 'x'`, never raw C#), "did you mean" everywhere, NuGet via `add/remove/search/list`.
 
-## Learn by building
+## Samples
 
-| Example | Explore |
+| Sample | Shows |
 |---|---|
-| [Hello](examples/basics/hello.al) | Classes, interpolation, blocks and SIMD |
-| [Practical examples](examples/README.md) | Data processing, JSON, concurrency and expected output |
-| [ASP.NET Core API](examples/web/aspnet/README.md) | Alice HTTP routes, validation and pricing logic |
-| [C# interop](samples/AliceApp/src/main.al) | Alice calling C#; [C# calling Alice](samples/CSharpApp/Program.cs) |
-| [Breakout](samples/Breakout/README.md) | A complete MonoGame game with headless logic tests |
+| [`samples/life`](samples/life) | Game of Life, terminal animation, frame export |
+| [`samples/raytracer`](samples/raytracer) | operator overloading on value types, parallel rendering, image output |
+| [`samples/fractal`](samples/fractal) | parallel Mandelbrot zoom video |
+| [`samples/wonderland`](samples/wonderland) | text adventure written as a Ruby-style DSL |
+| [`samples/celeste`](samples/celeste) | Celeste Classic rewritten in Alice (raylib), 28 tests |
+| [`samples/Breakout`](samples/Breakout), [`BounceGame`](samples/BounceGame) | MonoGame games |
+| [`samples/AliceLib`](samples/AliceLib) + [`CSharpApp`](samples/CSharpApp) | C# ⇄ Alice interop |
+| [`examples/`](examples) | basics, data/JSON, channels, ASP.NET API |
 
-## Performance you can inspect
+## Docs
 
-Alice optimizes eligible idiomatic code: fuse iterator chains, vectorize arithmetic and parallelize pure work. Results depend on the workload and hardware; parallel floating-point reductions can change addition order.
+[Language](docs/language.md) · [Tooling & REPL](docs/tooling.md) · [Errors](docs/errors.md) ·
+[Performance](docs/performance.md) · [Architecture](archicture/README.md) · [Changelog](CHANGELOG.md)
 
-The recorded [C# comparison (run 5)](benchmarks/README.md#run-5--vs-expert-hand-optimized-c-fusion-simt-load-balancing-2026-10-16) includes idiomatic and hand-optimized baselines, checksums and methodology. For example, the pipeline measured **2.1 ms** in Alice, **31.3 ms** in idiomatic C# and **2.0 ms** in hand-optimized C# on the documented laptop. Reproduce with `benchmarks/run.sh`.
+## Roadmap
 
-## Documentation
+- Incremental compilation and a language server (editor completion, go-to-definition).
+- Broader race analysis (prove disjoint `y * w + x` writes so more loops parallelize safely).
+- GPU offload for `Par` kernels; more `@[Native]` coverage (structs, strings).
+- Refinements, `ObjectSpace`, `class_eval` with strings.
+- NativeAOT single-file `alice` binary; package registry for Alice libraries.
 
-[Getting started](docs/getting-started.md) · [Language](docs/language.md) · [Tooling](docs/tooling.md) · [Error codes](docs/errors.md) · [Performance](docs/performance.md) · [Architecture](archicture/README.md)
+## License
 
-## Development
-
-**0.10.0 · in development.** See the [changelog](CHANGELOG.md) and [contributing guide](CONTRIBUTING.md).
-
-```bash
-dotnet build Alice.sln --configuration Release
-dotnet test Alice.sln --configuration Release
-bash examples/verify.sh
-```
-
-CI runs the test suite and example checks. The [release workflow](docs/releases.md) tests and packages platform binaries before publishing a tagged release.
+Code: [Apache License 2.0](LICENSE). The Alice name, rabbit logo and brand images are © 2026 Julia Klee, all
+rights reserved — use them to refer to Alice, not for commercial exploitation ([details](assets/brand/LICENSE.md)).

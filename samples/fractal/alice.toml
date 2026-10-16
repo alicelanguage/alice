@@ -1,0 +1,6 @@
+[package]
+name = "fractal"
+version = "0.1.0"
+kind = "exe"
+
+[dependencies]

@@ -60,3 +60,7 @@
 - Fix: array patterns accept literal elements (`in ["go", dir]`, `in [1, _, x]`); literals were wrongly treated as bindings.
 - Fix: `instance_eval` as the only statement of a block.
 - Sample `samples/wonderland`: text adventure written as a Ruby-style DSL (yield builders, instance_eval, case/in).
+- Fix: overloads of .NET methods are chosen by argument types (`Math.Floor(Float64)` no longer picks `Decimal`).
+- Branch locals (also destructuring) are visible after `if`/`case` inside blocks and loops, like Ruby.
+- Project builds type-check in `alice gen`: errors are reported in Alice terms, never raw `csc` output; MSB3073 noise removed.
+- Sample `samples/fractal`: parallel Mandelbrot zoom; README rewritten with GIFs, architecture, capabilities, roadmap.

@@ -230,7 +230,10 @@ public static class CompileCommands
 
     static void Report(DotNet.Result r)
     {
-        if (r.Diagnostics.Count > 0) Ui.DiagnosticRenderer.Render(r.Diagnostics.Where(d => d.Severity == "error"));
+        // MSB3073 ("the command alice gen exited with code 1") only repeats the Alice errors above it
+        var errors = r.Diagnostics.Where(d => d.Severity == "error").ToList();
+        if (errors.Any(d => d.Code != "MSB3073")) errors.RemoveAll(d => d.Code == "MSB3073");
+        if (r.Diagnostics.Count > 0) Ui.DiagnosticRenderer.Render(errors);
         else foreach (var l in r.Output.TakeLast(30)) Console.Error.WriteLine(l);
     }
 
@@ -267,6 +270,9 @@ public static class CompileCommands
             string lib = o.Rest.FirstOrDefault(r => r.StartsWith("--native-lib="))?["--native-lib=".Length..] ?? "alice_native";
             var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib);
             if (csrc != null) File.WriteAllText(Path.Combine(o.Output, lib + ".c"), csrc);
+            // type-check here (in-process Roslyn) so errors are reported in Alice terms, never as raw csc output
+            var checkRefs = o.Refs.Where(r => !r.Replace('\\', '/').Contains("/packs/") && !Path.GetFileName(r).StartsWith("Alice.Runtime") && File.Exists(r)).ToList();
+            AliceCompiler.Emit(cs, "check", cs.Any(c => c.Contains("public static void Main(string[] ARGV)")), checkRefs);
             var used = new HashSet<string>();
             foreach (var old in Directory.GetFiles(o.Output, "*.g.cs")) File.Delete(old);
             for (int i = 0; i < files.Count; i++)

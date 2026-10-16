@@ -115,6 +115,7 @@ public sealed class LambdaExpr : Expr
     public bool ReturnsValue;
     public bool Captures;
     public bool DiscardValue;   // passed where an Action is expected: the tail value is dropped
+    public bool BranchLocalsPromoted;
 }
 
 public sealed class TypeTestExpr : Expr

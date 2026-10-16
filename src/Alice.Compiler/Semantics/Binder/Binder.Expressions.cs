@@ -408,6 +408,7 @@ public sealed partial class Binder
 
     void BindLambdaCore(LambdaExpr lam, List<AType> expected, bool conc)
     {
+        if (!lam.BranchLocalsPromoted) { PromoteBranchLocals(lam.Body, lam.Params.Select(p => p.Name).ToHashSet()); lam.BranchLocalsPromoted = true; }
         lam.Captures = false;
         lam.ParamSyms = new List<LocalSym>();
         lambdas.Add(lam);

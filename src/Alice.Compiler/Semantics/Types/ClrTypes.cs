@@ -170,6 +170,7 @@ public sealed class ClrTypes
                     if (f.Name == name) return new Member(f.IsLiteral ? "const" : "field", FromClr(f.FieldType), wantStatic);
             }
             MethodInfo? best = null;
+            int bestScore = int.MinValue;
             foreach (var m in ty.GetMethods(flags))
             {
                 if (m.Name != name) continue;
@@ -177,7 +178,8 @@ public sealed class ClrTypes
                 int req = ps.Count(p => !p.IsOptional && !p.IsDefined(typeof(ParamArrayAttribute)));
                 bool variadic = ps.Length > 0 && ps[^1].IsDefined(typeof(ParamArrayAttribute));
                 if (argc < req || (argc > ps.Length && !variadic)) continue;
-                if (best == null || ps.Length == argc) best = m;
+                int score = (ps.Length == argc ? 1 : 0) + OverloadScore(ps, args);
+                if (best == null || score > bestScore) { best = m; bestScore = score; }
             }
             if (best != null)
             {
@@ -187,6 +189,28 @@ public sealed class ClrTypes
         }
         if (t.IsInterface && !wantStatic) return Lookup(typeof(object), name, argc, hasArgs, false);
         return null;
+    }
+
+    static readonly Type[] NumericOrder = [typeof(sbyte), typeof(byte), typeof(short), typeof(ushort), typeof(int), typeof(uint), typeof(long), typeof(ulong), typeof(float), typeof(double)];
+
+    /// <summary>How well known argument types fit (exact 4, numeric widening 2, assignable 1, mismatch -50).</summary>
+    static int OverloadScore(ParameterInfo[] ps, List<AType>? args)
+    {
+        if (args == null) return 0;
+        int score = 0;
+        for (int i = 0; i < args.Count && i < ps.Length; i++)
+        {
+            var a = args[i].Clr;
+            var p = ps[i].ParameterType;
+            if (a == null || p.ContainsGenericParameters) continue;
+            if (p.IsByRef) p = p.GetElementType()!;
+            if (p == a) score += 4;
+            else if (Array.IndexOf(NumericOrder, a) is int ai and >= 0 && Array.IndexOf(NumericOrder, p) is int pi and >= 0)
+                score += pi > ai ? 2 - (pi - ai) / 4 : -50;   // widening is fine; narrowing would not compile
+            else if (p.IsAssignableFrom(a)) score += 1;
+            else score -= 50;
+        }
+        return score;
     }
 
     /// <summary>Infers a generic method's type arguments from argument types (arrays, generic types, lambdas as Func/Action).</summary>

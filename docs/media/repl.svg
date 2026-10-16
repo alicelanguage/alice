@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 330" font-family="ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace" font-size="15">
+  <rect width="760" height="330" rx="12" fill="#141210"/>
+  <circle cx="22" cy="20" r="6" fill="#C2183C"/><circle cx="42" cy="20" r="6" fill="#F5EFE0" opacity=".5"/><circle cx="62" cy="20" r="6" fill="#F5EFE0" opacity=".25"/>
+  <g fill="#F5EFE0">
+    <text x="20" y="58"><tspan fill="#C2183C" font-weight="bold">alice&gt; </tspan>def fib(n : Int32) : Int64</text>
+    <text x="20" y="80"><tspan fill="#777">     ⋮ </tspan>  n &lt; 2 ? n.to_i64 : fib(n - 1) + fib(n - 2)</text>
+    <text x="20" y="102"><tspan fill="#777">     ⋮ </tspan>end</text>
+    <text x="20" y="128"><tspan fill="#C2183C" font-weight="bold">alice&gt; </tspan>fib(30)</text>
+    <text x="20" y="150" font-weight="bold">832040 <tspan fill="#777" font-weight="normal">:: Int64</tspan></text>
+    <text x="20" y="176"><tspan fill="#C2183C" font-weight="bold">alice&gt; </tspan>(1..5).map { |i| i * i }</text>
+    <text x="20" y="198" font-weight="bold">[1, 4, 9, 16, 25] <tspan fill="#777" font-weight="normal">:: Array(Int32)</tspan></text>
+    <text x="20" y="224"><tspan fill="#E8B04B" font-weight="bold">help?&gt; </tspan>Math.Sqrt</text>
+    <text x="20" y="246" fill="#E8B04B">Math.Sqrt(Float64) : Float64</text>
+    <text x="20" y="272"><tspan fill="#5B8DEF" font-weight="bold">(demo) pkg&gt; </tspan>add Humanizer.Core</text>
+    <text x="20" y="296"><tspan fill="#5BBF6A">      Added</tspan> Humanizer.Core → alice.toml</text>
+  </g>
+</svg>
