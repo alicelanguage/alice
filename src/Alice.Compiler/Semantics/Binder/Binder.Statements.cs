@@ -113,6 +113,8 @@ public sealed partial class Binder
         }
         BindExpr(a.Target);
         BindExpr(a.Value);
+        if (curMethod != null && lambdas.Count == 0 && a.Target is IvarExpr or NameExpr { Res: "field" } or CallExpr { Res: "field", Recv: SelfExpr }) curMethod.Mutates = true;
+        CheckSharedTargetWrite(a.Target);
     }
 
     /// <summary>Rust-style write rules: `val` locals are immutable; spawned tasks may not write captured locals.</summary>

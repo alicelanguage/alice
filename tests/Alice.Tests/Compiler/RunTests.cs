@@ -59,7 +59,7 @@ public class RunTests
         { "string methods", "puts \"abc\".size\nputs 42.to_s + \"!\"\nputs \"12\".to_i + 1", "3\n42!\n13" },
         { "parallel map", "r = Par.Map([1, 2, 3], ->(x : Int32) { x * 2 })\nputs r.sum\nputs [1, 2, 3].par_map { |x| x + 1 }.sum", "12\n9" },
         { "spawn and channel", "ch = Channel(Int32).new\nspawn do\n  for i in 1..10\n    ch.send(i)\n  end\n  ch.close\nend\ntotal = 0\nch.each { |v| total += v }\nputs total", "55" },
-        { "actor", "sum = 0\na = Actor(Int32).new(->(m : Int32) { sum += m })\nfor i in 1..100\n  a.send(i)\nend\na.stop\nputs sum", "5050" },
+        { "actor", "sum = Atomic.new(0)\na = Actor(Int32).new(->(m : Int32) { sum.add(m) })\nfor i in 1..100\n  a.send(i)\nend\na.stop\nputs sum", "5050" },
         { "spawn returns value", "t = spawn { 6 * 7 }\nputs t.wait", "42" },
         { "enum", "enum Color\n  Red\n  Green = 5\nend\nputs Color::Green", "Green" },
         { "native lib", "@[Link(\"libm.so.6\")]\nlib LibM\n  fun cos(x : Float64) : Float64\nend\nputs LibM.cos(0.0)", "1" },

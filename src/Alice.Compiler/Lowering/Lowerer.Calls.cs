@@ -39,7 +39,7 @@ public sealed partial class Lowerer
                 return new MMember { Target = recv!, Name = c.Sym is FieldSym f ? f.CsName : c.Name, Safe = c.Safe };
             case "clr":
             case "dyncall":
-                return new MCall { Target = recv, Name = c.Name, Args = args, Safe = c.Safe };
+                return new MCall { Target = recv, Name = Binder.Mangle(c.Name), Args = args, Safe = c.Safe };
             case "ext":
             case "free":
                 return new MCall { Target = recv, Name = cs, Args = args, Safe = c.Safe };

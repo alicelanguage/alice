@@ -10,6 +10,16 @@ public sealed partial class Binder
     {
         if (c.Recv == null) return BindSelfCall(c);
         AType recv = BindExpr(c.Recv);
+        bool conc = IsConcurrentCall(c, recv);
+        if (conc) MarkConcurrentArgs(c.Args);
+        bool savedRef = refAllowed;
+        refAllowed = c.Recv is ConstExpr { Sym: AType { Clr: Type ic } } && (ic == typeof(Interlocked) || ic == typeof(Volatile) && false);
+        try { return BindCallCore(c, recv, conc); }
+        finally { refAllowed = savedRef; }
+    }
+
+    AType BindCallCore(CallExpr c, AType recv, bool conc)
+    {
         int argc = c.Args.Count;
         bool hasArgs = c.Parens || argc > 0;
         bool dynSpecial = c.Name is "send" or "respond_to?";
@@ -37,6 +47,7 @@ public sealed partial class Binder
                 {
                     c.Res = "alice";
                     c.Sym = m;
+                    pendingConcurrent = conc && c.Block != null;
                     BindBlockFor(c, m);
                     return m.Ret;
                 }
@@ -54,6 +65,7 @@ public sealed partial class Binder
                 if (mem != null)
                 {
                     c.Res = mem.Kind == "method" ? "clr" : "field";
+                    pendingConcurrent = conc && c.Block != null;
                     if (c.Block != null) BindLambda(c.Block, new List<AType>());
                     return mem.Type;
                 }
@@ -71,6 +83,7 @@ public sealed partial class Binder
             if (x.ExtTarget == null || x.ExtTarget.Cs != recv.Cs.TrimEnd('?')) continue;
             var xm = x.FindMethod(c.Name, argc);
             if (xm == null) continue;
+            CheckMutatingCall(c, recv, xm);
             c.Res = "alice";
             c.Sym = xm;
             BindBlockFor(c, xm);
@@ -85,6 +98,7 @@ public sealed partial class Binder
             {
                 c.Res = "alice";
                 c.Sym = m;
+                CheckMutatingCall(c, recv, m);
                 BindBlockFor(c, m);
                 return CallRet(m, argTypes);
             }
@@ -112,6 +126,8 @@ public sealed partial class Binder
             if (mem != null)
             {
                 c.Res = mem.Kind == "method" ? "clr" : "field";
+                if (mem.Kind == "method") CheckMutatingCall(c, recv, null);
+                pendingConcurrent = conc && c.Block != null;
                 if (c.Block != null) BindLambda(c.Block, new List<AType>());
                 return mem.Type;
             }
@@ -130,9 +146,11 @@ public sealed partial class Binder
         if (Builtins.ExtNames.Contains(cs))
         {
             c.Res = "ext";
+            CheckMutatingCall(c, recv, null);
             AType? br = null;
             if (c.Block != null)
             {
+                pendingConcurrent = conc;
                 BindLambda(c.Block, Builtins.BlockParams(cs, recv, argTypes));
                 br = c.Block.ReturnsValue ? c.Block.Result : AType.Void;
             }

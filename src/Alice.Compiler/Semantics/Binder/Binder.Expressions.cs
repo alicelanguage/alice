@@ -54,6 +54,7 @@ public sealed partial class Binder
                         return BindExpr(ne.AsCall);
                     }
                     var t = ResolveType(ne.TypeRef);
+                    if (IsConcurrentType(t)) MarkConcurrentArgs(ne.Args);
                     BindArgs(ne.Args);
                     if (ne.Block != null) BindLambda(ne.Block, new List<AType>());
                     return t;
@@ -94,6 +95,7 @@ public sealed partial class Binder
             case TupleLit tl:
                 return Tuple(tl.Items.Select(BindExpr).ToList());
             case LambdaExpr lam:
+                pendingConcurrent = concurrentLambdas.Contains(lam);
                 BindLambda(lam, new List<AType>());
                 return lam.ReturnsValue && lam.Result.IsKnown
                     ? Func(lam.ParamSyms.Select(p => p.Type).ToList(), lam.Result)
@@ -360,11 +362,21 @@ public sealed partial class Binder
                 continue;
             }
             if (a.Value != null) BindExpr(a.Value);
+            CheckRefArg(a);
         }
     }
 
     /// <summary>Binds a lambda/block. Expected parameter types come from the callee (e.g. Prelude iterators).</summary>
     void BindLambda(LambdaExpr lam, List<AType> expected)
+    {
+        bool conc = pendingConcurrent;
+        pendingConcurrent = false;
+        if (conc) spawnDepth++;
+        try { BindLambdaCore(lam, expected, conc); }
+        finally { if (conc) spawnDepth--; }
+    }
+
+    void BindLambdaCore(LambdaExpr lam, List<AType> expected, bool conc)
     {
         lam.Captures = false;
         lam.ParamSyms = new List<LocalSym>();
@@ -378,6 +390,7 @@ public sealed partial class Binder
             AType t = p.Type != null ? ResolveType(p.Type) : i < expected.Count ? expected[i] : AType.Unknown;
             lam.ParamSyms.Add(Declare(p, p.Name, t));
         }
+        if (conc) disjoint.Add(new HashSet<LocalSym>(lam.ParamSyms));
         BindBlock(lam.Body);
         PopScope();
         var tail = TailType(lam.Body);
@@ -385,6 +398,7 @@ public sealed partial class Binder
         lam.Result = lam.ReturnsValue ? Unify(returns.Concat(tail != null ? [tail] : Array.Empty<AType>())) : AType.Void;
         if (lam.ReturnsValue && lam.Result.IsUnknown) lam.Result = AType.Unknown;
         returns = savedReturns;
+        if (conc) disjoint.RemoveAt(disjoint.Count - 1);
         lambdas.RemoveAt(lambdas.Count - 1);
     }
 }
