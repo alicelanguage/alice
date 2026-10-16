@@ -108,6 +108,16 @@ public sealed partial class Lowerer
         }
         var target = Expr(a.Target);
         var value = Expr(a.Value);
+        // `obj.Event += block`: adapt the Alice delegate (any return type) to the event's delegate type
+        if (a.Op is "+=" or "-=" && a.Target is CallExpr { Recv: { Type.Clr: { } rc }, Args.Count: 0 } ev && rc.GetEvent(ev.Name) is { EventHandlerType: { } ht }
+            && ht.GetMethod("Invoke") is { } inv && inv.ReturnType == typeof(void))
+        {
+            string hn = "global::" + (ht.FullName ?? ht.Name).Replace('+', '.');
+            var ps = string.Join(", ", inv.GetParameters().Select((_, i) => "__e" + i));
+            var make = new MCode($"static __f => new {hn}(({ps}) => {{ __f.DynamicInvoke({ps}); }})");
+            o.Add(new MAssign { Target = target, Op = a.Op, Value = new MCall { Target = new MCode("global::Alice.Runtime.EventAdapters"), Name = $"Handler<{hn}>", Args = { value, make } } });
+            return;
+        }
         // x += a*b / x -= a*b on floats -> x = fma(+-a, b, x)
         if (!StrictMath && a.Op is "+=" or "-=" && IsFloat(a.Target.Type) && a.Value is BinaryExpr { Op: "*" } vb && IsFloat(vb.L.Type) && IsFloat(vb.R.Type) && value is MBinary { Op: "*" } mv)
         {

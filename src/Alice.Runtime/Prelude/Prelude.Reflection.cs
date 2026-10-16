@@ -60,3 +60,12 @@ public static partial class Prelude
 
     public static dynamic? public_send(this object o, string name, params object?[] args) => send(o, name, args);
 }
+
+/// <summary>Alice blocks/Func values as CLR event handlers; the same source delegate maps to the same handler (so -= works).</summary>
+public static class EventAdapters
+{
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Delegate, Delegate> Cache = new();
+
+    public static TD Handler<TD>(Delegate f, Func<Delegate, TD> make) where TD : Delegate =>
+        f is TD d ? d : (TD)Cache.GetValue(f, k => make(k));
+}

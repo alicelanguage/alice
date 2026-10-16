@@ -33,3 +33,4 @@
 - Floating-point contraction (FMA) by default, `@[StrictMath]` to opt out.
 - C# compatibility suite (`CSharpCompatTests`, 17 programs): events, delegates, nullable `||`, tuples, flags, out/ref, `using r = ... end`, constrained generics (`where T : I` members), spans, LINQ, async WhenAll.
 - Ruby reflection: `instance_variable_get/set`, `instance_variables`, `methods`, `public_send`.
+- CLR events accept Alice blocks/Func values (`obj.Event += block`, `-=` unsubscribes the same handler).
