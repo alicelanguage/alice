@@ -52,6 +52,8 @@ public sealed partial class Binder
             case "Pointer" when args.Count == 1: return new AType("prim", args[0].Cs + "*", args[0].Clr?.MakePointerType());
             case "Tuple": return Tuple(args);
             case "Proc" when args.Count >= 1: return Func(args.Take(args.Count - 1).ToList(), args[^1]);
+            case "Hash" when args.Count == 2:
+                return Builtins.Generic(typeof(Dictionary<,>), args[0], args[1]);
             case "SoA" when args.Count == 1:
                 if (args[0].Sym is { SoaStore: null, Decl: { } sd } lazy && sd.Attrs.Contains("SoA")) EnsureSoaStore(lazy);
                 if (args[0].Sym?.SoaStore is TypeSym store) return store.Type;
@@ -124,7 +126,7 @@ public sealed partial class Binder
     {
         if (args.Count == 0 && PrimNames.TryGetValue(name, out var prim) && !prim.IsVoid && prim.Kind != "dynamic") return prim;
         if (args.Count == 0 && typeParams.Contains(name)) return new AType("param", name);
-        if (name is "Array" or "Pointer" or "Tuple" or "Proc" or "SoA" && args.Count > 0) return ResolveType(new TypeRef { Name = name, Args = args });
+        if (name is "Array" or "Pointer" or "Tuple" or "Proc" or "SoA" or "Hash" && args.Count > 0) return ResolveType(new TypeRef { Name = name, Args = args });
         if (Types.ContainsKey(name)) return ResolveType(new TypeRef { Name = name, Args = args });
         if (Clr.Find(name, args.Count, usings) != null) return ResolveType(new TypeRef { Name = name, Args = args });
         return null;

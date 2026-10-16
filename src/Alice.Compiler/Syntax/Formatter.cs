@@ -20,8 +20,9 @@ public static class Formatter
         var stack = new List<string>();   // open block kinds
         int blank = 0;
         bool started = false;
-        foreach (var raw in lines)
+        for (int li = 0; li < lines.Length; li++)
         {
+            string raw = lines[li];
             string line = raw.Trim();
             if (line.Length == 0)
             {
@@ -44,6 +45,7 @@ public static class Formatter
             string owner = stack.Count > 0 ? stack[^1] : "";
             foreach (var kw in OpenerKeywords(words, owner))
                 if (!ClosesOnSameLine(words, kw)) stack.Add(kw);
+            if (first == "record" && RecordHasBody(lines, li)) stack.Add("record");
             if (words.Count > 0 && words[^1] == "do" || EndsWithDoParams(code)) stack.Add("do");
             int braces = code.Count(c => c == '{') - code.Count(c => c == '}');
             if (code.StartsWith("}")) braces++;   // its closing brace was consumed by the dedent above
@@ -62,11 +64,24 @@ public static class Formatter
             string w = words[i];
             if (!Openers.Contains(w)) continue;
             bool atStart = i == 0 || (i == 1 && words[0] is "abstract" or "private" or "protected" or "async");
-            bool asValue = i > 0 && words[i - 1] is "=" or "(" or "," or "return" or "+=" or "||=";
+            bool asValue = i > 0 && words[i - 1] is "=" or "(" or "," or "+=" or "||=";   // `return if c` is always postfix
             if (!atStart && !asValue) continue;
             if (w == "def" && (owner == "interface" || (i > 0 && words[0] == "abstract"))) continue;   // signatures without bodies
             yield return w;
         }
+    }
+
+    /// <summary>A record has a body when the next non-blank line is a member declaration (Parser.RecordHasBody rule).</summary>
+    static bool RecordHasBody(string[] lines, int at)
+    {
+        for (int k = at + 1; k < lines.Length; k++)
+        {
+            var t = lines[k].Trim();
+            if (t.Length == 0) continue;
+            var w = Words(CodeOf(t));
+            return w.Count > 0 && w[0] is "def" or "getter" or "property" or "setter" or "include" or "private" or "protected" or "abstract" or "@[" or "attr_accessor" or "attr_reader";
+        }
+        return false;
     }
 
     static bool ClosesOnSameLine(List<string> words, string kw) => words.Count > 1 && words[^1] == "end" && words.IndexOf(kw) < words.Count - 1;

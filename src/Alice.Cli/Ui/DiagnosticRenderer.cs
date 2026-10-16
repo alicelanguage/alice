@@ -61,6 +61,7 @@ public static class DiagnosticRenderer
     static string? SourceLine(string file, int line, IReadOnlyDictionary<string, string>? sources)
     {
         string? text = null;
+        if (string.IsNullOrEmpty(file)) return null;
         if (sources != null && sources.TryGetValue(file, out var s)) text = s;
         else if (File.Exists(file)) text = File.ReadAllText(file);
         if (text == null) return null;
@@ -72,6 +73,7 @@ public static class DiagnosticRenderer
     {
         try
         {
+            if (string.IsNullOrEmpty(path)) return "<generated>";
             if (!Path.IsPathRooted(path)) return path;
             var rel = Path.GetRelativePath(Environment.CurrentDirectory, path);
             return rel.StartsWith("..") ? path : rel;

@@ -21,4 +21,10 @@ public class FormatterTests
         const string expected = "case x\nwhen 1 then 2\nelse\n  3\nend\nbegin\n  risky\nrescue e : Exception\n  puts e\nensure\n  done\nend\n";
         Assert.Equal(expected, Formatter.Format(src));
     }
+
+    [Theory]
+    [InlineData("record struct V(x : Float64)\ndef d : Float64\nx\nend\nend\n", "record struct V(x : Float64)\n  def d : Float64\n    x\n  end\nend\n")]
+    [InlineData("record P(a : Int32)\nputs 1\n", "record P(a : Int32)\nputs 1\n")]
+    [InlineData("def f(x : Int32)\nreturn if x < 0\nreturn unless x > 9\nputs x\nend\n", "def f(x : Int32)\n  return if x < 0\n  return unless x > 9\n  puts x\nend\n")]
+    public void Records_and_bare_postfix_return(string src, string expected) => Assert.Equal(expected, Formatter.Format(src));
 }

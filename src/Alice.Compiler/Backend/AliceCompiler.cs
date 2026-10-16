@@ -88,7 +88,7 @@ public static class AliceCompiler
             {
                 var span = d.Location.GetMappedLineSpan();
                 int len = Math.Max(1, span.EndLinePosition.Line == span.StartLinePosition.Line ? span.EndLinePosition.Character - span.StartLinePosition.Character : 1);
-                return new Diagnostic("error", d.Id, span.Path, span.StartLinePosition.Line + 1, span.StartLinePosition.Character + 1, d.GetMessage(), len);
+                return new Diagnostic("error", d.Id, span.Path ?? "", span.StartLinePosition.Line + 1, span.StartLinePosition.Character + 1, d.GetMessage(), len);
             }).ToList();
             throw new CompileException(errs);
         }

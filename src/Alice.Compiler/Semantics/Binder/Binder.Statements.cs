@@ -241,6 +241,14 @@ public sealed partial class Binder
         if (c.Else != null) Scoped(c.Else);
         // Rust-style exhaustiveness for sum types
         c.Exhaustive = false;
+        if (c.Else == null && subj.Sym is { Kind: "enum", Decl: null } en && Types.Values.FirstOrDefault(t => t == en) is { } enumSym)
+        {
+            var names = enumSym.Fields.Values.Where(f => f.Kind == "const").Select(f => f.Name).ToList();
+            var hit = c.Whens.SelectMany(w => w.Patterns).Select(p => p is ConstExpr ce ? ce.Ref.Name.Split('.')[^1] : null).Where(n => n != null).ToHashSet();
+            var missing = names.Where(n => !hit.Contains(n)).ToList();
+            if (missing.Count > 0 && hit.Count > 0) throw Err(c, $"non-exhaustive match on {enumSym.Name}: missing {string.Join(", ", missing)}");
+            c.Exhaustive = missing.Count == 0;
+        }
         if (c.Else == null && subj.Sym is { Kind: "adt" } adt)
         {
             var missing = adt.Variants.Where(v => !covered.Contains(v)).Select(v => v.Name).ToList();

@@ -90,6 +90,8 @@ public class LanguageTests
         { "generic .NET method return inference", "def k(xs : Array(Int32))\n  Par.Map(xs, ->(x : Int32) { x * 2 }).sum\nend\nputs k([1, 2])\nputs Array.IndexOf([5, 6], 6).even?", "6\nfalse" },
         { "declared return keeps an untyped tail", "def k(xs : Array(Int32)) : Int32\n  ys = Par.Map(xs, ->(x : Int32) { x * 2 })\n  ys.sum\nend\nputs k([1, 2])", "6" },
         { "dotted call with constant args is a call", "puts System.Math.Max(Int32::MaxValue, 3) > 0\nputs System.String.Concat(\"a\", \"b\")", "true\nab" },
+        { "Hash(K, V) type annotation", "module M\n  X : Hash(String, Int32) = {\"a\" => 1}\nend\nh : Hash(String, Int32) = Hash(String, Int32).new\nh[\"b\"] = 2\nputs M::X[\"a\"] + h[\"b\"]", "3" },
+        { "exhaustive case over plain enum", "enum S\n  A\n  B\nend\ndef name(s : S) : String\n  case s\n  when S::A then \"a\"\n  when S::B then \"b\"\n  end\nend\nputs name(S::B)", "b" },
         { "duck typing is monomorphized", "def len(x)\n  x.Length\nend\nputs len(\"abcd\")\nputs len([1, 2])", "4\n2" },
         { "duck typed arithmetic", "def twice(x)\n  x * 2\nend\nputs twice(2)\nputs twice(1.5)", "4\n3" },
     };
@@ -106,6 +108,14 @@ public class LanguageTests
     {
         var src = "enum E\n  A(x : Int32)\n  B\nend\ndef f(e : E) : Int32\n  case e\n  when E::A(x) then x\n  end\nend\n";
         var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src));
+        Assert.Contains("non-exhaustive", ex.Message);
+        Assert.Contains("B", ex.Message);
+    }
+
+    [Fact]
+    public void Non_exhaustive_plain_enum_case_is_an_error()
+    {
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile("enum S\n  A\n  B\nend\ndef f(s : S) : Int32\n  case s\n  when S::A then 1\n  end\nend\n"));
         Assert.Contains("non-exhaustive", ex.Message);
         Assert.Contains("B", ex.Message);
     }
