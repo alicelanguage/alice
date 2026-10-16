@@ -18,6 +18,8 @@ public sealed class FileNode : Node
 
 public sealed class UsingItem : Item { public string Name = ""; }
 
+public sealed class RequireItem : Item { public string Path = ""; }
+
 public sealed class NamespaceItem : Item
 {
     public string Name = "";
@@ -34,6 +36,7 @@ public sealed class TypeDecl : Item
     public List<Item> Members = new();
     public List<Constraint> Constraints = new();
     public List<Param> RecordParams = new();    // record Point(x : Int32, y : Int32)
+    public List<(TypeRef Module, bool Extend)> Mixins = new();   // include M / extend M
 }
 
 /// <summary>`where T : IComparable(T), struct, new` (Rust/C# style generic constraint).</summary>
@@ -93,6 +96,10 @@ public sealed class MethodDecl : Item
     public List<Arg>? SuperInit;
     public List<Constraint> Constraints = new();
     public bool HasBody = true;
+    public bool SelfDef;
+    public bool IsTemplate;       // mixin-only method of an included/extended module (not compiled on the module)          // `def self.x` (module function) vs `def x` (mixin instance method)
+    public string SourceText = "";  // original Alice text, used to re-bind mixin methods in the including class
+    public string File = "";
     public HashSet<string> Hoisted = new();      // Ruby function-scoped locals first assigned in a nested block
     public List<LocalSym> HoistedLocals = new();
 }

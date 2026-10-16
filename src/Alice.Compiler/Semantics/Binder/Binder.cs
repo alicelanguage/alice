@@ -40,6 +40,7 @@ public sealed partial class Binder
     public void Bind()
     {
         Collect();
+        ExpandMixins();
         Declare();
         for (int pass = 0; pass < 8; pass++)
         {

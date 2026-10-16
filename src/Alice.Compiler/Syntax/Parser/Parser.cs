@@ -12,10 +12,25 @@ public sealed partial class Parser
 
     const string Keywords = " if unless while until for in do end then else elsif case when begin rescue ensure return break next and or not def class struct module interface enum lib fun namespace using require getter property setter include abstract private protected self nil true false super yield loop raise of forall spawn val where record async await ";
 
-    public Parser(string src, string file)
+    readonly string[] srcLines;
+
+    public Parser(string src, string file, int line = 1)
     {
         this.file = file;
-        t = new Lexer(src, file, 1).Lex();
+        srcLines = src.Replace("\r\n", "\n").Split('\n');
+        t = new Lexer(src, file, line).Lex();
+        lineBase = line;
+    }
+
+    readonly int lineBase;
+
+    /// <summary>Re-parses a method's source text as a member of a type of the given kind (mixins).</summary>
+    public static MethodDecl ParseMethod(string text, string file, int line, string ownerKind)
+    {
+        var p = new Parser(text, file, line);
+        p.PushLocals();
+        p.SkipNl();
+        return p.Def(ownerKind);
     }
 
     public static FileNode ParseFile(string src, string file) => new Parser(src, file).File();

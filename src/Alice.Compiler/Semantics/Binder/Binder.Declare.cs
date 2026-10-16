@@ -182,6 +182,8 @@ public sealed partial class Binder
                     s.Fields[fd.Name] = new FieldSym { Name = fd.Name, CsName = Mangle(fd.Name), Type = ResolveType(fd.Type), Kind = "field", IsStatic = s.Kind == "module", Owner = s };
                     fd.Sym = s.Fields[fd.Name];
                     break;
+                case MethodDecl { IsTemplate: true }:
+                    break;
                 case MethodDecl m:
                     DeclareMethod(m, s);
                     break;

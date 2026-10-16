@@ -20,6 +20,36 @@ public static class AliceCompiler
         return asts.Select(emitter.EmitFile).ToList();
     }
 
+    static readonly System.Text.RegularExpressions.Regex RequireLine = new(@"^\s*require\s+""(?<p>[^""]+)""", System.Text.RegularExpressions.RegexOptions.Multiline);
+
+    /// <summary>Loads entry files plus everything they `require` (relative paths, `.al` optional), transitively.</summary>
+    public static List<SourceFile> LoadWithRequires(IEnumerable<string> entries)
+    {
+        var result = new List<SourceFile>();
+        var seen = new HashSet<string>();
+        var queue = new Queue<string>(entries.Select(Path.GetFullPath));
+        while (queue.Count > 0)
+        {
+            var path = queue.Dequeue();
+            if (!seen.Add(path)) continue;
+            var text = File.ReadAllText(path);
+            result.Add(new SourceFile(path, text));
+            foreach (System.Text.RegularExpressions.Match m in RequireLine.Matches(text))
+            {
+                var rel = m.Groups["p"].Value;
+                var full = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, rel));
+                if (!full.EndsWith(".al")) full += ".al";
+                if (!File.Exists(full))
+                {
+                    int line = text[..m.Index].Count(c => c == '\n') + 1;
+                    throw new CompileException($"{path}:{line}:1: cannot find '{rel}' (looked for {full})");
+                }
+                queue.Enqueue(full);
+            }
+        }
+        return result;
+    }
+
     public static string Transpile(string src, string file = "main.al") => TranspileAll([new SourceFile(file, src)])[0];
 
     static readonly CSharpParseOptions Parse = new(LanguageVersion.Preview);

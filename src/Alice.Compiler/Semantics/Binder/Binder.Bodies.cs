@@ -38,6 +38,8 @@ public sealed partial class Binder
                 case TypeDecl d:
                     BindItems(d.Members, (TypeSym)d.Sym!);
                     break;
+                case MethodDecl { IsTemplate: true }:
+                    break;
                 case MethodDecl m:
                     BindMethod(m, owner, null);
                     var ms = (MethodSym)m.Sym!;

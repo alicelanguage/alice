@@ -27,7 +27,13 @@ public sealed partial class Parser
                 into.Add(At(new UsingItem { Name = DottedName() }, tok));
                 EndStmt();
             }
-            else if (IsKw("require")) { Next(); Next(); EndStmt(); }
+            else if (IsKw("require"))
+            {
+                Next();
+                if (t[p].Kind != "str") throw Err("require expects a string path");
+                into.Add(At(new RequireItem { Path = Next().Text }, tok));
+                EndStmt();
+            }
             else if (IsOp("@[")) Attr();
             else if (IsKw("namespace"))
             {
@@ -177,10 +183,11 @@ public sealed partial class Parser
             if (IsKw("end") || t[p].Kind == "eof") return;
             Token tok = Cur;
             if (IsOp("@[")) Attr();
-            else if (IsKw("include"))
+            else if (IsKw("include") || IsKw("extend"))
             {
-                Next();
-                d.Bases.Add(Type());
+                bool ext = Next().Text == "extend";
+                d.Mixins.Add((Type(), ext));
+                while (IsOp(",")) { Next(); d.Mixins.Add((Type(), ext)); }
                 EndStmt();
             }
             else if (IsKw("getter") || IsKw("property") || IsKw("setter"))
@@ -312,6 +319,7 @@ public sealed partial class Parser
             Next();
             Next();
             m.IsStatic = true;
+            m.SelfDef = true;
         }
         if (IsOp("[") && Peek(1).Text == "]") { Next(); Next(); m.Name = "[]"; }
         else m.Name = Next().Text;
@@ -359,8 +367,12 @@ public sealed partial class Parser
             EndStmt();
         }
         m.Body = Block(" end ");
+        int endLine = Cur.Line;
         ExpectKw("end");
         locals = saved;
+        m.File = file;
+        int from = m.Line - lineBase, to = endLine - lineBase;
+        if (from >= 0 && to < srcLines.Length) m.SourceText = string.Join("\n", srcLines[from..(to + 1)]);
         return m;
     }
 

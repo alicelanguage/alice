@@ -20,7 +20,7 @@ public static class TestCommand
         var sw = Stopwatch.StartNew();
         foreach (var t in tests)
         {
-            var files = lib.Append(t).Select(p => new SourceFile(Path.GetFullPath(p), File.ReadAllText(p))).ToList();
+            var files = AliceCompiler.LoadWithRequires(lib.Append(t));
             byte[] image;
             try
             {

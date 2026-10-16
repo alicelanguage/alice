@@ -45,7 +45,8 @@ public static class CompileCommands
         return o;
     }
 
-    static List<SourceFile> Read(IEnumerable<string> paths) => paths.Select(p => new SourceFile(Path.GetFullPath(p), File.ReadAllText(p))).ToList();
+    /// <summary>Entry files plus everything they `require`.</summary>
+    static List<SourceFile> Read(IEnumerable<string> paths) => AliceCompiler.LoadWithRequires(paths);
 
     static Dictionary<string, string> Sources(List<SourceFile> files) => files.ToDictionary(f => f.Path, f => f.Text);
 

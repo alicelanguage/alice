@@ -134,6 +134,7 @@ public sealed class Emitter
                         break;
                     }
                 case ConstDecl c: body.Append(Const(c, s)); break;
+                case MethodDecl { IsTemplate: true }: break;
                 case MethodDecl m: body.Append(Method(m, s)); break;
                 case TypeDecl nested: body.Append(Type(nested)); break;
                 case EnumDecl e: body.Append(Enum(e)); break;
