@@ -3,6 +3,7 @@ using Alice.Compiler;
 namespace Alice.Tests.Compiler;
 
 /// <summary>Errors found while compiling the generated C# are reported in Alice terms: AL codes, Alice type names.</summary>
+[Collection("console")]
 public class ErrorTranslationTests
 {
     static string Error(string src)
@@ -39,4 +40,8 @@ public class ErrorTranslationTests
     [InlineData("(int, string)", "{Int32, String}")]
     public void Type_names_read_as_alice(string cs, string alice) =>
         Assert.Equal(alice, Alice.Compiler.Diagnostics.AliceNames.Type(cs));
+
+    [Fact]
+    public void Constant_array_literals_infer_their_type() =>
+        Assert.Equal("3 b", AliceCompiler.Run("ROWS = [\"a\", \"b\", \"c\"]\nputs \"#{ROWS.size} #{ROWS[1]}\"\n").Trim());
 }

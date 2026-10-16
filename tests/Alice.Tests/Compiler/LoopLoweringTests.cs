@@ -43,4 +43,11 @@ public class LoopLoweringTests
     {
         Assert.Equal("6", AliceCompiler.Run("xs = List(Int32).new\nxs.Add(1)\nxs.Add(2)\nxs.Add(3)\nt = 0\nxs.each { |x| t += x }\nputs t").Trim());
     }
+
+    [Fact]
+    public void Reductions_over_instance_arrays_compile_and_run()
+    {
+        var src = "class Grid\n  @cells : Array(UInt8) = Array(UInt8).new(200000)\n  def fill\n    for i in 0...@cells.Length\n      @cells[i] = (i % 3 == 0) ? 1_u8 : 0_u8\n    end\n  end\n  def population : Int32\n    n = 0\n    for i in 0...@cells.Length\n      n += @cells[i]\n    end\n    n\n  end\nend\ng = Grid.new\ng.fill\nputs g.population\n";
+        Assert.Equal("66667", AliceCompiler.Run(src).Trim());
+    }
 }

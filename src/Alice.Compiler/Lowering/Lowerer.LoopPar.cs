@@ -79,12 +79,12 @@ public sealed partial class Lowerer
                     Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk }, new MCode("static (x, y) => x + y"), new MCode(grain) },
                 },
             });
-            Extra.Add($"private static {accT} {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
+            Extra.Add($"private {HelperStatic}{accT} {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
         }
         else
         {
             hp.Stmt(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk }, new MCode(grain) } } });
-            Extra.Add($"private static void {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
+            Extra.Add($"private {HelperStatic}void {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
         }
         string call = $"{helper}({string.Join(", ", args)})";
         MStmt par = plan.Acc != null
@@ -168,6 +168,9 @@ public sealed partial class Lowerer
     }
 
     readonly Dictionary<MethodSym, bool> purity = new();
+
+    /// <summary>Loop helpers of instance methods are instance methods too (bodies may read @ivars / self).</summary>
+    string HelperStatic => Method is { IsStatic: false } && Type.Kind != "extension" ? "" : "static ";
 
     /// <summary>
     /// Interprocedural purity: writes only its own locals (and, for constructors, the fresh object's fields),

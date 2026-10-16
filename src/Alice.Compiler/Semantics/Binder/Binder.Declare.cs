@@ -393,6 +393,8 @@ public sealed partial class Binder
         InterpExpr => AType.String,
         LitExpr { Kind: "char" } => AType.Char,
         LitExpr { Kind: "bool" } => AType.Bool,
+        // Ruby-style constant tables: arrays / hashes of literals infer their element types
+        ArrayLit { Of: null, Items.Count: > 0 } a when a.Items.Select(LiteralType).Distinct().ToList() is [{ IsKnown: true } t] => AType.Array(t),
         _ => AType.Unknown,
     };
 }

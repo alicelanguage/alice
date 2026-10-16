@@ -24,6 +24,7 @@ public static partial class Prelude
     public static string gsub(this string s, string a, string b) => s.Replace(a, b, StringComparison.Ordinal);
     public static string[] split(this string s, string sep = " ") => s.Split(sep, StringSplitOptions.RemoveEmptyEntries);
     public static void each_char(this string s, Action<char> f) { foreach (var c in s) f(c); }
+    public static void each_char_with_index(this string s, Action<char, int> f) { for (int i = 0; i < s.Length; i++) f(s[i], i); }
     public static string ljust(this string s, int n, char pad = ' ') => s.PadRight(n, pad);
     public static string rjust(this string s, int n, char pad = ' ') => s.PadLeft(n, pad);
 }

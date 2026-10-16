@@ -22,7 +22,7 @@ public static class Builtins
         .ToHashSet();
 
     /// <summary>Iteration methods whose literal blocks the lowerer may inline into loops.</summary>
-    public static readonly HashSet<string> Iterators = new() { "each", "each_with_index", "map", "select", "reject", "sum", "count", "any_q", "all_q", "find", "reduce", "times", "upto", "downto", "each_char", "max_by", "min_by" };
+    public static readonly HashSet<string> Iterators = new() { "each", "each_with_index", "map", "select", "reject", "sum", "count", "any_q", "all_q", "find", "reduce", "times", "upto", "downto", "each_char", "each_char_with_index", "max_by", "min_by" };
 
     static readonly HashSet<string> ClrExtNames = new[] { typeof(Enumerable), typeof(MemoryExtensions), typeof(System.Collections.Generic.CollectionExtensions) }
         .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
@@ -132,6 +132,7 @@ public static class Builtins
                 return new() { AType.Int };
             case "each_with_index":
             case "map_with_index":
+            case "each_char_with_index":
                 return new() { e, AType.Int };
             case "reduce":
                 return args.Count > 0 ? new() { args[0], e } : new() { e, e };
@@ -270,6 +271,7 @@ public static class Builtins
             case "upto":
             case "downto":
             case "each_char":
+            case "each_char_with_index":
             case "push":
             case "par_each":
                 return AType.Void;
