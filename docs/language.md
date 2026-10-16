@@ -10,9 +10,9 @@ Status: unmarked = implemented and covered by `tests/Alice.Tests/Compiler/`. **(
 |---|---|---|
 | Readable | Ruby | blocks, `name?`, implicit return, symbols, `send` |
 | Typed | Crystal | local + return-type inference; annotate when you want |
-| Safe | Rust | null-safety errors, `val`, spawn data-race check |
+| Safe | Rust | null-safety errors, `val`, compile-time data-race check (AL0202) |
 | Fast | C | inlined block loops, static dispatch, SIMD runtime, NativeAOT |
-| Parallel | Elixir | `spawn`, `Channel(T)`, `Actor(T)`, `par_map` |
+| Parallel | Elixir | `spawn`, `async`/`await`, `Channel(T)`, `Actor(T)`, auto-parallel loops |
 | Ecosystem | .NET | full BCL and NuGet; C# can call Alice |
 
 ```text
@@ -52,7 +52,8 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 | `T?` | nullable |
 | `Array(T)` | `T[]` (`Array(Float64).new(4)` = `new double[4]`) |
 | `List(T)`, `Dictionary(K, V)` | BCL generics |
-| `Channel(T)`, `Actor(T)` | runtime concurrency |
+| `Channel(T)`, `Actor(T)`, `Mutex(T)`, `Atomic` | runtime concurrency |
+| `SoA(T)` | columnar store of an `@[SoA]` record struct |
 
 Any other .NET type is used by name.
 
@@ -60,7 +61,7 @@ Any other .NET type is used by name.
 
 - Locals: from initializer. `s : String? = nil` annotates.
 - Method returns: inferred Crystal-style when `: Type` is omitted, including calls to defs declared later. Unresolvable -> `dynamic`.
-- Untyped params are generic: `def ident(x)` works for `5` and `"s"`.
+- Untyped params are monomorphized per call-site types: `def len(x)` called with `String` and `Array(Int32)` emits `int len(string x)` and `int len(int[] x)`; no `dynamic`.
 - Locals are Ruby function-scoped: a local first assigned inside `if`/loop is hoisted and visible after it.
 
 ### Null safety
@@ -120,8 +121,8 @@ def ok?(x : Int32) : Bool           # predicate names
   x > 0
 end
 
-def first<T>(xs : Array(T)) : T     # generic def
-  xs[0]
+def biggest(a : T, b : T) : T forall T where T : IComparable(T)
+  a.CompareTo(b) >= 0 ? a : b
 end
 
 greet "bob"                         # command call, no parens
@@ -210,11 +211,61 @@ end
 | `module M` | static class |
 | `interface I` + `class C < I` | interface implementation |
 | `enum Color ... end` | enum; `Color::Green` |
-| `abstract`, `private`, `protected`, `include` | parsed; not covered by tests |
+| `record Point(x : Int32, y : Int32)` | `record` class: value equality, `Point { x = 1, y = 2 }` |
+| `record struct Vec(x : Float64, y : Float64) ... end` | `record struct`, body may add methods |
+| `class Box(T)` / `class Node(T) where T : IComparable(T)` | generic class + constraint |
+| `abstract`, `private`, `include` | parsed; not covered by tests |
 
-Methods are `virtual` only when the class has an Alice subclass.
+Leaf classes are `sealed`; methods are `virtual` only when the class has an Alice subclass.
 
-Generic classes `class Box(T)` and constraints **(planned)**.
+### Sum types
+
+Enum variants with fields. `case` destructures; a missing variant without `else` is AL0201.
+
+```crystal
+enum Shape
+  Circle(r : Float64)
+  Rect(w : Float64, h : Float64)
+  Empty
+end
+
+def area(s : Shape) : Float64
+  case s
+  when Shape::Circle(r) then 3.0 * r * r
+  when Shape::Rect(w, h) then w * h
+  when Shape::Empty then 0.0
+  end
+end
+puts Shape::Rect(1.0, 2.0) == Shape::Rect(1.0, 2.0)   # true
+```
+
+Variants are constructed with `Type::Variant(args)` (lowered to sealed nested records). `Type(args)` sugar for ordinary classes **(planned)**.
+
+### Reopening and monkey patching
+
+- Reopening an Alice class merges members.
+- Reopening a .NET type (`class String`, `struct Int32`) emits extension methods: `"hey".shout`, `21.double`.
+
+### Inheriting .NET types
+
+- `class MyList < List(Int32)`: inherited members callable unqualified (`Add(5)`, `Count`).
+- Overriding a .NET virtual (incl. `protected`): `def Dispose(disposing : Bool) ... super end`.
+- Arrays of mixed .NET subclasses unify to the common base (`Stream[]`).
+
+### SoA records
+
+```crystal
+@[SoA]
+record struct Particle(x : Float64, v : Float64, m : Float64)
+
+ps = SoA(Particle).new
+ps.add(Particle.new(0.0, 1.0, 2.0))
+ps.each { |p| p.x += p.v * 0.5 }     # column-wise, vectorized
+puts ps.sum { |p| p.m * p.v }
+ps.remove_at(0)                      # swap-remove: last element moves to 0
+```
+
+Members: `add`, `[i]`, `remove_at`, `size`, `clear`, `each`, `sum`, `count`. Each field is one array column (`double[] x`).
 
 ## 9. Attributes
 
@@ -224,6 +275,7 @@ Generic classes `class Box(T)` and constraints **(planned)**.
 | `@[NoInline]` | `MethodImplOptions.NoInlining` |
 | `@[Hot]` | `MethodImplOptions.AggressiveOptimization` |
 | `@[Stack]` on struct | `ref struct` |
+| `@[SoA]` on record struct | enables `SoA(T)` columnar store |
 | `@[Link("lib")]` on `lib` | P/Invoke (`fun` -> `DllImport`) |
 | any other `@[Name(args)]` | .NET attribute |
 
@@ -234,31 +286,58 @@ lib LibM
 end
 ```
 
-## 10. Concurrency (ADR 0005)
+## 10. Concurrency (ADR 0005, 0008)
 
 ```crystal
 ch = Channel(Int32).new
-spawn do
-  for i in 1..10
-    ch.send(i)
-  end
-  ch.close
-end
+t = spawn { 5.times { |i| ch.send(i) }
+  ch.close }
 total = 0
 ch.each { |v| total += v }
+t.wait
 
-t = spawn { 6 * 7 }
-puts t.wait                          # 42
+m = Mutex(List(Int32)).new(List(Int32).new)
+Par.For(100) { |i| m.lock { |l| l.Add(i) } }
 
-a = Actor(Int32).new(->(m : Int32) { sum += m })
+c = Atomic.new(0)
+Par.For(1000) { |i| c.add(1) }
+puts c.get                           # 1000
+
+seen = Atomic.new(0)
+a = Actor(Int32).new(->(m : Int32) { seen.add(m) })
 a.send(1)
 a.stop                               # drains mailbox
-
-puts [1, 2, 3].par_map { |x| x + 1 }.sum
-r = Par.Map([1, 2, 3], ->(x : Int32) { x * 2 })
 ```
 
-Data-race check: a spawned block that assigns a captured local is a compile error (`data race`). Communicate via channels.
+`Channel(T)`: `send`, `receive`, `close`, `each`, `send_async`, `wait_async`. `Actor(T)` runs on an async mailbox: 2000 actors hold no threads.
+
+### Async
+
+```crystal
+async def twice(x : Int32) : Int32
+  await Task.Delay(1)
+  x * 2
+end
+async def main_async
+  puts await twice(4)
+end
+main_async.wait
+```
+
+Return type inferred as `Task<T>`.
+
+### Race safety (AL0202)
+
+Concurrent contexts: `spawn`, `Par.For`, `par_each`, `Task.Run` lambdas, `Actor` handlers.
+
+| Rejected | Allowed |
+|---|---|
+| assign / `+=` captured local | read captured values |
+| mutating call on captured collection (`xs.Add`) | `arr[i] = ...` disjoint index writes in `Par.For` |
+| `acc[0] = i` constant index | `Mutex(T)#lock`, `Atomic`, `Channel`, `Actor` |
+| method that mutates `@field` | `System.Collections.Concurrent.*` |
+| `@v = ...` inside `spawn` | `Interlocked.*(ref x, ...)` |
+| `Volatile.Write(ref x, ...)` | return a value from the task |
 
 ## 11. .NET interop
 
@@ -276,26 +355,10 @@ Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`
 
 ## 13. Performance model
 
-| Source | Emitted IL shape |
-|---|---|
-| literal block on `each/map/select/reject/sum/count/any?/all?/find/reduce/times/upto/downto/each_with_index` | inlined `for` loop, no delegate |
-| `map/select/reject` chain | fused into one loop (0 allocations, `AllocationTests`) |
-| `map` over array | exact-size result array only |
-| capture-free lambda | `static` lambda |
-| Alice method | non-virtual unless subclassed |
-| `"#{x}"` | invariant-culture interpolation, no boxing |
-| `for i in a..b` | counted loop |
-| `if`/`case` value | typed temp, no closure |
-
-Inspect lowering with `alice emit file.al`.
+See [performance.md](performance.md). Inspect lowering with `alice emit file.al`.
 
 ## 14. Commands
 
-| Command | Result |
-|---|---|
-| `alice run f.al [-- args]` | compile in memory and run |
-| `alice emit f.al` | print lowered C# |
-| `alice build f.al [-o out.dll] [-r ref.dll]` | IL assembly |
-| `alice build f.al --native` | NativeAOT binary |
+See [tooling.md](tooling.md). Error codes: [errors.md](errors.md).
 
 See also: [Memory safety and ownership (proposed)](design/memory-safety.md).

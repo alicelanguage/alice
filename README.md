@@ -19,8 +19,25 @@ end
 dotnet run --project src/Alice.Cli -- run hello.al
 ```
 
+Highlights: sum types + exhaustive `case`, records, generics with constraints, `async`/`await`, compile-time data-race errors (AL0202), `@[SoA]` columnar stores. The compiler fuses, vectorizes (`Vector<T>`) and auto-parallelizes pure loops.
+
+Benchmarks vs idiomatic C# on .NET 10 ([run 3](benchmarks/README.md)):
+
+| benchmark | Alice ms | C# ms | ratio |
+|---|---:|---:|---:|
+| pipeline | 2.0 | 28.1 | 0.07 |
+| particles | 25.3 | 159.1 | 0.16 |
+| mandelbrot | 21.8 | 118.5 | 0.18 |
+| wordfreq | 27.1 | 120.8 | 0.22 |
+| binarytrees | 103.7 | 182.2 | 0.57 |
+| nbody | 50.3 | 47.6 | 1.06 |
+
 - [Getting started](docs/getting-started.md)
 - [Language guide](docs/language.md)
+- [Performance model](docs/performance.md)
+- [Tooling](docs/tooling.md)
+- [Error codes](docs/errors.md)
+- [Benchmarks](benchmarks/README.md)
 - [Architecture](archicture/README.md)
 - [Changelog](CHANGELOG.md)
 

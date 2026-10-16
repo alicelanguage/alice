@@ -17,6 +17,7 @@
 | 0005 | Concurrency model |
 | 0006 | Ownership as static layer on .NET GC (proposed) |
 | 0007 | HIR/MIR pipeline for allocation-free IL |
+| 0008 | Compile-time race safety (AL0202) |
 
 ## Projects
 
@@ -24,7 +25,8 @@
 |---|---|---|
 | `src/Alice.Runtime` | Runtime library (SIMD, sparse, Par, math, concurrency, prelude) | `modules/runtime.md` |
 | `src/Alice.Compiler` | Compiler: Syntax -> Semantics -> Lowering/MIR -> Backend (Roslyn IL) | `modules/compiler.md` |
-| `src/Alice.Cli` | `alice` command | `modules/cli.md` |
+| `src/Alice.Cli` | `alice` command |
+| `src/Alice.Sdk` | MSBuild props/targets for `.alproj` | `docs/tooling.md` | `modules/cli.md` |
 | `tests/Alice.Tests` | xUnit tests | - |
 
 Dependency direction: `Runtime <- Compiler <- Cli`. Runtime depends on no other project.
