@@ -1,0 +1,31 @@
+{
+  "repository": "https://github.com/NoelFB/Celeste",
+  "revision": "1b0ce45c75e05649ae91b44a8bb6b196684e4352",
+  "files": [
+    {
+      "file": "upstream/atlas.png",
+      "source": "https://raw.githubusercontent.com/NoelFB/Celeste/1b0ce45c75e05649ae91b44a8bb6b196684e4352/Source/PICO-8/Graphics/atlas.png",
+      "sha256": "e330f6287c95cdc0fe5bcac5a57bb3728d02ea74faadd076b49b61f0ac0a0857"
+    },
+    {
+      "file": "upstream/consolebg.png",
+      "source": "https://raw.githubusercontent.com/NoelFB/Celeste/1b0ce45c75e05649ae91b44a8bb6b196684e4352/Source/PICO-8/Graphics/consolebg.png",
+      "sha256": "3bcb3834d60267a4e92206ef5aaf6f5f97c1e21940c590c0e6c4c2f9bb813bb3"
+    },
+    {
+      "file": "upstream/font.png",
+      "source": "https://raw.githubusercontent.com/NoelFB/Celeste/1b0ce45c75e05649ae91b44a8bb6b196684e4352/Source/PICO-8/Graphics/font.png",
+      "sha256": "d626a96804cdfee5391c8b7270437ce5724d2a552c7744d5bfcb6ba2a339dacd"
+    },
+    {
+      "file": "upstream/logo.png",
+      "source": "https://raw.githubusercontent.com/NoelFB/Celeste/1b0ce45c75e05649ae91b44a8bb6b196684e4352/Source/PICO-8/Graphics/logo.png",
+      "sha256": "1f64d13569381c91919b4ae2ffd67eea668360677a23fae0ac9720994bccb289"
+    }
+  ],
+  "derived": {
+    "map.hex": "MapData string from Source/PICO-8/Emulator.cs, verbatim; lower-half nibbles are decoded at load time.",
+    "atlas.pixels": "Palette indices and alpha from upstream/atlas.png; . denotes transparency.",
+    "font.pixels": "Palette indices and alpha from upstream/font.png; . denotes transparency."
+  }
+}
