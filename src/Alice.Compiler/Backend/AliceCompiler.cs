@@ -43,7 +43,11 @@ public static class AliceCompiler
             try
             {
                 var psi = new System.Diagnostics.ProcessStartInfo(cc) { RedirectStandardError = true, RedirectStandardOutput = true };
-                foreach (var a in new[] { "-O3", "-march=native", "-shared", "-fPIC", "-o", lib, c, "-lm" }) psi.ArgumentList.Add(a);
+                // Windows clang targets MSVC: no -fPIC, and the C runtime already provides libm
+                var flags = OperatingSystem.IsWindows()
+                    ? new[] { "-O3", "-march=native", "-shared", "-o", lib, c }
+                    : new[] { "-O3", "-march=native", "-shared", "-fPIC", "-o", lib, c, "-lm" };
+                foreach (var a in flags) psi.ArgumentList.Add(a);
                 using var p = System.Diagnostics.Process.Start(psi)!;
                 string err = p.StandardError.ReadToEnd();
                 p.WaitForExit();

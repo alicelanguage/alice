@@ -64,3 +64,4 @@
 - Branch locals (also destructuring) are visible after `if`/`case` inside blocks and loops, like Ruby.
 - Project builds type-check in `alice gen`: errors are reported in Alice terms, never raw `csc` output; MSB3073 noise removed.
 - Sample `samples/fractal`: parallel Mandelbrot zoom; README rewritten with GIFs, architecture, capabilities, roadmap.
+- Fix: `@[Native]` builds on Windows (no `-fPIC`/`-lm` for the MSVC target).

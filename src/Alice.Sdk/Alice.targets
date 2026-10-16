@@ -43,6 +43,7 @@
       <AliceNativeLib Condition="'$(OS)' == 'Windows_NT'">$(AssemblyName)_native.dll</AliceNativeLib>
       <AliceNativeLib Condition="'$(OS)' != 'Windows_NT'">lib$(AssemblyName)_native.so</AliceNativeLib>
     </PropertyGroup>
-    <Exec Command="clang -O3 -march=native -shared -fPIC -o &quot;$(OutDir)$(AliceNativeLib)&quot; &quot;$(AliceGenDir)$(AssemblyName)_native.c&quot; -lm" ContinueOnError="true" />
+    <Exec Condition="'$(OS)' == 'Windows_NT'" Command="clang -O3 -march=native -shared -o &quot;$(OutDir)$(AliceNativeLib)&quot; &quot;$(AliceGenDir)$(AssemblyName)_native.c&quot;" ContinueOnError="true" />
+    <Exec Condition="'$(OS)' != 'Windows_NT'" Command="clang -O3 -march=native -shared -fPIC -o &quot;$(OutDir)$(AliceNativeLib)&quot; &quot;$(AliceGenDir)$(AssemblyName)_native.c&quot; -lm" ContinueOnError="true" />
   </Target>
 </Project>
