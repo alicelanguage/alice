@@ -6,7 +6,7 @@ on:
     inputs:
       channel:
         description: Release to install (stable, nightly or a version)
-        default: nightly
+        default: stable
   workflow_run:
     workflows: [Release]
     types: [completed]
@@ -17,15 +17,17 @@ permissions:
 jobs:
   install:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-    name: Install (${{ matrix.os }})
+    name: Install ${{ matrix.channel }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2025, macos-15]
+        # after a Release run test both channels; a manual run tests the requested one
+        channel: ${{ fromJSON(inputs.channel && format('["{0}"]', inputs.channel) || '["stable", "nightly"]') }}
     env:
-      CHANNEL: ${{ inputs.channel || 'nightly' }}
+      CHANNEL: ${{ matrix.channel }}
       ALICE_NO_UPDATE_CHECK: '1'
       GITHUB_TOKEN: ${{ github.token }}
     steps:
