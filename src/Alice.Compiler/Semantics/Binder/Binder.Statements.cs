@@ -255,6 +255,7 @@ public sealed partial class Binder
                 if (c.Subject != null && p is ArrayPatternExpr ap)
                 {
                     var et = Builtins.ElemOf(subj);
+                    foreach (var lit in ap.Literals) if (lit != null) BindExpr(lit);
                     ap.Binds = ap.Names.Select(n => n == "_" ? null! : Declare(ap, n, et)).ToList();
                     ap.RestSym = ap.Rest != null ? Declare(ap, ap.Rest, AType.Array(et)) : null;
                     p.Res = "arraypat";

@@ -134,6 +134,7 @@ public sealed class InvokeExpr : Expr
 public sealed class ArrayPatternExpr : Expr
 {
     public List<string> Names = new();
+    public List<Expr?> Literals = new();   // per element: a value to compare (`["go", dir]`), null for a binding / `_`
     public string? Rest;
     public List<Semantics.LocalSym> Binds = new();
     public Semantics.LocalSym? RestSym;

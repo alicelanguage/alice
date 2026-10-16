@@ -236,7 +236,7 @@ public sealed partial class Lowerer
         int savedNoHoist = noHoist;
         noHoist = 0;
         ctx.Add("lambda");
-        if (lam.Body.Count == 1 && lam.Body[0] is ExprStmt es)
+        if (lam.Body.Count == 1 && lam.Body[0] is ExprStmt es && es.Expr is not CallExpr { Res: "inline" })
         {
             var body = Expr(es.Expr);
             if (lam.DiscardValue && !es.Expr.Type.IsVoid && es.Expr.Type.IsKnown)

@@ -57,3 +57,6 @@
 - Fix: diagnostics and stack traces inside lowered blocks map to the right Alice line (synthesized statements re-anchor `#line`).
 - `to_i`/`to_f` for UInt8/Int8/Int16/UInt16/UInt32/UInt64.
 - Sample `samples/raytracer`: parallel ray tracer (shadows, mirrors, supersampling), PNG and orbit GIF in `docs/media/`.
+- Fix: array patterns accept literal elements (`in ["go", dir]`, `in [1, _, x]`); literals were wrongly treated as bindings.
+- Fix: `instance_eval` as the only statement of a block.
+- Sample `samples/wonderland`: text adventure written as a Ruby-style DSL (yield builders, instance_eval, case/in).

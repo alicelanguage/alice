@@ -26,4 +26,8 @@ public class RubySemanticsTests
     [Fact]
     public void Narrow_integer_conversions() =>
         Assert.Equal("255 200 65535 7", Run("puts \"#{255.to_u8} #{200.to_i16} #{65535.to_u16} #{7_i64.to_u32}\"\n"));
+
+    [Fact]
+    public void Array_patterns_match_literal_elements() =>
+        Assert.Equal("L\ngo north\ngo east\n?\nthree from 1", Run("def look : String\n  \"L\"\nend\ndef go(d : String) : String\n  \"go \" + d\nend\ndef cmd(w : Array(String)) : String\n  case w\n  in [\"look\"] | [\"l\"]\n    look\n  in [\"go\", dir]\n    go(dir)\n  in [dir]\n    go(dir)\n  else\n    \"?\"\n  end\nend\nputs cmd([\"l\"])\nputs cmd([\"go\", \"north\"])\nputs cmd([\"east\"])\nputs cmd([\"x\", \"y\"])\ncase [1, 2, 3]\nin [1, _, x]\n  puts \"three from 1\"\nelse\n  puts \"no\"\nend\n"));
 }

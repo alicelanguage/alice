@@ -292,6 +292,9 @@ public sealed partial class Lowerer
         {
             string len = ap.Type.Kind == "array" || ap.Type.IsString ? "Length" : "Count";
             MExpr cond = new MBinary { Op = ap.Rest != null ? ">=" : "==", L = new MMember { Target = subj, Name = len }, R = new MCode(ap.Names.Count.ToString()) };
+            for (int i = 0; i < ap.Literals.Count; i++)
+                if (ap.Literals[i] is { } lit)
+                    cond = new MBinary { Op = "&&", L = cond, R = new MBinary { Op = "==", L = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, R = Expr(lit) } };
             for (int i = 0; i < ap.Binds.Count; i++)
                 if (ap.Binds[i] != null) cond = new MBinary { Op = "&&", L = cond, R = new MIs { E = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, TypeCs = "var " + ap.Binds[i].CsName } };
             if (ap.RestSym != null)

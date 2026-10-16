@@ -309,9 +309,19 @@ public sealed partial class Parser
             else
             {
                 if (ap.Rest != null) throw Err("the *rest element must be last");
-                string n = Next().Text;
-                ap.Names.Add(n);
-                DeclareLocal(n);
+                if (t[p].Kind == "id" && !IsKeyword(Cur.Text))
+                {
+                    string n = Next().Text;
+                    ap.Names.Add(n);
+                    ap.Literals.Add(null);
+                    DeclareLocal(n);
+                }
+                else
+                {
+                    // a value element: string/number/char/symbol/constant/true/false/nil, compared with ==
+                    ap.Literals.Add(Expression());
+                    ap.Names.Add("_");
+                }
             }
             if (IsOp(",")) Next();
         }
