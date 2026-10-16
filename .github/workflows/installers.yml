@@ -68,3 +68,30 @@ jobs:
           Get-Content -Raw scripts/install.ps1 | Invoke-Expression
           & "$env:ALICE_HOME\bin\alice.cmd" --lang en version
           if ($LASTEXITCODE -ne 0) { throw 'alice version failed under PowerShell 5.1' }
+
+  live:
+    # The exact public one-liners, fetched from alice-lang.org (what users copy from the site).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    name: Live one-liner (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    env:
+      ALICE_NO_UPDATE_CHECK: '1'
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: curl -fsSL https://alice-lang.org/install.sh | sh
+        if: runner.os != 'Windows'
+        run: |
+          curl -fsSL https://alice-lang.org/install.sh | sh
+          "$HOME/.alice/bin/alice" --lang en version
+      - name: irm https://alice-lang.org/install.ps1 | iex
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          irm https://alice-lang.org/install.ps1 | iex
+          & "$HOME\.alice\bin\alice.cmd" --lang en version
+          if ($LASTEXITCODE -ne 0) { throw 'alice version failed' }
