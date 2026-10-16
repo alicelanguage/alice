@@ -53,6 +53,7 @@ public sealed partial class Binder
             case "Tuple": return Tuple(args);
             case "Proc" when args.Count >= 1: return Func(args.Take(args.Count - 1).ToList(), args[^1]);
             case "SoA" when args.Count == 1:
+                if (args[0].Sym is { SoaStore: null, Decl: { } sd } lazy && sd.Attrs.Contains("SoA")) EnsureSoaStore(lazy);
                 if (args[0].Sym?.SoaStore is TypeSym store) return store.Type;
                 throw new CompileException($"{file}:{r.Line}:{r.Col}: SoA({args[0].Cs}) needs `@[SoA]` on {args[0].Cs}");
         }

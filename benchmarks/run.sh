@@ -5,7 +5,7 @@ export LC_ALL=C
 cd "$(dirname "$0")"
 ROOT=..
 OUT=out
-BENCHES=(nbody binarytrees pipeline expr wordfreq mandelbrot parallel)
+BENCHES=(nbody binarytrees pipeline expr wordfreq mandelbrot parallel particles)
 
 dotnet build "$ROOT/src/Alice.Cli" -c Release -v q -nologo >/dev/null
 ALICE="$ROOT/src/Alice.Cli/bin/Release/net10.0/alice.dll"

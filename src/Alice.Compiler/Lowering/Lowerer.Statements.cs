@@ -138,6 +138,12 @@ public sealed partial class Lowerer
     MStmt For(ForStmt f)
     {
         if (TrySplitLoop(f) is MStmt split) return split;
+        if (TryParallelFor(f) is MStmt par) return par;
+        return SerialFor(f);
+    }
+
+    MStmt SerialFor(ForStmt f)
+    {
         ctx.Add("loop");
         MStmt r;
         if (f.Iter is RangeExpr re)

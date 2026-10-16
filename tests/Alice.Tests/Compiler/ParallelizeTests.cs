@@ -59,3 +59,70 @@ public class ParallelizeTests
         Assert.Contains("Par.Range", AliceCompiler.Transpile(src + "\n"));
     }
 }
+
+public class LoopParallelizeTests
+{
+    static System.Reflection.MethodInfo Compile(string src) =>
+        AliceCompiler.Load(AliceCompiler.Emit([AliceCompiler.Transpile(src)], "lp", exe: false)).GetType("Program")!.GetMethod("f")!;
+
+    const string Mandel = "def f(size : Int32)\n  inside : Int64 = 0\n  for py in 0...size\n    ci = 2.0 * py / size - 1.0\n    for px in 0...size\n      cr = 2.0 * px / size - 1.5\n      zr = 0.0\n      zi = 0.0\n      it = 0\n      while it < 50 && zr * zr + zi * zi <= 4.0\n        t = zr * zr - zi * zi + cr\n        zi = 2.0 * zr * zi + ci\n        zr = t\n        it += 1\n      end\n      inside += 1 if it == 50\n    end\n  end\n  inside\nend";
+
+    static long MandelRef(int size)
+    {
+        long inside = 0;
+        for (int py = 0; py < size; py++)
+        {
+            double ci = 2.0 * py / size - 1.0;
+            for (int px = 0; px < size; px++)
+            {
+                double cr = 2.0 * px / size - 1.5, zr = 0, zi = 0;
+                int it = 0;
+                while (it < 50 && zr * zr + zi * zi <= 4.0) { double t = zr * zr - zi * zi + cr; zi = 2.0 * zr * zi + ci; zr = t; it++; }
+                if (it == 50) inside++;
+            }
+        }
+        return inside;
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(37)]
+    [InlineData(300)]
+    public void Reduction_loop_is_parallel_and_exact(int size)
+    {
+        Assert.Equal(MandelRef(size), Compile(Mandel).Invoke(null, [size]));
+        Assert.Contains("Par.Reduce", AliceCompiler.Transpile(Mandel + "\n"));
+    }
+
+    [Fact]
+    public void Disjoint_array_writes_parallelize()
+    {
+        var src = "def f(n : Int32)\n  out = Array(Int64).new(n)\n  for i in 0...n\n    s = 0L\n    for k in 0...100\n      s += k * i\n    end\n    out[i] = s\n  end\n  out.sum\nend";
+        long expected = Enumerable.Range(0, 5000).Sum(i => Enumerable.Range(0, 100).Sum(k => (long)k * i));
+        Assert.Equal(expected, Compile(src).Invoke(null, [5000]));
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src + "\n"));
+    }
+
+    [Fact]
+    public void Loops_calling_pure_user_methods_parallelize()
+    {
+        var src = "class Node\n  getter l : Node?\n  getter r : Node?\n  def initialize(@l : Node?, @r : Node?)\n  end\n  def count : Int32\n    a = l\n    b = r\n    if a.nil? || b.nil?\n      1\n    else\n      1 + a.count + b.count\n    end\n  end\nend\ndef build(d : Int32) : Node\n  d > 0 ? Node.new(build(d - 1), build(d - 1)) : Node.new(nil, nil)\nend\ndef f(n : Int32)\n  c = 0\n  k = 0\n  while k < 2\n    for i in 0...n\n      c += build(6).count\n    end\n    k += 1\n  end\n  c\nend";
+        Assert.Equal(2 * 40 * 127, Compile(src).Invoke(null, [40]));
+        Assert.Contains("Par.Reduce", AliceCompiler.Transpile(src + "\n"));
+    }
+
+    [Fact]
+    public void Loops_calling_impure_methods_stay_serial()
+    {
+        var src = "class C\n  getter n : Int32 = 0\n  def bump : Int32\n    @n += 1\n    @n\n  end\nend\ndef f(k : Int32)\n  c = C.new\n  s = 0\n  for i in 0...k\n    s += c.bump\n  end\n  s\nend";
+        Assert.DoesNotContain("Par.", AliceCompiler.Transpile(src + "\n"));
+    }
+
+    [Theory]
+    [InlineData("def f(n : Int32)\n  xs = List(Int32).new\n  for i in 0...n\n    xs.Add(i)\n  end\n  xs.Count\nend")]
+    [InlineData("def f(n : Int32)\n  last = 0\n  for i in 0...n\n    last = i\n  end\n  last\nend")]
+    [InlineData("def f(n : Int32)\n  s = 0\n  for i in 0...n\n    s += 1\n    break if s > 10\n  end\n  s\nend")]
+    [InlineData("def f(n : Int32)\n  s = 0\n  for i in 0...n\n    s += s + i\n  end\n  s\nend")]
+    public void Order_dependent_loops_stay_serial(string src)
+        => Assert.DoesNotContain("Par.", AliceCompiler.Transpile(src + "\n"));
+}

@@ -221,6 +221,23 @@ public sealed partial class Binder
     }
 
     /// <summary>`@[SoA] record struct P(...)` gets `P.Store`: one array column per field + add/[]/remove_at/size/clear.</summary>
+    /// <summary>Creates the store on first use (signatures may mention SoA(T) before T is declared).</summary>
+    void EnsureSoaStore(TypeSym s)
+    {
+        if (s.FieldOrder.Count == 0 && s.Decl != null)
+        {
+            var saved = typeParams;
+            typeParams = s.TypeParams;
+            foreach (var p in s.Decl.RecordParams)
+            {
+                s.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = s };
+                s.FieldOrder.Add(p.Name);
+            }
+            typeParams = saved;
+        }
+        CreateSoaStore(s);
+    }
+
     void CreateSoaStore(TypeSym s)
     {
         if (s.FieldOrder.Count == 0) throw Err(s.Decl!, "@[SoA] needs positional fields: record struct Name(a : T, ...)");

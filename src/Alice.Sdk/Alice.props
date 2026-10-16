@@ -8,6 +8,9 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TieredPGO>true</TieredPGO>
+    <!-- Alice auto-parallelizes allocation-heavy loops: server GC collects with all cores (DATAS keeps the heap adaptive) -->
+    <ServerGarbageCollection Condition="'$(ServerGarbageCollection)' == ''">true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection Condition="'$(ConcurrentGarbageCollection)' == ''">true</ConcurrentGarbageCollection>
     <Optimize Condition="'$(Configuration)' == 'Release'">true</Optimize>
     <!-- .alproj is unknown to MSBuild: compile through the C# targets (Alice lowers to C# then IL) -->
     <LanguageTargets Condition="'$(MSBuildProjectExtension)' == '.alproj'">$(MSBuildToolsPath)\Microsoft.CSharp.targets</LanguageTargets>

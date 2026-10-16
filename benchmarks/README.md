@@ -87,3 +87,18 @@ Same machine and method. All checksums match C#.
 | parallel | 31.3 | 33.2 | 32.9 | 0.94 |
 
 Compiler issue 1 (dropped implicit return after generic .NET calls) is fixed: generic method type inference + declared return types always return the tail. `parallel.al` now uses `xs.par_sum { }` (chunked map-reduce, no intermediate array).
+
+## Run 3 — idiom rewrites, SoA, auto-vectorization + auto-parallelization, server GC (2026-10-15)
+
+| benchmark | Alice ms | C# idiomatic ms | C# hand-opt ms | Alice/C# | why |
+|---|---:|---:|---:|---:|---|
+| nbody | 50.3 | 47.6 | - | 1.06 | sequential 5-body steps: same IL, tie |
+| binarytrees | 103.7 | 182.2 | - | 0.57 | loop calls pure methods -> auto-parallel + server GC |
+| pipeline | 2.0 | 28.1 | 7.6 | 0.07 | fused + Vector<T> + chunked across cores |
+| expr | 8.4 | 10.6 | - | 0.79 | sealed sum-type records, type-test dispatch |
+| wordfreq | 27.1 | 120.8 | 43.2 | 0.22 | span split + alternate lookup + single-probe increment |
+| mandelbrot | 21.8 | 118.5 | - | 0.18 | reduction loop auto-parallelized |
+| parallel | 34.6 | 36.8 | 34.4 | 0.94 | par_sum vs PLINQ/Parallel.For |
+| particles | 25.3 | 159.1 | 82.0 | 0.16 | @[SoA] columns, vectorized + parallel `each` |
+
+All checksums match C#. Parallel sums reassociate floating-point additions (documented); integer results are exact.

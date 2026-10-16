@@ -5,10 +5,13 @@ using System.Runtime.InteropServices;
 // Prints: RESULT <name> <median_ms> <checksum>
 var (name, variant) = (args[0], args[1]);
 Func<long> warm, run;
+long? fixedCheck = null;   // stateful benchmarks: checksum of a fresh run, timed runs are not re-checked
 switch (name, variant)
 {
     case ("nbody", "idiomatic"): warm = () => NBody.Kernel(20_000); run = () => NBody.Kernel(1_000_000); break;
     case ("binarytrees", "idiomatic"): warm = () => BinaryTrees.Kernel(10); run = () => BinaryTrees.Kernel(16); break;
+    case ("particles", "idiomatic"): { var ps = Particles.MakeObjects(1_000_000); fixedCheck = Particles.Objects(Particles.MakeObjects(1_000_000)); warm = run = () => { Particles.Objects(ps); return 0; }; break; }
+    case ("particles", "handopt"): { var ps = Particles.MakeStructs(1_000_000); fixedCheck = Particles.Structs(Particles.MakeStructs(1_000_000)); warm = run = () => { Particles.Structs(ps); return 0; }; break; }
     case ("pipeline", "idiomatic"): { var xs = Pipeline.Data(); warm = run = () => Pipeline.Linq(xs); break; }
     case ("pipeline", "handopt"): { var xs = Pipeline.Data(); warm = run = () => Pipeline.Loop(xs); break; }
     case ("expr", "idiomatic"): { var t = ExprBench.Build(20, 12345); warm = run = () => ExprBench.Kernel(t); break; }
@@ -19,11 +22,11 @@ switch (name, variant)
     case ("parallel", "handopt"): { var xs = ParallelBench.Data(); warm = run = () => ParallelBench.ParallelFor(xs); break; }
     default: Console.WriteLine($"SKIP {name} {variant}"); return;
 }
-Harness.Run(name, warm, run);
+Harness.Run(name, warm, run, fixedCheck);
 
 static class Harness
 {
-    public static void Run(string name, Func<long> warm, Func<long> run)
+    public static void Run(string name, Func<long> warm, Func<long> run, long? fixedCheck = null)
     {
         long check = run();
         // warm-up: >= 50 calls and >= 1 s so tier-1 + PGO code replaces tier-0/OSR
@@ -32,7 +35,7 @@ static class Harness
         var times = new double[15];
         for (int r = 0; r < times.Length; r++) times[r] = Measure(run, check);
         Array.Sort(times);
-        Console.WriteLine($"RESULT {name} {times[7].ToString(System.Globalization.CultureInfo.InvariantCulture)} {check}");
+        Console.WriteLine($"RESULT {name} {times[7].ToString(System.Globalization.CultureInfo.InvariantCulture)} {fixedCheck ?? check}");
     }
 
     static double Measure(Func<long> run, long check)
@@ -135,6 +138,52 @@ static class BinaryTrees
             total += c;
         }
         return total + longLived.Check();
+    }
+}
+
+static class Particles
+{
+    public sealed class P { public double X, Y, Vx, Vy; }
+    public struct S { public double X, Y, Vx, Vy; }
+
+    public static List<P> MakeObjects(int n)
+    {
+        var l = new List<P>(n);
+        for (int i = 0; i < n; i++) l.Add(new P { X = (i % 1000) * 0.01, Y = (i % 777) * 0.02, Vx = (i % 13) * 0.5 - 3.0, Vy = (i % 7) * 0.25 });
+        return l;
+    }
+
+    public static S[] MakeStructs(int n)
+    {
+        var a = new S[n];
+        for (int i = 0; i < n; i++) a[i] = new S { X = (i % 1000) * 0.01, Y = (i % 777) * 0.02, Vx = (i % 13) * 0.5 - 3.0, Vy = (i % 7) * 0.25 };
+        return a;
+    }
+
+    public static long Objects(List<P> ps)
+    {
+        const double dt = 0.01, g = 9.81;
+        for (int step = 0; step < 10; step++)
+        {
+            foreach (var p in ps) p.Vy -= g * dt;
+            foreach (var p in ps) p.X += p.Vx * dt;
+            foreach (var p in ps) p.Y += p.Vy * dt;
+        }
+        return Convert.ToInt64(ps.Sum(p => p.X + p.Y));
+    }
+
+    public static long Structs(S[] ps)
+    {
+        const double dt = 0.01, g = 9.81;
+        for (int step = 0; step < 10; step++)
+        {
+            for (int i = 0; i < ps.Length; i++) ps[i].Vy -= g * dt;
+            for (int i = 0; i < ps.Length; i++) ps[i].X += ps[i].Vx * dt;
+            for (int i = 0; i < ps.Length; i++) ps[i].Y += ps[i].Vy * dt;
+        }
+        double sum = 0;
+        for (int i = 0; i < ps.Length; i++) sum += ps[i].X + ps[i].Y;
+        return Convert.ToInt64(sum);
     }
 }
 

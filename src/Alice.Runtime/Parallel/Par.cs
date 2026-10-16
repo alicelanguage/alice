@@ -8,18 +8,18 @@ public static class Par
     public static int Workers => Environment.ProcessorCount;
 
     /// <summary>Calls body(lo, hi) over disjoint contiguous ranges covering [0, n).</summary>
-    public static void Range(int n, Action<int, int> body)
+    public static void Range(int n, Action<int, int> body, int grain = 1)
     {
         if (n <= 0) return;
-        int chunks = Math.Min(n, Workers * 4);
+        int chunks = Math.Min(Math.Max(1, n / Math.Max(1, grain)), Workers * 8);
         if (chunks <= 1) { body(0, n); return; }
         Parallel.For(0, chunks, c => body((int)((long)n * c / chunks), (int)((long)n * (c + 1) / chunks)));
     }
 
     /// <summary>Chunked map-reduce over [0, n): `chunk(lo, hi)` runs in parallel, partials are combined in order.</summary>
-    public static T Reduce<T>(int n, Func<int, int, T> chunk, Func<T, T, T> combine)
+    public static T Reduce<T>(int n, Func<int, int, T> chunk, Func<T, T, T> combine, int grain = 8192)
     {
-        int chunks = Math.Min(Math.Max(1, n / 8192), Workers * 4);
+        int chunks = Math.Min(Math.Max(1, n / Math.Max(1, grain)), Workers * 8);
         if (chunks <= 1) return chunk(0, n);
         var partial = new T[chunks];
         Parallel.For(0, chunks, c => partial[c] = chunk((int)((long)n * c / chunks), (int)((long)n * (c + 1) / chunks)));

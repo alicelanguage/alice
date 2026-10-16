@@ -31,6 +31,10 @@ public class SoATests
         => Assert.Equal("1000\n10.5\n4000\n999\n999.5", Run(Particles));
 
     [Fact]
+    public void Store_type_usable_in_signatures_before_declaration()
+        => Assert.Equal("2", Run("def make : SoA(Q)\n  s = SoA(Q).new\n  s.add(Q.new(1.0))\n  s.add(Q.new(2.0))\n  s\nend\n@[SoA]\nrecord struct Q(a : Float64)\nputs make.size"));
+
+    [Fact]
     public void Column_loops_touch_columns_and_vectorize()
     {
         var cs = AliceCompiler.Transpile(Particles);
