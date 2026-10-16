@@ -123,3 +123,18 @@ Gaps Alice would need to close:
 - mandelbrot: vectorize inner `while` loops with data-dependent exit (masked lanes, `ConditionalSelect`, all-lanes-done exit).
 - particles: loop fusion across consecutive `each` calls and across the outer `for step` loop (elementwise-independent updates), keeping columns in registers.
 - expr: lower sum-type `case` to virtual dispatch (or a vtable-like method per variant) instead of sequential `is` tests.
+
+## Run 5 — vs expert hand-optimized C# (fusion, SIMT, load balancing) (2026-10-16)
+
+| benchmark | Alice ms | C# idiomatic ms | C# hand-opt ms | Alice/hand-opt | note |
+|---|---:|---:|---:|---:|---|
+| nbody | 55.5 | 61.4 | 52.5 | 1.06 | sequential; same IL, noise |
+| binarytrees | 93.3 | 166.0 | 95.3 | 0.98 | auto-parallel pure calls + server GC |
+| pipeline | 2.1 | 31.3 | 2.0 | 1.05 | fused + vector + parallel, tie |
+| expr | 11.2 | 11.4 | 10.2 | 1.10 | sum-type dispatch, noise band |
+| wordfreq | 5.4 | 89.4 | 6.7 | 0.81 | parallel span map-reduce, order-preserving merge |
+| mandelbrot | 11.0 | 120.8 | 10.4 | 1.06 | auto-parallel rows + SIMT lanes for the escape loop |
+| parallel | 39.9 | 45.1 | 39.2 | 1.02 | tie |
+| particles | 2.3 | 139.2 | 2.3 | 1.00 | SoA pass fusion + interchange, registers, parallel |
+
+Alice beats idiomatic C# on every benchmark (0.02x–0.98x) and is within ~10% of expert hand-written C# everywhere (laptop noise ±10–20%), from plain idiomatic Alice source.
