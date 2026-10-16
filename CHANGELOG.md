@@ -44,3 +44,7 @@
 - `each` over a `List` iterates its backing span when the body provably can't modify the list. `benchmarks/run.sh`: interleaved rounds (ROUNDS, default 3; pass names to run a subset), median + spread, ratio vs hand-optimized C#.
 - `benchmarks/run.sh`: ~37 s for a full run (was 10+ min): incremental builds, ReadyToRun compiler (compile 1.8 s → 0.8 s per file), parallel compilation, 7 trials with 0.3 s warm-up.
 - CI: tests no longer run on Intel macOS; the `osx-x64` release package is cross-published on the arm64 runner. Release packages are ReadyToRun (faster compiler startup).
+- CLI: every usage mistake is `error:` + `hint:` (exit 2) or a missing file/dir (exit 1) with "did you mean"; no stack traces (exit 70 + `--verbose` for internal errors); no more `.alproj` in messages.
+- Packages: `alice remove`, `list`, `search`, `install` (`--tool`), `cache`; restores share the standard .NET NuGet cache.
+- Errors from the generated C# are translated (AL0300–AL0315) with Alice type names; no `CS####` or `global::` in messages.
+- New tagline: "curiouser and faster: write it like Ruby, run it like C, on all of .NET".

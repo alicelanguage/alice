@@ -12,9 +12,9 @@ public static class ProjectCommands
     {
         if (a.Contains("--workspace"))
         {
-            string wname = a.FirstOrDefault(x => !x.StartsWith("--")) ?? throw new CompileException(T("no.files"));
+            string wname = a.FirstOrDefault(x => !x.StartsWith("--")) ?? throw UsageException.Usage("alice new <name> --workspace");
             Directory.CreateDirectory(wname);
-            if (File.Exists(Path.Combine(wname, Manifest.FileName))) throw new CompileException(T("exists", wname));
+            if (File.Exists(Path.Combine(wname, Manifest.FileName))) throw new UsageException(T("exists", wname), null, 1);
             File.WriteAllText(Path.Combine(wname, Manifest.FileName), "[workspace]\nmembers = []\n");
             File.WriteAllText(Path.Combine(wname, ".gitignore"), "bin/\nobj/\n.alice/\n");
             UiH.Status(T("created"), $"workspace `{wname}`");
@@ -22,9 +22,9 @@ public static class ProjectCommands
         }
         string kind = a.Contains("--lib") ? "lib" : a.Contains("--game") ? "game" : "exe";
         string? name = a.FirstOrDefault(x => !x.StartsWith("--"));
-        if (name == null) throw new CompileException(T("no.files"));
+        if (name == null) throw UsageException.Usage("alice new <name> [--lib | --game | --workspace]");
         string dir = Path.GetFullPath(name);
-        if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any()) throw new CompileException(T("exists", name));
+        if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any()) throw new UsageException(T("exists", name), null, 1);
         string proj = Path.GetFileName(dir);
         Directory.CreateDirectory(Path.Combine(dir, "src"));
         Directory.CreateDirectory(Path.Combine(dir, "test"));
@@ -67,8 +67,8 @@ public static class ProjectCommands
 
     public static int Add(List<string> a)
     {
-        var proj = ProjectFiles.Find(".") ?? throw new CompileException(T("no.project"));
-        var pkg = a.FirstOrDefault(x => !x.StartsWith("-")) ?? throw new CompileException(T("no.files"));
+        var pkg = a.FirstOrDefault(x => !x.StartsWith("-")) ?? throw UsageException.Usage("alice add <package> [--version <v>] [--path <dir>]");
+        var proj = ProjectFiles.Find(".") ?? throw UsageException.NoProject();
         int pi = a.IndexOf("--path");
         int vv = a.IndexOf("--version");
         if (File.Exists(Manifest.FileName))
@@ -95,6 +95,7 @@ public static class ProjectCommands
     public static int Clean(List<string> a)
     {
         string root = a.FirstOrDefault() ?? ".";
+        if (!Directory.Exists(root)) throw new UsageException(T("dir.not.found", root), null, 1);
         foreach (var d in new[] { "bin", "obj" })
         {
             var p = Path.Combine(root, d);

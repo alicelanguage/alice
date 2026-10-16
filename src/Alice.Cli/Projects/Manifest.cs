@@ -90,6 +90,43 @@ public static class Manifest
         return proj;
     }
 
+    /// <summary>[dependencies] entries in file order: (name, version or "path:dir").</summary>
+    public static List<(string Name, string Spec)> Dependencies(string dir)
+    {
+        var r = new List<(string, string)>();
+        bool inDeps = false;
+        foreach (var raw in File.ReadAllLines(Path.Combine(dir, FileName)))
+        {
+            string l = raw.Trim();
+            if (l.StartsWith('[')) { inDeps = l == "[dependencies]"; continue; }
+            if (!inDeps || l.Length == 0 || l.StartsWith('#') || !l.Contains('=')) continue;
+            string name = l[..l.IndexOf('=')].Trim().Trim('"');
+            string val = l[(l.IndexOf('=') + 1)..].Trim();
+            r.Add((name, val.StartsWith('{') && val.Contains("path") ? "path:" + val.Split('"')[1] : val.Trim('"')));
+        }
+        return r;
+    }
+
+    /// <summary>Removes a [dependencies] entry; false when it is not there.</summary>
+    public static bool RemoveDependency(string dir, string name)
+    {
+        string file = Path.Combine(dir, FileName);
+        var lines = File.ReadAllLines(file).ToList();
+        bool inDeps = false;
+        for (int i = 0; i < lines.Count; i++)
+        {
+            string l = lines[i].Trim();
+            if (l.StartsWith('[')) { inDeps = l == "[dependencies]"; continue; }
+            if (inDeps && l.Contains('=') && l[..l.IndexOf('=')].Trim().Trim('"').Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                lines.RemoveAt(i);
+                File.WriteAllLines(file, lines);
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// <summary>Adds or updates `name = "version"` / `name = { path = "..." }` under [dependencies].</summary>
     public static void AddDependency(string dir, string name, string? version, string? path = null)
     {

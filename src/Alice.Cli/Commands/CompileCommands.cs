@@ -29,13 +29,13 @@ public static class CompileCommands
             switch (a[i])
             {
                 case "--": o.Rest = a.Skip(i + 1).ToList(); return o;
-                case "-o": o.Output = a[++i]; break;
-                case "-r": o.Refs.Add(a[++i]); break;
-                case "--refs-file": o.RefsFile = a[++i]; break;
+                case "-o": o.Output = Value(a, ref i); break;
+                case "-r": o.Refs.Add(Value(a, ref i)); break;
+                case "--refs-file": o.RefsFile = Value(a, ref i); break;
                 case "--release": o.Release = true; break;
                 case "--native": o.Native = true; break;
                 default:
-                    if (a[i].EndsWith(".al")) o.Files.Add(a[i]);
+                    if (a[i].EndsWith(".al")) { UsageException.RequireFile(a[i]); o.Files.Add(a[i]); }
                     else if (a[i].EndsWith(".alproj") || Directory.Exists(a[i])) o.Project = a[i];
                     else o.Rest.Add(a[i]);
                     break;
@@ -44,6 +44,9 @@ public static class CompileCommands
         if (o.RefsFile != null) o.Refs.AddRange(File.ReadAllLines(o.RefsFile).Where(l => l.Length > 0));
         return o;
     }
+
+    static string Value(List<string> a, ref int i) =>
+        i + 1 < a.Count && !a[i + 1].StartsWith('-') ? a[++i] : throw new UsageException(T("opt.needs.value", a[i]));
 
     /// <summary>Entry files plus everything they `require`.</summary>
     static List<SourceFile> Read(IEnumerable<string> paths) => AliceCompiler.LoadWithRequires(paths);
@@ -124,7 +127,7 @@ public static class CompileCommands
             if (pick != null) o.Rest.Remove(pick);
             where = target.Dir;
         }
-        var proj = ProjectFiles.Find(where) ?? throw new CompileException(T("no.project"));
+        var proj = ProjectFiles.Find(where) ?? throw UsageException.NoProject();
         int rc = BuildProject(proj, o.Release);
         if (rc != 0) return rc;
         UiH.Status(T("running"), Path.GetFileNameWithoutExtension(proj));
@@ -139,7 +142,7 @@ public static class CompileCommands
         if (o.Files.Count == 0)
         {
             if (Workspace.IsWorkspaceRoot(o.Project ?? ".")) return BuildWorkspace(o.Project ?? ".", o.Release);
-            var proj = ProjectFiles.Find(o.Project ?? ".") ?? throw new CompileException(T("no.project"));
+            var proj = ProjectFiles.Find(o.Project ?? ".") ?? throw UsageException.NoProject();
             return BuildProject(proj, o.Release || o.Native, o.Native);
         }
         var files = Read(o.Files);
@@ -235,7 +238,7 @@ public static class CompileCommands
     {
         var o = Parse(a);
         var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories).Where(f => !f.Contains("/obj/") && !f.Contains("/bin/")).ToList();
-        if (paths.Count == 0) throw new CompileException(T("no.files"));
+        if (paths.Count == 0) throw new UsageException(T("no.files"), T("hint.no.project"));
         var files = Read(paths);
         var sw = Stopwatch.StartNew();
         var image = CompileFiles(files, "check", false, o.Refs);
@@ -247,7 +250,7 @@ public static class CompileCommands
     public static int Emit(List<string> a)
     {
         var o = Parse(a);
-        if (o.Files.Count == 0) throw new CompileException(T("no.files"));
+        if (o.Files.Count == 0) throw UsageException.Usage("alice emit <file.al>");
         foreach (var cs in AliceCompiler.TranspileAll(Read(o.Files), o.Refs)) Console.WriteLine(cs);
         return 0;
     }

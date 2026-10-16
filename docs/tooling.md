@@ -139,3 +139,17 @@ Finds `test/**/*.al` (or `spec/`), compiles each with the project sources (their
 | `--profile` | 10 slowest examples |
 
 Failures print expected/got, the Alice source line, and a `alice test file.al:LINE` rerun command. Exit code 1 on failure.
+
+## Packages (NuGet)
+
+Restores use `dotnet restore`, so packages live in the standard .NET global cache (`~/.nuget/packages`, or `$NUGET_PACKAGES`), shared with all C# projects.
+
+| Command | Effect |
+|---|---|
+| `alice add <pkg> [--version v] [--path dir]` | add to `[dependencies]` in alice.toml and restore |
+| `alice remove <pkg> [--no-restore]` | remove from alice.toml |
+| `alice list` | dependencies and cache path |
+| `alice search <term>` | search nuget.org |
+| `alice install` | restore all dependencies (refreshes alice.lock) |
+| `alice install --tool <name>` | install/update a .NET global tool |
+| `alice cache [--clear]` | show or clear the shared package cache |

@@ -13,8 +13,11 @@ public static class App
     static readonly (string Name, string Key)[] Commands =
     [
         ("new", "cmd.new"), ("build", "cmd.build"), ("run", "cmd.run"), ("check", "cmd.check"), ("test", "cmd.test"),
-        ("add", "cmd.add"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
+        ("add", "cmd.add"), ("remove", "cmd.remove"), ("search", "cmd.search"), ("list", "cmd.list"), ("install", "cmd.install"), ("cache", "cmd.cache"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
     ];
+
+    /// <summary>`--verbose`: show internal stack traces (otherwise every failure is a one-line error + hint).</summary>
+    public static bool Verbose;
 
     public static int Run(string[] argv)
     {
@@ -24,6 +27,7 @@ public static class App
             if (args[i] == "--lang" && i + 1 < args.Count) { Strings.Use(args[i + 1]); args.RemoveRange(i, 2); i--; }
             else if (args[i] is "-q" or "--quiet") { Ui.Ui.Quiet = true; args.RemoveAt(i); i--; }
             else if (args[i] == "--no-color") { AnsiConsole.Profile.Capabilities.ColorSystem = ColorSystem.NoColors; args.RemoveAt(i); i--; }
+            else if (args[i] == "--verbose") { Verbose = true; args.RemoveAt(i); i--; }
             else if (args[i] == "--") break;
         }
         if (args.Count == 0 || args[0] is "-h" or "--help" or "help") { Help(); return args.Count == 0 ? 2 : 0; }
@@ -42,6 +46,11 @@ public static class App
                 "test" => TestCommand.Run(rest),
                 "fmt" => FormatCommand.Run(rest),
                 "add" => ProjectCommands.Add(rest),
+                "remove" => PackageCommands.Remove(rest),
+                "search" => PackageCommands.Search(rest),
+                "list" => PackageCommands.List(rest),
+                "install" => PackageCommands.Install(rest),
+                "cache" => PackageCommands.Cache(rest),
                 "clean" => ProjectCommands.Clean(rest),
                 "update" => ProjectCommands.Update(rest),
                 "version" => VersionCommand.Run(),
@@ -49,18 +58,28 @@ public static class App
                 _ => Unknown(args[0]),
             };
         }
+        catch (UsageException e)
+        {
+            Ui.Ui.Error(e.Message, e.Hint);
+            return e.ExitCode;
+        }
         catch (Alice.Compiler.CompileException e)
         {
             Ui.DiagnosticRenderer.Render(e.Diagnostics);
             return 1;
         }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            // last resort: a bug or environment failure is still one readable line, the trace only on request
+            Ui.Ui.Error(T("internal", e.Message), Verbose ? e.ToString() : T("hint.verbose"));
+            return 70;
+        }
     }
 
     static int Unknown(string cmd)
     {
-        Ui.Ui.Error(T("unknown.command", cmd));
-        Help();
-        return 2;
+        var near = UsageException.Closest(cmd, Commands.Select(c => c.Name).Append("repl"));
+        throw new UsageException(T("unknown.command", cmd), near != null ? T("did.you.mean", near) : "alice --help");
     }
 
     static void Help()

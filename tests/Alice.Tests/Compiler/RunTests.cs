@@ -81,7 +81,8 @@ public class RunTests
     public void Null_dereference_is_a_compile_error()
     {
         var ex = Assert.Throws<CompileException>(() => AliceCompiler.Run("s : String? = nil\nputs s.Length\n"));
-        Assert.Contains("CS8602", ex.Message);
+        Assert.Contains("AL0310", ex.Message);
+        Assert.Contains("may be nil", ex.Message);
     }
 
     [Fact]

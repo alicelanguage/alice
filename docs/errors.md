@@ -24,3 +24,31 @@ help: send the value through a Channel(T), use an Actor, or return it from the t
 ```
 
 Language: `ALICE_LANG=pt|es|en` or `--lang pt`. Default: OS UI culture.
+
+## Errors from type checking (AL03xx)
+
+The generated C# is type-checked by Roslyn; its errors are reported in Alice terms (Alice type names, no C# ids).
+
+| Code | Meaning | Example message |
+|---|---|---|
+| AL0301 | operator not defined for the operand types | `'-' is not defined for Int32 and String` |
+| AL0302 | no such method/member | `undefined method 'open' for Box` |
+| AL0303 | unknown name | `undefined name 'totl'` |
+| AL0304 | type mismatch | `type mismatch: expected String, got Int32` |
+| AL0305 | wrong argument type | `argument 1 of f: expected Int32, got String` |
+| AL0306 | wrong argument count | `wrong number of arguments for f (given 2)` |
+| AL0307 | unknown type | `unknown type 'Foo' (missing require, using or a package?)` |
+| AL0308 | missing return value | `not every path returns a value` |
+| AL0309 | use before assignment | `'x' may be used before it is assigned` |
+| AL0310 | possible nil | `value may be nil here; check it ... or x.not_nil!` |
+| AL0311 | ambiguous call | `ambiguous call: ...` |
+| AL0312 | generic inference failed | `cannot infer type arguments for 'f'; give them explicitly` |
+| AL0313 | private member | `'x' is private here` |
+| AL0314 | read-only member | `'x' is read-only (declare it with property)` |
+| AL0315 | instance required | `'x' needs an instance` |
+| AL0300 | anything else from type checking | message with Alice type names |
+
+## CLI errors
+
+Usage mistakes print `error: ...` plus a `hint:` line and exit with 2 (usage) or 1 (missing file/dir, not a dependency).
+Internal failures exit with 70 and print one line; `--verbose` shows the stack trace.

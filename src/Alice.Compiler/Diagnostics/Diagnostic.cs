@@ -2,10 +2,10 @@ using System.Text.RegularExpressions;
 
 namespace Alice.Compiler;
 
-/// <summary>A positioned compiler message. Alice errors use AL codes; .NET errors keep their CS codes.</summary>
+/// <summary>A positioned compiler message. Alice checks use AL01xx/AL02xx; errors from the generated C# are translated to AL03xx.</summary>
 public sealed record Diagnostic(string Severity, string Code, string File, int Line, int Col, string Message, int Length = 1)
 {
-    public override string ToString() => Code.StartsWith("CS")
+    public override string ToString() => Code.StartsWith("CS") || Code.StartsWith("AL03")
         ? $"{File}({Line},{Col}): {Severity} {Code}: {Message}"
         : $"{File}:{Line}:{Col}: {Message}";
 

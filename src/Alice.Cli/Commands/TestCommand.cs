@@ -34,7 +34,7 @@ public static class TestCommand
         }
         foreach (var dir in new[] { "test", "spec" })
             if (tests.Count == 0 && Directory.Exists(dir)) tests = Directory.GetFiles(dir, "*.al", SearchOption.AllDirectories).OrderBy(x => x).ToList();
-        if (tests.Count == 0) throw new CompileException(T("no.files"));
+        if (tests.Count == 0) throw new UsageException(T("no.tests"), T("hint.no.tests"));
         var lib = Directory.Exists("src") ? Directory.GetFiles("src", "*.al", SearchOption.AllDirectories).ToList() : new List<string>();
         var refs = new List<string>();
         if (File.Exists(Alice.Cli.Projects.Manifest.FileName))

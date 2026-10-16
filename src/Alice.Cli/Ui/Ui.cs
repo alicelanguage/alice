@@ -15,6 +15,12 @@ public static class Ui
         AnsiConsole.MarkupLine($"[bold {color}]{Markup.Escape(verb),12}[/] {Markup.Escape(detail)}");
     }
 
+    public static void Error(string message, string? hint)
+    {
+        Error(message);
+        if (hint != null) AnsiConsole.MarkupLine($"  [cyan]hint[/]: {Markup.Escape(hint)}");
+    }
+
     public static void Error(string message)
     {
         AnsiConsole.MarkupLine($"[bold red]{T("error")}[/][bold]: {Markup.Escape(message)}[/]");
