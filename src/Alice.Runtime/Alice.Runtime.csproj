@@ -10,7 +10,7 @@
 
   <!-- Native kernels: built when a C compiler is present; Native.cs falls back to managed SIMD otherwise. -->
   <PropertyGroup>
-    <NativeSrc>$(MSBuildThisFileDirectory)../../native/alice_native.c</NativeSrc>
+    <NativeSrc>$(MSBuildThisFileDirectory)Native/alice_native.c</NativeSrc>
     <NativeOut>$(IntermediateOutputPath)libalice_native.so</NativeOut>
   </PropertyGroup>
   <Target Name="BuildAliceNative" BeforeTargets="AssignTargetPaths" Condition="'$(OS)' != 'Windows_NT'">

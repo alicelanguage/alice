@@ -50,6 +50,7 @@ public class RunTests
         { "predicate and bang names", "def ok?(x : Int32) : Bool\n  x > 0\nend\nputs ok?(1)", "true" },
         { "namespace and entrypoint", "namespace Demo\n  class Calc\n    def self.go : Int32\n      7\n    end\n  end\nend\nputs Demo::Calc.go", "7" },
         { "runtime simd and sparse", "using Alice.Runtime\nxs = [1.0, 2.0, 3.0]\nputs Simd.Dot(xs, xs)\nputs xs.sum", "14\n6" },
+        { "full dotnet stdlib", "using System.Text.RegularExpressions\nusing System.Text.Json\nputs Regex.IsMatch(\"abc123\", \"[0-9]+\")\nputs JsonSerializer.Serialize([1, 2])\nputs [3, 1, 2].OrderBy(->(x : Int32) { x }).First()\nputs Path.Combine(\"a\", \"b\")\nputs DateTime.UnixEpoch.Year", "true\n[1,2]\n1\na/b\n1970" },
         { "comments", "# a comment\nx = 1 # trailing\nputs x", "1" },
         { "interface and attribute", "interface IShape\n  def area : Float64\nend\n@[Obsolete(\"old\")]\nclass Sq < IShape\n  def initialize(@s : Float64)\n  end\n  def area : Float64\n    @s * @s\n  end\nend\nputs Sq.new(3.0).area", "9" },
         { "generic def", "def first<T>(xs : Array(T)) : T\n  xs[0]\nend\nputs first([\"q\", \"r\"])", "q" },
