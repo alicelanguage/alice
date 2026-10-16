@@ -30,8 +30,10 @@ end
 | [Celeste Classic (`samples/celeste`)](samples/celeste) | Ray tracer (`samples/raytracer`) |
 |---|---|
 | [![Celeste Classic gameplay in Alice](docs/media/celeste.gif)](samples/celeste) | ![raytracer](docs/media/raytracer-orbit.gif) |
-| **Mandelbrot zoom (`samples/fractal`)** | **The REPL (`alice`)** |
-| ![fractal](docs/media/fractal-zoom.gif) | ![repl](docs/media/repl.svg) |
+| **[Breakout (`samples/Breakout`)](samples/Breakout)** | **Mandelbrot zoom (`samples/fractal`)** |
+| [![Breakout gameplay in Alice with MonoGame](docs/media/breakout.gif)](samples/Breakout) | ![fractal](docs/media/fractal-zoom.gif) |
+| **The REPL (`alice`)** | **[Playground](https://playground.alice-lang.org)** |
+| ![repl](docs/media/repl.svg) | Edit and run Alice in your browser; inspect HIR, MIR, C# and IL at [playground.alice-lang.org](https://playground.alice-lang.org) |
 
 All of these are 100% Alice. The ray tracer renders 960×540 with shadows, mirrors and 4× supersampling in ~0.25 s;
 the 60-frame fractal zoom renders in ~1.5 s (i5-1235U).
@@ -41,19 +43,46 @@ see the sample's [run instructions and original credits](samples/celeste/README.
 
 ## Install and first steps
 
-Download an archive from [Releases](../../releases) (Linux x64, Windows x64, macOS x64/arm64; needs the .NET 10
-runtime), or build from source:
+```bash
+# Linux and macOS
+curl -fsSL https://alice-lang.org/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell; no administrator rights, no Visual Studio)
+irm https://alice-lang.org/install.ps1 | iex
+```
+
+The installer picks the build for your platform from [Releases](https://github.com/alicelanguage/alice/releases),
+verifies its SHA-256, installs the .NET 10 SDK per-user if it is missing, and puts `alice` on your PATH.
+Options: `sh -s -- --nightly`, `--version 0.11.0`, `--no-modify-path`, `--no-dotnet` (PowerShell: `-Version`, `-NoDotnet`, …).
 
 ```bash
-git clone https://github.com/kleeedolinux/alice && cd alice
-dotnet build src/Alice.Cli -c Release
-alias alice="dotnet $PWD/src/Alice.Cli/bin/Release/net10.0/alice.dll"
-
-alice                      # REPL
+alice                      # REPL: highlighting, Tab completion, ↑ history search, ?help ;shell ]packages
 alice run hello.al         # run a file
 alice new app && cd app    # project (alice.toml)
 alice add Newtonsoft.Json  # NuGet package (shared .NET cache)
 alice test                 # specs and tests
+alice doctor               # check .NET, PATH, toolchains
+```
+
+Several versions side by side, rustup-style:
+
+```bash
+alice toolchain install nightly     # stable, nightly or a version
+alice toolchain default 0.11.0
+alice toolchain pin 0.11.0          # per project (writes ./alice-toolchain)
+alice +nightly run app.al           # one-off
+alice self update                   # update; a notice appears when a new release is out
+```
+
+Details: [releases and installers](docs/releases.md), [toolchains](docs/tooling.md#toolchains).
+Build from source instead:
+
+```bash
+git clone https://github.com/alicelanguage/alice && cd alice
+dotnet build src/Alice.Cli -c Release
+alias alice="dotnet $PWD/src/Alice.Cli/bin/Release/net10.0/alice.dll"
 ```
 
 ## How it works
