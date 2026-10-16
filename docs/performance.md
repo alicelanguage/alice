@@ -53,3 +53,19 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | nbody | 1.06 | 0.90 | sequential, same IL |
 
 Alice beats idiomatic C# everywhere and is within ~10% of hand-written C# (noise ±10-20%).
+
+## Known limit: nbody vs C
+
+Measured on the same machine (median ms, identical checksums):
+
+| variant | ms |
+|---|---:|
+| clang -O3 -march=native (C, serial) | 29.9 |
+| Alice (JIT) | 47.2 |
+| Alice NativeAOT (`alice build --native`) | 45.7 |
+| expert C# (SoA spans, unrolled pairs) | ~50 |
+| C#: x/y/z in `Vector256<double>` (SLP by hand) | 43.9 |
+| C#: fully unrolled, all fields in scalar locals | 65.6 (register spills) |
+
+The step is a serial chain of div/sqrt over 10 pairs; clang interleaves the pairs with better register allocation.
+RyuJIT cannot (unrolling makes it spill), so no Alice lowering produces C speed here. Every other benchmark beats C (benchmarks/README.md run 6).
