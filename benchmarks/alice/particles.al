@@ -31,13 +31,13 @@ ps = make(1000000)
 check = kernel(make(1000000))
 warm = System.Diagnostics.Stopwatch.StartNew
 wn = 0
-while wn < 50 || warm.Elapsed.TotalMilliseconds < 1000.0
+while wn < 30 || warm.Elapsed.TotalMilliseconds < 300.0
   kernel(ps)
   wn += 1
 end
-times = Array(Float64).new(15)
-for r in 0...15
+times = Array(Float64).new(7)
+for r in 0...7
   times[r] = measure(ps)
 end
 System.Array.Sort(times)
-puts "RESULT particles #{times[7]} #{check}"
+puts "RESULT particles #{times[3]} #{check}"

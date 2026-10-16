@@ -96,13 +96,13 @@ steps = 1000000
 check = kernel(steps)
 warm = System.Diagnostics.Stopwatch.StartNew
 wn = 0
-while wn < 5 || warm.Elapsed.TotalMilliseconds < 1000.0
+while wn < 30 || warm.Elapsed.TotalMilliseconds < 300.0
   kernel(steps / 50)
   wn += 1
 end
-times = Array(Float64).new(15)
-for r in 0...15
+times = Array(Float64).new(7)
+for r in 0...7
   times[r] = measure(steps, check)
 end
 System.Array.Sort(times)
-puts "RESULT nbody_native #{times[7]} #{check} native=#{__alice_native_loaded()}"
+puts "RESULT nbody_native #{times[3]} #{check} native=#{__alice_native_loaded()}"

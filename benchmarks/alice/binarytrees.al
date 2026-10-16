@@ -51,16 +51,16 @@ end
 
 depth = 16
 check = kernel(depth)
-# warm-up: >= 50 calls and >= 1 s so tier-1 + PGO code replaces tier-0/OSR
+# warm-up: >= 30 calls (tier-1 promotion threshold) and >= 0.3 s
 warm = System.Diagnostics.Stopwatch.StartNew
 wn = 0
-while wn < 50 || warm.Elapsed.TotalMilliseconds < 1000.0
+while wn < 30 || warm.Elapsed.TotalMilliseconds < 300.0
   kernel(10)
   wn += 1
 end
-times = Array(Float64).new(15)
-for r in 0...15
+times = Array(Float64).new(7)
+for r in 0...7
   times[r] = measure(depth, check)
 end
 System.Array.Sort(times)
-puts "RESULT binarytrees #{times[7]} #{check}"
+puts "RESULT binarytrees #{times[3]} #{check}"

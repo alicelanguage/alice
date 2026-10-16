@@ -33,13 +33,13 @@ static class Harness
     public static void Run(string name, Func<long> warm, Func<long> run, long? fixedCheck = null)
     {
         long check = run();
-        // warm-up: >= 50 calls and >= 1 s so tier-1 + PGO code replaces tier-0/OSR
+        // warm-up: >= 30 calls (tier-1 promotion threshold) and >= 0.3 s
         var ws = Stopwatch.StartNew();
-        for (int i = 0; i < 50 || ws.ElapsedMilliseconds < 1000; i++) warm();
-        var times = new double[15];
+        for (int i = 0; i < 30 || ws.ElapsedMilliseconds < 300; i++) warm();
+        var times = new double[7];
         for (int r = 0; r < times.Length; r++) times[r] = Measure(run, check);
         Array.Sort(times);
-        Console.WriteLine($"RESULT {name} {times[7].ToString(System.Globalization.CultureInfo.InvariantCulture)} {fixedCheck ?? check}");
+        Console.WriteLine($"RESULT {name} {times[3].ToString(System.Globalization.CultureInfo.InvariantCulture)} {fixedCheck ?? check}");
     }
 
     static double Measure(Func<long> run, long check)
