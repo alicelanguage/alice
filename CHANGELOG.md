@@ -41,3 +41,4 @@
 - Block iteration over generic collections of Alice types (`List(Entity)`) now lowers to loops instead of closure calls; `benchmarks/alice/celeste_update.al` (headless Celeste update benchmark).
 - CLR generics over Alice types (`List(Entity)`, `Dictionary(String, Entity)`) are fully typed via stand-in proxy types: members, indexers and element types resolve (was untyped, e.g. `Count()` via LINQ). Celeste update benchmark 3.5 → ~1.9 ms.
 - Native calls: leaf `@[Native]` functions skip the GC transition; `@[Native(fast)]`, `lib` `@[Fast]` opt in; `Bool` marshals as 1-byte C bool.
+- `each` over a `List` iterates its backing span when the body provably can't modify the list. `benchmarks/run.sh`: interleaved rounds (ROUNDS, default 5), median + spread, ratio vs hand-optimized C#.

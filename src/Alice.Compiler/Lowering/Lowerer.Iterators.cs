@@ -216,6 +216,15 @@ public sealed partial class Lowerer
         MStmt loop;
         if (src is RangeExpr r)
             loop = new MFor { Var = loopVar, Start = Expr(r.A), Cmp = r.Excl ? "<" : "<=", End = Expr(r.B), Body = body };
+        else if (IsList(src.Type) && vec == null && boundLo == null && boundHi == null && Method is not { IsAsync: true }
+                 && ListStable(stages.Select(s => s.Block).Append(sb)))
+        {
+            // the body cannot add/remove/replace the list's storage: iterate its backing span (no version/bounds checks)
+            string span = Temp("sp"), idx = Temp("k");
+            before.Add(new MDecl { Name = span, Init = new MCode($"global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan({((MCode)srcExpr).Text})") });
+            body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = new MCode(span), Args = { new MCode(idx) } } });
+            loop = new MFor { Var = idx, Start = new MCode("0"), Cmp = "<", End = new MCode(span + ".Length"), Body = body };
+        }
         else if (src.Type.Kind == "array" || src.Type.IsString || IsList(src.Type))
         {
             string idx = Temp("k");
@@ -247,6 +256,32 @@ public sealed partial class Lowerer
                 return new MCall { Target = new MCode(res), Name = "ToArray" };
         }
         return new MCode(res);
+    }
+
+    /// <summary>
+    /// True when no block can change a List's storage: calls are limited to pure Alice methods, statics on
+    /// value/BCL math types, value-type or string receivers, and Prelude output; no call takes a collection.
+    /// </summary>
+    bool ListStable(IEnumerable<LambdaExpr?> blocks)
+    {
+        bool ok = true;
+        foreach (var b in blocks)
+        {
+            if (b == null) continue;
+            AstWalk.Each(b.Body, n =>
+            {
+                if (!ok || n is not CallExpr c) return;
+                if (c.Args.Any(a => a.Value?.Type is { } at && (IsList(at) || at.Kind == "array" || at.Clr is { } ac && typeof(System.Collections.IEnumerable).IsAssignableFrom(ac) && ac != typeof(string)))) { ok = false; return; }
+                ok = c.Res switch
+                {
+                    "alice" => c.Sym is MethodSym m && MethodPure(m),
+                    "free" => c.Name is "puts" or "print" or "p" or "format",
+                    "clr" or "ext" or "field" => c.Recv is ConstExpr || c.Recv?.Type is { } rt && (rt.Kind is "prim" or "struct" or "enum" || rt.IsString),
+                    _ => false,
+                };
+            });
+        }
+        return ok;
     }
 
     static bool IsList(AType t) => t.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(List<>);
