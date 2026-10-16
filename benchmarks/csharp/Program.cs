@@ -515,40 +515,31 @@ static class BinaryTreesOpt
     static Node BinaryTrees_BottomUp(int depth) => depth > 0 ? new Node(BinaryTrees_BottomUp(depth - 1), BinaryTrees_BottomUp(depth - 1)) : new Node(null, null);
 }
 
-sealed class XNode(int tag, long v, XNode? a, XNode? b)
-{
-    public readonly int Tag = tag; public readonly long V = v; public readonly XNode? A = a, B = b;
-}
+abstract class VExpr { public abstract long Eval(); }
+sealed class VNum(long v) : VExpr { readonly long V = v; public override long Eval() => V; }
+sealed class VAdd(VExpr a, VExpr b) : VExpr { readonly VExpr A = a, B = b; public override long Eval() => A.Eval() + B.Eval(); }
+sealed class VMul(VExpr a, VExpr b) : VExpr { readonly VExpr A = a, B = b; public override long Eval() => A.Eval() * B.Eval(); }
+sealed class VNeg(VExpr e) : VExpr { readonly VExpr E = e; public override long Eval() => -E.Eval(); }
 
 static class ExprOpt
 {
-    // Int type tag + switch, fields instead of properties; Neg stores child in A.
-    const int TNum = 0, TAdd = 1, TMul = 2, TNeg = 3;
-
-    static long Eval(XNode e) => e.Tag switch
+    // Sealed classes, virtual Eval (one indirect call per node, no type-test chain). Measured faster than an int-tag switch.
+    public static VExpr Build(int d, int seed)
     {
-        TNum => e.V,
-        TAdd => Eval(e.A!) + Eval(e.B!),
-        TMul => Eval(e.A!) * Eval(e.B!),
-        _ => -Eval(e.A!),
-    };
-
-    public static XNode Build(int d, int seed)
-    {
-        if (d == 0) return new XNode(TNum, seed % 7 + 1, null, null);
+        if (d == 0) return new VNum(seed % 7 + 1);
         int s1 = (seed * 31 + 7) % 1000003, s2 = (seed * 17 + 3) % 1000003;
         return (seed % 5) switch
         {
-            0 => new XNode(TNeg, 0, Build(d - 1, s1), null),
-            1 => new XNode(TMul, 0, Build(d - 1, s1), Build(d - 1, s2)),
-            _ => new XNode(TAdd, 0, Build(d - 1, s1), Build(d - 1, s2)),
+            0 => new VNeg(Build(d - 1, s1)),
+            1 => new VMul(Build(d - 1, s1), Build(d - 1, s2)),
+            _ => new VAdd(Build(d - 1, s1), Build(d - 1, s2)),
         };
     }
 
-    public static long Kernel(XNode tree)
+    public static long Kernel(VExpr tree)
     {
         long acc = 0;
-        for (int i = 0; i < 10; i++) acc += Eval(tree);
+        for (int i = 0; i < 10; i++) acc += tree.Eval();
         return acc;
     }
 }

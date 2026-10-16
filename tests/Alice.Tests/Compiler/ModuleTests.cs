@@ -30,6 +30,10 @@ public class ModuleTests
     }
 
     [Fact]
+    public void Using_a_module_imports_its_functions()
+        => Assert.Equal("5\n4", Run("module Tools\n  def self.five : Int32\n    5\n  end\nend\nusing Tools\nusing System.Text\nputs five\nputs StringBuilder.new(\"abcd\").Length"));
+
+    [Fact]
     public void Same_mixin_in_several_classes()
     {
         var src = "module Sized\n  def big? : Bool\n    size > 3\n  end\nend\nclass A\n  include Sized\n  def size : Int32\n    5\n  end\nend\nclass B\n  include Sized\n  def size : Int32\n    1\n  end\nend\nputs A.new.big?\nputs B.new.big?";

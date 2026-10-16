@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Alice.Compiler\Alice.Compiler.csproj" />
     <ProjectReference Include="..\..\src\Alice.Runtime\Alice.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\Alice.Cli\Alice.Cli.csproj" />
   </ItemGroup>
 
 </Project>

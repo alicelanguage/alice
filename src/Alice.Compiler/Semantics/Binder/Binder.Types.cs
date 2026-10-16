@@ -114,6 +114,11 @@ public sealed partial class Binder
         return t;
     }
 
+    public bool IsTypeName(string name) => Types.ContainsKey(name) || (Clr.Find(name, 0, Array.Empty<string>()) is Type t && !IsNamespace(name) && t != null);
+
+    static bool IsNamespace(string name) =>
+        AppDomain.CurrentDomain.GetAssemblies().Any(a => { try { return a.GetExportedTypes().Any(t => t.Namespace == name); } catch (Exception) { return false; } });
+
     /// <summary>Resolves a dotted const path to a type, if the whole path names one.</summary>
     AType? TypeByName(string name, List<TypeRef> args)
     {

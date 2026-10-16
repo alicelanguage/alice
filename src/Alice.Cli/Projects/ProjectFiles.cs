@@ -8,7 +8,9 @@ public static class ProjectFiles
     public static string? Find(string dir)
     {
         if (File.Exists(dir) && dir.EndsWith(".alproj")) return Path.GetFullPath(dir);
+        if (File.Exists(dir) && Path.GetFileName(dir) == Manifest.FileName) dir = Path.GetDirectoryName(Path.GetFullPath(dir))!;
         if (!Directory.Exists(dir)) return null;
+        if (File.Exists(Path.Combine(dir, Manifest.FileName))) return Manifest.Sync(dir);
         return Directory.GetFiles(dir, "*.alproj").FirstOrDefault();
     }
 
@@ -74,9 +76,29 @@ public static class ProjectFiles
         return string.Concat(parts.Select(p => char.ToUpperInvariant(p[0]) + p.Substring(1)));
     }
 
+    public static void NewSolution(string path)
+    {
+        if (path.EndsWith(".slnx")) File.WriteAllText(path, "<Solution>\n</Solution>\n");
+        else File.WriteAllText(path, "\r\nMicrosoft Visual Studio Solution File, Format Version 12.00\r\nGlobal\r\n\tGlobalSection(SolutionConfigurationPlatforms) = preSolution\r\n\t\tDebug|Any CPU = Debug|Any CPU\r\n\t\tRelease|Any CPU = Release|Any CPU\r\n\tEndGlobalSection\r\nEndGlobal\r\n");
+    }
+
+    /// <summary>.slnx: `.alproj` needs an explicit Type (the solution model only knows built-in extensions).</summary>
+    static void AddToSlnx(string slnx, string project)
+    {
+        var doc = System.Xml.Linq.XDocument.Load(slnx);
+        string rel = Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(slnx))!, Path.GetFullPath(project)).Replace('\\', '/');
+        var root = doc.Root!;
+        if (root.Descendants("Project").Any(p => (string?)p.Attribute("Path") == rel)) return;
+        var e = new System.Xml.Linq.XElement("Project", new System.Xml.Linq.XAttribute("Path", rel));
+        if (project.EndsWith(".alproj")) e.Add(new System.Xml.Linq.XAttribute("Type", "C#"));
+        root.Add(e);
+        doc.Save(slnx);
+    }
+
     /// <summary>`dotnet sln add` rejects unknown extensions; the solution format itself accepts any SDK project.</summary>
     public static void AddToSolution(string sln, string project)
     {
+        if (sln.EndsWith(".slnx")) { AddToSlnx(sln, project); return; }
         var text = File.ReadAllText(sln);
         string rel = Path.GetRelativePath(Path.GetDirectoryName(Path.GetFullPath(sln))!, Path.GetFullPath(project)).Replace('/', '\\');
         if (text.Contains(rel)) return;

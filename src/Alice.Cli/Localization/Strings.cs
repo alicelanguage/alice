@@ -52,7 +52,7 @@ public static class Strings
         ["cmd.add"] = "Add a NuGet package to the project",
         ["cmd.clean"] = "Remove build outputs",
         ["cmd.emit"] = "Print the lowered C# (debugging the compiler)",
-        ["cmd.sln"] = "Add an .alproj to a solution: sln add <sln> <proj>",
+        ["cmd.sln"] = "Solutions: sln new <name.slnx> | sln add <sln|slnx> <project>",
         ["cmd.version"] = "Show version, runtime and SIMD capabilities",
         ["cmd.fmt"] = "Format .al files (--check for CI)",
         ["fmt.formatted"] = "Formatted",

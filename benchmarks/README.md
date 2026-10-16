@@ -102,3 +102,24 @@ Compiler issue 1 (dropped implicit return after generic .NET calls) is fixed: ge
 | particles | 25.3 | 159.1 | 82.0 | 0.16 | @[SoA] columns, vectorized + parallel `each` |
 
 All checksums match C#. Parallel sums reassociate floating-point additions (documented); integer results are exact.
+
+## Run 4 — expert hand-optimized C# baselines (2026-10-16)
+
+Every benchmark now has a `handopt` C# variant. `Bench.CSharp.csproj` sets `ServerGarbageCollection`, `ConcurrentGarbageCollection`, `TieredPGO` for both C# variants (Alice apps default to server GC). All checksums match.
+
+| benchmark | Alice ms | C# idiomatic ms | C# hand-opt ms | Alice/hand-opt | winner | why |
+|---|---:|---:|---:|---:|---|---|
+| nbody | 50.8 | 47.0 | 49.1 | 1.03 | tie | 5 bodies, serial dependency per step; SoA spans + unrolled pairs give nothing over the JIT. No FMA: changes the checksum. |
+| binarytrees | 127.1 | 249.3 | 130.2 | 0.98 | tie | both parallelize iterations over a real per-iteration tree; GC bound. |
+| pipeline | 2.4 | 30.4 | 2.7 | 0.89 | tie | both fused + `Vector<T>` + chunked over cores; memory bound. |
+| expr | 9.8 | 10.5 | 9.1 | 1.08 | tie / C# slightly | hand-opt uses virtual `Eval` on sealed classes (one indirect call per node) vs Alice type-test chain. Int-tag switch measured slower (13 ms). |
+| wordfreq | 27.5 | 78.7 | 4.7 | 5.85 | C# | parallel partition at spaces, per-chunk dictionary, merge; `GetValueRefOrAddDefault` on the alternate lookup. |
+| mandelbrot | 19.3 | 113.9 | 8.3 | 2.33 | C# | `Vector256<double>` 4 lanes over x with an active mask + early exit, on top of row parallelism. |
+| parallel | 32.5 | 34.9 | 31.4 | 1.04 | tie | bound by scalar `Math.Sin/Cos`; no honest vectorization. |
+| particles | 23.4 | 136.1 | 2.3 | 10.2 | C# | SoA + parallel + vector, and fuses the 3 passes x 10 steps into one pass with state in registers (40 memory sweeps -> 1). |
+
+Gaps Alice would need to close:
+- wordfreq: auto-parallel map-reduce over string partitions with per-worker dictionaries + merge (dictionary-count reduction).
+- mandelbrot: vectorize inner `while` loops with data-dependent exit (masked lanes, `ConditionalSelect`, all-lanes-done exit).
+- particles: loop fusion across consecutive `each` calls and across the outer `for step` loop (elementwise-independent updates), keeping columns in registers.
+- expr: lower sum-type `case` to virtual dispatch (or a vtable-like method per variant) instead of sequential `is` tests.

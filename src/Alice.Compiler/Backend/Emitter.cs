@@ -31,7 +31,7 @@ public sealed class Emitter
         file = f.Path;
         var sb = new StringBuilder(Header);
         foreach (var it in f.Items)
-            if (it is UsingItem u) sb.Append("using ").Append(u.Name).Append(";\n");
+            if (it is UsingItem u) sb.Append(UsingLine(u.Name));
         if (!moduleAttrsEmitted)
         {
             // Alice guarantees definite assignment, so zero-initialising locals/stackalloc is wasted work.
@@ -55,6 +55,10 @@ public sealed class Emitter
         return sb.ToString();
     }
 
+    /// <summary>`using X` on a type (an Alice module, a static class) imports its members, like Ruby's include.</summary>
+    string UsingLine(string name) =>
+        binder.IsTypeName(name) ? $"using static {binder.ResolveType(new TypeRef { Name = name }).Cs};\n" : $"using {name};\n";
+
     string Print(List<MStmt> body, int ind)
     {
         var p = new Printer(file, ind);
@@ -71,7 +75,7 @@ public sealed class Emitter
                 case NamespaceItem n:
                     {
                         var inner = new StringBuilder();
-                        foreach (var u in n.Items.OfType<UsingItem>()) inner.Append("using ").Append(u.Name).Append(";\n");
+                        foreach (var u in n.Items.OfType<UsingItem>()) inner.Append(UsingLine(u.Name));
                         Items(inner, prog, n.Items);
                         types.Append($"namespace {n.Name}\n{{\n{inner}}}\n");
                         break;
