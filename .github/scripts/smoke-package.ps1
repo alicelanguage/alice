@@ -35,6 +35,37 @@ New-Item $work -ItemType Directory | Out-Null
 Push-Location $work
 try {
     Invoke-Alice -Arguments @('--no-color', 'version') -Expected $Version
+    # The installed CLI must speak LSP on stdout without banners or update notices.
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = if ($ViaDotnet) { 'dotnet' } else { $executable }
+    if ($ViaDotnet) { $start.ArgumentList.Add((Join-Path $package 'alice.dll')) }
+    $start.ArgumentList.Add('lsp')
+    $start.ArgumentList.Add('--stdio')
+    $start.UseShellExecute = $false
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.Environment['ALICE_NO_UPDATE_CHECK'] = '1'
+    $server = [Diagnostics.Process]::Start($start)
+    try {
+        $stdout = $server.StandardOutput.ReadToEndAsync()
+        $stderr = $server.StandardError.ReadToEndAsync()
+        foreach ($message in @(
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}',
+            '{"jsonrpc":"2.0","id":2,"method":"shutdown"}',
+            '{"jsonrpc":"2.0","method":"exit"}'
+        )) {
+            $frame = "Content-Length: $([Text.Encoding]::UTF8.GetByteCount($message))`r`n`r`n$message"
+            $server.StandardInput.Write($frame)
+        }
+        $server.StandardInput.Close()
+        if (-not $server.WaitForExit(15000)) { $server.Kill($true); throw 'Packaged LSP did not exit.' }
+        $protocol = $stdout.GetAwaiter().GetResult()
+        if ($server.ExitCode -ne 0 -or -not $protocol.StartsWith('Content-Length: ') -or -not $protocol.Contains('"completionProvider"')) {
+            throw "Packaged LSP failed: $protocol $($stderr.GetAwaiter().GetResult())"
+        }
+    } finally { $server.Dispose() }
+
     'puts "packaged compiler works"' | Set-Content main.al -Encoding utf8NoBOM
     Invoke-Alice -Arguments @('run', 'main.al') -Expected 'packaged compiler works'
     Invoke-Alice -Arguments @('new', 'smoke')

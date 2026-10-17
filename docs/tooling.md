@@ -203,3 +203,27 @@ Selection order: `alice +VERSION`, `ALICE_TOOLCHAIN`, nearest `alice-toolchain` 
 the root; `ALICE_RELEASES_REPO` points at a fork; `GITHUB_TOKEN` raises API limits. Once a day a background
 check caches the newest stable release and the next command prints a one-line notice; `ALICE_NO_UPDATE_CHECK=1`
 or `CI` disables it.
+
+
+## Editor support
+
+Alice 0.11.1+ includes `alice lsp --stdio`. Install Alice using the normal installer,
+then install the matching extension from the [extensions repository](https://github.com/alicelanguage/extensions).
+VS Code and VSCodium use the same platform-specific VSIX; Zed uses the Rust/WASI
+extension. The CLI must be on PATH (or configure its absolute path in the editor).
+
+Features include diagnostics, completion, .NET members, automatic `using` edits,
+hover and XML docs, definitions, symbols, signature help and formatting. NuGet IDs
+and stable versions are suggested inside `[dependencies]` in `alice.toml` and
+`PackageReference` in `.alproj`. Generated projects remain disposable: edit
+`alice.toml`, then run `alice install` or build to refresh restored references.
+C# project APIs are read from their built assemblies, including XML docs beside
+the DLL. Restart the language server after rebuilding a changed reference assembly. Open Alice source buffers override disk contents for project checking.
+
+The server checks edits after 180 ms and checks generated C# on open/save without
+emitting assemblies. VS Code settings `alice.debounceMs`, `alice.deepChecks`, and
+`alice.nugetCompletion` control these behaviors. For any LSP client, pass the same
+keys without the `alice.` prefix in `initializationOptions`. Disable NuGet
+completion for fully offline editing. Requests time out after two seconds and
+successful results are cached for ten minutes. The LSP uses stdout exclusively
+for framed protocol messages and stderr for server errors.

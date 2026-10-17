@@ -45,6 +45,7 @@ public sealed partial class Parser
     Token Next()
     {
         Token x = t[p];
+        if (x.Kind == "eof") throw Err("unexpected end of file");
         if (p < t.Count - 1) p++;
         return x;
     }

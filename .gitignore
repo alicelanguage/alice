@@ -481,3 +481,6 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 *.so
+
+# Independent editor extensions repository
+extensions/

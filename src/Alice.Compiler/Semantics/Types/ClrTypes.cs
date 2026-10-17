@@ -44,6 +44,11 @@ public sealed class ClrTypes
     /// <summary>Finds a type by Alice/C# name (dotted, optional global::) with the given generic arity.</summary>
     public Type? Find(string name, int arity, IReadOnlyCollection<string> usings)
     {
+        lock (cache) return FindCore(name, arity, usings);
+    }
+
+    Type? FindCore(string name, int arity, IReadOnlyCollection<string> usings)
+    {
         string key = name + "`" + arity + "|" + string.Join(",", usings);
         if (cache.TryGetValue(key, out var hit)) return hit;
         Type? r = Search(name, arity, usings);

@@ -152,6 +152,27 @@ public static class AliceCompiler
         return ms.ToArray();
     }
 
+    /// <summary>Type-checks lowered C# without emitting IL (editor diagnostics): errors mapped to Alice positions.</summary>
+    public static List<Diagnostic> Check(IReadOnlyList<string> csharp, IEnumerable<string>? extraRefs = null)
+    {
+        var trees = csharp.Select((c, i) => CSharpSyntaxTree.ParseText(c, Parse, path: $"check.{i}.g.cs")).ToList();
+        var kind = csharp.Any(c => c.Contains("public static void Main(string[] ARGV)"))
+            ? OutputKind.ConsoleApplication : OutputKind.DynamicallyLinkedLibrary;
+        var opts = new CSharpCompilationOptions(kind)
+            .WithAllowUnsafe(true)
+            .WithNullableContextOptions(NullableContextOptions.Enable)
+            .WithSpecificDiagnosticOptions(NullErrors.ToDictionary(x => x, _ => ReportDiagnostic.Error));
+        var refs = Refs.Value.Concat((extraRefs ?? []).Where(File.Exists).Select(r => (MetadataReference)MetadataReference.CreateFromFile(Path.GetFullPath(r))));
+        var comp = CSharpCompilation.Create("check", trees, refs, opts);
+        return comp.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Take(50).Select(d =>
+        {
+            var span = d.Location.GetMappedLineSpan();
+            int len = Math.Max(1, span.EndLinePosition.Line == span.StartLinePosition.Line ? span.EndLinePosition.Character - span.StartLinePosition.Character : 1);
+            var (code, msg) = Diagnostics.CSharpErrors.Translate(d);
+            return new Diagnostic("error", code, span.Path ?? "", span.StartLinePosition.Line + 1, span.StartLinePosition.Character + 1, msg, len);
+        }).ToList();
+    }
+
     public static Assembly Load(byte[] image) => new AssemblyLoadContext("alice", isCollectible: true).LoadFromStream(new MemoryStream(image));
 
     /// <summary>Runs an assembly's entry point, capturing stdout.</summary>

@@ -2,6 +2,13 @@
 
 ## 0.12.0 - Unreleased
 
+## 0.11.1 - 2026-10-16
+
+- `alice lsp --stdio`: incremental editor diagnostics, completion, .NET/NuGet members, auto-import quick fixes, hover with XML documentation, definitions, document symbols, formatting and signature help (ADR 0011).
+- Editor project assistance: NuGet ID/version completion in `alice.toml` and `.alproj`, setting hover, manifest/XML formatting, and restored C#/NuGet/framework references.
+- Rust editor adapters in the companion extensions repository: VS Code/VSCodium napi-rs client, grammar, snippets and icons; Zed Rust/WASI client and pinned tree-sitter highlighting.
+- Fix incomplete parameter lists looping at EOF; serialize shared CLR type lookup for concurrent editor queries.
+
 ## 0.11.0 - 2026-10-16
 
 - Toolchains (ADR 0010): `alice toolchain list|available|install|uninstall|default|pin|unpin|which|show`; versions side by side in `~/.alice/toolchains`, `alice-toolchain` pin files, `ALICE_TOOLCHAIN`, and `alice +VERSION <command>`.

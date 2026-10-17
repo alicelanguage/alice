@@ -17,7 +17,7 @@ public static class App
     [
         ("new", "cmd.new"), ("build", "cmd.build"), ("run", "cmd.run"), ("check", "cmd.check"), ("test", "cmd.test"),
         ("add", "cmd.add"), ("remove", "cmd.remove"), ("search", "cmd.search"), ("list", "cmd.list"), ("install", "cmd.install"), ("repl", "cmd.repl"), ("cache", "cmd.cache"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
-        ("toolchain", "cmd.toolchain"), ("self", "cmd.self"), ("doctor", "cmd.doctor"), ("completions", "cmd.completions"),
+        ("lsp", "cmd.lsp"), ("toolchain", "cmd.toolchain"), ("self", "cmd.self"), ("doctor", "cmd.doctor"), ("completions", "cmd.completions"),
     ];
 
     public static IEnumerable<string> CommandNames => Commands.Select(c => c.Name);
@@ -41,7 +41,7 @@ public static class App
             if (ToolchainCommands.Dispatch(args, argv) is int forwarded) return forwarded;
         }
         catch (UsageException e) { Ui.Ui.Error(e.Message, e.Hint); return e.ExitCode; }
-        var refresh = args.FirstOrDefault() is "self" or "completions" ? null : Toolchains.UpdateNotifier.RefreshInBackground(Toolchains.ToolchainHome.Current());
+        var refresh = args.FirstOrDefault() is "self" or "completions" or "lsp" ? null : Toolchains.UpdateNotifier.RefreshInBackground(Toolchains.ToolchainHome.Current());
         int code = Dispatch(args);
         Notify(args, refresh);
         return code;
@@ -51,7 +51,7 @@ public static class App
     static void Notify(List<string> args, Task? refresh)
     {
         refresh?.Wait(TimeSpan.FromMilliseconds(150));
-        if (Ui.Ui.Quiet || Console.IsErrorRedirected || args.FirstOrDefault() is "self" or "completions" or "repl" || args.Count == 0) return;
+        if (Ui.Ui.Quiet || Console.IsErrorRedirected || args.FirstOrDefault() is "self" or "completions" or "repl" or "lsp" || args.Count == 0) return;
         if (!Toolchains.UpdateNotifier.Enabled(Environment.GetEnvironmentVariable)) return;
         if (Toolchains.UpdateNotifier.Notice(Toolchains.ToolchainHome.Current(), Version) is { } n)
             AnsiConsole.MarkupLine($"\n[yellow]↑[/] [grey]{Markup.Escape(n)}[/]");
@@ -67,6 +67,7 @@ public static class App
         {
             return args[0] switch
             {
+                "lsp" => RunLsp(rest),
                 "new" => ProjectCommands.New(rest),
                 "build" => CompileCommands.Build(rest),
                 "run" => CompileCommands.RunCmd(rest),
@@ -115,6 +116,13 @@ public static class App
             Ui.Ui.Error(T("internal", e.Message), Verbose ? e.ToString() : T("hint.verbose"));
             return 70;
         }
+    }
+
+    static int RunLsp(List<string> args)
+    {
+        if (args.Any(a => a != "--stdio")) throw UsageException.Usage("alice lsp [--stdio]");
+        using var server = new Lsp.LspServer(Console.OpenStandardInput(), Console.OpenStandardOutput());
+        return server.Run();
     }
 
     static int Unknown(string cmd)

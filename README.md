@@ -85,6 +85,13 @@ dotnet build src/Alice.Cli -c Release
 alias alice="dotnet $PWD/src/Alice.Cli/bin/Release/net10.0/alice.dll"
 ```
 
+## Editor support
+
+Alice 0.11.1 includes `alice lsp --stdio`. The [Rust editor extensions](https://github.com/alicelanguage/extensions)
+add completion, diagnostics, .NET/NuGet assistance, automatic imports, hover,
+formatting, highlighting and icons to VS Code, VSCodium and Zed. Install the
+matching VSIX or use Zed's dev extension installer. See [tooling](docs/tooling.md#editor-support).
+
 ## How it works
 
 ```
