@@ -1,0 +1,20 @@
+{
+  "name": "alice-workspace",
+  "version": "0.11.1",
+  "private": true,
+  "description": "Workspace commands for the Alice compiler and editor extensions",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "postinstall": "npm --prefix extensions ci",
+    "build": "dotnet build Alice.sln",
+    "test": "dotnet test",
+    "build:extensions": "npm --prefix extensions run build",
+    "build:native": "npm --prefix extensions run build:native",
+    "build:zed": "npm --prefix extensions run build:zed",
+    "test:extensions": "npm --prefix extensions test",
+    "check:extensions": "npm --prefix extensions run check",
+    "package:vsix": "npm --prefix extensions run package:vsix",
+    "package:zed": "npm --prefix extensions run package:zed",
+    "package": "npm --prefix extensions run package"
+  }
+}

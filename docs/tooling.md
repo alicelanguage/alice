@@ -227,3 +227,19 @@ keys without the `alice.` prefix in `initializationOptions`. Disable NuGet
 completion for fully offline editing. Requests time out after two seconds and
 successful results are cached for ten minutes. The LSP uses stdout exclusively
 for framed protocol messages and stderr for server errors.
+
+To build editor packages locally, clone the extensions repository into `extensions/`
+beside `Alice.sln` if it is not already present. Requires Node.js 22+, Rust and Python 3:
+
+```sh
+git clone https://github.com/alicelanguage/extensions.git extensions
+npm install
+npm run package:vsix                # Host VS Code/VSCodium package
+rustup target add wasm32-wasip2     # Once, before building Zed
+npm run package:zed                 # Zed source/WASI archive
+npm run package                    # Both packages
+```
+
+Artifacts are written to `extensions/dist/`. `npm run build` and `npm test` run the
+.NET build and tests; `build:extensions`, `test:extensions` and `check:extensions`
+operate on the adapters. The extensions checkout also supports its own root npm commands.
