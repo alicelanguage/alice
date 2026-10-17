@@ -17,7 +17,9 @@ serialized. Fast checks parse/bind; deep checks on open/save inspect generated
 C# without emitting IL or creating a Roslyn Workspace. Restored `obj/**/refs.txt`
 provides NuGet and C# project references. Unsaved sibling sources overlay disk.
 Type-name indexes use PE metadata and are lazy; project and XML-doc caches are
-bounded. Clients select workstation GC for the editor process.
+bounded. Project reference assemblies use collectible contexts loaded from streams,
+so C# builds can replace DLLs while the editor runs. Clients select workstation GC
+for the editor process.
 
 NuGet ID/version suggestions are opt-out, on-demand HTTPS requests with a two
 second timeout and bounded ten-minute cache. They never restore packages or

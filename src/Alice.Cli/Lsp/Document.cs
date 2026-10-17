@@ -12,6 +12,7 @@ public sealed class Document(string uri, string text, int version)
     public int Version { get; set; } = version;
     public long AnalysisGeneration { get; set; }
     public List<Document> Related { get; set; } = [];
+    public Project? AnalyzedProject { get; set; }
     public int AnalyzedVersion { get; set; } = -1;
     /// <summary>Last AST that parsed; kept while the user types an incomplete line.</summary>
     public FileNode? Ast { get; set; }

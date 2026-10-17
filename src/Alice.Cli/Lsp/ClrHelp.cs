@@ -26,8 +26,10 @@ public static class ClrHelp
         var type = member as Type ?? member.DeclaringType;
         if (type == null) return "";
         var assembly = type.Assembly;
-        if (assembly.IsDynamic || string.IsNullOrEmpty(assembly.Location)) return "";
-        string xml = Path.ChangeExtension(assembly.Location, ".xml");
+        if (assembly.IsDynamic) return "";
+        string location = Alice.Compiler.Semantics.ClrTypes.AssemblyPath(assembly);
+        if (location.Length == 0) return "";
+        string xml = Path.ChangeExtension(location, ".xml");
         if (!File.Exists(xml))
         {
             var dotnet = Path.GetFullPath(Path.Combine(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "../../.."));

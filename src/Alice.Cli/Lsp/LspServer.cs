@@ -10,7 +10,7 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
     readonly object gate = new();
     readonly Dictionary<string, Document> documents = new(StringComparer.Ordinal);
     readonly Dictionary<string, Timer> pending = new(StringComparer.Ordinal);
-    bool initialized, shutdown, disposed;
+    bool initialized, shutdown, disposed, canWatch;
     int debounce = 180;
     bool deepChecks = true;
     public bool Synchronous { get; init; }
@@ -38,6 +38,7 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
         {
             var replies = new List<JsonObject>();
             if (disposed || Exited) return replies;
+            if (!message.ContainsKey("method")) return replies; // Response to a server registration request.
             var id = message["id"];
             bool request = message.ContainsKey("id");
             var method = message["method"]?.GetValue<string>();
@@ -46,6 +47,7 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
             if (method == "initialize" && !initialized)
             {
                 initialized = true;
+                canWatch = p["capabilities"]?["workspace"]?["didChangeWatchedFiles"]?["dynamicRegistration"]?.GetValue<bool>() == true;
                 Configure(p["initializationOptions"] as JsonObject);
                 replies.Add(Reply(id, new JsonObject
                 {
@@ -74,13 +76,24 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
                 JsonNode? result = null;
                 switch (method)
                 {
-                    case "initialized": case "$/cancelRequest": case "$/setTrace": break;
+                    case "initialized":
+                        if (canWatch) replies.Add(new JsonObject
+                        {
+                            ["jsonrpc"] = "2.0", ["id"] = "alice-watch", ["method"] = "client/registerCapability",
+                            ["params"] = new JsonObject { ["registrations"] = new JsonArray(new JsonObject
+                            {
+                                ["id"] = "alice-project-files", ["method"] = "workspace/didChangeWatchedFiles",
+                                ["registerOptions"] = new JsonObject { ["watchers"] = new JsonArray(new JsonObject { ["globPattern"] = "**/{*.al,*.dll,*.xml,*.alproj,alice.toml,alice.lock,refs.txt}", ["kind"] = 7 }) },
+                            }) },
+                        });
+                        break;
+                    case "$/cancelRequest": case "$/setTrace": break;
                     case "shutdown": shutdown = true; CancelAll(); documents.Clear(); break;
                     case "workspace/didChangeConfiguration": Configure(p["settings"]?["alice"] as JsonObject ?? p["settings"] as JsonObject); break;
                     case "workspace/didChangeWorkspaceFolders": break;
                     case "workspace/didChangeWatchedFiles":
                         Project.Invalidate();
-                        foreach (var doc in documents.Values) Schedule(doc, true, replies);
+                        foreach (var doc in documents.Values) Schedule(doc, true, replies, debounce);
                         break;
                     case "textDocument/didOpen":
                     {
@@ -123,7 +136,7 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
                         var doc = Get(p);
                         if (doc == null) break;
                         var project = Project.For(doc.Path);
-                        if (IsAlice(doc) && doc.AnalyzedVersion != doc.Version) Analyzer.Quick(doc, project, Project.Sources(doc, documents.Values));
+                        if (IsAlice(doc) && (doc.AnalyzedVersion != doc.Version || !ReferenceEquals(doc.AnalyzedProject, project))) Analyzer.Quick(doc, project, Project.Sources(doc, documents.Values));
                         int line = p["position"]?["line"]?.GetValue<int>() ?? 0;
                         int ch = p["position"]?["character"]?.GetValue<int>() ?? 0;
                         if (!IsAlice(doc))
@@ -197,7 +210,7 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
         }
     }
 
-    void Schedule(Document doc, bool deep, List<JsonObject> replies)
+    void Schedule(Document doc, bool deep, List<JsonObject> replies, int? delay = null)
     {
         Cancel(doc.Uri);
         doc.AnalyzedVersion = -1;
@@ -212,7 +225,7 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
                 try { JsonRpc.Write(output, Analyze(doc, deep)); }
                 catch (Exception e) when (e is not OutOfMemoryException) { Console.Error.WriteLine("Alice LSP: " + e.Message); }
             }
-        }, null, deep ? 0 : debounce, Timeout.Infinite);
+        }, null, delay ?? (deep ? 0 : debounce), Timeout.Infinite);
     }
 
     JsonObject Analyze(Document doc, bool deep)

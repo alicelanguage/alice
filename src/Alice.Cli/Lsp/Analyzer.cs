@@ -32,6 +32,7 @@ public static class Analyzer
     public static List<Diagnostic> Quick(Document doc, Project project, List<Document>? sources = null)
     {
         doc.AnalyzedVersion = doc.Version;
+        doc.AnalyzedProject = project;
         doc.Related = (sources ?? []).Where(s => s != doc).ToList();
         var asts = new List<FileNode>();
         var diagnostics = new List<Diagnostic>();
@@ -54,7 +55,7 @@ public static class Analyzer
     {
         try
         {
-            var cs = AliceCompiler.TranspileAll((sources ?? [doc]).Select(d => new SourceFile(d.Path, d.Text)).ToList(), project.Refs);
+            var cs = AliceCompiler.TranspileAll((sources ?? [doc]).Select(d => new SourceFile(d.Path, d.Text)).ToList(), project.Refs, project.Clr);
             return Here(AliceCompiler.Check(cs, project.Refs), doc);
         }
         catch (CompileException e) { return Here(e.Diagnostics, doc); }

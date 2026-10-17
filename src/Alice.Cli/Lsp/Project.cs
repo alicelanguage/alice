@@ -9,10 +9,19 @@ public sealed class Project
     public IReadOnlyList<string> Refs { get; }
     public ClrTypes Clr { get; }
     TypeIndex? index;
-    Project(IReadOnlyList<string> refs) { Refs = refs; Clr = new ClrTypes(refs); }
+    readonly ReferenceContext references;
+    Project(IReadOnlyList<string> refs)
+    {
+        Refs = refs;
+        references = new ReferenceContext(refs);
+        Clr = new ClrTypes(refs, references.Read);
+    }
     public TypeIndex Index => index ??= TypeIndex.For(Refs.ToList());
     static readonly Dictionary<string, Project> ByKey = new();
-    public static void Invalidate() { lock (ByKey) ByKey.Clear(); }
+    public static void Invalidate()
+    {
+        lock (ByKey) { foreach (var project in ByKey.Values) project.references.Unload(); ByKey.Clear(); }
+    }
     public static Project For(string filePath)
     {
         var refs = FindRefs(filePath);
@@ -21,7 +30,7 @@ public sealed class Project
         {
             if (!ByKey.TryGetValue(key, out var project))
             {
-                if (ByKey.Count >= 8) ByKey.Clear();
+                if (ByKey.Count >= 8) Invalidate();
                 ByKey[key] = project = new Project(refs);
             }
             return project;

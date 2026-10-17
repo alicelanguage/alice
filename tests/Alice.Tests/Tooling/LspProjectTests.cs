@@ -48,11 +48,21 @@ public class LspProjectTests
             var hover = Features.Hover(doc, project, 1, 17)!["contents"]!["value"]!.GetValue<string>();
             Assert.Contains("Jump over the garden gate", hover);
             Assert.Contains("Height in metres", hover);
+            Assert.Empty(Analyzer.Deep(new Document(doc.Uri, "using Garden\nputs RabbitApi.Jump(2)\n", 1), project));
+            // A running editor must allow rebuilding the same DLL and see its new API.
+            File.WriteAllBytes(dll, Alice.Compiler.AliceCompiler.Emit(["namespace Garden; public static class RabbitApi { public static int Hop(int height) => height; }"], Path.GetFileNameWithoutExtension(dll), exe: false));
+            Project.Invalidate();
+            var updated = new Document(doc.Uri, "using Garden\nputs RabbitApi.Hop(2)\nRabbitApi.Ho\n", 2);
+            var refreshed = Project.For(updated.Path);
+            Analyzer.Quick(updated, refreshed);
+            Assert.Contains(Features.Completion(updated, refreshed, 2, 12)["items"]!.AsArray(), i => i!["label"]!.GetValue<string>() == "Hop");
+            Assert.Empty(Analyzer.Deep(new Document(doc.Uri, "using Garden\nputs RabbitApi.Hop(2)\n", 3), refreshed));
         }
         finally
         {
             Project.Invalidate();
-            try { Directory.Delete(root, true); } catch (IOException) { } // Windows can retain loaded DLL handles.
+            try { Directory.Delete(root, true); }
+            catch (Exception e) when (OperatingSystem.IsWindows() && (e is IOException or UnauthorizedAccessException)) { } // CLR retains loaded DLL handles.
         }
     }
 
@@ -76,6 +86,17 @@ public class LspProjectTests
         foreach (var child in symbol["children"]!.AsArray())
             Assert.True(endLine >= child!["range"]!["end"]!["line"]!.GetValue<int>());
         Assert.Equal(5, endLine);
+    }
+
+    [Fact]
+    public void Deep_checks_accept_sdk_framework_reference_packs()
+    {
+        string dotnet = Path.GetFullPath(Path.Combine(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "../../.."));
+        string pack = Path.Combine(dotnet, "packs", "Microsoft.NETCore.App.Ref");
+        string reference = Directory.EnumerateFiles(pack, "System.Runtime.dll", SearchOption.AllDirectories).OrderDescending().First();
+        var refs = Directory.GetFiles(Path.GetDirectoryName(reference)!, "*.dll");
+        var code = Alice.Compiler.AliceCompiler.TranspileAll([new Alice.Compiler.SourceFile("framework.al", "puts 1\n")]);
+        Assert.Empty(Alice.Compiler.AliceCompiler.Check(code, refs));
     }
 
     sealed class Feed : HttpMessageHandler

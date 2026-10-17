@@ -16,7 +16,13 @@ public static class AliceCompiler
         TranspileFull(files, extraRefs, "alice_native").CSharp;
 
     /// <summary>C# units plus the C source of all @[Native] functions (null when there are none).</summary>
-    public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib)
+    public static List<string> TranspileAll(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, Semantics.ClrTypes clr) =>
+        TranspileFull(files, extraRefs, "alice_native", clr).CSharp;
+
+    public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib) =>
+        TranspileFull(files, extraRefs, nativeLib, null);
+
+    static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, Semantics.ClrTypes? clr)
     {
         var asts = files.Select(f =>
         {
@@ -24,7 +30,7 @@ public static class AliceCompiler
             if (f.LibraryOnly) ast.Items.RemoveAll(i => i is Syntax.StmtItem);
             return ast;
         }).ToList();
-        var binder = new Semantics.Binder(asts, new Semantics.ClrTypes(extraRefs));
+        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs));
         binder.Bind();
         var emitter = new Backend.Emitter(binder) { NativeLib = nativeLib };
         var cs = asts.Select(emitter.EmitFile).ToList();
@@ -162,7 +168,9 @@ public static class AliceCompiler
             .WithAllowUnsafe(true)
             .WithNullableContextOptions(NullableContextOptions.Enable)
             .WithSpecificDiagnosticOptions(NullErrors.ToDictionary(x => x, _ => ReportDiagnostic.Error));
-        var refs = Refs.Value.Concat((extraRefs ?? []).Where(File.Exists).Select(r => (MetadataReference)MetadataReference.CreateFromFile(Path.GetFullPath(r))));
+        var runtimeNames = Refs.Value.OfType<PortableExecutableReference>().Select(r => Path.GetFileName(r.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var refs = Refs.Value.Concat((extraRefs ?? []).Where(File.Exists).Where(r => !runtimeNames.Contains(Path.GetFileName(r)))
+            .Select(r => (MetadataReference)MetadataReference.CreateFromImage(File.ReadAllBytes(r), filePath: Path.GetFullPath(r))));
         var comp = CSharpCompilation.Create("check", trees, refs, opts);
         return comp.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Take(50).Select(d =>
         {

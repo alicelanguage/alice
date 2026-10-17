@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Alice.Compiler.Semantics;
 
@@ -12,13 +13,27 @@ public sealed class ClrTypes
     readonly Dictionary<string, Type?> cache = new();
     bool allLoaded;
 
-    public ClrTypes(IEnumerable<string>? extraRefs = null)
+    public ClrTypes(IEnumerable<string>? extraRefs = null) : this(extraRefs, Assembly.LoadFrom) { }
+
+    static readonly ConditionalWeakTable<Assembly, Source> Sources = new();
+    sealed record Source(string Path);
+    public static string AssemblyPath(Assembly assembly) => assembly.Location.Length > 0 ? assembly.Location : Sources.TryGetValue(assembly, out var source) ? source.Path : "";
+
+    /// <summary>Tooling may supply a collectible, non-locking loader for long-lived editor sessions.</summary>
+    public ClrTypes(IEnumerable<string>? extraRefs, Func<string, Assembly> loadAssembly)
     {
         foreach (var t in new[] { typeof(object), typeof(List<>), typeof(Enumerable), typeof(Console), typeof(Alice.Runtime.Prelude), typeof(System.Collections.Concurrent.ConcurrentDictionary<,>), typeof(Uri) })
             if (!asms.Contains(t.Assembly)) asms.Add(t.Assembly);
         foreach (var r in extraRefs ?? [])
         {
-            try { asms.Add(Assembly.LoadFrom(Path.GetFullPath(r))); } catch (Exception) { }
+            try
+            {
+                var path = Path.GetFullPath(r);
+                var assembly = loadAssembly(path);
+                if (assembly.Location.Length == 0) Sources.GetValue(assembly, _ => new Source(path));
+                if (!asms.Contains(assembly)) asms.Add(assembly);
+            }
+            catch (Exception) { }
         }
     }
 

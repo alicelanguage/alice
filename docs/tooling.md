@@ -218,7 +218,7 @@ and stable versions are suggested inside `[dependencies]` in `alice.toml` and
 `PackageReference` in `.alproj`. Generated projects remain disposable: edit
 `alice.toml`, then run `alice install` or build to refresh restored references.
 C# project APIs are read from their built assemblies, including XML docs beside
-the DLL. Restart the language server after rebuilding a changed reference assembly. Open Alice source buffers override disk contents for project checking.
+the DLL. Reference assemblies are read without locking DLLs; builds refresh the editor metadata. Open Alice source buffers override disk contents for project checking.
 
 The server checks edits after 180 ms and checks generated C# on open/save without
 emitting assemblies. VS Code settings `alice.debounceMs`, `alice.deepChecks`, and

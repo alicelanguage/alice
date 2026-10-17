@@ -30,6 +30,17 @@ public class LspLifecycleTests
     }
 
     [Fact]
+    public void Project_watchers_register_with_clients_that_support_them()
+    {
+        using var server = new LspServer(new MemoryStream(), new MemoryStream());
+        server.Handle(Message("initialize", new JsonObject { ["capabilities"] = new JsonObject { ["workspace"] = new JsonObject { ["didChangeWatchedFiles"] = new JsonObject { ["dynamicRegistration"] = true } } } }, 1));
+        var registration = server.Handle(Message("initialized")).Single();
+        Assert.Equal("client/registerCapability", registration["method"]!.GetValue<string>());
+        Assert.Contains("*.dll", registration["params"]!["registrations"]![0]!["registerOptions"]!["watchers"]![0]!["globPattern"]!.GetValue<string>());
+        Assert.Empty(server.Handle(new JsonObject { ["jsonrpc"] = "2.0", ["id"] = "alice-watch", ["result"] = null }));
+    }
+
+    [Fact]
     public void Stale_edits_are_ignored_and_closing_clears_diagnostics()
     {
         const string uri = "file:///tmp/lifecycle.al";
