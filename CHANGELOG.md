@@ -4,6 +4,10 @@
 
 - Root npm commands build/test Alice and generate VSIX/Zed packages from the companion `extensions/` checkout.
 
+## 0.11.2 - 2026-10-16
+
+- Fix editor document-symbol ranges after edits and mixin expansion: outlines use current source declarations and keep selections inside their full ranges.
+
 ## 0.11.1 - 2026-10-16
 
 - `alice lsp --stdio`: incremental editor diagnostics, completion, .NET/NuGet members, auto-import quick fixes, hover with XML documentation, definitions, document symbols, formatting and signature help (ADR 0011).

@@ -347,7 +347,11 @@ public static class Features
     public static JsonArray Symbols(Document doc)
     {
         var arr = new JsonArray();
-        if (doc.Ast is { } ast) foreach (var s in SymbolsOf(doc, ast.Items)) arr.Add(s);
+        // Binding expands mixins into the AST, and recovery may retain an older AST.
+        // Outline locations must describe declarations in the current source buffer.
+        var syntax = new Document(doc.Uri, doc.Text, doc.Version);
+        Analyzer.Parse(syntax);
+        if (syntax.Ast is { } ast) foreach (var s in SymbolsOf(doc, ast.Items)) arr.Add(s);
         return arr;
     }
 
@@ -358,19 +362,20 @@ public static class Features
             if (it is NamespaceItem ns) { foreach (var s in SymbolsOf(doc, ns.Items)) yield return s; continue; }
             foreach (var (name, kind, node) in Declarations([it]))
             {
-                int l = Math.Max(0, node.Line - 1);
-                var len = doc.Line(l).Length;
+                int last = doc.Text.Count(c => c == '\n');
+                int l = Math.Clamp(node.Line - 1, 0, last);
+                string line = doc.Line(l);
+                int col = line.IndexOf(name, StringComparison.Ordinal);
+                if (col < 0) continue;
+                int len = line.Length;
+                int end = Math.Clamp(EndLine(doc, node), l, last);
                 var sym = new JsonObject
                 {
                     ["name"] = name,
                     ["kind"] = kind switch { 7 => 5, 9 => 2, 8 => 11, 22 => 23, 13 => 10, 10 => 7, 5 => 8, 21 => 14, 3 => 12, _ => 6 },
-                    ["range"] = Range(l, 0, l, len),
-                    ["selectionRange"] = Range(l, 0, l, len),
+                    ["range"] = Range(l, 0, end, doc.Line(end).Length),
+                    ["selectionRange"] = Range(l, col, l, col + name.Length),
                 };
-                int end = EndLine(doc, node);
-                sym["range"] = Range(l, 0, end, doc.Line(end).Length);
-                int col = Math.Max(0, doc.Line(l).IndexOf(name, StringComparison.Ordinal));
-                sym["selectionRange"] = Range(l, col, l, col + name.Length);
                 if (node is MethodDecl md) sym["detail"] = Signature(doc, md);
                 if (node is TypeDecl td) sym["children"] = new JsonArray(SymbolsOf(doc, td.Members).Cast<JsonNode>().ToArray());
                 if (node is EnumDecl ed)
