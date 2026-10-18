@@ -2,6 +2,8 @@
 
 ## 0.12.0 - Unreleased
 
+- Windows installer: launch Microsoft's .NET SDK installer with a child-process execution policy override, preserving the user's policy and reporting SDK installation failures.
+
 - Root npm commands build/test Alice and generate VSIX/Zed packages from the companion `extensions/` checkout.
 
 ## 0.11.2 - 2026-10-16

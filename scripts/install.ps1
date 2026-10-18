@@ -38,6 +38,14 @@ function Fail([string] $Message, [string] $Hint = '') {
 function Get-Sdk10([string] $Dotnet) {
     try { (& $Dotnet --list-sdks 2>$null) | Where-Object { $_ -match '^10\.' } | Select-Object -Last 1 } catch { $null }
 }
+function Invoke-DotnetInstaller([string] $Installer, [string] $InstallDir) {
+    # Limit the policy override to this child; leave the user's saved policy unchanged.
+    $hostName = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh' } else { 'powershell' }
+    if ($env:OS -eq 'Windows_NT') { $hostName += '.exe' }
+    $hostExe = Join-Path $PSHOME $hostName
+    & $hostExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Installer -Channel 10.0 -InstallDir $InstallDir -NoPath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Microsoft .NET SDK installer failed with exit code $LASTEXITCODE" }
+}
 function Add-UserPath([string] $Dir) {
     $current = [Environment]::GetEnvironmentVariable('Path', 'User')
     $parts = @(); if ($current) { $parts = $current.Split(';') | Where-Object { $_ } }
@@ -76,7 +84,7 @@ try {
         Say 'Installing' ".NET 10 SDK into $dotnetDir (Microsoft dotnet-install, per-user)" 'Cyan'
         $installer = Join-Path $tmp 'dotnet-install.ps1'
         Invoke-WebRequest 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installer -UseBasicParsing
-        & $installer -Channel 10.0 -InstallDir $dotnetDir -NoPath | Out-Null
+        Invoke-DotnetInstaller $installer $dotnetDir
         if (-not (Test-Path (Join-Path $dotnetDir 'dotnet.exe'))) { Fail '.NET SDK installation failed' 'install it manually: https://dot.net/download' }
         [Environment]::SetEnvironmentVariable('DOTNET_ROOT', $dotnetDir, 'User')
         $env:DOTNET_ROOT = $dotnetDir

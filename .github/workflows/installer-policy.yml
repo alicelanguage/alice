@@ -1,0 +1,40 @@
+name: Windows installer execution policy
+
+on:
+  push:
+    paths:
+      - scripts/install.ps1
+      - scripts/test-install-policy.ps1
+      - .github/workflows/installer-policy.yml
+  pull_request:
+    paths:
+      - scripts/install.ps1
+      - scripts/test-install-policy.ps1
+      - .github/workflows/installer-policy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: windows-2025
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+      - name: Run SDK launcher with a Restricted parent policy
+        shell: ${{ matrix.shell }}
+        run: |
+          $hostExe = Join-Path $PSHOME $(if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' })
+          $root = $env:GITHUB_WORKSPACE.Replace("'", "''")
+          $command = "& ([scriptblock]::Create([IO.File]::ReadAllText('$root/scripts/test-install-policy.ps1'))) -RepositoryRoot '$root'"
+          $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+          & $hostExe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Restricted -EncodedCommand $encoded
+          if ($LASTEXITCODE -ne 0) { throw 'Installer policy regression failed' }
