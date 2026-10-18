@@ -24,13 +24,15 @@ jobs:
       fail-fast: false
       matrix:
         shell: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
           sparse-checkout: scripts
       - name: Run SDK launcher with a Restricted parent policy
-        shell: ${{ matrix.shell }}
         run: |
           $hostExe = Join-Path $PSHOME $(if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' })
           $root = $env:GITHUB_WORKSPACE.Replace("'", "''")
