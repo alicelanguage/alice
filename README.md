@@ -148,8 +148,8 @@ val limit = 10  # cannot be reassigned
 
 ## Docs
 
-[Language](docs/language.md) · [Tooling & REPL](docs/tooling.md) · [Errors](docs/errors.md) ·
-[Performance](docs/performance.md) · [Architecture](archicture/README.md) · [Changelog](CHANGELOG.md)
+[Language](https://alice-lang.org/documentation) · [Tooling & REPL](https://alice-lang.org/documentation) · [Errors](https://alice-lang.org/documentation) ·
+[Performance](https://alice-lang.org/documentation) · [Architecture](https://alice-lang.org/documentation) · [Changelog](https://alice-lang.org/documentation)
 
 ## Roadmap
 
