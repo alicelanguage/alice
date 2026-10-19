@@ -122,6 +122,17 @@ matching VSIX or use Zed's dev extension installer. See [tooling](docs/tooling.m
 - **Tooling**: REPL with help/shell/package modes, RSpec + xUnit style tests, formatter, readable errors
   (`AL0303 undefined name 'x'`, never raw C#), "did you mean" everywhere, NuGet via `add/remove/search/list`.
 
+### Mutability
+
+Local bindings are mutable by default; use `val` when a binding must not be reassigned. For fields, `getter` exposes
+read-only access and `property` exposes read-write access. `val` prevents rebinding, but does not make a referenced
+object deeply immutable.
+
+```ruby
+count = 1       # mutable binding
+val limit = 10  # cannot be reassigned
+```
+
 ## Samples
 
 | Sample | Shows |
