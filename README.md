@@ -87,7 +87,7 @@ alias alice="dotnet $PWD/src/Alice.Cli/bin/Release/net10.0/alice.dll"
 
 ## Editor support
 
-Alice 0.11.1 includes `alice lsp --stdio`. The [Rust editor extensions](https://github.com/alicelanguage/extensions)
+Alice includes `alice lsp --stdio`. The [Rust editor extensions](https://github.com/alicelanguage/extensions)
 add completion, diagnostics, .NET/NuGet assistance, automatic imports, hover,
 formatting, highlighting and icons to VS Code, VSCodium and Zed. Install the
 matching VSIX or use Zed's dev extension installer. See [tooling](docs/tooling.md#editor-support).
@@ -116,22 +116,106 @@ matching VSIX or use Zed's dev extension installer. See [tooling](docs/tooling.m
 - **Ruby ergonomics**: blocks, `yield`, `instance_eval`/`instance_exec`, class-body macros, `define_method`,
   `method_missing`, `send`, `@@class_vars`, `attr_accessor`, monkey patching, `Comparable`/`Enumerable`, `case/in`.
 - **Safety**: static types everywhere, nil-safety, immutable `val`, compile-time data-race detection.
-- **Speed**: auto-vectorized and auto-parallel loops, fused pipelines, SoA records, FMA contraction, `@[Native]`
-  functions compiled by clang. See [benchmarks](benchmarks/README.md): Alice beats idiomatic C# on all 8 and
+- **Speed**: auto-vectorized and auto-parallel loops, fork/join recursion, GC-free owned buffers, fused pipelines, SoA records, FMA contraction, `@[Native]`
+  functions compiled by clang. See [benchmarks](benchmarks/README.md): Alice beats idiomatic C# on 6 of 7 in run 8 (binarytrees: 1.02×) and
   matches or beats C on the 5 C benchmarks.
 - **Tooling**: REPL with help/shell/package modes, RSpec + xUnit style tests, formatter, readable errors
   (`AL0303 undefined name 'x'`, never raw C#), "did you mean" everywhere, NuGet via `add/remove/search/list`.
 
+## Mutability, ownership and parallelism
+
 ### Mutability
 
-Local bindings are mutable by default; use `val` when a binding must not be reassigned. For fields, `getter` exposes
-read-only access and `property` exposes read-write access. `val` prevents rebinding, but does not make a referenced
-object deeply immutable.
+A local binding is mutable unless you declare it with `val`. In a class, `getter` makes a field read-only from
+outside and `property` makes it readable and writable. `val` only stops the name from being rebound. It does not
+freeze the object it refers to: a `val` array can still have its elements written.
 
 ```ruby
-count = 1       # mutable binding
-val limit = 10  # cannot be reassigned
+count = 1               # mutable binding
+val limit = 10          # reassigning it is a compile error
+val xs = [1, 2, 3]
+xs[0] = 9               # allowed: the binding is fixed, the array is not
 ```
+
+Mutation is also what the compiler checks for races. If concurrent code writes shared state that another task can
+reach, that is compile error AL0202. Loops and forks are parallelized only when their bodies are proven pure.
+
+### Ownership (0.12)
+
+.NET's garbage collector stays as the safety net. On top of it, the compiler tracks which local arrays are the only
+reference to their buffer. When such an array is dropped, its memory goes back to a per-thread pool instead of to
+the GC, and the next `Array(T).new(n)` of the same length reuses it. A dynamic-programming loop that builds a fresh
+row each iteration allocates two rows in total:
+
+```ruby
+def edit_distance(a : String, b : String) : Int32
+  previous = Array(Int32).new(b.size + 1)
+  for j in 0..b.size
+    previous[j] = j
+  end
+  for i in 1..a.size
+    row = Array(Int32).new(b.size + 1)    # reuses the buffer released below
+    row[0] = i
+    for j in 1..b.size
+      cost = a[i - 1] == b[j - 1] ? 0 : 1
+      row[j] = [row[j - 1] + 1, previous[j] + 1, previous[j - 1] + cost].min
+    end
+    previous = row                        # move: the old row returns to the pool
+  end
+  previous[b.size]
+end
+```
+
+Inference happens silently: an array that escapes into a field, a closure or a .NET call stays an ordinary GC
+array. Write `own` to turn the rules into a contract, so that an escape is error AL0207 and a use after a move is
+error AL0208:
+
+```ruby
+own scratch = Array(Float64).new(1024)
+```
+
+### Fork/join and parallel loops
+
+You don't create threads. Two independent bindings where at least one is a recursive call fork onto the thread
+pool, and a counted loop whose iterations are proven independent runs in chunks across cores:
+
+```ruby
+def sum_tree(n : Int32) : Int64
+  return 1_i64 if n == 0
+  a, b = sum_tree(n - 1), sum_tree(n - 1)   # forks near the root, plain calls deeper down
+  a + b
+end
+
+par for y in 0...h                           # parallel at any size, or compile error AL0209
+  for x in 0...w
+    img[y * w + x] = shade(x, y)
+  end
+end
+```
+
+A fork costs one pooled work item. If no worker picks it up, the joining thread runs it inline, and only the top
+`log2(cores) + 3` levels of the call tree fork at all. Parallel loops share a chunk scheduler in which the calling
+thread does work too, so nested loops can't starve the pool, and exceptions reach the caller unwrapped. A loop that
+reads the array it writes at another index (`row[j - 1]`) stays serial. For hashes and PRNGs, `unchecked ... end`
+or `&+ &- &*` turn off the overflow checks.
+
+### Benchmarks
+
+Alice compared with C#, both under server GC, from the repo suite ([run 8](benchmarks/README.md), i5-1235U, lower is better):
+
+| benchmark | Alice ms | idiomatic C# ms | hand-optimized C# ms |
+|---|---:|---:|---:|
+| nbody | 47.8 | 53.3 | 48.9 |
+| binarytrees | 171.3 | 167.6 | 91.4 |
+| pipeline | 2.0 | 37.7 | 2.1 |
+| expr | 10.3 | 11.0 | 10.5 |
+| wordfreq | 6.9 | 80.5 | 5.3 |
+| mandelbrot | 9.7 | 104.5 | 8.7 |
+| parallel | 34.8 | 40.4 | 34.0 |
+
+On the 17-workload polyglot suite, Alice is faster than C# on 10, including tree-radix (3.2×), symreg (2.0×),
+hashmap (1.45×) and merkle (1.2×). The other 7 are within 2–12 %. See
+[how to get maximum performance](https://alice-lang.org/documentation/guides/max-performance/).
 
 ## Samples
 
@@ -155,7 +239,7 @@ val limit = 10  # cannot be reassigned
 ## Roadmap
 
 - Incremental compilation and a language server (editor completion, go-to-definition).
-- Broader race analysis (prove disjoint `y * w + x` writes so more loops parallelize safely).
+- Fork `f(n - 1) + f(n - 2)` expressions directly; ownership for collections and records.
 - GPU offload for `Par` kernels; more `@[Native]` coverage (structs, strings).
 - Refinements, `ObjectSpace`, `class_eval` with strings.
 - NativeAOT single-file `alice` binary; package registry for Alice libraries.

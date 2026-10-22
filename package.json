@@ -1,6 +1,6 @@
 {
   "name": "alice-workspace",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "private": true,
   "description": "Workspace commands for the Alice compiler and editor extensions",
   "engines": { "node": ">=22" },

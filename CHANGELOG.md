@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.12.0 - Unreleased
+## 0.12.1 - Unreleased
+
+## 0.12.0 - 2026-10-22
 
 - Breaking (ADR 0013): signed `/` and `%` are floored like `divmod` (`-7 / 2 == -4`); `tdiv`/`remainder` truncate. Float `%` follows the divisor.
 - Breaking (ADR 0013): integer overflow raises `OverflowException`; `&+ &- &*` wrap. `2 ** -1` raises instead of returning 1.
