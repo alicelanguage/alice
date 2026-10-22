@@ -36,6 +36,9 @@
 - Auto-parallel loops prove row-major writes disjoint: `img[y * w + x] = ...` (directly or through a local bound once) with `x` counting `0...w` in a nested loop runs rows across cores, as game of life, mandelbrot and image loops are written.
 - Runtime: `Par.Fork` offers its left half as one thread-pool work item instead of a `Task` (no Task, wrapper closure or continuation per fork); the join runs an unclaimed half inline, spins briefly, then blocks on the job. When the right half throws, the left half finishes before the exception unwinds.
 - Syntax: `par for i in a...b` parallelizes at any trip count and is compile error AL0209 when iterations are not provably independent; `unchecked ... end` is a wrapping region for integer `+ - *` (ADR 0013). `alice fmt` indents both.
+- Benchmarks: `run.sh` runs Alice with the same server GC as the C# baselines; run 8 recorded (Alice at or ahead of idiomatic C# on all eight). The recursive-kernel rule requires a primitive result, so object-building recursion keeps tier-1 PGO.
+- `examples/verify.sh` expects 0.12 float printing (`30.0`).
+- Version 0.12.0.
 - Fix (ADR 0008): a counted loop whose body read the array it writes at another index (`row[j] = row[j - 1] + ...`) was auto-parallelized from 65,536 iterations and could compute wrong values. Such loops stay serial; stencils over a different array stay parallel behind a runtime `ReferenceEquals` alias check.
 - Fix: an exception raised inside an auto-parallelized loop reaches the caller as itself, as in the serial loop, not wrapped in `AggregateException`.
 - Runtime: `Par.Range`/`Reduce`/`MapSum` run on a lean chunk scheduler (`ParJob`) instead of `Parallel.For`: one allocation per loop, an atomic chunk counter, and the calling thread works through chunks itself, so nested parallel loops cannot starve the pool and no TPL machinery is JIT-compiled at startup.

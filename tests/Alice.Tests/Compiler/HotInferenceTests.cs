@@ -23,6 +23,7 @@ public class HotInferenceTests
     [Theory]
     [InlineData("def sq(n : Int32) : Int32\n  n * n\nend\n")]                                                   // not recursive
     [InlineData("def walk(o : Object, n : Int32) : Int32\n  n == 0 ? 0 : walk(o, n - 1)\nend\n")]                 // reference parameter: PGO may devirtualize
+    [InlineData("class T\n  def initialize(@l : T?)\n  end\nend\ndef build(d : Int32) : T\n  d == 0 ? T.new(nil) : T.new(build(d - 1))\nend\n")]   // builds objects: allocation-heavy, PGO helps
     public void Other_functions_stay_tiered(string src)
         => Assert.DoesNotContain(Opt, AliceCompiler.Transpile(src));
 }

@@ -350,12 +350,14 @@ public sealed class Emitter
     const string Hot = "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n";
 
     /// <summary>
-    /// A self-recursive static function over primitives and primitive arrays is a compute kernel: fully optimized
+    /// A self-recursive static function over primitives and primitive arrays, returning one of them, is a compute kernel: fully optimized
     /// from its first call instead of spending its hottest frames in tier 0 and OSR. With no reference parameters it
     /// has no virtual call sites, so tiered PGO has nothing to devirtualize.
     /// </summary>
     static bool Kernel(MethodDecl d, MethodSym m, Instance? inst, List<MStmt> body)
     {
+        var ret = inst?.Ret ?? m.Ret;
+        if (!(ret.IsVoid || Primitive(ret) || ret.Kind == "array" && ret.Elem != null && Primitive(ret.Elem))) return false;   // object-building recursion gains from tier-1 PGO
         if (!m.IsStatic || m.IsAsync || m.IsCtor || d.Attrs.Any(a => a is "Hot" or "Inline" or "NoInline")) return false;
         for (int i = 0; i < m.Params.Count; i++)
         {
