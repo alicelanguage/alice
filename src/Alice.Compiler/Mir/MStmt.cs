@@ -14,6 +14,7 @@ public sealed class MDecl : MStmt
     public string Name = "";
     public string? TypeCs;          // null => var
     public MExpr? Init;
+    public string? RentLength;      // Init is Own<T>.Rent(RentLength) of an owned array; RentLength names a local
 }
 
 public sealed class MDeconstruct : MStmt

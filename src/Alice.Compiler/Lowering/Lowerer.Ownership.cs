@@ -245,7 +245,12 @@ public sealed partial class Lowerer
             }
             o.Add(Release(l, el));
         }
-        if (a.Declares != null && !hoisted.Contains(a.Declares)) o.Add(new MDecl { Name = l.CsName, Init = value });
+        if (a.Declares != null && !hoisted.Contains(a.Declares))
+            o.Add(new MDecl
+            {
+                Name = l.CsName, Init = value,
+                RentLength = Unwrap(a.Value) is NewExpr { Args: [{ Value: NameExpr { Sym: LocalSym n } }] } && value is MCall { Name: "Rent" } ? n.CsName : null,
+            });
         else o.Add(new MAssign { Target = new MCode(l.CsName), Value = value });
         return true;
     }

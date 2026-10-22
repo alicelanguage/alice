@@ -37,3 +37,11 @@ methods. Buffers released on one thread are reused by that thread only. Owned
 locals are limited to unmanaged element arrays declared in the method; fields,
 collections of references and arrays shared across threads stay with the GC.
 Ports to the self-hosted compiler follow ADR 0006's rule.
+
+Amendment (0.12.1): a pooled array hides its length from the JIT. `new T[n]`
+tells RyuJIT that the length is `n`, so `for (k = 0; k < n; k++) buf[k]` has no
+bounds checks; `Own<T>.Rent(n)` is an opaque call and the checks stay. The MIR
+pass `owned-bounds` (ADR 0014) rewrites such a loop's bound to `buf.Length` when
+`n` is a local or parameter written only by its declaration and `buf` is written
+only by its own: the two values are equal everywhere, and the JIT then drops the
+checks as it does for `new`. Measured in `benchmarks/gc` (`scratch`).
