@@ -35,6 +35,8 @@ public sealed partial class Lowerer
             && (long)cb - ca + (r.Excl ? 0 : 1) < (plan.Heavy ? 2 : Threshold)) return null;
         if (plan.Acc != null && WalkReads(f.Body).Any(n => n.Sym == plan.Acc)) return null;
         if (plan.Acc == null && !WalkStmts(f.Body).Any(s => s is Assign { Target: IndexExpr })) return null;   // no observable effect to parallelize
+        var aliasGuards = AliasGuards(f.Body, plan);
+        if (aliasGuards == null) return null;
 
         // captured read-only locals become helper parameters
         var captured = new List<LocalSym>();
@@ -98,8 +100,37 @@ public sealed partial class Lowerer
             ? new MAssign { Target = new MCode(plan.Acc.CsName), Op = "+=", Value = new MCode(call) }
             : new MExprStmt { E = new MCode(call) };
         string min = plan.Heavy ? "2" : Threshold.ToString();
-        return new MIf { Cond = new MCode($"{count} >= {min} && global::Alice.Runtime.Par.Workers > 1"), Then = { par }, Else = serial };
+        string distinct = string.Concat(aliasGuards.Select(g => $" && !global::System.Object.ReferenceEquals({g.W.CsName}, {g.R.CsName})"));
+        return new MIf { Cond = new MCode($"{count} >= {min} && global::Alice.Runtime.Par.Workers > 1{distinct}"), Then = { par }, Else = serial };
     }
+
+    /// <summary>
+    /// Cross-iteration dependencies through arrays. A written array may be read only at the loop index (`a[i] = a[i - 1]`
+    /// is a prefix scan, inherently serial). Another local array read at a shifted index (a stencil) is independent
+    /// unless it is the same object as a written one, which a runtime check decides: the returned (written, read)
+    /// pairs must be distinct for the parallel path. Null: a dependency the loop cannot rule out.
+    /// </summary>
+    List<(LocalSym W, LocalSym R)>? AliasGuards(List<Stmt> body, LoopPlan plan)
+    {
+        var written = WalkStmts(body).OfType<Assign>()
+            .Select(a => a.Target is IndexExpr { Target: NameExpr { Sym: LocalSym w } } ? w : null).OfType<LocalSym>().Distinct().ToList();
+        var guards = new List<(LocalSym, LocalSym)>();
+        foreach (var ix in WalkReads(body).OfType<IndexExpr>())
+        {
+            if (ix.Target.Type?.Kind != "array") continue;   // strings and other immutable reads cannot alias an array
+            bool atIndex = ix.Args is [{ Value: NameExpr { Sym: LocalSym k } }] && k == plan.LoopVar;
+            if (atIndex) continue;   // same element as this iteration's write: never another iteration's
+            if (ix.Target is not NameExpr { Sym: LocalSym r }) { if (written.Any(w => MayAlias(w.Type, ix.Target.Type))) return null; continue; }
+            if (written.Contains(r)) return null;
+            foreach (var w in written)
+                if (MayAlias(w.Type, r.Type) && !guards.Contains((w, r))) guards.Add((w, r));
+        }
+        return guards;
+    }
+
+    /// <summary>Arrays of distinct primitive element types are distinct objects; anything else may share storage.</summary>
+    static bool MayAlias(AType a, AType b) =>
+        !(a.Elem is { Kind: "prim" } ea && b.Elem is { Kind: "prim" } eb && ea.Cs != eb.Cs);
 
     /// <summary>Checks every statement for loop-carried dependencies; fills the plan.</summary>
     bool LoopBody(List<Stmt> body, LoopPlan plan, int depth)

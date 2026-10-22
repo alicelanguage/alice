@@ -32,8 +32,15 @@
 - Allocation-free: `round(n)`/`floor(n)`/`ceil(n)`, `q, r = a.divmod(b)` (no array), `a.step(limit, k)` with a literal step (inlined loop), and `puts`/`str`/`inspect` of numbers (no boxing).
 - `Digest::SHA256.hexdigest`, `Digest::SHA1`, `Digest::MD5` (Ruby API).
 - New primitives: `to_i8`..`to_u64`, `to_i32`, `to_f64`, `fdiv`, `sign`, `popcount`, `leading_zeros_count`, `trailing_zeros_count`, `bit_length`, `finite?`; `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`; snake_case .NET statics (`Math.sqrt`, `Math.atan2`).
+- Fix (ADR 0008): a counted loop whose body read the array it writes at another index (`row[j] = row[j - 1] + ...`) was auto-parallelized from 65,536 iterations and could compute wrong values. Such loops stay serial; stencils over a different array stay parallel behind a runtime `ReferenceEquals` alias check.
+- Fix: an exception raised inside an auto-parallelized loop reaches the caller as itself, as in the serial loop, not wrapped in `AggregateException`.
+- Runtime: `Par.Range`/`Reduce`/`MapSum` run on a lean chunk scheduler (`ParJob`) instead of `Parallel.For`: one allocation per loop, an atomic chunk counter, and the calling thread works through chunks itself, so nested parallel loops cannot starve the pool and no TPL machinery is JIT-compiled at startup.
+- Shift counts are modular (ADR 0013): the `+ - *` computing `x << n` drop their overflow checks.
+- A self-recursive function over primitives and primitive arrays compiles fully optimized from its first call (`AggressiveOptimization`). Suite queens: 0.92 s → 0.81 s (C# 0.91 s).
 - `q, r = 7.divmod(2)`: multiple assignment destructures arrays and lists.
 - Hex and binary literals accept `_` separators and type suffixes (`0xFFFF_FFFF_i64`, `0xFF_u8`).
+
+- `samples/wonderland3d`: Alice-authored procedural 3D Wonderland film, interactive preview, deterministic 30-second MP4 export, GLSL bloom and an original synthesized stereo score (ADR 0012).
 
 - Windows installer: launch Microsoft's .NET SDK installer with a child-process execution policy override, preserving the user's policy and reporting SDK installation failures.
 

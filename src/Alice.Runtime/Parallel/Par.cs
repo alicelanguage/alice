@@ -43,7 +43,7 @@ public static class Par
         int cap = grain <= 1 ? Workers * 64 : Workers * 8;
         int chunks = Math.Min(Math.Max(1, n / Math.Max(1, grain)), cap);
         if (chunks <= 1) { body(0, n); return; }
-        Parallel.For(0, chunks, c => body((int)((long)n * c / chunks), (int)((long)n * (c + 1) / chunks)));
+        ParJob<byte>.Run(n, chunks, body);
     }
 
     /// <summary>Chunked map-reduce over [0, n): `chunk(lo, hi)` runs in parallel, partials are combined in order.</summary>
@@ -53,8 +53,7 @@ public static class Par
         int cap = grain <= 1 ? Workers * 64 : Workers * 8;
         int chunks = Math.Min(Math.Max(1, n / Math.Max(1, grain)), cap);
         if (chunks <= 1) return chunk(0, n);
-        var partial = new T[chunks];
-        Parallel.For(0, chunks, c => partial[c] = chunk((int)((long)n * c / chunks), (int)((long)n * (c + 1) / chunks)));
+        var partial = ParJob<T>.Run(n, chunks, chunk);
         T acc = partial[0];
         for (int i = 1; i < chunks; i++) acc = combine(acc, partial[i]);
         return acc;
@@ -79,13 +78,11 @@ public static class Par
             foreach (var x in src) s += f(x);
             return s;
         }
-        var partial = new R[chunks];
-        Parallel.For(0, chunks, c =>
+        var partial = ParJob<R>.Run(src.Length, chunks, (lo, hi) =>
         {
-            int lo = (int)((long)src.Length * c / chunks), hi = (int)((long)src.Length * (c + 1) / chunks);
             R s = R.Zero;
             for (int i = lo; i < hi; i++) s += f(src[i]);
-            partial[c] = s;
+            return s;
         });
         R total = R.Zero;
         foreach (var p in partial) total += p;

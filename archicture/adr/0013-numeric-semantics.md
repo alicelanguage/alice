@@ -22,6 +22,10 @@ Behavior follows Ruby/Crystal where they agree; the generated IL stays plain C#.
   scientific notation below 1e-4 or from 1e16 (`1.0e-07`, `1.0e+16`), in
   `puts`, `print`, `p`, interpolation, `to_s` and `inspect`.
 - Literal `-5.abs` is `(-5).abs`; `-2 ** 2` stays `-(2 ** 2)`.
+- Shift counts are modular: `x << n` uses the low 5 (32-bit) or 6 (64-bit) bits
+  of `n`, so the `+ - *` that compute a count wrap instead of raising. Wrapping
+  and exact arithmetic agree on every low bit, so the shifted value is the one
+  exact arithmetic gives (`1 << (row - c + n - 1)` carries no overflow branch).
 
 Generated programs use workstation concurrent GC by default: faster startup and
 lower RSS for CLIs and short jobs. `alice.toml` `[runtime] gc = "server"` opts in

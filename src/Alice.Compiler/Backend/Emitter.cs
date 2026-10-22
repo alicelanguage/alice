@@ -1,6 +1,7 @@
 using System.Text;
 using Alice.Compiler.Lowering;
 using Alice.Compiler.Mir;
+using Alice.Compiler.Optimizer;
 using Alice.Compiler.Semantics;
 using Alice.Compiler.Syntax;
 
@@ -345,6 +346,26 @@ public sealed class Emitter
         return w.ToString();
     }
 
+    const string Hot = "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n";
+
+    /// <summary>
+    /// A self-recursive static function over primitives and primitive arrays is a compute kernel: fully optimized
+    /// from its first call instead of spending its hottest frames in tier 0 and OSR. With no reference parameters it
+    /// has no virtual call sites, so tiered PGO has nothing to devirtualize.
+    /// </summary>
+    static bool Kernel(MethodDecl d, MethodSym m, Instance? inst, List<MStmt> body)
+    {
+        if (!m.IsStatic || m.IsAsync || m.IsCtor || d.Attrs.Any(a => a is "Hot" or "Inline" or "NoInline")) return false;
+        for (int i = 0; i < m.Params.Count; i++)
+        {
+            var t = inst != null ? inst.Args[i] : m.Params[i].Type;
+            if (!(Primitive(t) || t.Kind == "array" && t.Elem != null && Primitive(t.Elem))) return false;
+        }
+        return MirFacts.Calls(body, m.CsName);
+    }
+
+    static bool Primitive(AType t) => t.Kind == "prim" && !t.Nullable && t.Cs != "decimal";
+
     string MethodVariant(MethodDecl d, TypeSym owner, Instance? inst)
     {
         var m = (MethodSym)d.Sym!;
@@ -381,7 +402,7 @@ public sealed class Emitter
         string code = Print(body, 1);
         string extra = string.Concat(lowerer.Extra);
         lowerer.Extra.Clear();
-        string attrs = extra + Attrs(d.Attrs);
+        string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) ? Hot : "");
         if (m.IsCtor)
         {
             string baseInit = "";

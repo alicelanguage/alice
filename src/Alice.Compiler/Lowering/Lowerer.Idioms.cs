@@ -169,8 +169,10 @@ public sealed partial class Lowerer
                 }
                 cuts.Add({{text}}.Length);
                 var locals = new global::System.Collections.Generic.Dictionary<string, {{V}}>[cuts.Count - 1];
-                global::System.Threading.Tasks.Parallel.For(0, locals.Length, c =>
+                global::Alice.Runtime.Par.Range(locals.Length, (lo, hi) =>
                 {
+                    for (int c = lo; c < hi; c++)
+                    {
                     int len = cuts[c + 1] - cuts[c] - 1;
                     var local = new global::System.Collections.Generic.Dictionary<string, {{V}}>(global::System.Math.Min(len / 64 + 16, 16384));   // pre-sized (bounded): few rehashes while counting
                     var alt = local.GetAlternateLookup<global::System.ReadOnlySpan<char>>();
@@ -178,7 +180,8 @@ public sealed partial class Lowerer
                     foreach (var r in span.Split({{sep}}))
                         {{CM}}.GetValueRefOrAddDefault(alt, span[r], out _) {{op}} {{deltaCs}};
                     locals[c] = local;
-                });
+                    }
+                }, 1);
                 int total = {{d}}.Count;
                 foreach (var local in locals) total += local.Count;
                 {{d}}.EnsureCapacity(total);

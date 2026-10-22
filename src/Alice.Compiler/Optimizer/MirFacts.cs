@@ -105,4 +105,22 @@ public static class MirFacts
         MArg a => [a.E],
         _ => [],
     };
+
+    /// <summary>Whether a body calls the unqualified method `name` (a self call when `name` is the enclosing method).</summary>
+    public static bool Calls(List<MStmt> body, string name)
+    {
+        var finder = new CallFinder(name);
+        finder.Run(body);
+        return finder.Found;
+    }
+
+    sealed class CallFinder(string name) : MirRewriter
+    {
+        public bool Found;
+        protected override MExpr Rewrite(MExpr e)
+        {
+            if (e is MCall { Target: null } c && c.Name == name) Found = true;
+            return e;
+        }
+    }
 }

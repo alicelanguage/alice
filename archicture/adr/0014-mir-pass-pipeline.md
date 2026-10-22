@@ -20,7 +20,14 @@ primitive passes run on every lowered method body before it is printed to C#
   `strength-reduce` (floored division/modulo by 2^k becomes `>>` / `&`, exact for
   two's complement), `literal-minmax` (`[a, b, c].min` becomes a `Math.Min`
   chain, no allocation), `induction` (a typed `i < end` counter that the body
-  never writes steps unchecked).
+  never writes steps unchecked), `shift-count` (the `+ - *` spine of a shift
+  count over names and literals is unchecked, ADR 0013).
+
+The emitter marks a self-recursive static function whose parameters are all
+primitives or primitive arrays `AggressiveOptimization`: its hottest frames
+would otherwise run in tier 0 and OSR, and with no reference parameters tiered
+PGO has no virtual call to devirtualize (suite queens: 0.92 s → 0.81 s). Marking
+every loop-bearing method this way was measured and rejected (±5%, no net win).
 
 Lowering stays a direct translation and supplies facts the passes need instead
 of optimizing: counted loops declare their counter type (`MFor.VarType`), and
