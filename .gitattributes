@@ -1,1 +1,4 @@
 *.al linguist-language=Crystal
+guide/*.md text eol=lf
+RULES.al text eol=lf
+PROOF.al text eol=lf

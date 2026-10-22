@@ -27,6 +27,13 @@ public class GuideTests
     public void Guide_has_alice_examples() => Assert.True(Examples().Count() >= 14);
 
     [Fact]
+    public void Guide_text_is_the_same_on_every_os()
+    {
+        Assert.Equal("# A\n```alice\nx = 1\n```\n", GuideCommand.Normalize("# A\r\n```alice\r\nx = 1\r\n```\r\n"));   // CRLF checkout on Windows
+        Assert.DoesNotContain("\r", GuideCommand.Text());
+    }
+
+    [Fact]
     public void Topics_are_embedded()
     {
         Assert.Equal(["interop", "performance", "proofs"], GuideCommand.Topics());
