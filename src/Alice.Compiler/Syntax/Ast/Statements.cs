@@ -22,6 +22,7 @@ public sealed class Assign : Stmt
     public string Op = "=";
     public Expr Value = null!;
     public LocalSym? Declares;   // set when this assignment introduces the local
+    public bool Own;             // `own x = ...`: x must stay the only reference to its array (ADR 0016)
 }
 
 public sealed class MultiAssign : Stmt

@@ -68,6 +68,17 @@ public sealed partial class Parser
             return At(new NextStmt { Value = AtStmtEnd() ? null : Expression() }, tok);
         }
         if (IsKw("raise")) { Next(); return At(new RaiseStmt { Value = Expression() }, tok); }
+        if (IsKw("own") && Peek(1).Kind == "id" && !IsKeyword(Peek(1).Text) && Peek(2).Kind == "op" && Peek(2).Text == "=")
+        {
+            Next();
+            var nameTok = Cur;
+            string name = Next().Text;
+            Next();
+            SkipNl();
+            Expr v = Expression();
+            DeclareLocal(name);
+            return At(new Assign { Target = At(new NameExpr { Name = name }, nameTok), Value = v, Own = true }, tok);
+        }
         if (IsKw("val") && Peek(1).Kind == "id")
         {
             Next();

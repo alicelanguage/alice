@@ -23,7 +23,12 @@ public sealed partial class Lowerer
                     var e = Expr(es.Expr);
                     if (value)
                     {
-                        if (tail == Tail.Return) o.Add(new MReturn { Value = e });
+                        if (tail == Tail.Return)
+                        {
+                            MExpr? rv = e;
+                            ReleaseOwnedAt(o, es, ref rv, es.Expr);
+                            o.Add(new MReturn { Value = rv });
+                        }
                         else o.Add(new MAssign { Target = new MCode(target!), Value = e });
                     }
                     else if (e != MCode.Empty) o.Add(new MExprStmt { E = e });
@@ -99,8 +104,12 @@ public sealed partial class Lowerer
                     break;
                 }
             case ReturnStmt r:
-                o.Add(new MReturn { Value = r.Value != null ? Expr(r.Value) : null });
-                break;
+                {
+                    MExpr? rv = r.Value != null ? Expr(r.Value) : null;
+                    ReleaseOwnedAt(o, r, ref rv, r.Value);
+                    o.Add(new MReturn { Value = rv });
+                    break;
+                }
             case BreakStmt:
                 o.Add(InLambda ? new MReturn() : new MBreak());
                 break;
@@ -122,6 +131,7 @@ public sealed partial class Lowerer
 
     void AssignStmt(List<MStmt> o, Assign a)
     {
+        if (TryOwnedAssign(o, a)) return;
         if (a.Declares == null && TryCounterUpdate(o, a)) return;
         if (TryStackArrayInit(o, a)) return;
         if (TryFlatDecl(o, a) || TryFlatRowWrite(o, a)) return;

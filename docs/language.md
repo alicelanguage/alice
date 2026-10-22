@@ -99,6 +99,28 @@ val k = 3
 k = 4              # compile error: immutable
 ```
 
+### Ownership (ADR 0016)
+
+A local array of unmanaged elements that is only indexed, sized, iterated, lent to a
+parameter that does not keep it, moved to another such local or returned is *owned*:
+the compiler hands its buffer back to a per-thread pool where the program drops it, so
+loops that build a fresh array per iteration stop allocating. This is inferred; `own`
+turns it into a checked contract.
+
+```crystal
+own prev = Array(Int32).new(n + 1)
+for i in 1..n
+  own row = Array(Int32).new(n + 1)   # reuses the buffer released below
+  row[0] = i
+  # ... fill row from prev ...
+  prev = row                          # move: prev's old buffer is released, row is moved
+end
+prev[n]                               # prev released after the read
+```
+
+`own a` that escapes (stored, captured, passed to .NET) is AL0207; reading a moved
+local before reassigning it is AL0208.
+
 ## 4. Operators
 
 | Group | Operators |

@@ -47,6 +47,7 @@ public sealed class Emitter
     public string EmitFile(FileNode f)
     {
         file = f.Path;
+        lowerer.File = f.Path;
         var sb = new StringBuilder(Header);
         foreach (var it in f.Items)
             if (it is UsingItem u) sb.Append(UsingLine(u.Name));
