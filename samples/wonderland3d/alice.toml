@@ -1,0 +1,7 @@
+[package]
+name = "wonderland3d"
+version = "0.12.0"
+kind = "exe"
+
+[dependencies]
+"Raylib-cs" = "7.0.2"
