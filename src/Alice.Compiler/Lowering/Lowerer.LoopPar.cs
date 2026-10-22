@@ -18,6 +18,25 @@ public sealed partial class Lowerer
         public bool Heavy;               // nested loops: parallel even for small trip counts
         public readonly HashSet<LocalSym> Inner = new();
         public HashSet<LocalSym> Fresh = new();   // locals only ever bound to arrays allocated in this body
+        public readonly Dictionary<LocalSym, RangeExpr> InnerRanges = new();   // counters of nested `for j in a...b`
+        public readonly Dictionary<LocalSym, Syntax.Expr?> Defs = new();      // body locals bound once (null: rebound)
+    }
+
+    /// <summary>
+    /// An index this iteration alone writes: the loop counter i, or a row-major cell `i * w + j` (also `w * i + j`,
+    /// directly or through a body local bound once) where j counts `0...w` in a nested loop and w is loop-invariant.
+    /// Iteration i then owns the cells [i * w, i * w + w), disjoint from every other iteration (checked arithmetic
+    /// raises instead of wrapping into another row).
+    /// </summary>
+    bool OwnIndex(Syntax.Expr idx, LoopPlan plan)
+    {
+        if (idx is NameExpr { Sym: LocalSym k } && k == plan.LoopVar) return true;
+        if (idx is NameExpr { Sym: LocalSym d } && plan.Defs.TryGetValue(d, out var def) && def != null) idx = def;
+        if (idx is not BinaryExpr { Op: "+", L: BinaryExpr { Op: "*" } mul, R: NameExpr { Sym: LocalSym j } }) return false;
+        var (a, b) = (mul.L, mul.R);
+        var w = a is NameExpr { Sym: LocalSym ai } && ai == plan.LoopVar ? b : b is NameExpr { Sym: LocalSym bi } && bi == plan.LoopVar ? a : null;
+        return w is NameExpr { Res: "local", Sym: LocalSym wl } && !plan.Inner.Contains(wl)
+            && plan.InnerRanges.TryGetValue(j, out var r) && r.Excl && r.A is LitExpr { Kind: "int", Text: "0" } && r.B is NameExpr { Sym: LocalSym rb } && rb == wl;
     }
 
     MStmt? TryParallelFor(ForStmt f)
@@ -118,7 +137,7 @@ public sealed partial class Lowerer
         foreach (var ix in WalkReads(body).OfType<IndexExpr>())
         {
             if (ix.Target.Type?.Kind != "array") continue;   // strings and other immutable reads cannot alias an array
-            bool atIndex = ix.Args is [{ Value: NameExpr { Sym: LocalSym k } }] && k == plan.LoopVar;
+            bool atIndex = ix.Args is [{ Mod: "", Value: { } k }] && OwnIndex(k, plan);
             if (atIndex) continue;   // same element as this iteration's write: never another iteration's
             if (ix.Target is not NameExpr { Sym: LocalSym r }) { if (written.Any(w => MayAlias(w.Type, ix.Target.Type))) return null; continue; }
             if (written.Contains(r)) return null;
@@ -142,18 +161,18 @@ public sealed partial class Lowerer
                 case ExprStmt es when PureRead(es.Expr, plan):
                     break;
                 case LocalDecl d when d.Value == null || PureRead(d.Value, plan):
-                    if (d.Local != null) plan.Inner.Add(d.Local);
+                    if (d.Local != null) { plan.Inner.Add(d.Local); plan.Defs[d.Local] = null; }
                     break;
                 case Assign a when PureRead(a.Value, plan):
-                    if (a.Declares != null) { plan.Inner.Add(a.Declares); break; }
+                    if (a.Declares != null) { plan.Inner.Add(a.Declares); plan.Defs[a.Declares] = plan.Defs.ContainsKey(a.Declares) || a.Op != "=" ? null : a.Value; break; }
                     if (a.Target is NameExpr { Sym: LocalSym l })
                     {
-                        if (plan.Inner.Contains(l)) break;
+                        if (plan.Inner.Contains(l)) { plan.Defs[l] = null; break; }
                         if (a.Op is "+=" or "-=" && l.Type.IsNumeric && (plan.Acc == null || plan.Acc == l)) { plan.Acc = l; break; }
                         return false;
                     }
-                    if (a.Op == "=" && a.Target is IndexExpr { Target: NameExpr { Sym: LocalSym arr, Type.Kind: "array" }, Args: [{ Value: NameExpr { Sym: LocalSym idx } }] }
-                        && idx == plan.LoopVar && !plan.Inner.Contains(arr)) break;
+                    if (a.Op == "=" && a.Target is IndexExpr { Target: NameExpr { Sym: LocalSym arr, Type.Kind: "array" }, Args: [{ Mod: "", Value: { } idx }] }
+                        && OwnIndex(idx, plan) && !plan.Inner.Contains(arr)) break;
                     return false;
                 case IfStmt i when i.Conds.All(c => PureRead(c, plan)):
                     if (!i.Bodies.All(b => LoopBody(b, plan, depth)) || (i.Else != null && !LoopBody(i.Else, plan, depth))) return false;
@@ -165,6 +184,7 @@ public sealed partial class Lowerer
                 case ForStmt fr when fr.Iter is RangeExpr rr && PureRead(rr.A, plan) && PureRead(rr.B, plan):
                     plan.Heavy = true;
                     plan.Inner.UnionWith(fr.Locals);
+                    if (fr.Locals.Count == 1 && !WalkStmts(fr.Body).Any(x => x is Assign { Target: NameExpr { Sym: LocalSym c } } && c == fr.Locals[0])) plan.InnerRanges[fr.Locals[0]] = rr;
                     if (!LoopBody(fr.Body, plan, depth + 1)) return false;
                     break;
                 case NextStmt { Value: null }:

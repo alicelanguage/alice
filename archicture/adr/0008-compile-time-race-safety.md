@@ -10,4 +10,5 @@ Auto-parallelization (ADR 0007 lowering) only fires for blocks the purity checke
 Counted loops also need iteration independence: an array the body writes at the loop index is read only at that index
 (`a[i] = a[i - 1] + 1` is a scan and stays serial), and a local array read at a shifted index (a stencil) is a different
 object from every written array of a compatible element type, checked with `ReferenceEquals` before the parallel path.
+An iteration's own cells are `a[i]` and the row-major `a[i * w + j]` with `j` counting `0...w` in a nested loop and `w` invariant.
 Consequences: Shared-state bugs become compile errors with a help hint. Conservative: some safe patterns (e.g. disjoint List writes) need Mutex/Atomic or arrays. Escape via C# interop is not checked.
