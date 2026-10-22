@@ -90,6 +90,21 @@ public class ManifestTests
         else Assert.Contains($"System.GC.ConserveMemory\" Value=\"{conserve}\"", xml);
     }
 
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("[runtime]\nglobalization = \"culture\"\n", false)]
+    [InlineData("[runtime]\nglobalization = \"invariant\"\n", true)]
+    public void Runtime_globalization_maps_to_msbuild(string runtime, bool invariant)
+    {
+        // invariant: no ICU at run time (2-4 MB less memory on every program measured); strings sort and compare
+        // ordinally, as in Ruby, instead of linguistically
+        var dir = Path.Combine(Path.GetTempPath(), "alice-glob-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"glob\"\n" + runtime);
+        var xml = File.ReadAllText(Manifest.Sync(dir));
+        Assert.Equal(invariant, xml.Contains("<InvariantGlobalization>true</InvariantGlobalization>"));
+    }
+
     [Fact]
     public void Unknown_gc_mode_is_rejected()
     {

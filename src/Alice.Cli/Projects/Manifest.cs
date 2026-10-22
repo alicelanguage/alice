@@ -45,6 +45,12 @@ public static class Manifest
         };
         props.Append($"    <ServerGarbageCollection>{(server ? "true" : "false")}</ServerGarbageCollection>\n");
         props.Append($"    <ConcurrentGarbageCollection>{(concurrent ? "true" : "false")}</ConcurrentGarbageCollection>\n");
+        // invariant: ICU is not loaded (2-4 MB less memory per process, measured); strings then sort and compare
+        // ordinally (Ruby order: "A" < "B" < "a") instead of linguistically. Numbers already print invariantly either way
+        string glob = runtime.TryGetValue("globalization", out var gl) ? (string)gl : "culture";
+        if (glob is not ("culture" or "invariant"))
+            throw new InvalidOperationException($"[runtime] globalization = \"{glob}\" is not a mode (expected one of: culture, invariant)");
+        if (glob == "invariant") props.Append("    <InvariantGlobalization>true</InvariantGlobalization>\n");
 
         var items = new StringBuilder();
         if (conserve != null) items.Append($"    <RuntimeHostConfigurationOption Include=\"System.GC.ConserveMemory\" Value=\"{conserve}\" />\n");

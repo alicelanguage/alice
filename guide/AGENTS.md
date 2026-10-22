@@ -23,6 +23,8 @@ Before writing Alice:
 | `Array<Int32>`, `Hash<K, V>` | generics use parentheses: `Array(Int32)`, `Hash(String, Int32)` |
 | `require "json"` (a gem) | `require` loads `.al` files. Libraries are NuGet packages: `alice add <Package>`, then use the .NET API |
 | `x.size` on a value that may be `nil` | compile error AL0310. Check `if x`, `x.nil?`, use `x || default`, or `x.not_nil!` |
+| `x = risky rescue fallback` | no `rescue` modifier. Write `x = begin ... rescue e : Exception ... end` |
+| `"a" < "b"` on strings | `<`/`>` are not defined on strings. Use `"a" <=> "b"` (returns -1, 0, 1) |
 | `-7 / 2 == -3` (C#/Java habit) | integer `/` and `%` are floored, as in Ruby: `-7 / 2 == -4`, `-7 % 3 == 2` |
 | monkey-patching hot paths, `method_missing`, `send` | they work but run through reflection. Prefer plain methods in performance-sensitive code |
 | untyped `Any`/`Object` containers | they box and disable optimizations. Use typed arrays and collections |

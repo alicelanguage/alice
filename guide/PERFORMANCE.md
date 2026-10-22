@@ -102,12 +102,25 @@ Class instances live on the .NET GC heap, as in C#. Two things help:
   the allocation of C# and ~1.35x faster.
 - `@[SoA]` record structs store many small records column by column, ready for SIMD.
 
-## Start-up and JIT
+## Start-up, JIT and runtime settings
 
 - `alice run` caches the compiled image; an unchanged program starts in ~0.1 s.
 - Loop nests and recursive numeric kernels are compiled fully optimized from their first call; other methods
   use tiered compilation with dynamic PGO.
-- `alice build --native` produces a NativeAOT executable: no JIT at start-up.
+- `alice build --native` produces a NativeAOT executable. Choose it for programs that run for less than a few
+  seconds: they end before the JIT has optimized their hot code. A short game-update benchmark ran in 1.8 ms
+  per trial native against 11.2 ms under the JIT, with 15 MB peak memory instead of 40 MB. Long-running
+  programs reach the same speed either way.
+- `[runtime] globalization = "invariant"` in `alice.toml` skips loading ICU: 2-4 MB less memory per process.
+  Strings then sort and compare ordinally (`"A" < "B" < "a"`, as in Ruby) instead of linguistically
+  (`"a" < "A" < "b"`). Number printing does not change; it is always invariant.
+- `[runtime] gc = "server"` gives each core its own heap: best for long-running, allocation-heavy parallel
+  work. The default workstation GC suits short programs. Tuning gen0 size or `GCConserveMemory` measured no
+  gain.
+
+Measured and not worth changing: turning off tiered compilation or PGO helps short programs and slows long ones
+(use `--native` instead); precompiling the Alice runtime with ReadyToRun made no measurable start-up
+difference.
 
 ## A checklist
 

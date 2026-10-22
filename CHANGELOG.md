@@ -4,6 +4,9 @@
 
 - Owned results lent straight to a borrowing parameter (`t += dist(seq(a), seq(b))`) live in a temporary for the statement and go back to the pool after it. `benchmarks/gc` `rows`: 0.06 MiB per run down to 0.00.
 - `alice build file.al --native` keeps the directory layout of the entry file and everything it `require`s. A flat copy broke relative `require` paths, so multi-file programs could not be built natively. `benchmarks/alice/celeste_update` now builds: 1.8 ms per trial native against 11.2 ms under the JIT (the program ends before tiered compilation warms up), 15.5 MB against 40 MB peak.
+- `[runtime] globalization = "invariant"` in `alice.toml`: no ICU at run time, 2-4 MB less memory on every program measured. Strings sort ordinally (Ruby's order) in that mode; the default stays `culture`.
+- Runtime knob survey (median of 5, four program shapes): turning off tiered compilation, PGO or quick JIT for loops helps short programs and slows long ones; ReadyToRun for `Alice.Runtime.dll` and GC gen0/conserve tuning gave no gain. The performance guide records the results and recommends `--native` for short-lived programs.
+- Guide: no `rescue` modifier and no `<` on strings (use `<=>`) in the Ruby habits table.
 - Every `benchmarks/alice` program builds with NativeAOT with no trimming or AOT warnings and prints the same results as under the JIT, using 20-70% less memory.
 - Forks of `1 + l.check + r.check` over nullable tree children stay serial on purpose: forking it measured 21.5 -> 32.6 ms on `benchmarks/gc` `trees` (tasks of under a microsecond). The reason is recorded in the code and a test.
 

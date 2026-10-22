@@ -19,6 +19,14 @@ gc = "workstation"   # default
 
 Measured on the polyglot suite: server GC started slower and used up to 70% more RSS on short runs (merkle: 126 MB → 216 MB), and was ~13% faster only on one long allocation-heavy workload. The usual .NET environment variables (`DOTNET_gcServer`, `DOTNET_GCgen0size`, ...) still override the configuration for experiments.
 
+### Globalization
+
+`[runtime] globalization = "invariant"` sets `InvariantGlobalization`: ICU is not loaded, which measured 2-4 MB
+less resident memory on every program tried (hello world, a game update loop, an allocation-heavy interpreter,
+n-body). String sorting and `CompareTo` become ordinal (`A,B,Z,a,b,e,é`, Ruby's order) instead of linguistic
+(`a,A,b,B,e,é,Z`). Alice prints and parses numbers with the invariant culture in both modes. The default stays
+`culture`, because switching changes the order of sorted strings in existing programs.
+
 ## What the compiler keeps off the heap
 
 | Source | Without Alice's lowering | What Alice emits |
