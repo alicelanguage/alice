@@ -16,7 +16,12 @@ public sealed partial class Lowerer
     string? boundLo, boundHi;
     bool inParallelGen;
 
-    static readonly HashSet<string> PureExt = new() { "abs", "sqrt", "floor", "ceil", "round", "to_i", "to_f", "to_f32", "to_i64", "even_q", "odd_q", "zero_q", "succ", "pred" };
+    static readonly HashSet<string> PureExt = new() { "min", "max", "sum", "size", "length", "abs", "sqrt", "floor", "ceil", "round", "to_i", "to_f", "to_f32", "to_i64", "even_q", "odd_q", "zero_q", "succ", "pred",
+        // numeric primitives (ADR 0013): pure functions of their receiver and arguments
+        "to_i8", "to_i16", "to_i32", "to_u8", "to_u16", "to_u32", "to_u64", "to_f64", "to_i_b", "to_i8_b", "to_i16_b", "to_i32_b", "to_i64_b",
+        "to_u8_b", "to_u16_b", "to_u32_b", "to_u64_b", "popcount", "bit_length", "trailing_zeros_count", "leading_zeros_count", "sign", "fdiv",
+        "tdiv", "remainder", "clamp", "between_q", "gcd", "lcm", "cbrt", "log", "log2", "log10", "truncate", "nan_q", "infinite_q", "finite_q",
+        "positive_q", "negative_q" };
 
     MExpr? ParallelOrSerial(CallExpr c, string name)
     {
@@ -45,14 +50,14 @@ public sealed partial class Lowerer
         var captured = Captured(c);
         if (captured == null) { pre.AddRange(serial); return rSerial; }
         string helper = $"__par_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
-        string ps = string.Join(", ", captured.Select(l => $"{TypeCs(l.Type)} {l.CsName}"));
+        string ps = string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
         string args = string.Join(", ", captured.Select(l => l.CsName));
         var big = new MCode($"{n} >= {Threshold} && global::Alice.Runtime.Par.Workers > 1");
         var hp = new Backend.Printer("", 1);
         if (resultType == null)
         {
             var range = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel } } };
-            hp.Stmt(new MExprStmt { E = range });
+            hp.Root(new MExprStmt { E = range });
             Extra.Add($"private static void {helper}({ps})\n{{\n{hp}}}\n");
             pre.Add(new MIf { Cond = big, Then = { new MExprStmt { E = new MCode($"{helper}({args})") } }, Else = serial });
             return MCode.Empty;
@@ -66,7 +71,7 @@ public sealed partial class Lowerer
             Name = $"Reduce<{T}>",
             Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode(combine!) },
         };
-        hp.Stmt(new MReturn { Value = reduce });
+        hp.Root(new MReturn { Value = reduce });
         Extra.Add($"private static {T} {helper}({ps})\n{{\n{hp}}}\n");
         pre.Add(new MDecl { Name = res, TypeCs = T, Init = new MCode("default") });
         serial.Add(new MAssign { Target = new MCode(res), Value = rSerial });

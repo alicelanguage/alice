@@ -17,7 +17,7 @@ public sealed class Lexer
     static readonly string[] Ops3 = { "**=", "<=>", "===", "...", "||=", "&&=", "<<=", ">>=" };
     static readonly string[] Ops2 = { "..", "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "|=", "&=", "^=", "<<", ">>", "**", "&.", "@[", "=~", "!~" };
     const string Ops1 = "+-*/%=<>!&|^~.,:;?()[]{}";
-    const string Cont = " , . :: + - * / % ** = == != < > <= >= && || -> => += -= *= /= %= |= &= ^= ||= &&= **= & ^ << >> ? : ";
+    const string Cont = " , . :: + - * / % &+ &- &* ** = == != < > <= >= && || -> => += -= *= /= %= |= &= ^= ||= &&= **= & ^ << >> ? : ";
 
     public Lexer(string src, string file, int line)
     {
@@ -202,14 +202,40 @@ public sealed class Lexer
         if (src[pos] == '0' && (At(1) == 'x' || At(1) == 'b'))
         {
             sb.Append(src[pos]); Adv(); sb.Append(src[pos]); Adv();
-            while (pos < src.Length && (char.IsLetterOrDigit(src[pos]) || src[pos] == '_') && !(src[pos] == '_' && char.IsLetter(At(1)) && At(1) != 'e'))
+            // `_` separates digits (0xFFFF_FFFF) unless it starts a type suffix (0xFF_u8, 0x1_f32)
+            bool Suffix() => src[pos] == '_' && ((At(1) is 'i' or 'u' && char.IsDigit(At(2)))
+                || (At(1) == 'f' && (At(2), At(3)) is ('3', '2') or ('6', '4') && !char.IsLetterOrDigit(At(4))));
+            while (pos < src.Length && (char.IsLetterOrDigit(src[pos]) || src[pos] == '_') && !Suffix())
             {
                 if (src[pos] != '_') sb.Append(src[pos]);
                 Adv();
             }
-            Add(kind, sb.ToString(), l, c);
-            return;
         }
+        else Number(sb, ref kind);
+        string num = sb.ToString();
+        bool radix = num.Length > 1 && num[1] is 'x' or 'b';
+        if (At(0) == '_' && char.IsLetter(At(1))) Adv();
+        int s = pos;
+        while (pos < src.Length && char.IsLetterOrDigit(src[pos])) Adv();
+        string suf = src.Substring(s, pos - s);
+        string text = num;
+        if (suf == "i64" || suf == "L") text = num + "L";
+        else if (suf == "u64" || suf == "UL") text = num + "UL";
+        else if (suf == "u32" || suf == "U") text = num + "U";
+        else if (radix && suf is "f32" or "f64") { text = $"(({(suf == "f32" ? "float" : "double")}){num})"; kind = "float"; }   // C# has no hex float literal
+        else if (suf == "f32" || suf == "f") { text = num + "f"; kind = "float"; }
+        else if (suf == "f64" || suf == "d") { text = num + "d"; kind = "float"; }
+        else if (suf == "m") { text = num + "m"; kind = "float"; }
+        else if (suf == "u8") text = "((byte)" + num + ")";
+        else if (suf == "i8") text = "((sbyte)" + num + ")";
+        else if (suf == "i16") text = "((short)" + num + ")";
+        else if (suf == "u16") text = "((ushort)" + num + ")";
+        else if (suf != "" && suf != "i32") throw Err("unknown number suffix '" + suf + "'");
+        Add(kind, text, l, c);
+    }
+
+    void Number(StringBuilder sb, ref string kind)
+    {
         Digits(sb);
         if (At(0) == '.' && char.IsDigit(At(1)))
         {
@@ -224,24 +250,6 @@ public sealed class Lexer
             if (At(0) == '-' || At(0) == '+') { sb.Append(src[pos]); Adv(); }
             Digits(sb);
         }
-        string num = sb.ToString();
-        if (At(0) == '_' && char.IsLetter(At(1))) Adv();
-        int s = pos;
-        while (pos < src.Length && char.IsLetterOrDigit(src[pos])) Adv();
-        string suf = src.Substring(s, pos - s);
-        string text = num;
-        if (suf == "i64" || suf == "L") text = num + "L";
-        else if (suf == "u64" || suf == "UL") text = num + "UL";
-        else if (suf == "u32" || suf == "U") text = num + "U";
-        else if (suf == "f32" || suf == "f") { text = num + "f"; kind = "float"; }
-        else if (suf == "f64" || suf == "d") { text = num + "d"; kind = "float"; }
-        else if (suf == "m") { text = num + "m"; kind = "float"; }
-        else if (suf == "u8") text = "((byte)" + num + ")";
-        else if (suf == "i8") text = "((sbyte)" + num + ")";
-        else if (suf == "i16") text = "((short)" + num + ")";
-        else if (suf == "u16") text = "((ushort)" + num + ")";
-        else if (suf != "" && suf != "i32") throw Err("unknown number suffix '" + suf + "'");
-        Add(kind, text, l, c);
     }
 
     void Digits(StringBuilder sb)
@@ -335,6 +343,8 @@ public sealed class Lexer
         string? op = null;
         foreach (var o in Ops3) if (string.CompareOrdinal(src, pos, o, 0, 3) == 0) { op = o; break; }
         if (op == null) foreach (var o in Ops2) if (string.CompareOrdinal(src, pos, o, 0, 2) == 0) { op = o; break; }
+        // wrapping arithmetic `&+ &- &*` (but `&->` stays a block-pass of a lambda)
+        if (op == null && At(0) == '&' && At(1) is '+' or '-' or '*' && !(At(1) == '-' && At(2) == '>')) op = src.Substring(pos, 2);
         if (op == null && Ops1.Contains(src[pos])) op = src[pos].ToString();
         if (op == null) throw Err($"unexpected character '{src[pos]}'");
         for (int i = 0; i < op.Length; i++) Adv();

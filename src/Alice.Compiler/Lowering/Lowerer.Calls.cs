@@ -20,6 +20,9 @@ public sealed partial class Lowerer
         }
         if (c.Res == "ext" && c.Block != null && TryInline(c) is MExpr inlined) return inlined;
         if (c.Res == "ext" && c.Block == null && TryFuseSink(c) is MExpr fused) return fused;
+        if (c.Res == "ext" && c.Block == null && c.Args.Count == 0 && Binder.Mangle(c.Name) is "size" or "length" && TryFlatSize(c) is MExpr rows) return rows;
+        if (c.Res == "ext" && c.Block == null && c.Args.Count == 0 && c.Recv != null && WideningCast(c.Name, c.Recv.Type.Cs) is string to)
+            return new MCast { TypeCs = to, E = Expr(c.Recv) };
         // xs.size / s.length -> the Length/Count member itself (no call; the JIT sees the array length)
         if (c.Res == "ext" && c.Block == null && c.Args.Count == 0 && c.Recv != null && Binder.Mangle(c.Name) is "size" or "length" or "count")
         {
@@ -68,4 +71,20 @@ public sealed partial class Lowerer
     }
 
     static string TypeArgList(CallExpr c) => c.TypeArgTypes.Count == 0 ? "" : "<" + string.Join(", ", c.TypeArgTypes.Select(TypeCs)) + ">";
+
+    static readonly HashSet<string> SignedNarrowToLong = ["sbyte", "short", "int", "long", "byte", "ushort", "uint"];
+    static readonly HashSet<string> IntoInt = ["sbyte", "short", "int", "byte", "ushort"];
+
+    /// <summary>
+    /// A conversion that can never fail is a plain cast: `x.to_i64` on Int32, any number `.to_f`. The checked
+    /// generic helper (CreateChecked) is a call the JIT does not inline; narrowing conversions keep it.
+    /// </summary>
+    static string? WideningCast(string name, string from) => (name, from) switch
+    {
+        ("to_f" or "to_f64", "sbyte" or "short" or "int" or "long" or "byte" or "ushort" or "uint" or "ulong" or "float" or "double") => "double",
+        ("to_f32", "sbyte" or "short" or "int" or "long" or "byte" or "ushort" or "uint" or "ulong" or "float" or "double") => "float",
+        ("to_i64", _) when SignedNarrowToLong.Contains(from) => "long",
+        ("to_i" or "to_i32", _) when IntoInt.Contains(from) => "int",
+        _ => null,
+    };
 }

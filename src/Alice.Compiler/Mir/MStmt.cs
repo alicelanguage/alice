@@ -49,6 +49,7 @@ public sealed class MWhile : MStmt
 public sealed class MFor : MStmt
 {
     public string Var = "";
+    public string? VarType;          // null => var (inferred from Start)
     public MExpr Start = null!;
     public string Cmp = "<";
     public MExpr End = null!;
@@ -83,7 +84,11 @@ public sealed class MTry : MStmt
     public List<MStmt>? Finally;
 }
 
-public sealed class MBlock : MStmt { public List<MStmt> Body = new(); }
+public sealed class MBlock : MStmt
+{
+    public List<MStmt> Body = new();
+    public bool Unchecked;   // C# `unchecked { }`
+}
 
 public sealed class MUsing : MStmt
 {

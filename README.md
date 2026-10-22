@@ -141,6 +141,7 @@ val limit = 10  # cannot be reassigned
 | [`samples/raytracer`](samples/raytracer) | operator overloading on value types, parallel rendering, image output |
 | [`samples/fractal`](samples/fractal) | parallel Mandelbrot zoom video |
 | [`samples/wonderland`](samples/wonderland) | text adventure written as a Ruby-style DSL |
+| [`samples/wonderland3d`](samples/wonderland3d) | psychedelic 3D film, deterministic 30-second MP4 export and Alice-synthesized music |
 | [`samples/celeste`](samples/celeste) | Celeste Classic rewritten in Alice (raylib), 28 tests |
 | [`samples/Breakout`](samples/Breakout), [`BounceGame`](samples/BounceGame) | MonoGame games |
 | [`samples/AliceLib`](samples/AliceLib) + [`CSharpApp`](samples/CSharpApp) | C# ⇄ Alice interop |

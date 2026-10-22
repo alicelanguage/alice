@@ -32,7 +32,22 @@ public static class Manifest
         if (build.TryGetValue("native", out var nat) && nat is true)
             props.Append("    <PublishAot>true</PublishAot>\n    <OptimizationPreference>Speed</OptimizationPreference>\n");
 
+        var runtime = toml.GetValueOrDefault("runtime") ?? new Dictionary<string, object>();
+        string gc = runtime.TryGetValue("gc", out var g) ? (string)g : "workstation";
+        var (server, concurrent, conserve) = gc switch
+        {
+            // short-lived CLIs and benchmarks: one heap, fast startup, low RSS
+            "workstation" => (false, true, (string?)null),
+            // long-running, allocation-heavy parallel work: one heap per core (DATAS keeps it adaptive)
+            "server" => (true, true, null),
+            "low-memory" => (false, false, "7"),
+            _ => throw new InvalidOperationException($"[runtime] gc = \"{gc}\" is not a GC mode (expected one of: workstation, server, low-memory)"),
+        };
+        props.Append($"    <ServerGarbageCollection>{(server ? "true" : "false")}</ServerGarbageCollection>\n");
+        props.Append($"    <ConcurrentGarbageCollection>{(concurrent ? "true" : "false")}</ConcurrentGarbageCollection>\n");
+
         var items = new StringBuilder();
+        if (conserve != null) items.Append($"    <RuntimeHostConfigurationOption Include=\"System.GC.ConserveMemory\" Value=\"{conserve}\" />\n");
         foreach (var (dep, spec) in toml.GetValueOrDefault("dependencies") ?? new Dictionary<string, object>())
         {
             if (spec is string version)

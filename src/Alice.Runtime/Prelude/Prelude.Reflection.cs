@@ -11,14 +11,15 @@ namespace Alice.Runtime;
 public static partial class Prelude
 {
     const BindingFlags Inst = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-    static readonly ConcurrentDictionary<(Type, string), FieldInfo?> FieldCache = new();
+    // lazy: initialized on first use, not when a program first touches Prelude (StartupTests)
+    static class FieldCacheHolder { public static readonly ConcurrentDictionary<(Type, string), FieldInfo?> Value = new(); }
 
     static string IvarName(FieldInfo f) =>
         f.Name.StartsWith('<') && f.Name.Contains(">k__BackingField") ? f.Name[1..f.Name.IndexOf('>')] : f.Name.TrimStart('@');
 
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "Ruby reflection is opt-in.")]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Ruby reflection is opt-in.")]
-    static FieldInfo? Ivar(Type t, string name) => FieldCache.GetOrAdd((t, name.TrimStart('@')), FindIvar);
+    static FieldInfo? Ivar(Type t, string name) => FieldCacheHolder.Value.GetOrAdd((t, name.TrimStart('@')), FindIvar);
 
     [UnconditionalSuppressMessage("Trimming", "IL2080", Justification = "Ruby reflection is opt-in.")]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Ruby reflection is opt-in.")]

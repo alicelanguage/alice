@@ -12,7 +12,7 @@ public static class Features
 {
     static readonly string[] Keywords = ("def class module struct enum interface record lib fun if elsif else unless while until for in do end case when then " +
         "begin rescue ensure return break next yield self super nil true false and or not require using include extend getter setter property " +
-        "spawn async await val raise loop lambda proc describe context it expect private protected public abstract").Split(' ');
+        "spawn async await val own par unchecked raise loop lambda proc describe context it expect private protected public abstract").Split(' ');
 
     static readonly Dictionary<string, string> KeywordDocs = new()
     {
@@ -22,6 +22,9 @@ public static class Features
         ["module"] = "module Name ... end — namespace for `def self.` functions and mixins",
         ["val"] = "val name = expr — immutable binding (reassignment is a compile error, AL0203)",
         ["spawn"] = "spawn { ... } — run concurrently; data races are compile errors (AL0202)",
+        ["own"] = "own name = Array(T).new(n) — owned buffer, recycled where it is dropped; escapes are AL0207, use after move AL0208",
+        ["par"] = "par for i in a...b ... end — parallel loop at any size; dependent iterations are AL0209",
+        ["unchecked"] = "unchecked ... end — integer + - * inside wrap instead of raising",
         ["using"] = "using System.Text — import a .NET namespace",
         ["require"] = "require \"./file\" — load another Alice file",
     };

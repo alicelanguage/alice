@@ -129,9 +129,17 @@ public sealed partial class Binder
             if (owner.Clr != null)
             {
                 var mem = ClrTypes.Lookup(owner.Clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs);
+                // Alice spelling of a .NET static: Math.sqrt / Math.atan2 / Console.write_line -> Sqrt / Atan2 / WriteLine
+                if (mem == null && ClrTypes.Pascal(c.Name) is { } pascal
+                    && ClrTypes.Lookup(owner.Clr, pascal, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs) is { } pm)
+                {
+                    c.Name = pascal;
+                    mem = pm;
+                }
                 if (mem != null)
                 {
                     c.Res = mem.Kind == "method" ? "clr" : "field";
+                    c.Sym = mem.Method;   // the purity gate checks [Pure] on Alice.Runtime methods
                     pendingConcurrent = conc && c.Block != null;
                     if (c.Block != null) BindLambda(c.Block, new List<AType>());
                     return mem.Type;

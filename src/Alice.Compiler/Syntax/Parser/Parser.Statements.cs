@@ -34,6 +34,20 @@ public sealed partial class Parser
         else if (IsKw("for")) s = For();
         else if (IsKw("case")) s = Case();
         else if (IsKw("begin")) s = Begin();
+        else if (IsKw("unchecked") && Peek(1).Kind == "nl")
+        {
+            Next();
+            var u = At(new BeginStmt { Body = Block(" end "), Unchecked = true }, tok);
+            ExpectKw("end");
+            s = u;
+        }
+        else if (IsKw("par") && Peek(1).Kind == "id" && Peek(1).Text == "for")
+        {
+            Next();
+            var pf = For();
+            pf.Par = true;
+            s = pf;
+        }
         else if (IsKw("loop") && (Peek(1).Text == "do" || Peek(1).Text == "{")) s = Loop();
         else if (IsKw("using") && Peek(1).Kind == "id" && Peek(2).Text == "=") s = UsingResource();
         else s = Simple();
@@ -68,6 +82,17 @@ public sealed partial class Parser
             return At(new NextStmt { Value = AtStmtEnd() ? null : Expression() }, tok);
         }
         if (IsKw("raise")) { Next(); return At(new RaiseStmt { Value = Expression() }, tok); }
+        if (IsKw("own") && Peek(1).Kind == "id" && !IsKeyword(Peek(1).Text) && Peek(2).Kind == "op" && Peek(2).Text == "=")
+        {
+            Next();
+            var nameTok = Cur;
+            string name = Next().Text;
+            Next();
+            SkipNl();
+            Expr v = Expression();
+            DeclareLocal(name);
+            return At(new Assign { Target = At(new NameExpr { Name = name }, nameTok), Value = v, Own = true }, tok);
+        }
         if (IsKw("val") && Peek(1).Kind == "id")
         {
             Next();

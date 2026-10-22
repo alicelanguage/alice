@@ -99,6 +99,28 @@ val k = 3
 k = 4              # compile error: immutable
 ```
 
+### Ownership (ADR 0016)
+
+A local array of unmanaged elements that is only indexed, sized, iterated, lent to a
+parameter that does not keep it, moved to another such local or returned is *owned*:
+the compiler hands its buffer back to a per-thread pool where the program drops it, so
+loops that build a fresh array per iteration stop allocating. This is inferred; `own`
+turns it into a checked contract.
+
+```crystal
+own prev = Array(Int32).new(n + 1)
+for i in 1..n
+  own row = Array(Int32).new(n + 1)   # reuses the buffer released below
+  row[0] = i
+  # ... fill row from prev ...
+  prev = row                          # move: prev's old buffer is released, row is moved
+end
+prev[n]                               # prev released after the read
+```
+
+`own a` that escapes (stored, captured, passed to .NET) is AL0207; reading a moved
+local before reassigning it is AL0208.
+
 ## 4. Operators
 
 | Group | Operators |
@@ -113,7 +135,7 @@ k = 4              # compile error: immutable
 | Array | `a + b`, `a - b`, `a & b` (intersection), `a \| b` (union) |
 | String | `"%05d\|%.2f" % [42, 3.14]` (format), `"ab" * 3` (repeat) |
 
-Integer `/` on ints is integer division; `a/2` is division, not a regex. User operators: `def +(o : V2) : V2`.
+Integer `/` on ints is integer division; `a/2` is division, not a regex. Signed `/` and `%` are floored (`-7 / 2 == -4`, `-7 % 3 == 2`, like `divmod`); `tdiv`/`remainder` truncate. Integer overflow raises `OverflowException`; `&+ &- &*` wrap. Floats print as `2.0`, `1.0e-07`, `1.0e+16` (ADR 0013). Limits: `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`. User operators: `def +(o : V2) : V2`.
 
 ## 5. Methods
 
@@ -376,7 +398,7 @@ a.send(1)
 a.stop                               # drains mailbox
 ```
 
-`Channel(T)`: `send`, `receive`, `close`, `each`, `send_async`, `wait_async`. `Actor(T)` runs on an async mailbox: 2000 actors hold no threads.
+`Channel(T)`: `send`, `receive`, `try_receive`, `close`, `each`, `send_async`, `receive_async`, `wait_async`. `Channel(T).new` is unbuffered: `send` returns once a receiver has taken the value. `Channel(T).new(n)` buffers up to `n` values; `send` blocks only when full. After `close`, pending values still drain, `send` raises `ClosedChannelError`, and `receive` raises once the channel is empty; `each` stops. Blocking `send`/`receive` allocate nothing. `Actor(T)` runs on an async mailbox: 2000 actors hold no threads.
 
 ### Async
 
@@ -392,6 +414,38 @@ main_async.wait
 ```
 
 Return type inferred as `Task<T>`.
+
+### Explicit parallel loops: `par for`
+
+Counted loops already run in parallel when the compiler proves their iterations independent and the trip
+count is large (65,536+, or 2+ when the body has nested loops or calls). `par for` drops the size heuristic
+and makes the proof a requirement:
+
+```crystal
+par for y in 0...h
+  for x in 0...w
+    img[y * w + x] = shade(x, y)   # iteration y owns row y
+  end
+end
+```
+
+If the iterations are not provably independent (a write outside `a[i]` / `a[i * w + j]`, a loop-carried
+read such as `a[i - 1]` of the written array, an impure call) it is compile error AL0209 rather than a silent
+serial loop.
+
+### Wrapping regions: `unchecked`
+
+Integer `+ - *` raise `OverflowException` on overflow (ADR 0013). Inside `unchecked ... end` they wrap, the
+region form of `&+ &- &*` for hashes and PRNGs:
+
+```crystal
+h = 0
+unchecked
+  for c in s.chars
+    h = h * 31 + c.ord
+  end
+end
+```
 
 ### Race safety (AL0202)
 
@@ -439,7 +493,7 @@ Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
 | String | `size center ljust rjust chomp chop strip squeeze count(set) index rindex starts_with? ends_with? includes? include? sub gsub(str\|Regex) tr delete lines each_line each_char chars scan(Regex\|pattern) match? repeat(n) to_sym succ bytes hex oct to_i to_f upcase downcase capitalize swapcase title reverse split` |
 | Array / Enumerable | `each each_with_index map select reject find find_index count sum min max minmax min_by max_by sort sort{\|a,b\|} sort_by uniq uniq{} reverse reverse_each first(n) last(n) take drop take_while drop_while each_slice each_cons zip flatten compact group_by partition tally chunk_while flat_map product sample shuffle(Random?) rotate reduce inject each_with_object step(n) cycle(n) combination(k) permutation(k) join to_a to_h include? cover?` |
 | Hash | `each each_pair map select reject fetch dig merge key? has_key? value? keys values invert to_a min_by max_by sort_by transform_values transform_keys group_by sum count any? all?` (blocks get `\|k, v\|`) |
-| Int / Float | `gcd lcm digits divmod clamp between? round(n) floor(n) ceil(n) abs even? odd? zero? positive? negative? times upto downto step(limit, by) to_s(base) sqrt cbrt log log2 log10 truncate nan? infinite?` |
+| Int / Float | `gcd lcm digits divmod clamp between? round(n) floor(n) ceil(n) abs even? odd? zero? positive? negative? times upto downto step(limit, by) to_s(base) sqrt cbrt log log2 log10 truncate nan? infinite? finite? fdiv sign tdiv remainder popcount leading_zeros_count trailing_zeros_count bit_length to_i8..to_u64 to_i32 to_f64 to_f32 (checked) to_X! (wrapping)` |
 | Range | Enumerable methods plus `step size include? cover? to_a sum` |
 | Free functions | `puts print p gets rand exit format(fmt, ...) read_file write_file file_exists? read_lines sleep(sec) now env(name) to_json(obj) parse_json(text)` |
 

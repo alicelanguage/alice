@@ -19,7 +19,7 @@ expect() {
   printf 'PASS %s\n' "$file"
 }
 
-expect basics/hello.al $'Hello, Alice!\nsimd dot = 30\nsquares = [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]'
+expect basics/hello.al $'Hello, Alice!\nsimd dot = 30.0\nsquares = [1, 4, 9, 16, 25, 36, 49, 64, 81, 100]'
 expect data/invoices.al $'paid invoices=3\nrevenue cents=4250\nlarge invoice cents=3000'
 expect data/json_report.al $'{"service":"alice","healthy":true,"requests":42}\nALICE: 42 requests'
 expect concurrency/channels.al 'sum of squares=385'

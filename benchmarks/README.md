@@ -173,3 +173,38 @@ clang's vectorization/scheduling of the fixed 5-body loop, which RyuJIT does not
 | Alice managed (JIT, FMA) | ~43.6 |
 
 Identical checksum (-169086185). With this, Alice matches or beats C on all five C benchmarks (run 6 + run 7).
+
+## Run 8 — 0.12.0: ownership, lean Par scheduler, same GC on both sides (2026-10-22)
+
+`run.sh` now runs Alice programs with `DOTNET_gcServer=1`: the C# baselines set `ServerGarbageCollection`, while
+generated Alice programs default to workstation GC (ADR 0013), so earlier `binarytrees` gaps compared two GCs.
+Alice serial vs C# serial (`DOTNET_PROCESSOR_COUNT=1`, same GC) was 300 vs 235 ms before that was found; with the
+same server GC both land at ~170 ms. The self-recursive "kernel" rule (ADR 0014) now also requires a primitive
+result: object-building recursion such as `bottom_up` keeps tier-1 PGO (+3 % when forced to full opt).
+
+| benchmark | Alice ms | C# idiomatic ms | C# hand-opt ms | Alice/idiomatic | Alice/hand-opt | checksum |
+|---|---:|---:|---:|---:|---:|---|
+| nbody | 47.8 | 53.3 | 48.9 | 0.90 | 0.98 | ok |
+| binarytrees | 171.3 | 167.6 | 91.4 | 1.02 | 1.87 | ok |
+| pipeline | 2.0 | 37.7 | 2.1 | 0.05 | 0.94 | ok |
+| expr | 10.3 | 11.0 | 10.5 | 0.94 | 0.99 | ok |
+| wordfreq | 6.9 | 80.5 | 5.3 | 0.09 | 1.30 | ok |
+| mandelbrot | 9.7 | 104.5 | 8.7 | 0.09 | 1.12 | ok |
+| parallel | 34.8 | 40.4 | 34.0 | 0.86 | 1.02 | ok |
+| particles | 2.4 | 135.8 | 2.4 | 0.02 | 1.02 | ok |
+
+Polyglot suite (`alicelangbench/suite`, cold process, median of 7, CPUs 2-11) at sizes where the algorithm
+dominates startup:
+
+| workload (size) | Alice ms | C# ms | C#/Alice |
+|---|---:|---:|---:|
+| editdist (16384) | 583.7 | 595.0 | 1.02 |
+| hashmap (262144) | 172.9 | 387.3 | 2.24 |
+| merkle (262144) | 406.9 | 639.2 | 1.57 |
+| symreg (262144) | 118.7 | 558.3 | 4.70 |
+| tree-radix (262144) | 157.4 | 494.5 | 3.14 |
+| kmeans (262144) | 148.9 | 167.1 | 1.12 |
+| queens (1024 → n=14) | 913.0 | 1004.7 | 1.10 |
+
+The other ten workloads cap their input internally and finish in 55-90 ms, inside process-startup noise
+(±7 ms) for both languages.

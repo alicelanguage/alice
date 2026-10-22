@@ -12,7 +12,9 @@
 *.user
 *.userosscache
 *.sln.docstates
-
+site/
+github/
+playground/
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
@@ -484,3 +486,4 @@ $RECYCLE.BIN/
 
 # Independent editor extensions repository
 extensions/
+samples/fractal/zoom/

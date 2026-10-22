@@ -20,6 +20,7 @@
 | 0008 | Compile-time race safety (AL0202) |
 | 0009 | [Tested CLI distribution archives](adr/0009-release-distribution.md) |
 | 0010 | [Toolchain manager, installers and nightlies](adr/0010-toolchains-and-updates.md) |
+| 0016 | [Ownership of local arrays and pooled buffers](adr/0016-ownership-and-pooled-buffers.md) |
 
 ## Projects
 

@@ -33,7 +33,8 @@ result() { "$@" | awk '/^RESULT/ {print $3, $4; f=1} END {if (!f) print "- -"}';
 echo "| benchmark | Alice ms | C# idiomatic ms | C# hand-opt ms | Alice/idiomatic | Alice/hand-opt | checksum |"
 echo "|---|---:|---:|---:|---:|---:|---|"
 for b in "${BENCHES[@]}"; do
-  read -r a ac < <(result dotnet "$OUT/$b/$b.dll")
+  # same GC as the C# baselines (Bench.CSharp.csproj sets ServerGarbageCollection); Alice programs default to workstation GC
+  read -r a ac < <(result env DOTNET_gcServer=1 dotnet "$OUT/$b/$b.dll")
   read -r i ic < <(result dotnet "$OUT/csharp/Bench.CSharp.dll" "$b" idiomatic)
   read -r h hc < <(result dotnet "$OUT/csharp/Bench.CSharp.dll" "$b" handopt)
   ok="ok"

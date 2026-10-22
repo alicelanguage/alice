@@ -17,8 +17,9 @@ dotnet run --project src/Alice.Cli -- emit file.al
 |---|---|
 | `src/Alice.Compiler/Syntax` | lexer, parser, AST |
 | `src/Alice.Compiler/Semantics` | binder (incl. `Binder.Races`, AL0202), symbols, types (HIR) |
-| `src/Alice.Compiler/Lowering` | AST/HIR -> MIR: Iterators, Vectorize, Parallel, LoopPar, Idioms, SoA, SoAFusion, Simt |
+| `src/Alice.Compiler/Lowering` | AST/HIR -> MIR: Iterators, Vectorize, Parallel, LoopPar, Fork (ADR 0015), StackArrays, Idioms, SoA, SoAFusion, Simt |
 | `src/Alice.Compiler/Mir` | MIR nodes |
+| `src/Alice.Compiler/Optimizer` | MIR pass pipeline (ADR 0014): `MirRewriter`, `MirFacts`, `Passes/` (const-fold, strength-reduce, literal-minmax, induction) |
 | `src/Alice.Compiler/Backend` | C# emitter/printer, Roslyn |
 | `src/Alice.Runtime` | runtime library (pure C#) |
 | `src/Alice.Cli` | `alice` entrypoint (thin): `Commands/`, `Projects/` (alice.toml, workspace, lock) |

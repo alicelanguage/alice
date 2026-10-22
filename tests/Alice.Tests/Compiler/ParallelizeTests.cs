@@ -60,6 +60,7 @@ public class ParallelizeTests
     }
 }
 
+[Collection("console")]   // some tests run programs and capture stdout
 public class LoopParallelizeTests
 {
     static System.Reflection.MethodInfo Compile(string src) =>
@@ -125,4 +126,130 @@ public class LoopParallelizeTests
     [InlineData("def f(n : Int32)\n  s = 0\n  for i in 0...n\n    s += s + i\n  end\n  s\nend")]
     public void Order_dependent_loops_stay_serial(string src)
         => Assert.DoesNotContain("Par.", AliceCompiler.Transpile(src + "\n"));
+
+    [Fact]
+    public void Tiny_inner_stencil_loops_stay_serial()
+    {
+        // game-of-life neighbourhood: the 3-trip dy loop sits inside the per-cell loops; dispatching it per cell is pure overhead
+        const string src = "def f(cells : Array(Int32), n : Int32) : Int32\n  total = 0\n  for y in 0...n\n    for x in 0...n\n      count = 0\n      for dy in -1..1\n        for dx in -1..1\n          count += cells[((y + dy + n) % n) * n + (x + dx + n) % n]\n        end\n      end\n      total += count\n    end\n  end\n  total\nend\n";
+        var cs = AliceCompiler.Transpile(src);
+        Assert.DoesNotMatch(@"for \(var d[xy]_\d+ = __a", cs);   // the 3-trip neighbourhood loops are never the parallel loop
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(cs, @">= 2 && global::Alice.Runtime.Par.Workers"));   // only the outermost loop is "heavy"
+    }
+
+    [Fact]
+    public void Constant_short_trip_counts_emit_no_parallel_path()
+    {
+        var cs = AliceCompiler.Transpile("def f(xs : Array(Float64)) : Float64\n  s = 0.0\n  for i in 0...3\n    s += Math.sqrt(xs[i])\n  end\n  s\nend\n");
+        Assert.DoesNotContain("Par.", cs);
+    }
+
+    const string Fib = "def fib(n : Int32) : Int64\n  if n < 2\n    n.to_i64\n  else\n    a = fib(n - 1)\n    b = fib(n - 2)\n    a + b\n  end\nend\n";
+
+    [Fact]
+    public void Independent_pure_recursive_calls_fork_with_lazy_task_creation()
+    {
+        var cs = AliceCompiler.Transpile(Fib);
+        Assert.Contains("global::Alice.Runtime.Par.Forkable", cs);   // below the depth cutoff the calls run inline
+        Assert.Contains("global::Alice.Runtime.Par.Fork(", cs);
+        var f = AliceCompiler.Load(AliceCompiler.Emit([cs], "fork", exe: false)).GetType("Program")!.GetMethod("fib")!;
+        Assert.Equal(75025L, f.Invoke(null, [25]));
+    }
+
+    [Theory]
+    [InlineData("def g(n : Int32) : Int32\n  puts n\n  n\nend\ndef f(n : Int32) : Int32\n  return 0 if n < 1\n  a = f(n - 1)\n  b = g(n)\n  a + b\nend\n")]   // impure callee
+    [InlineData("def f(n : Int32) : Int32\n  return 0 if n < 1\n  a = f(n - 1)\n  b = f(a - 1)\n  a + b\nend\n")]                                  // second call reads the first result
+    [InlineData("def sq(n : Int32) : Int32\n  n * n\nend\ndef f(n : Int32) : Int32\n  a = sq(n)\n  b = sq(n + 1)\n  a + b\nend\n")]               // no recursion: too small to fork
+    public void Forks_need_purity_independence_and_recursion(string src)
+        => Assert.DoesNotContain("Par.Fork", AliceCompiler.Transpile(src));
+
+    [Fact]
+    public void Forked_exceptions_surface_unwrapped()
+    {
+        const string src = "def f(n : Int32) : Int32\n  return 1 / n if n < 1\n  a = f(n - 1)\n  b = f(n - 2)\n  a + b\nend\nputs f(20)\n";
+        Assert.Contains("Par.Fork", AliceCompiler.Transpile(src));
+        Assert.ThrowsAny<DivideByZeroException>(() => AliceCompiler.Run(src));
+    }
+
+    [Fact]
+    public void Forking_method_has_no_closure_on_its_sequential_path()
+    {
+        // lambdas capturing a parameter make Roslyn allocate the closure at method entry, on every recursive call:
+        // the fork lives in a helper so only the forking calls near the root pay for a closure
+        var cs = AliceCompiler.Transpile(Fib);
+        int start = cs.IndexOf("public static long fib(int n)");
+        string body = cs.Substring(start, cs.IndexOf("\n}\n", start) - start);
+        Assert.DoesNotContain("=>", body);
+    }
+
+    const string Radix = "def radix(values : Array(Int64), shift : Int32) : Array(Int64)\n  return values if values.Length < 2 || shift < 0\n  zeros = Array(Int64).new(values.Length)\n  ones = Array(Int64).new(values.Length)\n  z = 0\n  o = 0\n  for v in values\n    if (v >> shift) & 1 == 0\n      zeros[z] = v\n      z += 1\n    else\n      ones[o] = v\n      o += 1\n    end\n  end\n  left = Array(Int64).new(z)\n  right = Array(Int64).new(o)\n  for i in 0...z\n    left[i] = zeros[i]\n  end\n  for i in 0...o\n    right[i] = ones[i]\n  end\n  sl = radix(left, shift - 1)\n  sr = radix(right, shift - 1)\n  out = Array(Int64).new(values.Length)\n  for i in 0...z\n    out[i] = sl[i]\n  end\n  for i in 0...o\n    out[z + i] = sr[i]\n  end\n  out\nend\n";
+
+    [Fact]
+    public void Writes_into_fresh_local_arrays_keep_a_method_pure()
+    {
+        var cs = AliceCompiler.Transpile(Radix + "xs = [5_i64, 3_i64, 9_i64, 1_i64, 7_i64, 2_i64]\nputs radix(xs, 3).inspect\n");
+        Assert.Contains("Par.Fork(", cs);
+        Assert.Equal("[1, 2, 3, 5, 7, 9]", AliceCompiler.Run(Radix + "xs = [5_i64, 3_i64, 9_i64, 1_i64, 7_i64, 2_i64]\nputs radix(xs, 3).inspect\n").Trim());
+    }
+
+    [Theory]
+    [InlineData("def f(xs : Array(Int32), n : Int32) : Int32\n  return 0 if n < 1\n  xs[0] = n\n  a = f(xs, n - 1)\n  b = f(xs, n - 2)\n  a + b\nend\n")]                    // writes the caller's array
+    [InlineData("def f(xs : Array(Int32), n : Int32) : Int32\n  return 0 if n < 1\n  ys = Array(Int32).new(1)\n  ys = xs\n  ys[0] = n\n  a = f(xs, n - 1)\n  b = f(xs, n - 2)\n  a + b\nend\n")]   // alias of a parameter
+    public void Writes_through_shared_arrays_stay_impure(string src)
+        => Assert.DoesNotContain("Par.Fork", AliceCompiler.Transpile(src));
+
+    [Fact]
+    public void Parallel_multi_assign_forks_like_bends_parallel_call()
+    {
+        // Bend: `a b = pow2(p) pow2(p)`; Alice: `a, b = pow2(n - 1), pow2(n - 1)`
+        const string src = "def pow2(n : Int32) : Int64\n  return 1_i64 if n == 0\n  a, b = pow2(n - 1), pow2(n - 1)\n  a + b\nend\nputs pow2(16)\n";
+        Assert.Contains("Par.Fork(", AliceCompiler.Transpile(src));
+        Assert.Equal("65536", AliceCompiler.Run(src).Trim());
+    }
+
+    [Fact]
+    public void Multi_assign_fork_into_existing_variables()
+    {
+        const string src = "def f(n : Int32) : Int64\n  return 1_i64 if n < 2\n  a = 0_i64\n  b = 0_i64\n  a, b = f(n - 1), f(n - 2)\n  a + b\nend\nputs f(20)\n";
+        Assert.Contains("Par.Fork(", AliceCompiler.Transpile(src));
+        Assert.Equal("10946", AliceCompiler.Run(src).Trim());
+    }
+
+    [Fact]
+    public void Loops_calling_pure_runtime_functions_parallelize()
+    {
+        // Digest is marked [Pure] in Alice.Runtime: hashing each index is independent work
+        const string src = "def leaves(n : Int32) : Array(String)\n  out = Array(String).new(n)\n  for i in 0...n\n    out[i] = Digest::SHA256.hexdigest(\"#{i}:x\")\n  end\n  out\nend\nputs leaves(100_000)[99_999]\n";
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
+        Assert.Equal(System.Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("99999:x"))), AliceCompiler.Run(src).Trim());
+    }
+
+    [Fact]
+    public void Loops_calling_unmarked_dotnet_methods_stay_serial()
+    {
+        const string src = "def f(n : Int32) : Array(Int32)\n  out = Array(Int32).new(n)\n  for i in 0...n\n    out[i] = System.Random.Shared.Next(i + 1)\n  end\n  out\nend\n";
+        Assert.DoesNotContain("Par.Range", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void Pure_module_functions_parallelize_through_their_static_receiver()
+    {
+        const string src = "module H\n  def self.sha(t : String) : String\n    Digest::SHA256.hexdigest(t)\n  end\nend\ndef f(n : Int32) : Array(String)\n  out = Array(String).new(n)\n  for i in 0...n\n    out[i] = H.sha(\"#{i}\")\n  end\n  out\nend\n";
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void Literal_array_min_in_a_loop_body_is_pure()
+    {
+        // merkle's pair loop: right = level[[i * 2 + 1, level.size - 1].min]
+        const string src = "def f(level : Array(String)) : Array(String)\n  nxt = Array(String).new((level.size + 1) / 2)\n  for i in 0...nxt.size\n    l = level[i * 2]\n    r = level[[i * 2 + 1, level.size - 1].min]\n    nxt[i] = Digest::SHA256.hexdigest(l + r)\n  end\n  nxt\nend\n";
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void Loops_over_numeric_primitives_parallelize()
+    {
+        const string src = "def f(xs : Array(Float64)) : Array(Int32)\n  out = Array(Int32).new(xs.size)\n  for i in 0...xs.size\n    out[i] = xs[i].log2.floor.to_i32.clamp(0, 99) + xs[i].sign\n  end\n  out\nend\n";
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
+    }
 }

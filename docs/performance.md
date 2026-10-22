@@ -1,6 +1,6 @@
 # Performance model
 
-Alice rewrites common source patterns into the IL shape a hand-optimizing C# author would write (ADR 0007). Inspect with `alice emit file.al`. Code: `src/Alice.Compiler/Lowering/`. Tests: `tests/Alice.Tests/Compiler/`.
+Alice rewrites common source patterns into the IL shape a hand-optimizing C# author would write (ADR 0007). Memory and GC: [heap and GC](heap-gc.md). Parallel recursion: [fork/join](fork-join.md). Inspect with `alice emit file.al`. Code: `src/Alice.Compiler/Lowering/`. Tests: `tests/Alice.Tests/Compiler/`.
 
 ## Pipeline
 
@@ -29,13 +29,34 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | untyped params | one typed specialization per call-site type | Semantics | `LanguageTests.Duck_typing_emits_typed_specializations_not_dynamic` |
 | class without Alice subclass | `sealed`; module `[SkipLocalsInit]` | Backend | `LanguageTests.Leaf_classes_are_sealed_and_locals_skip_init` |
 | capture-free lambda | `static` lambda | Backend | `AllocationTests.Capture_free_lambdas_are_static` |
-| `.alproj` builds | Server + concurrent GC by default (overridable) | `src/Alice.Sdk/Alice.props` | - |
+| `.alproj` builds | workstation + concurrent GC by default; `[runtime] gc = "server"` / `"low-memory"` | `src/Alice.Sdk/Alice.props`, `Projects/Manifest` | `ManifestTests.Runtime_gc_mode_maps_to_msbuild` |
+| loop nested in a serial loop | auto-parallel only for long trip counts (never the threshold-2 "heavy" rule); constant short trip counts: no parallel path | `Lowerer.LoopPar` | `LoopParallelizeTests.Tiny_inner_stencil_loops_stay_serial` |
+| `x / 2^k`, `x % 2^k` (floored) | `x >> k`, `x & (2^k - 1)` | `Optimizer/Passes/StrengthReduction` | `OptimizerTests.Power_of_two_division_compiles_to_a_shift` |
+| integer literal arithmetic | folded (overflow left for Roslyn to report) | `Optimizer/Passes/ConstantFolding` | `OptimizerTests.Constant_folding` |
+| `[a, b, c].min` / `.max` | `Math.Min(Math.Min(a, b), c)`, no array | `Optimizer/Passes/LiteralMinMax` | `AllocationTests` "literal array min" |
+| typed `for (T i...; i < end; ...)`, body never writes `i` | unchecked step (no `add.ovf`); all other integer ops checked | `Optimizer/Passes/InductionVariables` | `OptimizerTests.Induction_step_is_unchecked_only_when_provable` |
+| small non-escaping local array (`Array(T).new(3, v)`, `[x, y]`) | one `stackalloc` buffer at method entry, re-initialized at the declaration | `Lowerer.StackArrays` | `AllocationTests.Non_escaping_small_arrays_live_in_one_stack_buffer`, `Escaping_or_unbounded_arrays_stay_on_the_heap` |
+| counter offsets `i + k`, `i - k` inside a proven range (`.Length` bound <= Array.MaxLength) | unchecked | `Optimizer/Passes/InductionVariables` | `OptimizerTests.Counter_offsets_are_unchecked_only_inside_their_proven_range` |
+| array of fixed-width literal rows filled by a full loop, rows never escape | one flat `T[n * k]`, `a[i * k + j]`, column checked | `Lowerer.FlatRows` | `FlatRowsTests` |
+| `a, b = f(x), g(y)` (pure, independent, recursive) | `Par.Fork` like the two-declaration form | `Lowerer.Fork` | `LoopParallelizeTests.Parallel_multi_assign_forks_like_bends_parallel_call` |
+| integer `+ - *` with operand ranges proven in-type (masks, shifts, widened Int32, literals) | unchecked (no `add.ovf`/`mul.ovf`, no throw path) | `Lowerer.Ranges` | `RangeTests.Masked_hash_arithmetic_is_unchecked`, `Possibly_overflowing_arithmetic_stays_checked` |
+| `x >= 2^31 ? x - 2^32 : x` with x proven in [0, 2^32) (and 8/16-bit forms) | `(long)(int)x`: one sign extension, no branch | `Lowerer.Ranges.TrySignExtend` | `RangeTests.Proven_sign_reinterpretation_is_one_sign_extension` |
+| `xs.sum` / `min` / `max` on a large primitive array | fork/join over SIMD chunks | `Runtime/Parallel/ParReduce` | `ParReduceTests` |
+| `2.0 ** n` (integer `n`), `x ** 2` (float `x`) | `Math.ScaleB(1.0, n)`, `x * x`: bit-identical to `Math.Pow` | `Lowerer.Binary` | `PrimitiveTests.Exact_power_forms_match_math_pow` |
+| `x.to_i64` on Int32, any number `.to_f` (widening) | plain cast; narrowing keeps the checked, inlined helper | `Lowerer.Calls.WideningCast` | `PrimitiveTests.Widening_conversions_are_plain_casts` |
+| `xs.sort` on a large primitive array | fork/join merge sort, pooled buffer | `Runtime/Parallel/ParSort` | `ParSortTests` |
+| `a = f(x)` / `b = f(y)`: pure, independent, recursive | `Par.Fork` in a helper when `Par.Forkable` (top log2(cores)+3 levels), plain calls below | `Lowerer.Fork`, `Par.Fork` | `LoopParallelizeTests.Independent_pure_recursive_calls_fork_with_lazy_task_creation`, `Forks_need_purity_independence_and_recursion` |
+| writes into arrays allocated in the method | still pure (fresh locals cannot alias caller data) | `Lowerer.LoopPar.FreshArrays` | `LoopParallelizeTests.Writes_into_fresh_local_arrays_keep_a_method_pure`, `Writes_through_shared_arrays_stay_impure` |
+| `q, r = a.divmod(b)` | two floored helpers on temps, no array | `Lowerer.Statements` | `AllocationTests` "divmod destructure" |
+| `a.step(limit, k)` with literal `k` | inlined `for` (`+= k` / `-= k`) | `Lowerer.Iterators` | `AllocationTests` "step" |
 
 ## Semantics notes
 
 - Parallelization requires purity; the race checker (AL0202) and purity gate share the same model.
 - Parallel floating-point sums reassociate: results may differ from serial in the last bits. Integer results are exact.
 - Allocation tests must stay at 0 bytes.
+- Integer overflow is checked (ADR 0013); passes remove a check only where it is provably dead (ADR 0014).
+- `ALICE_DISABLE_PASSES=const-fold,strength-reduce,literal-minmax,induction` disables MIR passes for A/B runs.
 
 ## Results
 

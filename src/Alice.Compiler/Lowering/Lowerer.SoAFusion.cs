@@ -138,18 +138,18 @@ public sealed partial class Lowerer
         }
         string helper = $"__fused_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
         var hp = new Backend.Printer("", 1);
-        string sig = string.Join(", ", captured.Select(l => $"{TypeCs(l.Type)} {l.CsName}"));
+        string sig = string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
         string callText = $"{helper}({string.Join(", ", captured.Select(l => l.CsName))})";
         MStmt call;
         if (accT != null)
         {
-            hp.Stmt(new MReturn { Value = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = $"Reduce<{accT}>", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode("static (a, b) => a + b"), new MCode("4096") } } });
+            hp.Root(new MReturn { Value = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = $"Reduce<{accT}>", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode("static (a, b) => a + b"), new MCode("4096") } } });
             Extra.Add($"private static {accT} {helper}({sig})\n{{\n{hp}}}\n");
             call = new MAssign { Target = new MCode(fs.ResultTemp), Value = new MCode(callText) };
         }
         else
         {
-            hp.Stmt(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode("4096") } } });
+            hp.Root(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode("4096") } } });
             Extra.Add($"private static void {helper}({sig})\n{{\n{hp}}}\n");
             call = new MExprStmt { E = new MCode(callText) };
         }
@@ -187,7 +187,7 @@ public sealed partial class Lowerer
         }
         ctx.RemoveAt(ctx.Count - 1);
         soa = saved;
-        o.Add(new MFor { Var = idx, Start = new MCode(vi), Cmp = "<", End = new MCode(end), Body = body });
+        o.Add(new MFor { VarType = "int", Var = idx, Start = new MCode(vi), Cmp = "<", End = new MCode(end), Body = body });
     }
 
     MStmt? VectorFused(FusedSoaStmt fs, HashSet<LocalSym> ps, string store, string vi, string end, string T, string acc)

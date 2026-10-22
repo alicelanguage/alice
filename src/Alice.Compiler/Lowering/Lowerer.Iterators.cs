@@ -13,7 +13,7 @@ public sealed partial class Lowerer
     sealed record Stage(string Kind, LambdaExpr Block);
 
     static readonly HashSet<string> StageNames = new() { "map", "select", "reject" };
-    static readonly HashSet<string> BlockSinks = new() { "each", "each_with_index", "map", "select", "reject", "sum", "count", "any_q", "all_q", "find", "reduce", "times", "upto", "downto" };
+    static readonly HashSet<string> BlockSinks = new() { "each", "each_with_index", "map", "select", "reject", "sum", "count", "any_q", "all_q", "find", "reduce", "times", "upto", "downto", "step" };
     static readonly HashSet<string> PlainSinks = new() { "sum", "size", "length", "count", "to_a", "any_q", "max", "min", "first" };
 
     int noHoist;
@@ -22,7 +22,7 @@ public sealed partial class Lowerer
     {
         string name = Binder.Mangle(c.Name);
         if (noHoist > 0 || !BlockSinks.Contains(name) || c.Block == null || c.Recv == null) return null;
-        if (name is "times" or "upto" or "downto") return CountedLoop(c, name);
+        if (name is "times" or "upto" or "downto" or "step") return CountedLoop(c, name);
         return ParallelOrSerial(c, name);
     }
 
@@ -59,14 +59,19 @@ public sealed partial class Lowerer
     {
         var b = c.Block!;
         if (b.ParamSyms.Count > 1) return null;
-        if (name != "times" && c.Args.Count != 1) return null;
+        long by = 0;
+        if (name == "step" && (c.Args.Count != 2 || !c.Recv!.Type.IsInteger || c.Args[1].Value is not LitExpr { Kind: "int" } bl
+            || !long.TryParse(bl.Text.Replace("_", ""), out by) || by == 0)) return null;   // non-literal step: the runtime checks it
+        if (name is not ("times" or "step") && c.Args.Count != 1) return null;
         var recv = Expr(c.Recv!);
         string v = b.ParamSyms.Count == 1 ? b.ParamSyms[0].CsName : Temp("i");
-        var loop = new MFor { Var = v };
+        // the counter takes the receiver's integer type: 5_000_000_000_i64.times is a long loop
+        var loop = new MFor { Var = v, VarType = c.Recv!.Type.IsInteger ? (b.ParamSyms.Count == 1 && b.ParamSyms[0].Type.IsInteger ? b.ParamSyms[0].Type.Cs : c.Recv.Type.Cs) : null };
         switch (name)
         {
             case "times": loop.Start = new MCode("0"); loop.Cmp = "<"; loop.End = recv; break;
             case "upto": loop.Start = recv; loop.Cmp = "<="; loop.End = Expr(c.Args[0].Value!); break;
+            case "step": loop.Start = recv; loop.Cmp = by > 0 ? "<=" : ">="; loop.End = Expr(c.Args[0].Value!); loop.Step = by > 0 ? $" += {by}" : $" -= {-by}"; break;
             default: loop.Start = recv; loop.Cmp = ">="; loop.End = Expr(c.Args[0].Value!); loop.Step = "--"; break;
         }
         ctx.Add("loop");
@@ -223,7 +228,7 @@ public sealed partial class Lowerer
             string span = Temp("sp"), idx = Temp("k");
             before.Add(new MDecl { Name = span, Init = new MCode($"global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan({((MCode)srcExpr).Text})") });
             body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = new MCode(span), Args = { new MCode(idx) } } });
-            loop = new MFor { Var = idx, Start = new MCode("0"), Cmp = "<", End = new MCode(span + ".Length"), Body = body };
+            loop = new MFor { VarType = "int", Var = idx, Start = new MCode("0"), Cmp = "<", End = new MCode(span + ".Length"), Body = body };
         }
         else if (src.Type.Kind == "array" || src.Type.IsString || IsList(src.Type))
         {

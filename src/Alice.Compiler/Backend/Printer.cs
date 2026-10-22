@@ -57,6 +57,13 @@ public sealed class Printer
         Line("}");
     }
 
+    /// <summary>Entry for a standalone body (helper methods): run the MIR pass pipeline, then print.</summary>
+    public void Root(MStmt s)
+    {
+        Optimizer.Pipeline.Run([s]);
+        Stmt(s);
+    }
+
     public void Stmt(MStmt s)
     {
         LineDir(s.Line);
@@ -88,7 +95,7 @@ public sealed class Printer
                 Block(w.Body);
                 break;
             case MFor f:
-                Line($"for (var {f.Var} = {E(f.Start)}; {f.Var} {f.Cmp} {E(f.End)}; {f.Var}{f.Step})");
+                Line($"for ({f.VarType ?? "var"} {f.Var} = {E(f.Start)}; {f.Var} {f.Cmp} {E(f.End)}; {f.Var}{f.Step})");
                 Block(f.Body);
                 break;
             case MForeach fe:
@@ -122,6 +129,7 @@ public sealed class Printer
                 }
                 break;
             case MBlock b:
+                if (b.Unchecked) Line("unchecked");
                 Block(b.Body);
                 break;
             case MUsing u:
@@ -131,7 +139,8 @@ public sealed class Printer
         }
     }
 
-    static bool Atomic(MExpr e) => e is MCode or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp;
+    // a negative literal (`-5`) is not atomic: `-5.abs()` in C# is `-(5.abs())`
+    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp;
 
     static string P(MExpr e) => Atomic(e) ? E(e) : "(" + E(e) + ")";
 
@@ -164,7 +173,8 @@ public sealed class Printer
                 return P(c.C) + " ? " + P(c.A) + " : " + P(c.B);
             case MLambda l:
                 {
-                    string head = (l.Static ? "static " : "") + "(" + string.Join(", ", l.Params) + ") => ";
+                    string head = (l.Hot ? "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)] " : "")
+                        + (l.Static ? "static " : "") + "(" + string.Join(", ", l.Params) + ") => ";
                     if (l.ExprBody != null) return head + E(l.ExprBody);
                     // block bodies map back to Alice lines too (stack traces, CallerLineNumber, debugger)
                     var pr = new Printer(ambientFile ?? "", 0) { lastLine = int.MaxValue };

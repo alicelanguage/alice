@@ -86,11 +86,16 @@ public sealed partial class Lowerer
     {
         tmpN = 0;
         FindLengthAliases(body);
+        FindStackArrays(body);
+        FindFlatRows(body);
+        FindRanges(body);
+        FindOwned(body, tail);
         hoisted = new HashSet<LocalSym>(hoistedLocals);
-        var outp = new List<MStmt>();
+        var outp = new List<MStmt>(StackArrayDecls(line));
         foreach (var h in hoistedLocals)
-            outp.Add(new MDecl { Line = line, Name = h.CsName, TypeCs = TypeCs(h.Type), Init = new MCode("default!") });
+            if (!stackArrays.ContainsKey(h)) outp.Add(new MDecl { Line = line, Name = h.CsName, TypeCs = TypeCs(h.Type), Init = new MCode("default!") });
         outp.AddRange(Stmts(body, tail, null));
+        if (tail == Tail.None) outp.AddRange(ReleaseOwnedAtEnd());
         return outp;
     }
 
@@ -98,7 +103,12 @@ public sealed partial class Lowerer
     {
         if (!inParallelGen && soa == null) body = FuseSoa(body);
         var outp = new List<MStmt>();
-        for (int i = 0; i < body.Count; i++) Into(outp, body[i], i == body.Count - 1 ? tail : Tail.None, target);
+        for (int i = 0; i < body.Count; i++)
+        {
+            // a fork consumes one statement (`a, b = f(x), g(y)`) or two (`a = f(x)` / `b = g(y)`), never the tail value
+            if (TryFork(outp, body, i, body.Count - (tail == Tail.None ? 0 : 1)) is int used and > 0) { i += used - 1; continue; }
+            Into(outp, body[i], i == body.Count - 1 ? tail : Tail.None, target);
+        }
         return outp;
     }
 

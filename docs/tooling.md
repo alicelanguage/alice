@@ -99,7 +99,7 @@ In a package, `alice test` first builds it, then compiles each test file with th
 
 | File | Role |
 |---|---|
-| `src/Alice.Sdk/Alice.props` | defaults: net10.0, nullable errors, TieredPGO, server + concurrent GC |
+| `src/Alice.Sdk/Alice.props` | defaults: net10.0, nullable errors, TieredPGO, overflow checks, workstation concurrent GC (`[runtime] gc` in alice.toml) |
 | `src/Alice.Sdk/Alice.targets` | compiles `**/*.al` (excl. `bin/`, `obj/`) in any SDK project (.alproj or .csproj) |
 
 `dotnet build` / `dotnet run` work on the generated `.alproj`. In-repo samples import the SDK via `samples/Directory.Build.props|targets`.

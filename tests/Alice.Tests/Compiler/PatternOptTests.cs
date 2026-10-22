@@ -35,9 +35,14 @@ public class PatternOptTests
         var text = string.Join(' ', Enumerable.Repeat("a b c d", 2000));
         var del = m.CreateDelegate<Func<string, int>>();
         for (int i = 0; i < 50; i++) del(text);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        del(text);
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        // steady state: a single call can coincide with a tier-up of the JIT (stubs allocate on this thread under load)
+        long bytes = long.MaxValue;
+        for (int r = 0; r < 5; r++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            del(text);
+            bytes = Math.Min(bytes, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
         Assert.True(bytes < 2000, $"allocated {bytes} bytes for 8000 words");   // C# Split allocates ~8000 strings + an array
     }
 

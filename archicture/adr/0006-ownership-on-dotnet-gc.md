@@ -1,5 +1,5 @@
 # 0006 - Ownership as a static layer on the .NET GC
-Status: proposed
+Status: proposed; owned local arrays and `own` implemented by ADR 0016 (which amends "Alice never implements freeing" for pooled array buffers)
 Context: Users want ownership/lifetime safety. The CLR already prevents use-after-free, double free, dangling heap refs, and out-of-bounds access (GC, verifiable IL, bounds checks). Roslyn already enforces ref-safety for `ref struct`/`Span`/`scoped`. GC does not solve deterministic resource release, data races, mutable aliasing, or allocation-free hot paths.
 Decision:
 - Alice never implements allocation or freeing; memory reclamation is the GC.

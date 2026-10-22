@@ -69,7 +69,7 @@ public class RubyMixinTests
     {
         { "Comparable", Version, "true\ntrue\ntrue\ntrue\n0.9 1.2 1.10\n1.10\n1.10" },
         { "Enumerable", Bag, "30,10,20\n2\n6\n1,2,3\ntrue\n1\n6" },
-        { "case in with variants", "enum Shape\n  Circle(r : Float64)\n  Sq(s : Float64)\nend\ndef area(x : Shape) : Float64\n  case x\n  in Shape::Circle(r) then 3.0 * r * r\n  in Shape::Sq(s) then s * s\n  end\nend\nputs area(Shape::Sq(4.0))", "16" },
+        { "case in with variants", "enum Shape\n  Circle(r : Float64)\n  Sq(s : Float64)\nend\ndef area(x : Shape) : Float64\n  case x\n  in Shape::Circle(r) then 3.0 * r * r\n  in Shape::Sq(s) then s * s\n  end\nend\nputs area(Shape::Sq(4.0))", "16.0" },
         { "array patterns", "def describe(xs : Array(Int32)) : String\n  case xs\n  in [] then \"empty\"\n  in [a] then \"one #{a}\"\n  in [a, b] then \"two #{a + b}\"\n  in [first, *rest] then \"many #{first}+#{rest.size}\"\n  end\nend\nputs describe(Array(Int32).new(0))\nputs describe([7])\nputs describe([1, 2])\nputs describe([5, 6, 7, 8])", "empty\none 7\ntwo 3\nmany 5+3" },
     };
 

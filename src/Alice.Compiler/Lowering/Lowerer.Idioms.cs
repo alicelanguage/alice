@@ -157,7 +157,7 @@ public sealed partial class Lowerer
         string d = "__dict", text = "__text";
         string deltaCs = Backend.Printer.E(Expr(delta));
         var ps = new List<string> { $"string {text}", $"global::System.Collections.Generic.Dictionary<string, {V}> {d}" };
-        ps.AddRange(captured.Select(l => $"{TypeCs(l.Type)} {l.CsName}"));
+        ps.AddRange(captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
         string body = $$"""
                 int parts = global::System.Math.Min(global::Alice.Runtime.Par.Workers, {{text}}.Length / 16384 + 1);   // one partial dictionary per core keeps the merge small
                 var cuts = new global::System.Collections.Generic.List<int> { -1 };
@@ -169,8 +169,10 @@ public sealed partial class Lowerer
                 }
                 cuts.Add({{text}}.Length);
                 var locals = new global::System.Collections.Generic.Dictionary<string, {{V}}>[cuts.Count - 1];
-                global::System.Threading.Tasks.Parallel.For(0, locals.Length, c =>
+                global::Alice.Runtime.Par.Range(locals.Length, (lo, hi) =>
                 {
+                    for (int c = lo; c < hi; c++)
+                    {
                     int len = cuts[c + 1] - cuts[c] - 1;
                     var local = new global::System.Collections.Generic.Dictionary<string, {{V}}>(global::System.Math.Min(len / 64 + 16, 16384));   // pre-sized (bounded): few rehashes while counting
                     var alt = local.GetAlternateLookup<global::System.ReadOnlySpan<char>>();
@@ -178,7 +180,8 @@ public sealed partial class Lowerer
                     foreach (var r in span.Split({{sep}}))
                         {{CM}}.GetValueRefOrAddDefault(alt, span[r], out _) {{op}} {{deltaCs}};
                     locals[c] = local;
-                });
+                    }
+                }, 1);
                 int total = {{d}}.Count;
                 foreach (var local in locals) total += local.Count;
                 {{d}}.EnsureCapacity(total);
@@ -203,7 +206,7 @@ public sealed partial class Lowerer
             if (s is Assign a && a.Op == "=" && CounterUpdate(a) is { } cu && cu.Ix.Args[0].Value is NameExpr k && k.Sym == w) into.Add(a);
     }
 
-    static IEnumerable<Stmt> WalkStmts(List<Stmt> body)
+    internal static IEnumerable<Stmt> WalkStmts(List<Stmt> body)
     {
         foreach (var s in body)
         {
@@ -223,7 +226,7 @@ public sealed partial class Lowerer
     }
 
     /// <summary>All expression nodes reachable from statements (used for simple use-analysis).</summary>
-    static IEnumerable<Syntax.Expr> Walk(List<Stmt> body)
+    internal static IEnumerable<Syntax.Expr> Walk(List<Stmt> body)
     {
         foreach (var s in WalkStmts(body))
         {

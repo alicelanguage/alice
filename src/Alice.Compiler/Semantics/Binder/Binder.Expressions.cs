@@ -257,6 +257,7 @@ public sealed partial class Binder
             for (int j = k; j < segs.Length; j++)
             {
                 bool call;
+                if (isStatic && owner.Clr is { IsPrimitive: true } && NumericLimit(segs[j]) is { } limit) segs[j] = limit;
                 (cur, call) = MemberType(cur, segs[j], isStatic);
                 path.Members.Add((segs[j], call));
                 isStatic = false;
@@ -267,6 +268,16 @@ public sealed partial class Binder
         ce.Res = "unknown";
         return AType.Unknown;
     }
+
+    /// <summary>Crystal-style numeric limits: Int32::MAX, UInt8::MIN, Float64::INFINITY, Float64::NAN.</summary>
+    static string? NumericLimit(string name) => name switch
+    {
+        "MAX" => "MaxValue",
+        "MIN" => "MinValue",
+        "INFINITY" => "PositiveInfinity",
+        "NAN" => "NaN",
+        _ => null,
+    };
 
     (AType, bool) MemberType(AType owner, string member, bool isStatic)
     {

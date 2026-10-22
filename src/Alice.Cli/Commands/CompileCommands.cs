@@ -161,7 +161,7 @@ public static class CompileCommands
         foreach (var r in o.Refs) File.Copy(r, Path.Combine(dir, Path.GetFileName(r)), true);
         if (exe)
             File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"),
-                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":true,\"System.GC.Concurrent\":true}}}");
+                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":false,\"System.GC.Concurrent\":true}}}");
         UiH.Status(T("finished"), dll);
         return 0;
     }

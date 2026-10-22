@@ -2,7 +2,7 @@ namespace Alice.Compiler.Syntax;
 
 public sealed partial class Parser
 {
-    const string Levels = "|| ;&& ;== != === =~ !~ ;< > <= >= <=> ;| ;^ ;& ;<< >> ;+ - ;* / % ";
+    const string Levels = "|| ;&& ;== != === =~ !~ ;< > <= >= <=> ;| ;^ ;& ;<< >> ;+ - &+ &- ;* / % &* ";
     static readonly string[] LevelOps = Levels.Split(';');
 
     public Expr Expression()
@@ -72,6 +72,13 @@ public sealed partial class Parser
         Token tok = Cur;
         if (IsOp("-") || IsOp("!") || IsOp("~") || IsOp("+"))
         {
+            // `-5.abs` is (-5).abs: a minus glued to a numeric literal is part of it (but `-2 ** 2` is -(2 ** 2))
+            if (IsOp("-") && Peek(1) is { Kind: "int" or "float", Space: false } num && !(Peek(2).Kind == "op" && Peek(2).Text == "**"))
+            {
+                Next();
+                num.Text = "-" + num.Text;
+                return Power();
+            }
             string op = Next().Text;
             Expr e = Unary();
             if (op == "+") return e;

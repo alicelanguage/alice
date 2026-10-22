@@ -2,6 +2,57 @@
 
 ## 0.12.0 - Unreleased
 
+- Breaking (ADR 0013): signed `/` and `%` are floored like `divmod` (`-7 / 2 == -4`); `tdiv`/`remainder` truncate. Float `%` follows the divisor.
+- Breaking (ADR 0013): integer overflow raises `OverflowException`; `&+ &- &*` wrap. `2 ** -1` raises instead of returning 1.
+- Breaking (ADR 0013): `to_u8` and the other sized conversions raise when out of range (NaN too); `to_X!` wraps. `2.5.round` is `3.0` (half away from zero).
+- Breaking: floats print with a decimal point and Ruby exponent rules everywhere (`2.0`, `1.0e-07`, `1.0e+16`).
+- Generated programs default to workstation GC (faster startup, lower RSS); `[runtime] gc = "server" | "low-memory"` in `alice.toml`.
+- Startup: the `format` regex is source-generated (no Reflection.Emit on every launch); an `if`/`case` with a `raise` branch no longer becomes `dynamic` (the C# runtime binder was loading at startup).
+- Fix `(-5).abs` and `-7.5.abs` returning negative values (the C# emitter dropped the parentheses).
+- Fix `round(n)`/`floor(n)`/`ceil(n)` on decimal fractions (`0.29.floor(2)` was `0.28`).
+- `[a, b, c].min`/`.max` on a literal lower to `Math.Min`/`Math.Max` with no array allocation (editdist inner loop).
+- Compiler: MIR pass pipeline (ADR 0014) in `src/Alice.Compiler/Optimizer`: constant folding, strength reduction (`x / 8` is `x >> 3`, `x % 16` is `x & 15` with floored semantics), literal `[a, b].min/max` without allocation, unchecked counted-loop steps. `ALICE_DISABLE_PASSES` for A/B runs.
+- Compiler: fork/join of independent pure recursive calls (ADR 0015): `a = f(x)` / `b = f(y)` run in parallel with lazy task creation (only the top log2(cores)+3 levels spawn tasks). Writes into arrays allocated in the method keep it pure. Suite `tree-radix` at 1M elements: 3226 ms → 319 ms (C# 665 ms).
+- Breaking: `Channel(T).new` is unbuffered (a rendezvous, as in Crystal): `send` waits for a receiver. It was silently unbounded. `Channel(T).new(n)` buffers n. The channel is a lock-guarded ring (no Task per blocking call, no allocation per message); `send` after `close` raises `ClosedChannelError`.
+- Row flattening: an array of fixed-width literal rows filled by a full `for i in 0...n` loop and never escaping (`points[i] = [x, y]`) is one flat array `points[i * k + j]` with the column still bounds-checked (suite kmeans at 1M points: 0.44 s / 95 MB → 0.38 s / 63 MB).
+- Fix `Array(T).new(n) { |i| ... }` ignoring its block.
+- Heap-free small arrays: a local array of literal size (<= 256 unmanaged elements, or a literal of <= 32 items) that never escapes lives in one `stackalloc` buffer at method entry, also when declared inside a loop.
+- Fix `Array(T).new(n, v)` ignoring `v` (it returned zeros); a non-default fill uses an uninitialized allocation plus one `Fill`.
+- Range analysis: counted loops bounded by `.Length`/`.Count` and their `i ± k` offsets drop provably dead overflow checks (editdist: 998 → 884 ms, C# 841 ms).
+- Stdlib fork/join: `sort` of a large primitive array is a parallel merge sort with a pooled buffer (10M `Int32`: 756 → 207 ms).
+- Docs: [fork/join](docs/fork-join.md) (idea credited to Victor Taelin's BendRT) and [heap and GC](docs/heap-gc.md).
+- Value-range analysis: integer `+ - *` whose operand ranges (literals, masks, shifts, widened Int32, `^`/`|` of non-negatives, floored `% d`) prove no overflow are emitted unchecked; a proven `x >= 2^31 ? x - 2^32 : x` (also 8/16 bits) is one sign extension instead of a data-dependent branch. Suite terrain at 1M: 345 → 212 ms (C# 189 ms).
+- Purity gate: `Alice.Runtime.Pure` marks runtime functions the compiler may parallelize through (`Digest::*`); static `Module.f(x)` receivers, string interpolation, array literals, `min/max/sum` and the new numeric primitives are pure reads. Suite merkle at 1M leaves: 1812 → 1489 ms (C# 1885 ms).
+- Stdlib fork/join: `sum`, `min`, `max` of primitive arrays of 2^20+ elements split into SIMD chunks across cores (32M `Float64` sum + max: 68.7 → 16.4 ms).
+- `2.0 ** n` lowers to `Math.ScaleB` and `x ** 2` to `x * x` (both bit-identical to `Math.Pow`); widening conversions (`to_i64` on Int32, `.to_f`) are plain casts, narrowing ones an inlined checked helper.
+- Fork/join also forks Bend's single-statement parallel call `a, b = f(x), g(y)` (pure, independent, recursive), including into existing variables.
+- Startup: Prelude's dynamic/reflection/regex caches are created on first use instead of when every program starts.
+- Compiler: a loop nested in a serial loop is no longer auto-parallelized with the "heavy" threshold of 2 (game of life dispatched its 3-cell neighbourhood loop to the thread pool per cell: 197 ms → 60 ms); constant short trip counts emit no parallel path.
+- Fix `for k in 0...m` with `m : Int64` (and `n.times` on Int64) declaring an `int` counter that could never reach the bound.
+- Allocation-free: `round(n)`/`floor(n)`/`ceil(n)`, `q, r = a.divmod(b)` (no array), `a.step(limit, k)` with a literal step (inlined loop), and `puts`/`str`/`inspect` of numbers (no boxing).
+- `Digest::SHA256.hexdigest`, `Digest::SHA1`, `Digest::MD5` (Ruby API).
+- New primitives: `to_i8`..`to_u64`, `to_i32`, `to_f64`, `fdiv`, `sign`, `popcount`, `leading_zeros_count`, `trailing_zeros_count`, `bit_length`, `finite?`; `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`; snake_case .NET statics (`Math.sqrt`, `Math.atan2`).
+- Ownership (ADR 0016): local arrays of unmanaged elements that provably never escape are owned; their buffers return to a per-thread exact-length pool (`Own(T)`) before reassignment and at every exit, so a loop building a fresh row per iteration stops allocating. Moves (`prev = row`), interprocedural borrows and returns keep ownership. `own a = ...` makes it a checked contract: escape AL0207, use after move AL0208. 12 of the 17 suite workloads use it; editdist RSS 40.7 MB (C# 46.9 MB).
+- Auto-parallel loops prove row-major writes disjoint: `img[y * w + x] = ...` (directly or through a local bound once) with `x` counting `0...w` in a nested loop runs rows across cores, as game of life, mandelbrot and image loops are written.
+- Runtime: `Par.Fork` offers its left half as one thread-pool work item instead of a `Task` (no Task, wrapper closure or continuation per fork); the join runs an unclaimed half inline, spins briefly, then blocks on the job. When the right half throws, the left half finishes before the exception unwinds.
+- Syntax: `par for i in a...b` parallelizes at any trip count and is compile error AL0209 when iterations are not provably independent; `unchecked ... end` is a wrapping region for integer `+ - *` (ADR 0013). `alice fmt` indents both.
+- Benchmarks: `run.sh` runs Alice with the same server GC as the C# baselines; run 8 recorded (Alice at or ahead of idiomatic C# on all eight). The recursive-kernel rule requires a primitive result, so object-building recursion keeps tier-1 PGO.
+- `examples/verify.sh` expects 0.12 float printing (`30.0`).
+- Version 0.12.0.
+- JIT tiering (ADR 0014): methods with a loop nest, and primitive-only static functions that loops call, compile fully optimized from the first call instead of running instrumented tier-0 code until OSR / delayed tier-up (suite nbody 151 → 78 ms, terrain at 512x512 143 → 115 ms).
+- Parallel loops probe before dispatching: the first two iterations run serially, and the rest goes to the pool only when it projects past the dispatch cost (25 ms cold, 50 us warm); the runtime scheduler samples a chunk the same way. Short loops in short programs no longer pay thread-pool startup (small mandelbrot 80 → 75 ms); large ones stay parallel (4M-pixel mandelbrot 247 → 157 ms vs serial). Parallel chunk bodies compile fully optimized.
+- Floored `/` and `%` by a positive literal are branch-free (`floor_div_pos`, `floor_mod_pos`).
+- Fix: a loop whose body assigns its own counter is never auto-parallelized.
+- Fix (ADR 0008): a counted loop whose body read the array it writes at another index (`row[j] = row[j - 1] + ...`) was auto-parallelized from 65,536 iterations and could compute wrong values. Such loops stay serial; stencils over a different array stay parallel behind a runtime `ReferenceEquals` alias check.
+- Fix: an exception raised inside an auto-parallelized loop reaches the caller as itself, as in the serial loop, not wrapped in `AggregateException`.
+- Runtime: `Par.Range`/`Reduce`/`MapSum` run on a lean chunk scheduler (`ParJob`) instead of `Parallel.For`: one allocation per loop, an atomic chunk counter, and the calling thread works through chunks itself, so nested parallel loops cannot starve the pool and no TPL machinery is JIT-compiled at startup.
+- Shift counts are modular (ADR 0013): the `+ - *` computing `x << n` drop their overflow checks.
+- A self-recursive function over primitives and primitive arrays compiles fully optimized from its first call (`AggressiveOptimization`). Suite queens: 0.92 s → 0.81 s (C# 0.91 s).
+- `q, r = 7.divmod(2)`: multiple assignment destructures arrays and lists.
+- Hex and binary literals accept `_` separators and type suffixes (`0xFFFF_FFFF_i64`, `0xFF_u8`).
+
+- `samples/wonderland3d`: Alice-authored procedural 3D Wonderland film, interactive preview, deterministic 30-second MP4 export, GLSL bloom and an original synthesized stereo score (ADR 0012).
+
 - Windows installer: launch Microsoft's .NET SDK installer with a child-process execution policy override, preserving the user's policy and reporting SDK installation failures.
 
 - Root npm commands build/test Alice and generate VSIX/Zed packages from the companion `extensions/` checkout.

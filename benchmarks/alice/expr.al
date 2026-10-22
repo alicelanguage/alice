@@ -8,9 +8,9 @@ end
 def eval(e : Expr) : Int64
   case e
   when Expr::Num(v) then v
-  when Expr::Add(a, b) then eval(a) + eval(b)
-  when Expr::Mul(a, b) then eval(a) * eval(b)
-  when Expr::Neg(x) then -eval(x)
+  when Expr::Add(a, b) then eval(a) &+ eval(b)
+  when Expr::Mul(a, b) then eval(a) &* eval(b)
+  when Expr::Neg(x) then 0_i64 &- eval(x)
   end
 end
 
@@ -34,7 +34,7 @@ end
 def kernel(tree : Expr) : Int64
   acc : Int64 = 0
   for i in 0...10
-    acc += eval(tree)
+    acc = acc &+ eval(tree)
   end
   acc
 end

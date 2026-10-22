@@ -7,4 +7,12 @@ Decision:
 | Rejected (AL0202) | write to captured local or field; mutating call (List.Add, Alice method that writes its fields, ...) on a captured non-thread-safe value; element write at a non-disjoint index; `ref`/`out` of shared vars except Interlocked |
 | Allowed | reads; writes to block-locals; `out[i] = ...` where `i` is the concurrent block's own parameter; Mutex(T) (`m.lock { |v| ... }`), Atomic, Channel(T), Actor(T), System.Collections.Concurrent/Immutable |
 Auto-parallelization (ADR 0007 lowering) only fires for blocks the purity checker proves race-free.
+Counted loops also need iteration independence: an array the body writes at the loop index is read only at that index
+(`a[i] = a[i - 1] + 1` is a scan and stays serial), and a local array read at a shifted index (a stencil) is a different
+object from every written array of a compatible element type, checked with `ReferenceEquals` before the parallel path.
+`par for` requires this proof (AL0209 otherwise) and ignores the trip-count threshold.
+A proven loop runs its first two iterations serially and offloads the rest only when the second iteration's time,
+times the remaining count, exceeds the dispatch cost (`Par.Offload`: 25 ms while the pool is cold, 50 us once warm),
+so small loops in short programs never wake the thread pool. A loop whose body writes its own counter is never parallel.
+An iteration's own cells are `a[i]` and the row-major `a[i * w + j]` with `j` counting `0...w` in a nested loop and `w` invariant.
 Consequences: Shared-state bugs become compile errors with a help hint. Conservative: some safe patterns (e.g. disjoint List writes) need Mutex/Atomic or arrays. Escape via C# interop is not checked.

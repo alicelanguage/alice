@@ -77,7 +77,10 @@ public class StdlibTests
         { "round floor ceil n", "puts 3.14159.round(2)\nputs 3.14159.floor(1)\nputs 3.11.ceil(1)", "3.14\n3.1\n3.2" },
         { "int step", "1.step(10, 4) { |i| print i, \" \" }\nputs", "1 5 9" },
         { "to_s base", "puts 255.to_s(16)\nputs 5.to_s(2)", "ff\n101" },
-        { "math", "puts Math.Sqrt(16.0)\nputs 2.0.sqrt.round(3)", "4\n1.414" },
+        { "sha256 hexdigest", "puts Digest::SHA256.hexdigest(\"abc\")", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" },
+        { "sha256 of bytes", "b = Array(UInt8).new(1, 0_u8)\nputs Digest::SHA256.hexdigest(b).size", "64" },
+        { "md5 hexdigest", "puts Digest::MD5.hexdigest(\"\")", "d41d8cd98f00b204e9800998ecf8427e" },
+        { "math", "puts Math.Sqrt(16.0)\nputs 2.0.sqrt.round(3)", "4.0\n1.414" },
         // Range
         { "range ops", "r = 1..5\nputs r.to_a.size\nputs r.sum\nputs r.size\nputs r.include?(3)\nputs (1..5).cover?(9)", "5\n15\n5\ntrue\nfalse" },
         // IO / System / JSON

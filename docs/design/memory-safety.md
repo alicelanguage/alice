@@ -1,6 +1,6 @@
 # Memory safety and ownership on the .NET GC (proposed)
 
-Status: **proposed** (ADR 0006). Nothing here is implemented unless marked *implemented*.
+Status: **proposed** (ADR 0006). Nothing here is implemented unless marked *implemented*. *Implemented*: owned local arrays, `own`, moves and use-after-move (ADR 0016, AL0207/AL0208).
 
 ## Thesis
 

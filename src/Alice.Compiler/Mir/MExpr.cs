@@ -76,6 +76,7 @@ public sealed class MLambda : MExpr
 {
     public List<string> Params = new();
     public bool Static;
+    public bool Hot;          // [MethodImpl(AggressiveOptimization)]: a parallel chunk body, hot from its first call
     public MExpr? ExprBody;
     public List<MStmt>? Body;
 }
