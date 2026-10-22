@@ -21,6 +21,9 @@
 - Range analysis: counted loops bounded by `.Length`/`.Count` and their `i ± k` offsets drop provably dead overflow checks (editdist: 998 → 884 ms, C# 841 ms).
 - Stdlib fork/join: `sort` of a large primitive array is a parallel merge sort with a pooled buffer (10M `Int32`: 756 → 207 ms).
 - Docs: [fork/join](docs/fork-join.md) (idea credited to Victor Taelin's BendRT) and [heap and GC](docs/heap-gc.md).
+- Purity gate: `Alice.Runtime.Pure` marks runtime functions the compiler may parallelize through (`Digest::*`); static `Module.f(x)` receivers, string interpolation, array literals, `min/max/sum` and the new numeric primitives are pure reads. Suite merkle at 1M leaves: 1812 → 1489 ms (C# 1885 ms).
+- Stdlib fork/join: `sum`, `min`, `max` of primitive arrays of 2^20+ elements split into SIMD chunks across cores (32M `Float64` sum + max: 68.7 → 16.4 ms).
+- `2.0 ** n` lowers to `Math.ScaleB` and `x ** 2` to `x * x` (both bit-identical to `Math.Pow`); widening conversions (`to_i64` on Int32, `.to_f`) are plain casts, narrowing ones an inlined checked helper.
 - Fork/join also forks Bend's single-statement parallel call `a, b = f(x), g(y)` (pure, independent, recursive), including into existing variables.
 - Startup: Prelude's dynamic/reflection/regex caches are created on first use instead of when every program starts.
 - Compiler: a loop nested in a serial loop is no longer auto-parallelized with the "heavy" threshold of 2 (game of life dispatched its 3-cell neighbourhood loop to the thread pool per cell: 197 ms → 60 ms); constant short trip counts emit no parallel path.

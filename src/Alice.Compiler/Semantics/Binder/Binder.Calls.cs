@@ -139,6 +139,7 @@ public sealed partial class Binder
                 if (mem != null)
                 {
                     c.Res = mem.Kind == "method" ? "clr" : "field";
+                    c.Sym = mem.Method;   // the purity gate checks [Pure] on Alice.Runtime methods
                     pendingConcurrent = conc && c.Block != null;
                     if (c.Block != null) BindLambda(c.Block, new List<AType>());
                     return mem.Type;

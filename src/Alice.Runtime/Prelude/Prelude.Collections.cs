@@ -43,12 +43,13 @@ public static partial class Prelude
     public static T[] reject<T>(this IEnumerable<T> a, Func<T, bool> f) => a.Where(x => !f(x)).ToArray();
     public static R reduce<T, R>(this IEnumerable<T> a, R seed, Func<R, T, R> f) => a.Aggregate(seed, f);
     public static T reduce<T>(this IEnumerable<T> a, Func<T, T, T> f) => a.Aggregate(f);
-    public static T sum<T>(this T[] a) where T : unmanaged, INumber<T> => Simd.Sum<T>(a);
+    // large arrays fork into SIMD chunks (ParReduce); below the threshold one SIMD pass
+    public static T sum<T>(this T[] a) where T : unmanaged, INumber<T> => a.Length >= ParReduce.MinLength && Par.Workers > 1 ? ParReduce.Sum(a) : Simd.Sum<T>(a);
     public static T sum<T>(this IEnumerable<T> a) where T : INumber<T> { T s = T.Zero; foreach (var x in a) s += x; return s; }
     public static R sum<T, R>(this IEnumerable<T> a, Func<T, R> f) where R : INumber<R> { R s = R.Zero; foreach (var x in a) s += f(x); return s; }
-    public static T max<T>(this T[] a) where T : unmanaged, INumber<T> => Simd.Max<T>(a);
+    public static T max<T>(this T[] a) where T : unmanaged, INumber<T> => a.Length >= ParReduce.MinLength && Par.Workers > 1 ? ParReduce.Max(a) : Simd.Max<T>(a);
     public static T max<T>(this IEnumerable<T> a) => a.Max()!;
-    public static T min<T>(this T[] a) where T : unmanaged, INumber<T> => Simd.Min<T>(a);
+    public static T min<T>(this T[] a) where T : unmanaged, INumber<T> => a.Length >= ParReduce.MinLength && Par.Workers > 1 ? ParReduce.Min(a) : Simd.Min<T>(a);
     public static T min<T>(this IEnumerable<T> a) => a.Min()!;
     public static T max_by<T, K>(this IEnumerable<T> a, Func<T, K> f) => a.MaxBy(f)!;
     public static T min_by<T, K>(this IEnumerable<T> a, Func<T, K> f) => a.MinBy(f)!;

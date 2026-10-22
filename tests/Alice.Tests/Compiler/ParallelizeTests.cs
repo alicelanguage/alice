@@ -214,4 +214,42 @@ public class LoopParallelizeTests
         Assert.Contains("Par.Fork(", AliceCompiler.Transpile(src));
         Assert.Equal("10946", AliceCompiler.Run(src).Trim());
     }
+
+    [Fact]
+    public void Loops_calling_pure_runtime_functions_parallelize()
+    {
+        // Digest is marked [Pure] in Alice.Runtime: hashing each index is independent work
+        const string src = "def leaves(n : Int32) : Array(String)\n  out = Array(String).new(n)\n  for i in 0...n\n    out[i] = Digest::SHA256.hexdigest(\"#{i}:x\")\n  end\n  out\nend\nputs leaves(100_000)[99_999]\n";
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
+        Assert.Equal(System.Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("99999:x"))), AliceCompiler.Run(src).Trim());
+    }
+
+    [Fact]
+    public void Loops_calling_unmarked_dotnet_methods_stay_serial()
+    {
+        const string src = "def f(n : Int32) : Array(Int32)\n  out = Array(Int32).new(n)\n  for i in 0...n\n    out[i] = System.Random.Shared.Next(i + 1)\n  end\n  out\nend\n";
+        Assert.DoesNotContain("Par.Range", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void Pure_module_functions_parallelize_through_their_static_receiver()
+    {
+        const string src = "module H\n  def self.sha(t : String) : String\n    Digest::SHA256.hexdigest(t)\n  end\nend\ndef f(n : Int32) : Array(String)\n  out = Array(String).new(n)\n  for i in 0...n\n    out[i] = H.sha(\"#{i}\")\n  end\n  out\nend\n";
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void Literal_array_min_in_a_loop_body_is_pure()
+    {
+        // merkle's pair loop: right = level[[i * 2 + 1, level.size - 1].min]
+        const string src = "def f(level : Array(String)) : Array(String)\n  nxt = Array(String).new((level.size + 1) / 2)\n  for i in 0...nxt.size\n    l = level[i * 2]\n    r = level[[i * 2 + 1, level.size - 1].min]\n    nxt[i] = Digest::SHA256.hexdigest(l + r)\n  end\n  nxt\nend\n";
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void Loops_over_numeric_primitives_parallelize()
+    {
+        const string src = "def f(xs : Array(Float64)) : Array(Int32)\n  out = Array(Int32).new(xs.size)\n  for i in 0...xs.size\n    out[i] = xs[i].log2.floor.to_i32.clamp(0, 99) + xs[i].sign\n  end\n  out\nend\n";
+        Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
+    }
 }

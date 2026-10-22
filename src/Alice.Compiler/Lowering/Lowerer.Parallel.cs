@@ -16,7 +16,12 @@ public sealed partial class Lowerer
     string? boundLo, boundHi;
     bool inParallelGen;
 
-    static readonly HashSet<string> PureExt = new() { "abs", "sqrt", "floor", "ceil", "round", "to_i", "to_f", "to_f32", "to_i64", "even_q", "odd_q", "zero_q", "succ", "pred" };
+    static readonly HashSet<string> PureExt = new() { "min", "max", "sum", "size", "length", "abs", "sqrt", "floor", "ceil", "round", "to_i", "to_f", "to_f32", "to_i64", "even_q", "odd_q", "zero_q", "succ", "pred",
+        // numeric primitives (ADR 0013): pure functions of their receiver and arguments
+        "to_i8", "to_i16", "to_i32", "to_u8", "to_u16", "to_u32", "to_u64", "to_f64", "to_i_b", "to_i8_b", "to_i16_b", "to_i32_b", "to_i64_b",
+        "to_u8_b", "to_u16_b", "to_u32_b", "to_u64_b", "popcount", "bit_length", "trailing_zeros_count", "leading_zeros_count", "sign", "fdiv",
+        "tdiv", "remainder", "clamp", "between_q", "gcd", "lcm", "cbrt", "log", "log2", "log10", "truncate", "nan_q", "infinite_q", "finite_q",
+        "positive_q", "negative_q" };
 
     MExpr? ParallelOrSerial(CallExpr c, string name)
     {

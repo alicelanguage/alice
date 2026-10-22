@@ -155,6 +155,10 @@ public sealed partial class Lowerer
         IvarExpr or SelfExpr => true,
         TypeTestExpr tt => tt.E == null || PureRead(tt.E, plan),
         NewExpr { Type.Kind: "array", Block: null, AsCall: null } ne => ne.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),   // allocation is not an effect
+        InterpExpr ie => ie.Holes.All(h => PureRead(h, plan)),
+        ConstExpr { Res: "type" } => true,   // `Module.f(x)`: naming a type reads no state
+        ArrayLit lit => lit.Items.All(x => PureRead(x, plan)),   // a fresh array: allocation is not an effect
+        CallExpr { Res: "clr", Block: null, Sym: System.Reflection.MethodInfo mi } rc when PureRuntime(mi) => rc.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         BinaryExpr b => PureRead(b.L, plan) && PureRead(b.R, plan),
         UnaryExpr { Op: "-" or "!" or "~" } u => PureRead(u.E, plan),
         TernaryExpr t => PureRead(t.C, plan) && PureRead(t.A, plan) && PureRead(t.B, plan),
@@ -184,6 +188,12 @@ public sealed partial class Lowerer
     /// Interprocedural purity: writes only its own locals (and, for constructors, the fresh object's fields),
     /// calls only pure methods, raises nothing. Recursion is assumed pure while being analysed.
     /// </summary>
+    /// <summary>A static Alice.Runtime method marked [Pure]: the runtime vouches for it; arbitrary .NET code is never trusted.</summary>
+    /// Compared by name: referenced assemblies may load in a separate metadata context.
+    static bool PureRuntime(System.Reflection.MethodInfo mi) =>
+        mi.IsStatic && mi.DeclaringType?.Assembly.GetName().Name == "Alice.Runtime"
+        && mi.CustomAttributes.Any(a => a.AttributeType.FullName == "Alice.Runtime.PureAttribute");
+
     bool MethodPure(MethodSym m)
     {
         if (purity.TryGetValue(m, out var known)) return known;

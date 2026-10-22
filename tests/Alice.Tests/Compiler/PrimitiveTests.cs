@@ -341,4 +341,30 @@ public class PrimitiveTests
     [InlineData("g = Array(Array(Int32)).new(2) { Array(Int32).new(1) }\ng[0][0] = 3\nputs g[1][0]", "0")]   // one array per element, not shared
     public void Array_new_with_a_block_builds_each_element(string src, string expected)
         => Assert.Equal(expected, Run(src));
+
+    [Fact]
+    public void Widening_conversions_are_plain_casts()
+    {
+        var cs = AliceCompiler.Transpile("def f(x : Int32, b : UInt8, l : Int64) : Float64\n  x.to_i64.to_f + b.to_i + l.to_f + x.to_f32\nend\n");
+        Assert.Contains("(long)x", cs);
+        Assert.Contains("(double)", cs);
+        Assert.DoesNotContain(".to_i64()", cs);
+        Assert.DoesNotContain(".to_f()", cs);
+        Assert.Contains("to_i32", AliceCompiler.Transpile("def g(l : Int64) : Int32\n  l.to_i32\nend\n"));   // narrowing keeps its check
+    }
+
+    [Fact]
+    public void Exact_power_forms_skip_math_pow()
+    {
+        var cs = AliceCompiler.Transpile("def f(n : Int32, x : Float64) : Float64\n  2.0 ** n + x ** 2 + x ** 3\nend\n");
+        Assert.Contains("ScaleB(1.0, n)", cs);
+        Assert.Contains("x * x", cs);
+        Assert.Contains("pow(x, 3)", cs);   // x * x * x rounds twice: keeps Math.Pow
+    }
+
+    [Theory]
+    [InlineData("for n in [-1080, -1074, -1022, -3, 0, 5, 1023, 1024]\n  print (2.0 ** n).to_s, \" \"\nend\nputs", "0.0 5.0e-324 2.2250738585072014e-308 0.125 1.0 32.0 8.98846567431158e+307 Infinity")]
+    [InlineData("x = -1.5\nputs x ** 2\ny = 1e200\nputs y ** 2", "2.25\nInfinity")]
+    public void Exact_power_forms_match_math_pow(string src, string expected)
+        => Assert.Equal(expected, Run(src));
 }

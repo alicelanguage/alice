@@ -176,6 +176,11 @@ public sealed partial class Lowerer
         if (FlooredHelper(b.Op, b.Type) is string fl) return new MCall { Target = new MCode("Prelude"), Name = fl, Args = { l, r } };
         return b.Op switch
         {
+            // exact forms of Math.Pow: 2.0 ** n is a power of two (ScaleB), x ** 2 is one rounded multiply
+            "**" when b.L is LitExpr { Kind: "float", Text: "2.0" } && b.R.Type.Cs is "int" or "short" or "sbyte" or "byte" or "ushort"
+                => new MCall { Target = new MCode("global::System.Math"), Name = "ScaleB", Args = { new MCode("1.0"), r } },
+            "**" when b.R is LitExpr { Kind: "int", Text: "2" } && IsFloat(b.L.Type) && l is MCode
+                => new MBinary { Op = "*", L = l, R = l },
             "**" => new MCall { Target = new MCode("Prelude"), Name = "pow", Args = { l, r } },
             "<=>" => new MCall { Target = l, Name = "CompareTo", Args = { r } },
             _ => new MBinary { Op = b.Op, L = l, R = r },

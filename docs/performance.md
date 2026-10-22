@@ -39,6 +39,9 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | counter offsets `i + k`, `i - k` inside a proven range (`.Length` bound <= Array.MaxLength) | unchecked | `Optimizer/Passes/InductionVariables` | `OptimizerTests.Counter_offsets_are_unchecked_only_inside_their_proven_range` |
 | array of fixed-width literal rows filled by a full loop, rows never escape | one flat `T[n * k]`, `a[i * k + j]`, column checked | `Lowerer.FlatRows` | `FlatRowsTests` |
 | `a, b = f(x), g(y)` (pure, independent, recursive) | `Par.Fork` like the two-declaration form | `Lowerer.Fork` | `LoopParallelizeTests.Parallel_multi_assign_forks_like_bends_parallel_call` |
+| `xs.sum` / `min` / `max` on a large primitive array | fork/join over SIMD chunks | `Runtime/Parallel/ParReduce` | `ParReduceTests` |
+| `2.0 ** n` (integer `n`), `x ** 2` (float `x`) | `Math.ScaleB(1.0, n)`, `x * x`: bit-identical to `Math.Pow` | `Lowerer.Binary` | `PrimitiveTests.Exact_power_forms_match_math_pow` |
+| `x.to_i64` on Int32, any number `.to_f` (widening) | plain cast; narrowing keeps the checked, inlined helper | `Lowerer.Calls.WideningCast` | `PrimitiveTests.Widening_conversions_are_plain_casts` |
 | `xs.sort` on a large primitive array | fork/join merge sort, pooled buffer | `Runtime/Parallel/ParSort` | `ParSortTests` |
 | `a = f(x)` / `b = f(y)`: pure, independent, recursive | `Par.Fork` in a helper when `Par.Forkable` (top log2(cores)+3 levels), plain calls below | `Lowerer.Fork`, `Par.Fork` | `LoopParallelizeTests.Independent_pure_recursive_calls_fork_with_lazy_task_creation`, `Forks_need_purity_independence_and_recursion` |
 | writes into arrays allocated in the method | still pure (fresh locals cannot alias caller data) | `Lowerer.LoopPar.FreshArrays` | `LoopParallelizeTests.Writes_into_fresh_local_arrays_keep_a_method_pure`, `Writes_through_shared_arrays_stay_impure` |

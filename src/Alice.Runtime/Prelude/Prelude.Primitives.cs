@@ -75,27 +75,48 @@ public static partial class Prelude
 
     // ---- conversions: `to_X` raises OverflowException out of range (NaN too); `to_X!` wraps (floats saturate) ----
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int to_i<T>(this T v) where T : INumber<T> => int.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static sbyte to_i8<T>(this T v) where T : INumber<T> => sbyte.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short to_i16<T>(this T v) where T : INumber<T> => short.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int to_i32<T>(this T v) where T : INumber<T> => int.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long to_i64<T>(this T v) where T : INumber<T> => long.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static byte to_u8<T>(this T v) where T : INumber<T> => byte.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ushort to_u16<T>(this T v) where T : INumber<T> => ushort.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint to_u32<T>(this T v) where T : INumber<T> => uint.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong to_u64<T>(this T v) where T : INumber<T> => ulong.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double to_f<T>(this T v) where T : INumber<T> => double.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double to_f64<T>(this T v) where T : INumber<T> => double.CreateChecked(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float to_f32<T>(this T v) where T : INumber<T> => float.CreateChecked(v);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int to_i_b<T>(this T v) where T : INumber<T> => int.CreateTruncating(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static sbyte to_i8_b<T>(this T v) where T : INumber<T> => sbyte.CreateTruncating(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static short to_i16_b<T>(this T v) where T : INumber<T> => short.CreateTruncating(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int to_i32_b<T>(this T v) where T : INumber<T> => int.CreateTruncating(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long to_i64_b<T>(this T v) where T : INumber<T> => long.CreateTruncating(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static byte to_u8_b<T>(this T v) where T : INumber<T> => byte.CreateTruncating(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ushort to_u16_b<T>(this T v) where T : INumber<T> => ushort.CreateTruncating(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static uint to_u32_b<T>(this T v) where T : INumber<T> => uint.CreateTruncating(v);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong to_u64_b<T>(this T v) where T : INumber<T> => ulong.CreateTruncating(v);
 
     // ---- rounding: half away from zero; with digits, on the shortest printed form (0.29.floor(2) == 0.29) ----

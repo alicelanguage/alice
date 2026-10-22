@@ -41,7 +41,7 @@ fork when all of these hold:
 | no block or named argument, arguments are pure reads | arguments are evaluated inside the task |
 | not inside `async`, generic methods, lambdas or already-parallel helpers | a task boundary must not cross those |
 
-A method stays pure when it writes only into arrays it allocated itself: a local whose every assignment is a new array (`zeros = Array(Int64).new(n)`) cannot alias caller data, so `zeros[i] = v` is not an effect. Writing a parameter's array, or an alias of it, is.
+Calls into the runtime are pure when the runtime says so: a static `Alice.Runtime` method marked `[Pure]` (such as `Digest::SHA256.hexdigest`) may be called from forked or parallel code. Arbitrary .NET methods are never trusted. Static receivers (`Module.f(x)`), string interpolation, array literals and `min`/`max`/`sum` without a block are pure reads. A method stays pure when it writes only into arrays it allocated itself: a local whose every assignment is a new array (`zeros = Array(Int64).new(n)`) cannot alias caller data, so `zeros[i] = v` is not an effect. Writing a parameter's array, or an alias of it, is.
 
 ## What it lowers to
 
@@ -72,7 +72,9 @@ The lambdas live in a separate helper on purpose: lambdas that capture a method'
 | `Par.Fork(left, right)` | runs `left` as a task and `right` on the calling thread, then joins. The join uses `GetAwaiter().GetResult()`: a task the pool has not started yet runs inline on the joining thread (nested forks never block pool threads), and exceptions surface as themselves, not as `AggregateException` |
 | `xs.sort` (arrays of primitives, length >= 65536) | fork/join merge sort: halves sort in parallel near the root, leaves (16384 elements) sort in place on spans, merges use one scratch buffer from `ArrayPool`. Same result as `Array.Sort`; other element types use `Array.Sort` |
 
-The depth cutoff is lazy task creation as in BendRT: with 16 cores the top 7 levels fork (at most 128 tasks), so the pool has enough work to balance and nothing more.
+| `xs.sum`, `xs.min`, `xs.max` (arrays of primitives, length >= 2^20) | fork/join over index halves near the root, one SIMD pass per leaf (2^18 elements), partials combined in index order. Integer results and min/max are exact; a float sum reassociates like any SIMD sum |
+
+The runtime uses fork/join inside ordinary library calls: the caller writes `xs.sort` or `xs.sum`, and large inputs split across cores without any change to the program. The depth cutoff is lazy task creation as in BendRT: with 16 cores the top 7 levels fork (at most 128 tasks), so the pool has enough work to balance and nothing more.
 
 ## Results
 
@@ -82,6 +84,7 @@ Same machine, median of runs, outputs checked against the reference implementati
 |---|---:|---:|---:|
 | tree radix sort, 1M elements (polyglot suite) | 3226 ms | 319 ms | 665 ms |
 | `sort` of 10M `Int32` | 756 ms (clone + `Array.Sort`) | 207 ms | 756 ms |
+| `sum` + `max` of 32M `Float64` | 68.7 ms (serial SIMD) | 16.4 ms | 134.7 ms (LINQ) |
 
 ## Differences from BendRT
 
