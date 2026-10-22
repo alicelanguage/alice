@@ -114,6 +114,7 @@ public sealed partial class Lowerer
             var forked = TryForkOperands(outp, body[i]);
             Into(outp, body[i], i == body.Count - 1 ? tail : Tail.None, target);
             foreach (var c in forked) forkedCalls.Remove(c);
+            if (Presize(body, i) is MStmt reserve) outp.Add(reserve);
         }
         return outp;
     }

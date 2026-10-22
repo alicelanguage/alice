@@ -20,11 +20,12 @@ public static partial class Explain
         (new(@"for \(int __i\d+ = 0; __i\d+ < \w+\.Length; [^\n]*\n\s*\{\s*\n(\s*#line[^\n]*\n)?\s*var \w+ = (\w+)\[__i\d+\];"), "map updated in place (single owner)"),
         (new(@"(?<!readonly [\w.]+ )__shared_\w+"), "shared immutable object instead of an allocation"),
         (new(@"stackalloc"), "array on the stack"),
+        (new(@"\.(reserve|EnsureCapacity)\(global::System\.Math\.Max"), "collection presized for its fill loop"),
         (new(@"Vector(256|512|128)?<"), "SIMD"),
         (new(@"SuppressGCTransition"), "native call without GC transition"),
     ];
 
-    [GeneratedRegex(@"^(?:(?:\[[^\n]*\]|#line[^\n]*)\n)*(?:public|private|internal)(?: static)?(?: unsafe)? [\w<>\[\]?, ()]+ @?(\w+)\(", RegexOptions.Multiline)]
+    [GeneratedRegex(@"^(?:(?:\[[^\n]*\]|#line[^\n]*)\n)*(?:public|private|internal)(?: static)?(?: unsafe)? [\w<>\[\]?, ().:]+ @?(\w+)\(", RegexOptions.Multiline)]
     private static partial Regex MethodHead();
 
     /// <summary>Method name -> findings. Helpers (`__fork_f_1`, `__parfor_f_2`) count for the method they came from.</summary>

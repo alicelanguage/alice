@@ -291,6 +291,7 @@ public sealed partial class Binder
         M("add", AType.Int, ("item", s.Type));
         M("size", AType.Int);
         M("clear", AType.Void);
+        M("reserve", AType.Void, ("capacity", AType.Int));
         M("remove_at", AType.Void, ("index", AType.Int));
         M("[]", s.Type, ("index", AType.Int));
     }

@@ -18,6 +18,7 @@ at instruction selection. It wins by emitting code that idiomatic C# does not ge
 | parallel loops | iterations write only their own index | all cores, chunked |
 | fusion and SIMD | `map.select.sum` chains, `@[SoA]` records | one loop, `Vector<T>` |
 | stack arrays | small fixed arrays used locally | `stackalloc` |
+| presized collections | `xs = List(T).new` / `SoA(T).new` filled by the next counted loop, one add per iteration | sized once, no growth copies |
 
 ## When to use what
 

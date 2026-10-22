@@ -24,7 +24,9 @@ public class ExplainTests
         Assert.Contains(report["fib"], f => f.Contains("fork"));
         Assert.Contains(report["rows"], f => f.Contains("owned"));
         Assert.Contains(report["rows"], f => f.Contains("in place"));
-        Assert.DoesNotContain(report.Keys, k => k.StartsWith("__"));   // generated helpers are folded into their method
+        Assert.DoesNotContain(report.Keys, k => k.StartsWith("__"));
+        var filled = Explain.Report(AliceCompiler.Transpile("def make(n : Int32) : List(Int32)\n  xs = List(Int32).new\n  for i in 0...n\n    xs << i\n  end\n  xs\nend\n"));
+        Assert.Contains(filled["make"], f => f.Contains("presized"));   // generated helpers are folded into their method
     }
 
     [Fact]

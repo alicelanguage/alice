@@ -19,6 +19,11 @@ public static class SoAStore
         sb.Append("    public int Count => _count;\n");
         sb.Append("    public int size() => _count;\n");
         sb.Append("    public void clear() => _count = 0;\n");
+        // exact capacity: a store filled by a counted loop is sized once, instead of growing column by column through
+        // large-object-heap copies that only gen2 collections reclaim
+        sb.Append("    public void reserve(int capacity)\n    {\n");
+        foreach (var c in cols) sb.Append($"        if ({c.CsName}.Length < capacity) global::System.Array.Resize(ref {c.CsName}, capacity);\n");
+        sb.Append("    }\n");
         sb.Append($"    public int add({self} item)\n    {{\n        int i = _count;\n");
         sb.Append($"        if (i >= {cols[0].CsName}.Length)\n        {{\n");
         foreach (var c in cols) sb.Append($"            {Growth}.Ensure(ref {c.CsName}, i + 1);\n");
