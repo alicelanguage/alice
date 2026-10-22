@@ -43,7 +43,7 @@ public class OptimizerTests
     [InlineData("floor_mod", "16", "x & 15")]
     [InlineData("floor_mod", "16L", "x & 15L")]
     [InlineData("floor_div", "1", "x >> 0")]
-    [InlineData("floor_div", "6", "Prelude.floor_div(x, 6)")]
+    [InlineData("floor_div", "6", "Prelude.floor_div_pos(x, 6)")]
     [InlineData("floor_mod", "-4", "Prelude.floor_mod(x, -4)")]
     public void Strength_reduction_of_power_of_two_divisors(string fn, string d, string expected)
         => Assert.Equal(expected, After(new StrengthReduction(), Prelude(fn, new MCode("x"), new MCode(d))));
@@ -132,4 +132,25 @@ public class OptimizerTests
     [InlineData("xs = [1, 2, 3]\ns = 0\nfor i in 1...xs.size\n  s += xs[i] - xs[i - 1]\nend\nputs s", "2")]
     public void Range_proven_loops_compute_the_same_results(string src, string expected)
         => Assert.Equal(expected, Run(src));
+
+    [Fact]
+    public void Floored_ops_by_a_positive_literal_are_branch_free()
+    {
+        Assert.Equal("Prelude.floor_mod_pos(x, 400)", After(new StrengthReduction(), Prelude("floor_mod", new MCode("x"), new MCode("400"))));
+        Assert.Equal("Prelude.floor_div_pos(x, 10L)", After(new StrengthReduction(), Prelude("floor_div", new MCode("x"), new MCode("10L"))));
+        Assert.Equal("Prelude.floor_mod(x, -3)", After(new StrengthReduction(), Prelude("floor_mod", new MCode("x"), new MCode("-3"))));
+    }
+
+    [Theory]
+    [InlineData(-7)] [InlineData(-10)] [InlineData(0)] [InlineData(9)] [InlineData(int.MinValue)] [InlineData(int.MaxValue)]
+    public void Positive_divisor_forms_match_floored_semantics(int a)
+    {
+        foreach (int d in new[] { 1, 3, 10, 400, int.MaxValue })
+        {
+            Assert.Equal(Alice.Runtime.Prelude.floor_mod(a, d), Alice.Runtime.Prelude.floor_mod_pos(a, d));
+            Assert.Equal(Alice.Runtime.Prelude.floor_div(a, d), Alice.Runtime.Prelude.floor_div_pos(a, d));
+            Assert.Equal(Alice.Runtime.Prelude.floor_mod((long)a * 3, (long)d), Alice.Runtime.Prelude.floor_mod_pos((long)a * 3, (long)d));
+            Assert.Equal(Alice.Runtime.Prelude.floor_div((long)a * 3, (long)d), Alice.Runtime.Prelude.floor_div_pos((long)a * 3, (long)d));
+        }
+    }
 }

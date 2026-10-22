@@ -39,6 +39,10 @@
 - Benchmarks: `run.sh` runs Alice with the same server GC as the C# baselines; run 8 recorded (Alice at or ahead of idiomatic C# on all eight). The recursive-kernel rule requires a primitive result, so object-building recursion keeps tier-1 PGO.
 - `examples/verify.sh` expects 0.12 float printing (`30.0`).
 - Version 0.12.0.
+- JIT tiering (ADR 0014): methods with a loop nest, and primitive-only static functions that loops call, compile fully optimized from the first call instead of running instrumented tier-0 code until OSR / delayed tier-up (suite nbody 151 → 78 ms, terrain at 512x512 143 → 115 ms).
+- Parallel loops probe before dispatching: the first two iterations run serially, and the rest goes to the pool only when it projects past the dispatch cost (25 ms cold, 50 us warm); the runtime scheduler samples a chunk the same way. Short loops in short programs no longer pay thread-pool startup (small mandelbrot 80 → 75 ms); large ones stay parallel (4M-pixel mandelbrot 247 → 157 ms vs serial). Parallel chunk bodies compile fully optimized.
+- Floored `/` and `%` by a positive literal are branch-free (`floor_div_pos`, `floor_mod_pos`).
+- Fix: a loop whose body assigns its own counter is never auto-parallelized.
 - Fix (ADR 0008): a counted loop whose body read the array it writes at another index (`row[j] = row[j - 1] + ...`) was auto-parallelized from 65,536 iterations and could compute wrong values. Such loops stay serial; stencils over a different array stay parallel behind a runtime `ReferenceEquals` alias check.
 - Fix: an exception raised inside an auto-parallelized loop reaches the caller as itself, as in the serial loop, not wrapped in `AggregateException`.
 - Runtime: `Par.Range`/`Reduce`/`MapSum` run on a lean chunk scheduler (`ParJob`) instead of `Parallel.For`: one allocation per loop, an atomic chunk counter, and the calling thread works through chunks itself, so nested parallel loops cannot starve the pool and no TPL machinery is JIT-compiled at startup.

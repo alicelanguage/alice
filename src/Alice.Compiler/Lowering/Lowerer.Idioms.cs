@@ -206,7 +206,7 @@ public sealed partial class Lowerer
             if (s is Assign a && a.Op == "=" && CounterUpdate(a) is { } cu && cu.Ix.Args[0].Value is NameExpr k && k.Sym == w) into.Add(a);
     }
 
-    static IEnumerable<Stmt> WalkStmts(List<Stmt> body)
+    internal static IEnumerable<Stmt> WalkStmts(List<Stmt> body)
     {
         foreach (var s in body)
         {
@@ -226,7 +226,7 @@ public sealed partial class Lowerer
     }
 
     /// <summary>All expression nodes reachable from statements (used for simple use-analysis).</summary>
-    static IEnumerable<Syntax.Expr> Walk(List<Stmt> body)
+    internal static IEnumerable<Syntax.Expr> Walk(List<Stmt> body)
     {
         foreach (var s in WalkStmts(body))
         {

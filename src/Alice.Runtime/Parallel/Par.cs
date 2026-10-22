@@ -9,6 +9,9 @@ public static class Par
 
     // ---- fork/join of independent pure calls (`a = f(x)` / `b = f(y)`), lazy task creation like BendRT's parallel let ----
 
+    /// <summary>Whether a parallel loop already dispatched: pool threads exist and waking them is cheap.</summary>
+    internal static bool Warm;
+
     [ThreadStatic] static int forkDepth;
 
     internal static int ForkDepth { get => forkDepth; set => forkDepth = value; }
@@ -39,6 +42,13 @@ public static class Par
         forkDepth = outer;
         return (job.Join(), b);
     }
+
+    /// <summary>
+    /// Whether the rest of a loop is worth running in parallel: the first iteration took since <paramref name="t0"/>
+    /// (Stopwatch ticks), and <paramref name="remaining"/> iterations of about that cost are left. Generated loops call
+    /// it once, at the top of their second iteration.
+    /// </summary>
+    public static bool Offload(long t0, int remaining) => ParJob<byte>.WorthDispatch((System.Diagnostics.Stopwatch.GetTimestamp() - t0) * (long)remaining);
 
     /// <summary>Calls body(lo, hi) over disjoint contiguous ranges covering [0, n).</summary>
     public static void Range(int n, Action<int, int> body, int grain = 1)

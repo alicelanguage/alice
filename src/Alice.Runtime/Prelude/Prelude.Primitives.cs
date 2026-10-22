@@ -44,6 +44,20 @@ public static partial class Prelude
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static long floor_mod(long a, long b) { long r = a % b; if (r != 0 && ((r ^ b) < 0)) r += b; return r; }
 
+    // Floored division by a divisor known positive (a literal): exact and branch-free. a % d is negative exactly
+    // when a is a negative non-multiple, and then the floored quotient is one less and the modulo d more.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int floor_div_pos(int a, int d) => a / d + ((a % d) >> 31);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long floor_div_pos(long a, long d) => a / d + ((a % d) >> 63);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int floor_mod_pos(int a, int d) { int r = a % d; return r + ((r >> 31) & d); }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static long floor_mod_pos(long a, long d) { long r = a % d; return r + ((r >> 63) & d); }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static double floor_fmod(double a, double b) { double r = a % b; if (r != 0 && (r < 0) != (b < 0)) r += b; return r; }
 

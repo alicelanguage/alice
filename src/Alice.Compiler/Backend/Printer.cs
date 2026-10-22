@@ -173,7 +173,8 @@ public sealed class Printer
                 return P(c.C) + " ? " + P(c.A) + " : " + P(c.B);
             case MLambda l:
                 {
-                    string head = (l.Static ? "static " : "") + "(" + string.Join(", ", l.Params) + ") => ";
+                    string head = (l.Hot ? "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)] " : "")
+                        + (l.Static ? "static " : "") + "(" + string.Join(", ", l.Params) + ") => ";
                     if (l.ExprBody != null) return head + E(l.ExprBody);
                     // block bodies map back to Alice lines too (stack traces, CallerLineNumber, debugger)
                     var pr = new Printer(ambientFile ?? "", 0) { lastLine = int.MaxValue };

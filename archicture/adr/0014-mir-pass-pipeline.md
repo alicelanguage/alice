@@ -29,6 +29,21 @@ would otherwise run in tier 0 and OSR, and with no reference parameters tiered
 PGO has no virtual call to devirtualize (suite queens: 0.92 s → 0.81 s). Marking
 every loop-bearing method this way was measured and rejected (±5%, no net win).
 
+Two narrower tiering rules were measured and kept. A method with a loop nest
+(a loop inside a loop) usually runs long from one call, so instrumented tier 0
+runs it until on-stack replacement: it is compiled fully optimized (suite nbody
+151 → 78 ms, C# 78 ms; steady-state benchmarks within noise). Static functions
+over primitives that loops call, directly or through another such function
+(`noise`, `lattice` in a pixel loop), stay in tier 0 for most of a short run
+because call-counting tier-up waits for startup to settle; they are compiled
+fully optimized too (suite terrain at 512x512: 143 → 115 ms, C# 105 ms).
+Lowering the runtime's call-counting delay globally was measured and rejected
+(+2-6 ms of background JIT on short runs).
+
+`strength-reduce` also rewrites floored `/` and `%` by any other positive
+literal to branch-free helpers (`a / d + ((a % d) >> 31)`,
+`r + ((r >> 31) & d)`).
+
 Lowering stays a direct translation and supplies facts the passes need instead
 of optimizing: counted loops declare their counter type (`MFor.VarType`), and
 float modulo lowers to `floor_fmod`, so `floor_mod` is integer-only.

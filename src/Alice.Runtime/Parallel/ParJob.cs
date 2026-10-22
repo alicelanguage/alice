@@ -36,9 +36,37 @@ sealed class ParJob<T> : IThreadPoolWorkItem
         return job.partial!;
     }
 
+
+    /// <summary>
+    /// Serial work below which waking helpers costs more than it saves: starting the pool's threads in a fresh process
+    /// cost ~15 ms on a 12-thread laptop (25 ms budget), waking parked ones tens of microseconds (50 us).
+    /// </summary>
+    static long Threshold => System.Diagnostics.Stopwatch.Frequency / (Par.Warm ? 20_000 : 40);
+
+    /// <summary>True (and the pool counts as warm from now on) when serial work of this many ticks pays for a dispatch.</summary>
+    internal static bool WorthDispatch(long ticks)
+    {
+        if (ticks < Threshold) return false;
+        Par.Warm = true;
+        return true;
+    }
+
     void Start()
     {
-        int helpers = Math.Min(chunks, Par.Workers) - 1;
+        // the caller runs the first two chunks and times the second (the first pays for JIT-compiling the body): a
+        // loop whose projected remaining work is shorter than a dispatch finishes serially, so small "heavy" loops in
+        // a short program never wake the pool
+        RunOne();
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        RunOne();
+        long sample = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+        if (error != null || !WorthDispatch(sample * (chunks - 2)))
+        {
+            Execute();
+            error?.Throw();
+            return;
+        }
+        int helpers = Math.Min(chunks - 1, Par.Workers - 1);
         for (int i = 0; i < helpers; i++) ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
         Execute();
         var spin = new SpinWait();
@@ -48,8 +76,14 @@ sealed class ParJob<T> : IThreadPoolWorkItem
 
     public void Execute()
     {
-        int c;
-        while ((c = Interlocked.Increment(ref next) - 1) < chunks)
+        while (RunOne()) { }
+    }
+
+    /// <summary>Claims and runs one chunk; false when none was left.</summary>
+    bool RunOne()
+    {
+        int c = Interlocked.Increment(ref next) - 1;
+        if (c >= chunks) return false;
         {
             int lo = (int)((long)n * c / chunks), hi = (int)((long)n * (c + 1) / chunks);
             try
@@ -66,5 +100,6 @@ sealed class ParJob<T> : IThreadPoolWorkItem
             }
             Interlocked.Decrement(ref pending);
         }
+        return true;
     }
 }

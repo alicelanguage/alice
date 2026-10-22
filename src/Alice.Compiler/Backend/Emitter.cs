@@ -367,6 +367,66 @@ public sealed class Emitter
         return MirFacts.Calls(body, m.CsName);
     }
 
+    /// <summary>
+    /// A loop inside a loop: the method usually runs long from a single call, so tier 0 with PGO instrumentation
+    /// runs it until on-stack replacement (suite nbody: 151 ms -> 78 ms, C# 78 ms). Compiled fully optimized instead;
+    /// steady-state benchmarks measured within noise.
+    /// </summary>
+    static bool LoopNest(List<MStmt> body, int depth) => body.Any(s => s switch
+    {
+        MFor f => depth >= 1 || LoopNest(f.Body, depth + 1),
+        MWhile w => depth >= 1 || LoopNest(w.Body, depth + 1),
+        MForeach fe => depth >= 1 || LoopNest(fe.Body, depth + 1),
+        MIf i => LoopNest(i.Then, depth) || (i.Else != null && LoopNest(i.Else, depth)),
+        MBlock b => LoopNest(b.Body, depth),
+        _ => false,
+    });
+
+    HashSet<MethodSym>? loopLeaves;
+
+    /// <summary>
+    /// Static functions over primitives (parameters and result) that loops call, directly or through another such
+    /// function: `noise(x, y)` in a pixel loop, `lattice` inside it. Short programs end before tiering promotes them,
+    /// and with no reference values there is nothing for PGO to devirtualize, so they compile fully optimized at once.
+    /// </summary>
+    HashSet<MethodSym> LoopLeaves()
+    {
+        if (loopLeaves != null) return loopLeaves;
+        static bool Leaf(MethodSym m) => m.IsStatic && !m.IsAsync && !m.IsCtor && !m.UsesYield && m.Decl is { HasBody: true } d
+            && !d.Attrs.Any(a => a is "Hot" or "Inline" or "NoInline") && m.TypeParams.Count == 0 && !m.HasInferredGenerics
+            && (m.Ret.IsVoid || Primitive(m.Ret)) && m.Params.All(p => Primitive(p.Type));
+        static IEnumerable<MethodSym> Calls(IEnumerable<Expr> es) => es.Select(e => e switch
+        {
+            CallExpr { Sym: MethodSym c } => c,
+            NameExpr { Res: "call", Sym: MethodSym c } => c,
+            _ => null,
+        }).OfType<MethodSym>();
+        var bodies = new List<List<Stmt>>();
+        void Collect(IEnumerable<Item> items)
+        {
+            foreach (var it in items)
+                switch (it)
+                {
+                    case NamespaceItem ns: Collect(ns.Items); break;
+                    case TypeDecl td: Collect(td.Members); break;
+                    case MethodDecl md when md.HasBody: bodies.Add(md.Body); break;
+                    case StmtItem si: bodies.Add([si.Stmt]); break;
+                }
+        }
+        foreach (var f in binder.Files) Collect(f.Items);
+        var set = new HashSet<MethodSym>();
+        foreach (var b in bodies)
+            foreach (var loop in Lowerer.WalkStmts(b))
+                if (loop is ForStmt or WhileStmt)
+                    foreach (var c in Calls(Lowerer.Walk(loop is ForStmt fs ? fs.Body : ((WhileStmt)loop).Body)))
+                        if (Leaf(c)) set.Add(c);
+        var work = new Queue<MethodSym>(set);
+        while (work.TryDequeue(out var m))
+            foreach (var c in Calls(Lowerer.Walk(m.Decl!.Body)))
+                if (Leaf(c) && set.Add(c)) work.Enqueue(c);
+        return loopLeaves = set;
+    }
+
     static bool Primitive(AType t) => t.Kind == "prim" && !t.Nullable && t.Cs != "decimal";
 
     string MethodVariant(MethodDecl d, TypeSym owner, Instance? inst)
@@ -405,7 +465,7 @@ public sealed class Emitter
         string code = Print(body, 1);
         string extra = string.Concat(lowerer.Extra);
         lowerer.Extra.Clear();
-        string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) ? Hot : "");
+        string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) || LoopLeaves().Contains(m) || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && LoopNest(body, 0) ? Hot : "");
         if (m.IsCtor)
         {
             string baseInit = "";

@@ -43,6 +43,7 @@ public sealed partial class Lowerer
     {
         if (inParallelGen || ctx.Contains("lambda") || noHoist > 0 || Method is { TypeParams.Count: > 0 } || Method?.IsAsync == true) return null;
         if (f.Iter is not RangeExpr r || f.Locals.Count != 1 || !f.Locals[0].Type.IsInteger || f.Locals[0].Type.Cs != "int") return null;
+        if (WalkStmts(f.Body).Any(s => s is Assign { Target: NameExpr { Sym: LocalSym c } } && c == f.Locals[0])) return null;   // the body moves its own counter
         var plan = new LoopPlan { LoopVar = f.Locals[0] };
         plan.Inner.Add(plan.LoopVar);
         if (!LoopBody(f.Body, plan, 0)) return null;
@@ -104,23 +105,45 @@ public sealed partial class Lowerer
                 {
                     Target = new MCode("global::Alice.Runtime.Par"),
                     Name = $"Reduce<{accT}>",
-                    Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk }, new MCode("static (x, y) => x + y"), new MCode(grain) },
+                    Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk, Hot = true }, new MCode("static (x, y) => x + y"), new MCode(grain) },
                 },
             });
             Extra.Add($"private {HelperStatic}{accT} {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
         }
         else
         {
-            hp.Root(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk }, new MCode(grain) } } });
+            hp.Root(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk, Hot = true }, new MCode(grain) } } });
             Extra.Add($"private {HelperStatic}void {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
         }
-        string call = $"{helper}({string.Join(", ", args)})";
-        MStmt par = plan.Acc != null
-            ? new MAssign { Target = new MCode(plan.Acc.CsName), Op = "+=", Value = new MCode(call) }
-            : new MExprStmt { E = new MCode(call) };
+        MStmt Dispatch(string from, string n)
+        {
+            string call = $"{helper}({string.Join(", ", captured.Select(l => l.CsName).Append(from).Append(n))})";
+            return plan.Acc != null
+                ? new MAssign { Target = new MCode(plan.Acc.CsName), Op = "+=", Value = new MCode(call) }
+                : new MExprStmt { E = new MCode(call) };
+        }
         string min = plan.Heavy || f.Par ? "2" : Threshold.ToString();
         string distinct = string.Concat(aliasGuards.Select(g => $" && !global::System.Object.ReferenceEquals({g.W.CsName}, {g.R.CsName})"));
-        return new MIf { Cond = new MCode($"{count} >= {min} && global::Alice.Runtime.Par.Workers > 1{distinct}"), Then = { par }, Else = serial };
+        var cond = new MCode($"{count} >= {min} && global::Alice.Runtime.Par.Workers > 1{distinct}");
+        // probe: run the first two iterations here and time the second (the first runs cold: cache misses, first-touch
+        // page faults); at the top of the third, offload the rest only when the projected work pays for a dispatch
+        // (Par.Offload). Short loops never JIT or wake the parallel machinery.
+        if (!f.Par && SerialFor(f) is MFor probe && probe.Var == i)
+        {
+            string t0 = Temp("t0");
+            probe.Body.Insert(0, new MIf
+            {
+                Cond = new MCode($"{i} == {start} + 1"),
+                Then = { new MAssign { Target = new MCode(t0), Value = new MCode("global::System.Diagnostics.Stopwatch.GetTimestamp()") } },
+                Else = [new MIf
+                {
+                    Cond = new MCode($"{i} == {start} + 2 && global::Alice.Runtime.Par.Offload({t0}, {count} - 2)"),
+                    Then = { Dispatch($"{start} + 2", $"{count} - 2"), new MBreak() },
+                }],
+            });
+            return new MIf { Cond = cond, Then = { new MDecl { Name = t0, TypeCs = "long", Init = new MCode("0") }, probe }, Else = serial };
+        }
+        return new MIf { Cond = cond, Then = { Dispatch(start, count) }, Else = serial };
     }
 
     /// <summary>

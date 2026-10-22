@@ -58,4 +58,17 @@ public class LoopDependenceTests
     [Fact]
     public void Overlapping_rows_stay_serial()   // x in 0..w touches the next row's first cell
         => Assert.DoesNotContain("__parfor", AliceCompiler.Transpile(Overlapping));
+
+    [Fact]
+    public void Parallel_loops_probe_the_first_iteration_before_dispatching()
+    {
+        Assert.Contains("Par.Offload(", AliceCompiler.Transpile(Rows2D));   // a short loop never reaches the parallel helper
+        int h = 3, w = 4, s = 0;
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) s += (x + y) % 7;
+        Assert.Equal(s, Compile(Rows2D).Invoke(null, [h, w]));
+    }
+
+    [Fact]
+    public void A_body_that_moves_its_counter_stays_serial()
+        => Assert.DoesNotContain("__parfor", AliceCompiler.Transpile("def f(n : Int32) : Int32\n  a = Array(Int32).new(n)\n  for i in 0...n\n    a[i] = 1\n    i = i + 1\n  end\n  a[0]\nend\n"));
 }
