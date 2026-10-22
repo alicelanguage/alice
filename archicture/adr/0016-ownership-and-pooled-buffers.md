@@ -38,6 +38,13 @@ locals are limited to unmanaged element arrays declared in the method; fields,
 collections of references and arrays shared across threads stay with the GC.
 Ports to the self-hosted compiler follow ADR 0006's rule.
 
+Amendment (0.12.2): owned results. A call to a method whose every returned value is a local it
+owns (fed only by fresh arrays, never stored, captured or aliased) yields an array its caller may own:
+`src = source(n)` joins the caller's ownership analysis like a fresh array. The callee never releases what it
+returns, so the buffer moves to the caller, which releases it, and the next `source` call rents it back.
+`benchmarks/gc` `scratch`: 3.81 MiB and 18 collections per 7 runs down to under 400 B and 0 collections.
+In-place `xs = xs.map { }`, `own`/`borrow` parameters and `scope` regions are in ADR 0017.
+
 Amendment (0.12.1): a pooled array hides its length from the JIT. `new T[n]`
 tells RyuJIT that the length is `n`, so `for (k = 0; k < n; k++) buf[k]` has no
 bounds checks; `Own<T>.Rent(n)` is an opaque call and the checks stay. The MIR

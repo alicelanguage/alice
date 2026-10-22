@@ -126,7 +126,18 @@ public class NativeCallOverheadTests
     {
         var cs = AliceCompiler.Transpile("lib LibX\n  @[Fast]\n  fun add1(x : Int32) : Int32\n  fun flag(b : Bool) : Bool\nend\n");
         Assert.Contains("[global::System.Runtime.InteropServices.SuppressGCTransition]", cs);
-        Assert.Matches(@"MarshalAs\(global::System\.Runtime\.InteropServices\.UnmanagedType\.U1\)\]\s*public static extern bool flag\(\[global::System\.Runtime\.InteropServices\.MarshalAs\(global::System\.Runtime\.InteropServices\.UnmanagedType\.U1\)\] bool b\)", cs);
+        // blittable: a C bool crosses as one byte, so the call needs no marshalling stub and the JIT can inline it
+        Assert.Contains("private static extern byte __raw_flag(byte b);", cs);
+        Assert.Contains("public static bool flag(bool b) => __raw_flag(b ? (byte)1 : (byte)0) != 0;", cs);
+        Assert.DoesNotContain("MarshalAs", cs);
         Assert.Single(System.Text.RegularExpressions.Regex.Matches(cs, "SuppressGCTransition"));
+    }
+
+    [Fact]
+    public void Fast_bool_funs_stay_blittable()
+    {
+        // SuppressGCTransition needs a blittable signature: a marshalled bool would fail at the first call
+        var cs = AliceCompiler.Transpile("lib LibX\n  @[Fast]\n  fun flag(b : Bool) : Bool\nend\n");
+        Assert.Matches(@"SuppressGCTransition\]\s*private static extern byte __raw_flag\(byte b\);", cs);
     }
 }

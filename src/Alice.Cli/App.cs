@@ -16,7 +16,7 @@ public static class App
     static readonly (string Name, string Key)[] Commands =
     [
         ("new", "cmd.new"), ("build", "cmd.build"), ("run", "cmd.run"), ("check", "cmd.check"), ("test", "cmd.test"),
-        ("add", "cmd.add"), ("remove", "cmd.remove"), ("search", "cmd.search"), ("list", "cmd.list"), ("install", "cmd.install"), ("repl", "cmd.repl"), ("cache", "cmd.cache"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
+        ("add", "cmd.add"), ("remove", "cmd.remove"), ("search", "cmd.search"), ("list", "cmd.list"), ("install", "cmd.install"), ("repl", "cmd.repl"), ("cache", "cmd.cache"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("explain", "cmd.explain"), ("prove", "cmd.prove"), ("guide", "cmd.guide"), ("agents", "cmd.agents"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
         ("lsp", "cmd.lsp"), ("toolchain", "cmd.toolchain"), ("self", "cmd.self"), ("doctor", "cmd.doctor"), ("completions", "cmd.completions"),
     ];
 
@@ -73,6 +73,10 @@ public static class App
                 "run" => CompileCommands.RunCmd(rest),
                 "check" => CompileCommands.Check(rest),
                 "emit" => CompileCommands.Emit(rest),
+                "explain" => CompileCommands.ExplainCmd(rest),
+                "prove" => CompileCommands.ProveCmd(rest),
+                "guide" => GuideCommand.Run(rest),
+                "agents" => GuideCommand.Agents(rest),
                 "gen" => CompileCommands.Gen(rest),
                 "test" => TestCommand.Run(rest),
                 "fmt" => FormatCommand.Run(rest),

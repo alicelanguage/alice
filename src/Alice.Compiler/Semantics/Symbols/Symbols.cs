@@ -64,6 +64,9 @@ public sealed class ParamSym
     public bool Splat;
     public bool Block;
     public bool Auto;
+    public bool Own;                  // `own xs`: moved in by the caller
+    public bool Borrow;               // `borrow xs`: never retained by the callee
+    public LocalSym? Local;           // the body's local for this parameter
 }
 
 public sealed class MethodSym

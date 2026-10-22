@@ -21,4 +21,9 @@
   <ItemGroup>
     <None Include="../Alice.Sdk/Alice.props;../Alice.Sdk/Alice.targets" Link="sdk/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- `alice guide [topic]` and `alice agents` print these; it lives at the repository root so it is easy to find and update per version -->
+    <EmbeddedResource Include="../../guide/*.md" Exclude="../../guide/README.md" LogicalName="Alice.Guide.%(Filename).md" />
+  </ItemGroup>
 </Project>

@@ -81,6 +81,8 @@ public sealed class Param : Node
     public bool Auto;     // @x : T  (assigns the field)
     public bool Splat;    // *xs : T
     public bool Block;    // &blk : A -> R
+    public bool Own;      // own xs : Array(T)   (the caller moves its array in, ADR 0016)
+    public bool Borrow;   // borrow xs : Array(T)   (checked: never retained, AL0213)
 }
 
 public sealed class MethodDecl : Item
@@ -90,6 +92,10 @@ public sealed class MethodDecl : Item
     public bool IsStatic;
     public bool IsAbstract;
     public bool IsAsync;
+    public bool IsPure;
+    public string? RuleName;      // `rule name(...)` (RULES.al): a pure Bool method checked over Domains by `alice prove`
+    public List<RuleDomain> Domains = new();           // `pure def`: proven free of effects, or AL0210
+    public bool IsSafe;           // `safe def`: only Alice code, no interop, native or unchecked escape, or AL0212
     public List<string> TypeParams = new();
     public List<Param> Params = new();
     public TypeRef? Ret;
@@ -137,3 +143,12 @@ public sealed class AliasDecl : Item
 public sealed class IncludeDecl : Item { public TypeRef Type = new(); }
 
 public sealed class StmtItem : Item { public Stmt Stmt = null!; }
+
+/// <summary>One quantified variable of a rule: an inclusive integer range or Bool.</summary>
+public sealed class RuleDomain
+{
+    public string Name = "";
+    public bool IsBool;
+    public long Lo, Hi;           // inclusive
+    public long Size => IsBool ? 2 : Hi - Lo + 1;
+}

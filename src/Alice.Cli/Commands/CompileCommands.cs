@@ -54,7 +54,7 @@ public static class CompileCommands
     static Dictionary<string, string> Sources(List<SourceFile> files) => files.ToDictionary(f => f.Path, f => f.Text);
 
     /// <summary>Compile Alice sources to an in-memory IL image, rendering diagnostics on failure.</summary>
-    static byte[]? CompileFiles(List<SourceFile> files, string name, bool exe, List<string> refs, string? nativeDir = null)
+    static byte[]? CompileFiles(List<SourceFile> files, string name, bool exe, List<string> refs, string? nativeDir = null, Action? onNative = null)
     {
         try
         {
@@ -65,6 +65,7 @@ public static class CompileCommands
                 // @[Native] functions: clang -O3 -march=native; without a C compiler the managed bodies run instead
                 if (c != null)
                 {
+                    onNative?.Invoke();
                     string dir = nativeDir ?? Path.Combine(Path.GetTempPath(), "alice-native-" + Guid.NewGuid().ToString("N"));
                     if (AliceCompiler.BuildNativeLibrary(c, dir, name + "_native")) Alice.Runtime.NativeLibs.AddSearchPath(dir);
                     else Console.Error.WriteLine("warning: no C compiler found; @[Native] functions use their managed fallback");
@@ -87,8 +88,15 @@ public static class CompileCommands
         if (o.Files.Count == 0) return RunProject(o);
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Files[0]);
-        var image = CompileFiles(files, name, true, o.Refs);
-        if (image == null) return 1;
+        string? key = RunCache.Enabled ? RunCache.Key(files, name, o.Refs) : null;
+        var image = key != null ? RunCache.TryGet(key) : null;
+        if (image == null)
+        {
+            bool native = false;
+            image = CompileFiles(files, name, true, o.Refs, onNative: () => native = true);
+            if (image == null) return 1;
+            if (key != null && !native) RunCache.Put(key, image);   // a native library lives beside the run, not in the image
+        }
         UiH.Status(T("running"), name);
         var asm = AliceCompiler.Load(image);
         var entry = asm.EntryPoint;
@@ -248,6 +256,34 @@ public static class CompileCommands
         if (image == null) return 1;
         UiH.Status(T("finished"), $"{T("checking")} {files.Count} file(s) ({UiH.Elapsed(sw)})");
         return 0;
+    }
+
+    /// <summary>`alice prove [files] [--check]`: every .al file under the current directory by default.</summary>
+    public static int ProveCmd(List<string> a)
+    {
+        bool check = a.Remove("--check");
+        var o = Parse(a);
+        var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories)
+            .Where(f => !f.Contains("/obj/") && !f.Contains("/bin/") && !f.Contains("/.alice/") && Path.GetFileName(f) != Prove.ProofFile).ToList();
+        var files = Read(paths);
+        try { return Prove.Run(files, o.Refs, check, "."); }
+        catch (CompileException e)
+        {
+            Ui.DiagnosticRenderer.Render(e.Diagnostics, Sources(files));
+            return 1;
+        }
+    }
+
+    public static int ExplainCmd(List<string> a)
+    {
+        var o = Parse(a);
+        if (o.Files.Count == 0) throw new UsageException(T("no.files"), T("hint.no.project"));
+        try { return Explain.Run(Read(o.Files), o.Refs); }
+        catch (CompileException e)
+        {
+            Ui.DiagnosticRenderer.Render(e.Diagnostics, Sources(Read(o.Files)));
+            return 1;
+        }
     }
 
     public static int Emit(List<string> a)

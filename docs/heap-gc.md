@@ -90,5 +90,7 @@ Values typed `dynamic` load the C# runtime binder (tens of milliseconds). Alice 
 - Use literal blocks on `each/map/select/sum/...` and `times/upto/step`: those inline.
 - Return values instead of building small arrays to return two results; `q, r = a.divmod(b)` is already free.
 - For point/record-like rows, fill an `Array(Array(T))` with literal rows in one loop right after creating it, and index it as `a[i][j]`: it becomes one flat array.
-- Not yet done: reusing an array in place for `xs = xs.map { }` (Bend-style single-owner update). No Alice code in the samples, benchmarks or suite uses that shape today.
+- `xs = xs.map { }` on an owned array overwrites it in place (Bend-style single-owner update, 0.12.2).
+- A function that returns only an owned local (`def source(n)` building and returning `xs`) hands the buffer to
+  its caller: `src = source(n)` is owned, released by the caller and reused by the next `source` call (0.12.2).
 - Reuse buffers across iterations when they are large: `stackalloc` covers only small, fixed-size arrays.

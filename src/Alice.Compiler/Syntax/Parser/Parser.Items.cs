@@ -45,6 +45,7 @@ public sealed partial class Parser
             }
             else if (IsTypeStart()) into.Add(TypeItem());
             else if (IsDefStart()) into.Add(Def("program"));
+            else if (top && IsKw("rule") && Peek(1).Kind == "id" && Peek(2).Kind == "op" && Peek(2).Text == "(") into.Add(Rule());
             else if (IsStructNew()) into.Add(StructNew());
             else if (IsConstDecl()) into.Add(Const());
             else
@@ -95,7 +96,69 @@ public sealed partial class Parser
         return t[p].Kind == "id" && " class struct module interface enum lib record ".Contains(" " + t[p].Text + " ");
     }
 
-    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async")) && (Peek(1).Text == "def" || Peek(2).Text == "def"));
+    /// <summary>
+    /// `rule name(x in -10..10, b : Bool) ... end`: a pure method returning Bool over a finite domain whose bounds are
+    /// integer literals, so the domain is visible in the source (RULES.al, proven by `alice prove`).
+    /// </summary>
+    MethodDecl Rule()
+    {
+        var m = At(new MethodDecl(), Cur);
+        Next();
+        string name = Next().Text;
+        m.Name = "rule_" + name;
+        m.RuleName = name;
+        m.IsPure = true;
+        m.IsStatic = true;
+        var saved = locals;
+        locals = new List<HashSet<string>> { new() };
+        Expect("(");
+        SkipNl();
+        while (!IsOp(")"))
+        {
+            var pt = Cur;
+            var d = new RuleDomain { Name = Next().Text };
+            if (IsKw("in"))
+            {
+                Next();
+                d.Lo = SignedLiteral();
+                if (!IsOp("..") && !IsOp("...")) throw Err("expected `..` or `...` in a rule domain");
+                bool excl = Next().Text == "...";
+                d.Hi = SignedLiteral() - (excl ? 1 : 0);
+                if (d.Hi < d.Lo) throw Err($"empty domain for `{d.Name}`");
+            }
+            else
+            {
+                Expect(":");
+                var ty = Type();
+                if (ty.Name != "Bool") throw Err("a rule variable is `x in lo..hi` (integer literals) or `b : Bool`");
+                d.IsBool = true;
+            }
+            bool wide = d.Lo < int.MinValue || d.Hi > int.MaxValue;
+            m.Params.Add(At(new Param { Name = d.Name, Type = new TypeRef { Name = d.IsBool ? "Bool" : wide ? "Int64" : "Int32" } }, pt));
+            DeclareLocal(d.Name);
+            m.Domains.Add(d);
+            if (IsOp(",")) { Next(); SkipNl(); }
+        }
+        Next();
+        m.Ret = new TypeRef { Name = "Bool" };
+        SkipNl();
+        m.Body = Block(" end ");
+        ExpectKw("end");
+        locals = saved;
+        m.File = file;
+        return m;
+    }
+
+    long SignedLiteral()
+    {
+        bool neg = false;
+        if (IsOp("-")) { Next(); neg = true; }
+        if (t[p].Kind != "int") throw Err("rule domain bounds are integer literals");
+        long v = long.Parse(Next().Text.Replace("_", ""));
+        return neg ? -v : v;
+    }
+
+    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"));
 
     bool IsStructNew() => t[p].Kind == "const" && Peek(1).Text == "=" && Peek(2).Text == "Struct" && Peek(3).Text == "." && Peek(4).Text == "new";
 
@@ -386,15 +449,20 @@ public sealed partial class Parser
     MethodDecl Def(string ownerKind)
     {
         var m = At(new MethodDecl(), Cur);
-        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async"))
+        bool inline = false;
+        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("inline"))
         {
             string mod = Next().Text;
             if (mod == "abstract") m.IsAbstract = true;
             else if (mod == "async") m.IsAsync = true;
+            else if (mod == "pure") m.IsPure = true;
+            else if (mod == "safe") m.IsSafe = true;
+            else if (mod == "inline") inline = true;
             else m.Vis = mod;
         }
         ExpectKw("def");
         m.Attrs = TakeAttrs();
+        if (inline && !m.Attrs.Contains("Inline")) m.Attrs.Add("Inline");   // `inline def` = `def @[Inline]`
         m.IsStatic = ownerKind == "module" || ownerKind == "program";
         if (IsKw("self") && Peek(1).Kind == "op" && Peek(1).Text == ".")
         {
@@ -474,6 +542,8 @@ public sealed partial class Parser
     Param Param()
     {
         var pr = At(new Param(), Cur);
+        if (IsKw("own") && Peek(1).Kind == "id") { Next(); pr.Own = true; }
+        else if (IsKw("borrow") && Peek(1).Kind == "id") { Next(); pr.Borrow = true; }
         if (IsOp("*")) { Next(); pr.Splat = true; }
         if (IsOp("&")) { Next(); pr.Block = true; }
         pr.Auto = t[p].Kind == "ivar";

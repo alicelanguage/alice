@@ -96,6 +96,16 @@ public class CliErrorTests : IDisposable
     }
 
     [Fact]
+    public void New_project_gets_AGENTS_md_and_a_CLAUDE_md_that_mirrors_it()
+    {
+        Assert.Equal(0, Cli("new", "agentsdemo").Code);
+        var agents = File.ReadAllText("agentsdemo/AGENTS.md");
+        Assert.Contains("alice guide", agents);
+        Assert.Contains(Alice.Cli.Commands.GuideCommand.Start, agents);
+        Assert.Equal("@AGENTS.md\n", File.ReadAllText("agentsdemo/CLAUDE.md"));   // Claude Code imports AGENTS.md: one source, no drift
+    }
+
+    [Fact]
     public void Remove_and_list_edit_the_manifest()
     {
         Assert.Equal(0, Cli("new", "demo").Code);

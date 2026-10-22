@@ -32,5 +32,7 @@ should run at the same speed. It has no `alice-own/` version.
   without it the Alice version would also be paying for overflow checks.
 - `own` compiles to the same code as inferred ownership. What it adds is the compile-time guarantee: a change
   that makes an array escape becomes error AL0207 instead of a silent return to GC allocation.
-- `own` cannot yet take an array returned from another function (`own src = source(n)` is AL0207). Such
+- Since 0.12.2 an array returned by a function that only returns its own owned local is owned by the caller
+  (`src = source(n)`), so `scratch` no longer keeps 3.8 MiB with the GC. Before 0.12.2, `own` could not take an
+  array returned from another function (`own src = source(n)` was AL0207). Such
   arrays stay with the GC; this is the 3.8 MiB that remains in `scratch`.

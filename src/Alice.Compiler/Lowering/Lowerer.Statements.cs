@@ -14,8 +14,13 @@ public sealed partial class Lowerer
                 Into(o, inl.Stmt, tail, target);
                 break;
             case BeginStmt { Rescues.Count: 0, Ensure: null } plain:
-                o.Add(new MBlock { Body = Stmts(plain.Body, tail, target), Unchecked = plain.Unchecked });
-                break;
+                {
+                    var block = new MBlock { Body = Stmts(plain.Body, tail, target), Unchecked = plain.Unchecked };
+                    if (plain.Scope && tail == Tail.None && !inParallelGen && releaseAt.TryGetValue(plain, out var dying))   // lifetime region ends
+                        foreach (var l in dying.Where(owned.ContainsKey)) block.Body.Add(Release(l, owned[l]));
+                    o.Add(block);
+                    break;
+                }
             case ExprStmt es:
                 {
                     // a declared/inferred non-void result means the tail IS the value, even when its static type is unknown

@@ -62,9 +62,9 @@ public static class Formatter
         for (int i = 0; i < words.Count; i++)
         {
             string w = words[i];
-            if (w == "unchecked" && words.Count == 1) { yield return w; continue; }   // `unchecked` block (a call has arguments or a receiver)
+            if (w is "unchecked" or "scope" && words.Count == 1) { yield return w; continue; }   // `unchecked` / `scope` block (a call has arguments or a receiver)
             if (!Openers.Contains(w)) continue;
-            bool atStart = i == 0 || (i == 1 && words[0] is "abstract" or "private" or "protected" or "async" or "par");
+            bool atStart = i == 0 || (i == 1 && words[0] is "abstract" or "private" or "protected" or "async" or "par" or "pure" or "safe" or "inline");
             bool asValue = i > 0 && words[i - 1] is "=" or "(" or "," or "+=" or "||=";   // `return if c` is always postfix
             if (!atStart && !asValue) continue;
             if (w == "def" && (owner == "interface" || (i > 0 && words[0] == "abstract"))) continue;   // signatures without bodies

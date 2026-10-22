@@ -199,6 +199,55 @@ thread does work too, so nested loops can't starve the pool, and exceptions reac
 reads the array it writes at another index (`row[j - 1]`) stays serial. For hashes and PRNGs, `unchecked ... end`
 or `&+ &- &*` turn off the overflow checks.
 
+### Explicit contracts (0.12.2)
+
+Inference stays the default. When you want a guarantee, say it, and the compiler proves it or stops with an error:
+
+```ruby
+pure def work(n : Int64) : Int64 ... end              # no effects, or AL0210
+safe def score(xs : Array(Int32)) : Int32 ... end     # cannot reach files, network, processes (AL0212)
+par a, b = work(n), work(n + 1)                       # always forks (AL0211)
+
+def scale(own xs : Array(Float64), k : Float64) : Array(Float64)
+  xs = xs.map { |v| v * k }                           # owned: updated in place, no new array
+  xs
+end
+def total(borrow xs : Array(Int64)) : Int64 ... end   # never keeps xs (AL0213)
+
+scope                                                 # lifetime region: arrays inside die at `end`
+  tmp = Array(Int32).new(n)
+end
+```
+
+Arrays a function returns are recycled by its caller, immutable objects built from constants are shared, and
+`fib(n - 1) + fib(n - 2)` forks directly. `alice explain file.al` lists, per method, which of these the compiler
+applied.
+
+### Rules and proofs
+
+Inspired by Bend's `LAWS.bend`: write the properties your program must never break in `RULES.al`, over finite
+domains, and `alice prove` checks every case:
+
+```ruby
+# RULES.al
+rule clamp_stays_in_range(x in -1000..1000, lo in -50..50)
+  c = clamp(x, lo, lo + 10)
+  c >= lo && c <= lo + 10
+end
+```
+
+Rules are pure (enforced), so checking every input is a proof by exhaustion, not a sample. `alice prove` writes
+`PROOF.al`, a certificate with each result and a hash of the sources. `alice prove --check` fails in CI when a
+rule breaks or the code changed without re-proving; a failure prints the exact counterexample. Alice proves its
+own numeric semantics this way: see [`RULES.al`](RULES.al) and [`PROOF.al`](PROOF.al).
+
+### The guide, for people and AI agents
+
+`alice guide` prints the Alice guide, embedded in the CLI so it always matches the installed version. Topics:
+`alice guide performance` (including when each tool is worth using), `alice guide proofs`, `alice guide interop`.
+`alice agents --write` adds an Alice block to your project's `AGENTS.md`: how to check and prove changes, and the
+Ruby/Crystal habits that are wrong in Alice. Sources: [`guide/`](guide).
+
 ### Benchmarks
 
 Alice compared with C#, both under server GC, from the repo suite ([run 8](benchmarks/README.md), i5-1235U, lower is better):
@@ -239,7 +288,8 @@ hashmap (1.45×) and merkle (1.2×). The other 7 are within 2–12 %. See
 ## Roadmap
 
 - Incremental compilation and a language server (editor completion, go-to-definition).
-- Fork `f(n - 1) + f(n - 2)` expressions directly; ownership for collections and records.
+- Ownership for collections and records; forks of three or more calls in one expression.
+- Rules over unbounded domains (induction) in `RULES.al`.
 - GPU offload for `Par` kernels; more `@[Native]` coverage (structs, strings).
 - Refinements, `ObjectSpace`, `class_eval` with strings.
 - NativeAOT single-file `alice` binary; package registry for Alice libraries.

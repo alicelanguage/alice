@@ -31,6 +31,7 @@ public sealed class MultiAssign : Stmt
     public List<Expr> Values = new();
     public List<LocalSym> Locals = new();
     public bool Declares;
+    public bool Par;             // `par a, b = f(x), g(y)`: fork, or AL0211
 }
 
 public sealed class IfStmt : Stmt
@@ -93,6 +94,7 @@ public sealed class BeginStmt : Stmt
     public List<Rescue> Rescues = new();
     public List<Stmt>? Ensure;
     public bool Unchecked;       // `unchecked ... end`: integer + - * inside wrap (ADR 0013)
+    public bool Scope;           // `scope ... end`: a lifetime region; its arrays must be owned and die at `end`
 }
 
 public sealed class ReturnStmt : Stmt { public Expr? Value; }

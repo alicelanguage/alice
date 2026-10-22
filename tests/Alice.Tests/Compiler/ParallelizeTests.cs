@@ -215,6 +215,27 @@ public class LoopParallelizeTests
         Assert.Equal("10946", AliceCompiler.Run(src).Trim());
     }
 
+    // 0.12.2: HVM reduces every independent redex of a term in parallel; Alice forks the two
+    // independent recursive calls of one arithmetic expression without naming their results
+    [Theory]
+    [InlineData("def fib(n : Int32) : Int64\n  return n.to_i64 if n < 2\n  fib(n - 1) + fib(n - 2)\nend\nputs fib(24)\n", "46368")]
+    [InlineData("def fib(n : Int32) : Int64\n  return n.to_i64 if n < 2\n  return fib(n - 1) + fib(n - 2)\nend\nputs fib(24)\n", "46368")]
+    [InlineData("def sum(d : Int32) : Int64\n  return 1_i64 if d == 0\n  s = 1_i64 + sum(d - 1) * 2_i64 + sum(d - 1)\n  s\nend\nputs sum(10)\n", "88573")]
+    public void Two_recursive_calls_in_one_expression_fork(string src, string expected)
+    {
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("Par.Fork(", cs);
+        Assert.Equal(expected, AliceCompiler.Run(src).Trim());
+    }
+
+    [Theory]
+    [InlineData("def f(n : Int32) : Bool\n  return true if n < 1\n  n > 3 && f(n - 1) && f(n - 2)\nend\n")]                   // short-circuit: the second call may never run
+    [InlineData("def f(n : Int32) : Int32\n  return 0 if n < 1\n  n > 3 ? f(n - 1) : f(n - 2)\nend\n")]                     // only one branch runs
+    [InlineData("def g(n : Int32) : Int32\n  puts n\n  n\nend\ndef f(n : Int32) : Int32\n  return 0 if n < 1\n  f(n - 1) + g(n)\nend\n")]   // impure operand
+    [InlineData("def f(n : Int32) : Int32\n  return 0 if n < 1\n  f(f(n - 1) - 1)\nend\n")]                                  // nested: dependent
+    public void Expression_forks_keep_evaluation_semantics(string src)
+        => Assert.DoesNotContain("Par.Fork", AliceCompiler.Transpile(src));
+
     [Fact]
     public void Loops_calling_pure_runtime_functions_parallelize()
     {

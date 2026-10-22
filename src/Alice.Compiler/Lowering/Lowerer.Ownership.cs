@@ -41,9 +41,21 @@ public sealed partial class Lowerer
         if (Method is null || Method.IsAsync || Method.UsesYield || Method.IsCtor) return;
         var explicitOwn = WalkStmts(body).OfType<Assign>().Where(a => a.Own).Select(a => a.Declares ?? (a.Target as NameExpr)?.Sym as LocalSym).OfType<LocalSym>().ToHashSet();
         var reasons = new Dictionary<LocalSym, (Node At, string Why)>();
+        // a `scope` region checks the lifetime of every unmanaged array created in it: owned, or AL0207
+        foreach (var region in WalkStmts(body).OfType<BeginStmt>().Where(b => b.Scope))
+            foreach (var a in WalkStmts(region.Body).OfType<Assign>())
+                if (a.Declares is { Type: { Kind: "array", Elem: { } rel } } rl && Unmanaged.Contains(rel.Cs) && (Fresh(a.Value) || OwnedResult(a.Value))) explicitOwn.Add(rl);
 
-        // 1. candidates: unmanaged arrays fed only by fresh arrays or other candidates
+        // 1. candidates: unmanaged arrays fed only by fresh arrays or other candidates, and `own` parameters
         var cands = new Dictionary<LocalSym, string>();
+        var ownParams = new HashSet<LocalSym>();
+        foreach (var ps in Method.Params)
+            if (ps is { Own: true, Local: { Type: { Kind: "array", Elem: { } pel } } pl } && Unmanaged.Contains(pel.Cs))
+            {
+                cands[pl] = pel.Cs;
+                ownParams.Add(pl);
+                explicitOwn.Add(pl);
+            }
         foreach (var s in WalkStmts(body))
             if (s is Assign { Op: "=" } a && Assigned(a) is { } l && l.Type is { Kind: "array", Elem: { } el } && Unmanaged.Contains(el.Cs)
                 && !stackArrays.ContainsKey(l) && !flatRows.ContainsKey(l))
@@ -55,7 +67,7 @@ public sealed partial class Lowerer
             {
                 case Assign a when Assigned(a) is { } l && cands.ContainsKey(l):
                     if (a.Op != "=") Drop(cands, reasons, l, a, "compound assignment to an owned array");
-                    else if (Fresh(a.Value)) { }
+                    else if (Fresh(a.Value) || InPlaceMap(a, l) != null || OwnedResult(a.Value)) { }
                     else if (a.Value is NameExpr { Sym: LocalSym src } && src != l && cands.ContainsKey(src)) edges.Add((l, src));
                     else Drop(cands, reasons, l, a, "it is assigned a value it does not own");
                     break;
@@ -96,7 +108,7 @@ public sealed partial class Lowerer
             releaseBefore.Clear();
             releaseAt.Clear();
             var flow = new OwnFlow(cands, tail);
-            var end = flow.Block(body, new OwnState(), tail);
+            var end = flow.Block(body, new OwnState { Live = new(ownParams.Where(cands.ContainsKey)) }, tail);
             if (flow.Violations.Count == 0)
             {
                 foreach (var (a, ok) in flow.ReleaseBefore) if (ok) releaseBefore.Add(a);
@@ -115,6 +127,58 @@ public sealed partial class Lowerer
                     ? $"use after move: `{l.Name}` was moved into another owned local; reassign it before using it again"
                     : $"owned value `{l.Name}` escapes: {r.Why}"));
         owned = cands;
+    }
+
+    /// <summary>
+    /// `l = l.map { |v| e }` keeping the element type, with a one-expression block that does not mention l:
+    /// the block of the single-owner update. l owns its buffer, so the map can overwrite it (Bend's in-place update).
+    /// </summary>
+    static LambdaExpr? InPlaceMap(Assign a, LocalSym l) =>
+        a.Op == "=" && a.Value is CallExpr { Res: "ext", Args.Count: 0, Recv: NameExpr { Sym: LocalSym r }, Block: { ParamSyms.Count: 1, Body: [ExprStmt] } blk } c
+        && r == l && Binder.Mangle(c.Name) is "map" && c.Type.Elem?.Cs == l.Type.Elem?.Cs && c.Type.Elem != null
+        && !Walk(blk.Body).OfType<NameExpr>().Any(n => n.Sym == l)
+            ? blk : null;
+
+    /// <summary>`for (int i = 0; i < l.Length; i++) { var v = l[i]; l[i] = e; }`: no allocation, no release.</summary>
+    bool TryInPlaceMap(List<MStmt> o, Assign a, LocalSym l)
+    {
+        if (InPlaceMap(a, l) is not { } blk) return false;
+        string i = Temp("i");
+        var p = blk.ParamSyms[0];
+        var body = new List<MStmt> { new MDecl { Name = p.CsName, Init = new MIndex { Target = new MCode(l.CsName), Args = { new MCode(i) } } } };
+        var value = Isolated(((ExprStmt)blk.Body[0]).Expr, body);
+        body.Add(new MAssign { Target = new MIndex { Target = new MCode(l.CsName), Args = { new MCode(i) } }, Value = value });
+        o.Add(new MFor { Var = i, VarType = "int", Start = new MCode("0"), End = new MCode(l.CsName + ".Length"), Body = body });
+        return true;
+    }
+
+    readonly Dictionary<MethodSym, bool> ownedResults = new();
+
+    /// <summary>
+    /// A call whose result the caller may own: every value the callee returns is a local it owns (fed only by fresh
+    /// arrays, never stored, captured or aliased). The callee does not release what it returns, so the buffer moves
+    /// out to the caller, which recycles it; `src = source(n)` then stops allocating once warm.
+    /// </summary>
+    bool OwnedResult(Syntax.Expr e)
+    {
+        if (Unwrap(e) is not CallExpr { Sym: MethodSym m, Block: null } || m.Ret is not { Kind: "array", Elem: { } el } || !Unmanaged.Contains(el.Cs)) return false;
+        if (ownedResults.TryGetValue(m, out var known)) return known;
+        if (m.Decl is not { HasBody: true } d || m.IsAsync || m.UsesYield || m.IsCtor) return ownedResults[m] = false;
+        ownedResults[m] = false;   // recursion: not owned while being analysed
+        var tails = new HashSet<Syntax.Expr>();
+        TailExprs(d.Body, tails);
+        var results = tails.Concat(WalkStmts(d.Body).OfType<ReturnStmt>().Select(r => r.Value)).ToList();
+        if (results.Count == 0 || results.Any(r => r is not NameExpr { Sym: LocalSym })) return false;
+        foreach (var l in results.Select(r => (LocalSym)((NameExpr)r!).Sym!).Distinct())
+        {
+            var assigns = WalkStmts(d.Body).OfType<Assign>().Where(a => Assigned(a) == l).ToList();
+            if (assigns.Count == 0 || assigns.Any(a => a.Op != "=" || !Fresh(a.Value))) return false;
+            if (WalkStmts(d.Body).OfType<MultiAssign>().Any(ma => ma.Locals.Contains(l))) return false;
+            var cands = new Dictionary<LocalSym, string> { [l] = el.Cs };
+            CheckUses(d.Body, l, cands, new(), tails);
+            if (!cands.ContainsKey(l)) return false;
+        }
+        return ownedResults[m] = true;
     }
 
     static LocalSym? Assigned(Assign a) => a.Declares ?? (a.Target as NameExpr)?.Sym as LocalSym;
@@ -155,7 +219,8 @@ public sealed partial class Lowerer
                     for (int k = 0; k < call.Args.Count; k++)
                         if (call.Args[k] is { Value: NameExpr { Sym: LocalSym x } } arg && x == l)
                         {
-                            if (arg.Mod == "" && arg.Name == null && Borrows(m, k, new())) allowed++;
+                            if (arg.Mod == "" && arg.Name == null && k < m.Params.Count && m.Params[k].Own) allowed++;   // moved into the callee
+                            else if (arg.Mod == "" && arg.Name == null && Borrows(m, k, new())) allowed++;
                             else { Drop(cands, reasons, l, call, $"`{m.Name}` may keep a reference to it"); return; }
                         }
                     break;
@@ -170,7 +235,9 @@ public sealed partial class Lowerer
                     if (WalkStmts(f.Body).Any(x => x is Assign a2 && (Assigned(a2) == l || a2.Value is NameExpr { Sym: LocalSym v2 } && v2 == l))) { Drop(cands, reasons, l, f, "it is moved while a loop iterates it"); return; }
                     allowed++;
                     break;
-                case Assign { Target: NameExpr { Sym: LocalSym t } } a when t == l && a.Op == "=": allowed++; break;   // the local being (re)bound
+                case Assign { Target: NameExpr { Sym: LocalSym t } } a when t == l && a.Op == "=":   // the local being (re)bound
+                    allowed += InPlaceMap(a, l) != null ? 2 : 1;   // `l = l.map { }` also reads l, in place
+                    break;
                 case Assign { Value: NameExpr { Sym: LocalSym v } } a when v == l && Assigned(a) is { } dst && dst != l && cands.ContainsKey(dst): allowed++; break;   // a move
                 case ReturnStmt { Value: NameExpr { Sym: LocalSym r } } when r == l: allowed++; break;
             }
@@ -232,6 +299,7 @@ public sealed partial class Lowerer
     bool TryOwnedAssign(List<MStmt> o, Assign a)
     {
         if (Assigned(a) is not { } l || OwnedElem(l) is not { } el) return false;
+        if (a.Declares == null && TryInPlaceMap(o, a, l)) return true;
         MExpr value = Fresh(a.Value) && Unwrap(a.Value) is NewExpr ne
             ? new MCall { Target = new MCode($"global::Alice.Runtime.Own<{el}>"), Name = "Rent", Args = ne.Args.Select(x => Expr(x.Value!)).ToList() }
             : Expr(a.Value);
@@ -274,6 +342,25 @@ public sealed partial class Lowerer
     }
 
     IEnumerable<MStmt> ReleaseOwnedAtEnd() => inParallelGen ? [] : releaseAtEnd.Where(owned.ContainsKey).Select(l => Release(l, owned[l]));
+
+    /// <summary>Owned locals passed to an `own` parameter: the call takes their array.</summary>
+    static IEnumerable<LocalSym> MovedIntoCalls(IEnumerable<Syntax.Expr> exprs, Dictionary<LocalSym, string> cands)
+    {
+        foreach (var e in exprs)
+            if (e is CallExpr { Sym: MethodSym m } c)
+                for (int k = 0; k < c.Args.Count && k < m.Params.Count; k++)
+                    if (m.Params[k].Own && c.Args[k].Value is NameExpr { Sym: LocalSym l } && cands.ContainsKey(l)) yield return l;
+    }
+
+    /// <summary>An argument to an `own` parameter must give up its array: an owned local (moved) or a fresh array.</summary>
+    void CheckOwnArguments(List<Stmt> body)
+    {
+        foreach (var e in Walk(body))
+            if (e is CallExpr { Sym: MethodSym m } c)
+                for (int k = 0; k < c.Args.Count && k < m.Params.Count; k++)
+                    if (m.Params[k].Own && c.Args[k].Value is { } v && !Fresh(v) && !OwnedResult(v) && !(v is NameExpr { Sym: LocalSym l } && owned.ContainsKey(l)))
+                        throw new CompileException($"{File}:{c.Line}:{Math.Max(1, c.Col)}: owned value expected for `own {m.Params[k].Name}` of `{m.Name}`: pass an owned local (it moves) or a fresh `Array(T).new`, not an array others may still reference");
+    }
 
     // ---- move-state flow analysis ----
 
@@ -330,7 +417,21 @@ public sealed partial class Lowerer
             return s;
         }
 
+        /// <summary>A statement, then the moves it makes into `own` parameters: those locals are gone afterwards.</summary>
         OwnState Stmt(Stmt st, OwnState s, Tail tail)
+        {
+            s = StmtCore(st, s, tail);
+            if (!s.Reachable) return s;
+            foreach (var l in MovedIntoCalls(Walk([st]), cands))
+            {
+                if (s.Live.Contains(l) || !s.Moved.Contains(l)) s = s.Copy();
+                s.Live.Remove(l);
+                s.Moved.Add(l);
+            }
+            return s;
+        }
+
+        OwnState StmtCore(Stmt st, OwnState s, Tail tail)
         {
             if (!s.Reachable) return s;
             switch (st)
@@ -395,6 +496,18 @@ public sealed partial class Lowerer
                 case NextStmt { Value: null } when loops.Count > 0:
                     loops.Peek().Nexts.Add(s.Copy());
                     return new OwnState { Reachable = false };
+                case BeginStmt { Scope: true } region:
+                    {
+                        // end of the region: its owned arrays still live here die now, the rest of the method never sees them
+                        var end = Block(region.Body, s, tail);
+                        if (!end.Reachable) return end;
+                        var inside = WalkStmts(region.Body).OfType<Assign>().Select(a => a.Declares).OfType<LocalSym>().Where(cands.ContainsKey).ToHashSet();
+                        var dying = new HashSet<LocalSym>(end.Live.Where(inside.Contains));
+                        ReleaseAt[region] = ReleaseAt.TryGetValue(region, out var prev) ? new HashSet<LocalSym>(prev.Intersect(dying)) : dying;
+                        end = end.Copy();
+                        end.Live.ExceptWith(inside);
+                        return end;
+                    }
                 case BeginStmt { Rescues.Count: 0, Ensure: null } b:
                     return Block(b.Body, s, tail);
                 default:

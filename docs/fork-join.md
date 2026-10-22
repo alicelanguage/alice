@@ -99,5 +99,6 @@ Counted loops use the same proofs: an iteration may write only locals declared i
 
 ## Limits
 
-- Only the two shapes above fork (two consecutive declarations, or `a, b = f(x), g(y)`). An expression with two recursive calls (`1 + l.check + r.check`, `fib(n - 1) + fib(n - 2)`) does not yet: name the two results.
+- Three shapes fork: two consecutive declarations, `a, b = f(x), g(y)`, and (since 0.12.2) one expression with exactly two forkable calls, `fib(n - 1) + fib(n - 2)`. The third is HVM's view of a term: the two calls are independent redexes, so they reduce at the same time. The term must be arithmetic over pure reads; calls under `&&`, `||`, `??` or `?:` stay serial because they may never run. Three or more calls in one expression do not fork yet.
+- A fork that would capture a nullable local stays serial: the helper's parameter would lose the narrowing (`a` is non-nil in this branch).
 - The parallel sort covers primitive element types; `sort_by` and comparer sorts stay serial.

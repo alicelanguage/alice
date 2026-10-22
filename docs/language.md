@@ -121,6 +121,65 @@ prev[n]                               # prev released after the read
 `own a` that escapes (stored, captured, passed to .NET) is AL0207; reading a moved
 local before reassigning it is AL0208.
 
+#### Single-owner update (0.12.2)
+
+An owned array is the only reference to its buffer, so rebinding it to a `map` of itself
+with the same element type overwrites it in place (Bend's single-owner update): no new array.
+
+```crystal
+xs = Array(Float64).new(n, 1.5)
+xs = xs.map { |v| v * v }   # for (i...) xs[i] = xs[i] * xs[i]; the buffer is reused
+```
+
+The block must be one expression that does not mention `xs`. A shared array (`b = xs` first) is not owned and
+its map copies as before.
+
+#### `own` and `borrow` parameters
+
+```crystal
+def scale(own xs : Array(Float64), k : Float64) : Array(Float64)
+  xs = xs.map { |v| v * k }   # the callee owns xs: in place
+  xs
+end
+
+def total(borrow xs : Array(Int64)) : Int64
+  s = 0_i64
+  for v in xs
+    s += v
+  end
+  s
+end
+
+own a = Array(Float64).new(n, 1.5)
+b = scale(a, 2.0)   # a moves into scale; reading a now is AL0208
+```
+
+- `own p`: the caller hands over its array. The argument must be an owned local, which is moved, or a fresh
+  `Array(T).new`; an array others may reference is AL0207. Inside, `p` is an owned local, released at exit
+  unless returned.
+- `borrow p`: the callee promises not to keep `p`. It may index, size, iterate and lend `p` to another borrowing
+  parameter, but not assign, store, return, capture or pass it where it may be kept (AL0213). The caller's
+  owned array stays owned across the call. Without `borrow`, the same property is inferred silently.
+
+#### Lifetimes: `scope ... end`
+
+A `scope` is a lifetime region. Locals declared inside are not visible after `end`, every unmanaged array
+created inside must be owned (AL0207 otherwise), and its buffer goes back to the pool at `end` rather than at
+method exit. A move to an outer local takes the array out of the region.
+
+```crystal
+scope
+  tmp = Array(Int32).new(n, 1)
+  for v in tmp
+    s += v
+  end
+end                              # tmp released here
+out = Array(Int32).new(n)        # can reuse tmp's buffer
+```
+
+Measured: a 3-stage `map` pipeline over 1M `Float64` runs at 4.0 ms and 3 bytes per call in Alice. Hand-written
+C# loops take 9.3 ms and 32 MB per call; LINQ `Select().ToArray()` takes 11.7 ms and 32 MB.
+
 ## 4. Operators
 
 | Group | Operators |
@@ -432,6 +491,44 @@ end
 If the iterations are not provably independent (a write outside `a[i]` / `a[i * w + j]`, a loop-carried
 read such as `a[i - 1]` of the written array, an impure call) it is compile error AL0209 rather than a silent
 serial loop.
+
+### Declared effects and explicit forks (0.12.2)
+
+Inference stays the default. These modifiers let a program say what it wants, so the compiler optimizes
+without heuristics and a failed proof is a compile error instead of a silent fallback:
+
+| Syntax | Meaning | Error |
+|---|---|---|
+| `pure def f ...` | `f` has no effects: no I/O, no writes to state it did not allocate, calls only pure code. Pure methods fork and parallelize | AL0210 |
+| `par a, b = f(x), g(y)` | Bend's parallel let: fork the two calls even when neither is recursive | AL0211 when they are impure or dependent |
+| `inline def f ...` | same as `def f @[Inline]`: `AggressiveInlining` | - |
+| `safe def f ...` | secure execution: `f` and every Alice method it calls hold no ambient authority (no .NET statics except `Math`/`Alice.Runtime`, no I/O, network, process, reflection, threading or interop types), no `dynamic`, no `@[Native]`, no `unchecked` | AL0212 |
+
+```crystal
+pure def work(n : Int64) : Int64
+  s = 0_i64
+  for i in 0...n
+    s += i
+  end
+  s
+end
+
+def both(n : Int64) : Int64
+  par a, b = work(n), work(n + 1)   # always forks (below the fork depth cutoff)
+  a + b
+end
+
+safe def score(xs : Array(Int32)) : Int32   # may compute on what it is given, nothing else
+  xs.sum
+end
+```
+
+Modifiers combine: `safe pure def`, `private inline def`. `safe` is capability-style: instance members of
+values the method receives are allowed, since the caller chose to hand them over; reaching the machine by name
+is not. It is a compile-time check, not a sandbox: it does not limit memory or time.
+
+Expressions fork too, HVM-style: when a statement is arithmetic over pure reads and exactly two forkable calls
+(`fib(n - 1) + fib(n - 2)`), the two calls run as a fork. See [fork/join](fork-join.md).
 
 ### Wrapping regions: `unchecked`
 

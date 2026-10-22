@@ -29,10 +29,14 @@ public sealed partial class Lowerer
                 }
             case ConstExpr ce:
                 return Const(ce);
+            case CallExpr c when forkedCalls.TryGetValue(c, out var forked):
+                return new MCode(forked);
             case CallExpr c:
                 return Call(c);
             case NewExpr { AsCall: not null } nc:
                 return Expr(nc.AsCall);
+            case NewExpr ne when TryShared(ne) is MExpr shared:
+                return shared;
             case NewExpr ne:
                 {
                     var args = Args(ne.Args);

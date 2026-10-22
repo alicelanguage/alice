@@ -94,6 +94,7 @@ public sealed partial class Binder
             var pt = inst != null ? inst.Args[i] : ps.Type;
             var l = Declare(d, ps.Name, ps.Splat ? AType.Array(pt) : pt);
             l.CsName = ps.CsName;
+            if (inst == null) ps.Local = l;
         }
         foreach (var p in d.Params)
             if (p.Default != null) BindExpr(p.Default);

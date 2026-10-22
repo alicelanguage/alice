@@ -260,18 +260,36 @@ public sealed class Emitter
         return $"{Attrs(e.Attrs)}public enum {e.Name}{under}\n{{\n{string.Join(",\n", items)}\n}}\n";
     }
 
+    static bool BlittableCs(string cs) => cs is "bool" or "byte" or "sbyte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong" or "float" or "double" or "nint" or "nuint" or "char";
+
     static string Lib(LibDecl l)
     {
         var s = (TypeSym)l.Sym!;
         var sb = new StringBuilder();
-        // Bool is a 1-byte C bool (not the 4-byte Win32 BOOL default); @[Fast] drops the GC transition (~20% per call)
+        // Bool is a 1-byte C bool (not the 4-byte Win32 BOOL default); @[Fast] drops the GC transition (~20% per call).
+        // Primitive signatures stay blittable: a bool crosses as a byte behind an inlined wrapper, so the call needs no
+        // marshalling stub (3x faster per call, inlinable by the JIT, nothing generated at run time for AOT).
         const string U1 = "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.U1)]";
+        const string Inline = "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n";
         foreach (var f in l.Funs)
         {
             var m = s.Methods[f.Name][0];
+            string import = $"[global::System.Runtime.InteropServices.DllImport(\"{l.LibName}\", EntryPoint = \"{f.Entry}\", ExactSpelling = true)]\n"
+                + (f.Attrs.Contains("Fast") ? "[global::System.Runtime.InteropServices.SuppressGCTransition]\n" : "");
+            bool blittable = m.Params.All(p => BlittableCs(p.Type.Cs)) && (m.Ret.IsVoid || BlittableCs(m.Ret.Cs));
+            bool bools = m.Ret.Cs == "bool" || m.Params.Any(p => p.Type.Cs == "bool");
+            if (blittable && bools)
+            {
+                string Raw(string cs) => cs == "bool" ? "byte" : cs;
+                string raw = "__raw_" + m.CsName.TrimStart('@');
+                sb.Append(import).Append($"private static extern {Raw(m.Ret.Cs)} {raw}({string.Join(", ", m.Params.Select(p => Raw(p.Type.Cs) + " " + p.CsName))});\n");
+                string args = string.Join(", ", m.Params.Select(p => p.Type.Cs == "bool" ? $"{p.CsName} ? (byte)1 : (byte)0" : p.CsName));
+                string call = $"{raw}({args})" + (m.Ret.Cs == "bool" ? " != 0" : "");
+                sb.Append(Inline).Append($"public static {m.Ret.Cs} {m.CsName}({string.Join(", ", m.Params.Select(p => p.Type.Cs + " " + p.CsName))}) => {call};\n");
+                continue;
+            }
             string ps = string.Join(", ", m.Params.Select(p => (p.Type.Cs == "bool" ? U1 + " " : "") + p.Type.Cs + " " + p.CsName));
-            sb.Append($"[global::System.Runtime.InteropServices.DllImport(\"{l.LibName}\", EntryPoint = \"{f.Entry}\")]\n");
-            if (f.Attrs.Contains("Fast")) sb.Append("[global::System.Runtime.InteropServices.SuppressGCTransition]\n");
+            sb.Append(import);
             if (m.Ret.Cs == "bool") sb.Append("[return: global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.U1)]\n");
             sb.Append($"public static extern {m.Ret.Cs} {m.CsName}({ps});\n");
         }
@@ -294,7 +312,47 @@ public sealed class Emitter
         [">="] = "op_Ge",
     };
 
-    string Method(MethodDecl d, TypeSym owner)
+    string Method(MethodDecl d, TypeSym owner) => d.RuleName != null ? MethodCore(d, owner) + Prover(d) : MethodCore(d, owner);
+
+    /// <summary>Largest rule domain `alice prove` enumerates: about a minute of pure calls across cores.</summary>
+    const long MaxRuleCases = 1L << 32;
+
+    /// <summary>
+    /// `__prove_rule()`: every case of the rule's domain, outer variable in parallel. Returns the case count and a
+    /// counterexample (a `false` result or an exception), or null when the rule holds on every case.
+    /// </summary>
+    string Prover(MethodDecl d)
+    {
+        var m = (MethodSym)d.Sym!;
+        double cases = d.Domains.Aggregate(1.0, (acc, x) => acc * x.Size);
+        if (cases > MaxRuleCases)
+            throw new CompileException($"{file}:{d.Line}:{Math.Max(1, d.Col)}: rule domain of `{d.RuleName}` has {cases:0} cases, more than the {MaxRuleCases} `alice prove` checks exhaustively; narrow the ranges");
+        string Var(int i) => m.Params[i].CsName;
+        string Ty(RuleDomain x) => x.IsBool ? "bool" : x.Lo < int.MinValue || x.Hi > int.MaxValue ? "long" : "int";
+        string Loop(RuleDomain x, int i) => x.IsBool
+            ? $"foreach (var {Var(i)} in new[] {{ false, true }})"
+            : $"for ({Ty(x)} {Var(i)} = {x.Lo}; {Var(i)} <= {x.Hi}; {Var(i)}++)";
+        string args = string.Join(", ", d.Domains.Select((_, i) => Var(i)));
+        string show = string.Join(", ", d.Domains.Select((x, i) => $"{x.Name} = {{{Var(i)}}}"));
+        string check = $"bool __ok; try {{ __ok = {m.CsName}({args}); }} catch (global::System.Exception __e) {{ __cex ??= $\"{show}: raised {{__e.GetType().Name}}\"; __st.Stop(); return; }}\nif (!__ok) {{ __cex ??= $\"{show}\"; __st.Stop(); return; }}";
+        string body = check;
+        for (int i = d.Domains.Count - 1; i >= 1; i--) body = Loop(d.Domains[i], i) + "\n{\n" + body + "\n}";
+        var sb = new StringBuilder();
+        sb.Append($"public static (long, string?) __prove_{d.RuleName}()\n{{\n    string? __cex = null;\n");
+        if (d.Domains.Count == 0)
+            sb.Append($"    try {{ if (!{m.CsName}()) __cex = \"(no variables)\"; }} catch (global::System.Exception __e) {{ __cex = \"raised \" + __e.GetType().Name; }}\n");
+        else
+        {
+            var outer = d.Domains[0];
+            string range = outer.IsBool ? "0, 2" : $"{outer.Lo}L, {outer.Hi}L + 1";
+            string bind = outer.IsBool ? $"bool {Var(0)} = __k == 1;" : $"{Ty(outer)} {Var(0)} = ({Ty(outer)})__k;";
+            sb.Append($"    global::System.Threading.Tasks.Parallel.For({range}, (__k, __st) =>\n    {{\n        {bind}\n{body}\n    }});\n");
+        }
+        sb.Append($"    return ({(long)cases}L, __cex);\n}}\n");
+        return sb.ToString();
+    }
+
+    string MethodCore(MethodDecl d, TypeSym owner)
     {
         var m = (MethodSym)d.Sym!;
         if (CEmitter.IsNative(d)) return NativeMethod(d, owner, m);

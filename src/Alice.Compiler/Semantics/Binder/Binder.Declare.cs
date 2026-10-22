@@ -333,7 +333,7 @@ public sealed partial class Binder
         };
         foreach (var p in d.Params)
         {
-            var ps = new ParamSym { Name = p.Name, CsName = Mangle(p.Name), HasDefault = p.Default != null, Splat = p.Splat, Block = p.Block, Auto = p.Auto };
+            var ps = new ParamSym { Name = p.Name, CsName = Mangle(p.Name), HasDefault = p.Default != null, Splat = p.Splat, Block = p.Block, Auto = p.Auto, Own = p.Own, Borrow = p.Borrow };
             if (p.Type != null) ps.Type = ResolveType(p.Type);
             else
             {

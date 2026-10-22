@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.12.2 - 2026-10-22
+
+- Explicit, checked paradigms on top of inference (ADR 0017):
+  - Effects: `pure def` (AL0210) and `safe def` (secure execution, no ambient authority, AL0212).
+  - Parallel let: `par a, b = f(x), g(y)` (Bend's fork without the recursion rule, AL0211).
+  - Inlining: `inline def`.
+- Ownership:
+  - `own` parameters (the caller moves in).
+  - `borrow` parameters (checked, AL0213).
+  - `scope ... end` lifetime regions (arrays must be owned and are released at `end`).
+  - In-place `xs = xs.map { }` for owned arrays. A 3-stage map over 1M `Float64`: 4.0 ms and 3 B per call, against 9.3 ms and 32 MB for hand-written C# loops.
+- Owned results (ADR 0016 amendment): an array returned by a method that returns only its own owned local is owned by the caller and recycled. `benchmarks/gc` `scratch`: 3.81 MiB per run down to under 400 B, 0 collections.
+- `alice run file.al` caches the compiled image by content hash (`~/.cache/alice/run`, `ALICE_NO_CACHE=1` to disable): an unchanged program starts in 0.13 s instead of 1.2 s.
+- Shared immutable objects: `T.new(constants)` of an immutable class whose identity the program never observes is one static instance. `benchmarks/gc` `trees`: 68 to 34 MiB per run, half the collections, about 1.35x faster than C# (21.5 vs 28.9 ms).
+- Interop: `fun` signatures over numbers and `Bool` are blittable (a `Bool` crosses as one byte behind an inlined wrapper), with no marshalling stub; a `Bool` C call is 2.7x faster. `@[Fast]` on a `Bool` function no longer fails at run time. Imports use `ExactSpelling`.
+- Rules and proofs: `rule name(x in lo..hi, b : Bool) ... end` (RULES.al) declares a pure property over a finite domain. `alice prove` checks every case and writes `PROOF.al`, a certificate tied to a hash of the sources. `alice prove --check` fails when a rule fails or PROOF.al is stale. Domains over 2^32 cases are AL0214. The repository's `RULES.al` proves Alice's numeric semantics; `dotnet test` checks it.
+- `divmod`, `tdiv`, `remainder` and `modulo` count as pure.
+- `alice explain file.al`: per method, the optimizations applied (fork/join, parallel loops, owned arrays, in-place maps, shared objects, stack arrays, SIMD, fast native calls).
+- `alice guide [performance|proofs|interop]` prints the guide from `guide/`, embedded in the CLI, for people and AI agents; every `alice` code block in it is compiled by the tests. `alice agents [--write]` prints or merges an Alice block into a project's `AGENTS.md`: workflow, Ruby/Crystal habits that are wrong in Alice, error codes. `alice new` writes `AGENTS.md` with that block and a `CLAUDE.md` that imports it (`@AGENTS.md`).
+- Tests that run programs in `ExplicitParadigmTests` join the `console` collection.
+- Fork/join of independent redexes (HVM-style): a statement whose value is a pure arithmetic term with exactly two calls to pure user methods, one recursive, forks the two calls without named results (`fib(n - 1) + fib(n - 2)`, `1 + l.count + r.count`). Calls under `&&`, `||`, `??` or `?:` are never forked, and a fork never captures a nullable local, because the helper would lose flow narrowing. Naive `fib(38)` on 12 cores: 250 ms -> 145 ms.
+
 ## 0.12.1 - 2026-10-22
 
 - Loops over an owned array bounded by its fixed length (`for k in 0...n` over `Array(T).new(n)`) compare against `buf.Length`, so the JIT removes their bounds checks as it does for C#'s `new T[n]` (ADR 0016 amendment).

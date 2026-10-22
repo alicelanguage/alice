@@ -27,6 +27,11 @@ Diagnostics are rustc-style with AL codes and a `help:` hint. See [errors.md](er
 
 Single files: `alice run main.al` / `alice build main.al` follow `require` transitively; no manifest needed.
 
+`alice run file.al` caches the compiled image in `$XDG_CACHE_HOME/alice/run` (default `~/.cache/alice/run`). The key
+covers every source and `require`d file, the references and the compiler build, so an unchanged program skips
+transpiling and the Roslyn compile: a hello world goes from 1.2 s to 0.13 s on the second run. Programs with
+`@[Native]` functions are not cached. `ALICE_NO_CACHE=1` turns the cache off; deleting the directory clears it.
+
 ## alice.toml
 
 ```toml

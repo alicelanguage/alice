@@ -17,6 +17,7 @@ public static class ProjectCommands
             if (File.Exists(Path.Combine(wname, Manifest.FileName))) throw new UsageException(T("exists", wname), null, 1);
             File.WriteAllText(Path.Combine(wname, Manifest.FileName), "[workspace]\nmembers = []\n");
             File.WriteAllText(Path.Combine(wname, ".gitignore"), "bin/\nobj/\n.alice/\n");
+            GuideCommand.WriteAgentFiles(wname);
             UiH.Status(T("created"), $"workspace `{wname}`");
             return 0;
         }
@@ -33,6 +34,7 @@ public static class ProjectCommands
         File.WriteAllText(Path.Combine(dir, "src", kind == "lib" ? "lib.al" : "main.al"), ProjectFiles.MainSource(proj, kind));
         File.WriteAllText(Path.Combine(dir, "test", "basics_test.al"), ProjectFiles.TestSource(proj));
         File.WriteAllText(Path.Combine(dir, ".gitignore"), "bin/\nobj/\n.alice/\n");
+        GuideCommand.WriteAgentFiles(dir);
         RegisterMember(dir);
         UiH.Status(T("created"), $"{kind} `{proj}`");
         UiH.Status("", T("created.next", name), "grey");
