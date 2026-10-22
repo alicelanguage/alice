@@ -174,6 +174,35 @@ error AL0208:
 own scratch = Array(Float64).new(1024)
 ```
 
+### Memory: where Alice beats the GC
+
+Alice keeps .NET's garbage collector as a safety net, but most hot-loop memory never reaches it:
+
+- **Owned arrays** go back to a per-thread pool when the program drops them, and the next allocation of the same
+  size reuses them. Rolling rows, scratch buffers and frame buffers allocate once instead of once per iteration.
+- **Owned results**: an array a function builds and returns is recycled by its caller.
+- **In-place updates**: `xs = xs.map { }` on an owned array overwrites it instead of allocating a copy.
+- **Shared immutable objects**: `Leaf.new(nil, nil)` in a tree builder is one instance, not one per leaf.
+- **Stack arrays** for small fixed-size locals, and **lifetime regions** (`scope ... end`) that free a large
+  temporary as soon as the region ends.
+
+No reference counting, no runtime checks, no `try/finally` in hot code: the compiler proves where each array is
+the only reference. When it cannot prove it, the array is an ordinary GC array, so a missed optimization costs
+an allocation, never safety.
+
+Measured against idiomatic C# doing the same work ([`benchmarks/gc`](benchmarks/gc), 7 runs, server GC):
+
+| workload | allocated per run: Alice / C# | collections: Alice / C# | GC pause: Alice / C# | time: Alice / C# |
+|---|---:|---:|---:|---:|
+| rolling DP rows | 0.06 / 61.4 MiB | 0 / 174 | 0 / 8.0 ms | 39.0 / 37.3 ms |
+| per-call scratch buffers | 0.00 / 596.6 MiB | 0 / 1672 | 0 / 92.2 ms | 258.8 / 315.0 ms |
+| 4 MiB frames | 0.00 / 484.0 MiB | 0 / 192 | 0 / 131.6 ms | 197.5 / 471.2 ms |
+| binary trees (objects) | 34.0 / 68.0 MiB | 83 / 63 | 32.7 / 46.9 ms | 21.6 / 29.5 ms |
+
+Peak memory follows: 49 MiB for Alice against 131 MiB for C# on the frames workload. Under workstation GC the
+array workloads run at the same speed as C# with the same zero collections. A 3-stage `map` pipeline over
+1M `Float64` takes 4.0 ms and 3 bytes per call in Alice, against 9.3 ms and 32 MB in hand-written C#.
+
 ### Fork/join and parallel loops
 
 You don't create threads. Two independent bindings where at least one is a recursive call fork onto the thread
