@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.12.1 - Unreleased
+## 0.12.1 - 2026-10-22
+
+- Loops over an owned array bounded by its fixed length (`for k in 0...n` over `Array(T).new(n)`) compare against `buf.Length`, so the JIT removes their bounds checks as it does for C#'s `new T[n]` (ADR 0016 amendment).
+- README: mutability, ownership, fork/join and benchmark sections.
+- `benchmarks/gc`: allocation-heavy workloads (rolling rows, per-call scratch buffers, 4 MiB frames, object trees) in Alice with inferred ownership, Alice with explicit `own`, and C#, under workstation and server GC. Reports time, allocated bytes, collections, GC pause and peak memory, with charts. Alice runs `rows` and `frames` with 0 collections (C#: 74-1002) and is about 2x faster than C# on `scratch` and `frames` under server GC.
 
 ## 0.12.0 - 2026-10-22
 
