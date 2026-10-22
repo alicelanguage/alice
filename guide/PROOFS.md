@@ -47,7 +47,7 @@ every case of its domain, in parallel over the first variable, and writes `PROOF
 # rule clamp_stays_in_range: proven over 202101 cases
 ```
 
-A failing rule prints a counterexample, the exact inputs: `fails at x = 1001, lo = 0`. An exception thrown
+A failing rule prints its first counterexample in domain order (the same on every run and machine), the exact inputs: `fails at x = 1001, lo = 0`. An exception thrown
 while checking (overflow, division by zero, a missing key) is a failure with its type:
 `x = 0: raised DivideByZeroException`.
 

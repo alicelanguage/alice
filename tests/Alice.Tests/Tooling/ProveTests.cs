@@ -20,7 +20,9 @@ public class ProveTests
         Assert.Equal(["double_grows", "double_is_even"], results.Select(r => r.Rule).Order());
         Assert.Equal(2001, results.Single(r => r.Rule == "double_is_even").Cases);
         Assert.Null(results.Single(r => r.Rule == "double_is_even").Counterexample);
-        Assert.StartsWith("x = -", results.Single(r => r.Rule == "double_grows").Counterexample);   // double(-1) = -2 < -1
+        // the first failing case in domain order, whatever thread finds a failure first: PROOF.al must be reproducible
+        for (int i = 0; i < 20; i++)
+            Assert.Equal("x = -5", Prove.Check(Files, []).Single(r => r.Rule == "double_grows").Counterexample);
     }
 
     [Fact]

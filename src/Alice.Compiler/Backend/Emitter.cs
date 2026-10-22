@@ -318,8 +318,9 @@ public sealed class Emitter
     const long MaxRuleCases = 1L << 32;
 
     /// <summary>
-    /// `__prove_rule()`: every case of the rule's domain, outer variable in parallel. Returns the case count and a
-    /// counterexample (a `false` result or an exception), or null when the rule holds on every case.
+    /// `__prove_rule()`: every case of the rule's domain, outer variable in parallel. Returns the case count and the
+    /// first counterexample in domain order (a `false` result or an exception), or null when the rule holds on every
+    /// case. The first, not any: PROOF.al must not depend on thread timing.
     /// </summary>
     string Prover(MethodDecl d)
     {
@@ -334,11 +335,14 @@ public sealed class Emitter
             : $"for ({Ty(x)} {Var(i)} = {x.Lo}; {Var(i)} <= {x.Hi}; {Var(i)}++)";
         string args = string.Join(", ", d.Domains.Select((_, i) => Var(i)));
         string show = string.Join(", ", d.Domains.Select((x, i) => $"{x.Name} = {{{Var(i)}}}"));
-        string check = $"bool __ok; try {{ __ok = {m.CsName}({args}); }} catch (global::System.Exception __e) {{ __cex ??= $\"{show}: raised {{__e.GetType().Name}}\"; __st.Stop(); return; }}\nif (!__ok) {{ __cex ??= $\"{show}\"; __st.Stop(); return; }}";
+        // the first failure in domain order: inner variables run in order within one outer value, and Break() lets every
+        // lower outer value finish, so the smallest failing outer value wins whatever thread reaches a failure first
+        string fail(string msg) => $"lock (__gate) {{ if (__k < __first) {{ __first = __k; __cex = {msg}; }} }} __st.Break(); return;";
+        string check = $"bool __ok; try {{ __ok = {m.CsName}({args}); }} catch (global::System.Exception __e) {{ {fail($"$\"{show}: raised {{__e.GetType().Name}}\"")} }}\nif (!__ok) {{ {fail($"$\"{show}\"")} }}";
         string body = check;
         for (int i = d.Domains.Count - 1; i >= 1; i--) body = Loop(d.Domains[i], i) + "\n{\n" + body + "\n}";
         var sb = new StringBuilder();
-        sb.Append($"public static (long, string?) __prove_{d.RuleName}()\n{{\n    string? __cex = null;\n");
+        sb.Append($"public static (long, string?) __prove_{d.RuleName}()\n{{\n    string? __cex = null;\n    long __first = long.MaxValue;\n    var __gate = new object();\n");
         if (d.Domains.Count == 0)
             sb.Append($"    try {{ if (!{m.CsName}()) __cex = \"(no variables)\"; }} catch (global::System.Exception __e) {{ __cex = \"raised \" + __e.GetType().Name; }}\n");
         else
