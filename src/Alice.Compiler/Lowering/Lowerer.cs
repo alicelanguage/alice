@@ -88,6 +88,7 @@ public sealed partial class Lowerer
         FindLengthAliases(body);
         FindStackArrays(body);
         FindFlatRows(body);
+        FindRanges(body);
         hoisted = new HashSet<LocalSym>(hoistedLocals);
         var outp = new List<MStmt>(StackArrayDecls(line));
         foreach (var h in hoistedLocals)

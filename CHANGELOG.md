@@ -21,6 +21,7 @@
 - Range analysis: counted loops bounded by `.Length`/`.Count` and their `i ± k` offsets drop provably dead overflow checks (editdist: 998 → 884 ms, C# 841 ms).
 - Stdlib fork/join: `sort` of a large primitive array is a parallel merge sort with a pooled buffer (10M `Int32`: 756 → 207 ms).
 - Docs: [fork/join](docs/fork-join.md) (idea credited to Victor Taelin's BendRT) and [heap and GC](docs/heap-gc.md).
+- Value-range analysis: integer `+ - *` whose operand ranges (literals, masks, shifts, widened Int32, `^`/`|` of non-negatives, floored `% d`) prove no overflow are emitted unchecked; a proven `x >= 2^31 ? x - 2^32 : x` (also 8/16 bits) is one sign extension instead of a data-dependent branch. Suite terrain at 1M: 345 → 212 ms (C# 189 ms).
 - Purity gate: `Alice.Runtime.Pure` marks runtime functions the compiler may parallelize through (`Digest::*`); static `Module.f(x)` receivers, string interpolation, array literals, `min/max/sum` and the new numeric primitives are pure reads. Suite merkle at 1M leaves: 1812 → 1489 ms (C# 1885 ms).
 - Stdlib fork/join: `sum`, `min`, `max` of primitive arrays of 2^20+ elements split into SIMD chunks across cores (32M `Float64` sum + max: 68.7 → 16.4 ms).
 - `2.0 ** n` lowers to `Math.ScaleB` and `x ** 2` to `x * x` (both bit-identical to `Math.Pow`); widening conversions (`to_i64` on Int32, `.to_f`) are plain casts, narrowing ones an inlined checked helper.

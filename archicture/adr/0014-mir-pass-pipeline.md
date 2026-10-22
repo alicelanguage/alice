@@ -28,3 +28,8 @@ float modulo lowers to `floor_fmod`, so `floor_mod` is integer-only.
 `ALICE_DISABLE_PASSES=name,...` switches passes off for A/B measurements.
 
 Passes must be idempotent: helpers can reach the pipeline twice.
+
+Value ranges need source types, so they are computed in lowering (`Lowerer.Ranges`), not in MIR: a
+flow-insensitive interval per integer local (the union of every value assigned to it, iterated to a fixpoint
+with widening), used to emit provably safe `+ - *` unchecked and to turn a proven two's-complement
+reinterpretation into a sign extension.

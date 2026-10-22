@@ -39,6 +39,8 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | counter offsets `i + k`, `i - k` inside a proven range (`.Length` bound <= Array.MaxLength) | unchecked | `Optimizer/Passes/InductionVariables` | `OptimizerTests.Counter_offsets_are_unchecked_only_inside_their_proven_range` |
 | array of fixed-width literal rows filled by a full loop, rows never escape | one flat `T[n * k]`, `a[i * k + j]`, column checked | `Lowerer.FlatRows` | `FlatRowsTests` |
 | `a, b = f(x), g(y)` (pure, independent, recursive) | `Par.Fork` like the two-declaration form | `Lowerer.Fork` | `LoopParallelizeTests.Parallel_multi_assign_forks_like_bends_parallel_call` |
+| integer `+ - *` with operand ranges proven in-type (masks, shifts, widened Int32, literals) | unchecked (no `add.ovf`/`mul.ovf`, no throw path) | `Lowerer.Ranges` | `RangeTests.Masked_hash_arithmetic_is_unchecked`, `Possibly_overflowing_arithmetic_stays_checked` |
+| `x >= 2^31 ? x - 2^32 : x` with x proven in [0, 2^32) (and 8/16-bit forms) | `(long)(int)x`: one sign extension, no branch | `Lowerer.Ranges.TrySignExtend` | `RangeTests.Proven_sign_reinterpretation_is_one_sign_extension` |
 | `xs.sum` / `min` / `max` on a large primitive array | fork/join over SIMD chunks | `Runtime/Parallel/ParReduce` | `ParReduceTests` |
 | `2.0 ** n` (integer `n`), `x ** 2` (float `x`) | `Math.ScaleB(1.0, n)`, `x * x`: bit-identical to `Math.Pow` | `Lowerer.Binary` | `PrimitiveTests.Exact_power_forms_match_math_pow` |
 | `x.to_i64` on Int32, any number `.to_f` (widening) | plain cast; narrowing keeps the checked, inlined helper | `Lowerer.Calls.WideningCast` | `PrimitiveTests.Widening_conversions_are_plain_casts` |

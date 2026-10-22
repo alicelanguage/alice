@@ -56,6 +56,8 @@ public sealed partial class Lowerer
                 return Binary(b);
             case UnaryExpr u:
                 return new MUnary { Op = u.Op, E = Expr(u.E) };
+            case TernaryExpr t when TrySignExtend(t) is MExpr signExtended:
+                return signExtended;
             case TernaryExpr t:
                 {
                     var c = Expr(t.C);
@@ -173,6 +175,7 @@ public sealed partial class Lowerer
         if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
         if (Contract(b, l, r) is MExpr fused) return fused;
         if (b.Op is "&+" or "&-" or "&*") return new MCall { Name = "unchecked", Args = { new MBinary { Op = b.Op[1..], L = l, R = r } } };
+        if (UncheckedIfProven(b, l, r) is MExpr proven) return proven;
         if (FlooredHelper(b.Op, b.Type) is string fl) return new MCall { Target = new MCode("Prelude"), Name = fl, Args = { l, r } };
         return b.Op switch
         {
