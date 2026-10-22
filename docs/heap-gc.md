@@ -27,6 +27,7 @@ Measured on the polyglot suite: server GC started slower and used up to 70% more
 | capture-free lambda | closure object | `static` lambda (cached delegate) |
 | `[a, b, c].min` / `.max` | a 3-element array per evaluation | `Math.Min(Math.Min(a, b), c)` (MIR pass `literal-minmax`) |
 | `q, r = x.divmod(y)` | a `[q, r]` array | two floored helpers on temporaries |
+| local array of unmanaged elements that never escapes, reallocated per iteration (`row = Array(Int32).new(n)` ... `previous = row`) | one GC array per iteration | ownership (ADR 0016): the buffer goes back to `Own(T)`, a per-thread exact-length pool, before reassignment and at exit; `own` makes it a checked contract (AL0207, AL0208) |
 | small local array that never escapes: `rgb = Array(Float64).new(3, 0.0)`, `p = [x, y]` | an array per evaluation, also inside loops | one `stackalloc` buffer at method entry, re-initialized where the source declares it |
 | `Array(T).new(n, v)` | zeroing pass, then a fill loop | `GC.AllocateUninitializedArray` + one `Fill` |
 | `puts n`, `"#{n}"`, `inspect` of numbers | boxing the number before formatting | formatted directly to its string |

@@ -69,7 +69,7 @@ The lambdas live in a separate helper on purpose: lambdas that capture a method'
 | Operation | Meaning |
 |---|---|
 | `Par.Forkable` | true while the current fork depth is below `log2(cores) + 3` and there is more than one core. A thread-static read: deeper calls pay nothing else |
-| `Par.Fork(left, right)` | runs `left` as a task and `right` on the calling thread, then joins. The join uses `GetAwaiter().GetResult()`: a task the pool has not started yet runs inline on the joining thread (nested forks never block pool threads), and exceptions surface as themselves, not as `AggregateException` |
+| `Par.Fork(left, right)` | offers `left` to the thread pool as one work item (`ForkJob`, no `Task`) and runs `right` on the calling thread, then joins. A left half no pool thread has claimed yet runs inline on the joining thread (nested forks never block pool threads); one already running is awaited with a short spin, then a monitor wait. Exceptions surface as themselves, and when `right` throws, `left` finishes before the exception unwinds |
 | `xs.sort` (arrays of primitives, length >= 65536) | fork/join merge sort: halves sort in parallel near the root, leaves (16384 elements) sort in place on spans, merges use one scratch buffer from `ArrayPool`. Same result as `Array.Sort`; other element types use `Array.Sort` |
 
 | `xs.sum`, `xs.min`, `xs.max` (arrays of primitives, length >= 2^20) | fork/join over index halves near the root, one SIMD pass per leaf (2^18 elements), partials combined in index order. Integer results and min/max are exact; a float sum reassociates like any SIMD sum |
@@ -92,6 +92,10 @@ Same machine, median of runs, outputs checked against the reference implementati
 - BendRT schedules a fixed grid of rings without work stealing and leaves balance to the program. Alice uses the .NET thread pool, which steals work, so unequal splits still use the cores.
 - BendRT has no garbage collector (an affine type system places every free). Alice keeps the .NET GC; see [heap and GC](heap-gc.md) for how generated code stays off the heap.
 - Bend runs the same code on GPUs. Alice targets the CPU through .NET.
+
+## Parallel loops
+
+Counted loops use the same proofs: an iteration may write only locals declared in its body, `a[i]`, or its row `a[i * w + j]` (with `j` counting `0...w` in a nested loop), plus one `+=` reduction. A loop that reads the array it writes at another index (`row[j - 1]`) is a scan and stays serial; a shifted read of another array (a stencil) stays parallel behind a `ReferenceEquals` alias check. Loops run on `ParJob`: one work item per loop, an atomic chunk counter, and the calling thread working through chunks too. `par for` drops the trip-count threshold and makes a failed proof compile error AL0209.
 
 ## Limits
 
