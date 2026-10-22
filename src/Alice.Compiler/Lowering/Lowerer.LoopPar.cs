@@ -48,9 +48,9 @@ public sealed partial class Lowerer
         if (!LoopBody(f.Body, plan, 0)) return null;
         // inside a serial loop, a parallel dispatch per outer iteration only pays off for long inner loops
         bool nested = ctx.Contains("loop");
-        if (nested) plan.Heavy = false;
+        if (nested && !f.Par) plan.Heavy = false;
         // constant trip count below the threshold: no parallel path at all
-        if (r.A is LitExpr { Kind: "int" } la && r.B is LitExpr { Kind: "int" } lb && int.TryParse(la.Text.Replace("_", ""), out int ca) && int.TryParse(lb.Text.Replace("_", ""), out int cb)
+        if (!f.Par && r.A is LitExpr { Kind: "int" } la && r.B is LitExpr { Kind: "int" } lb && int.TryParse(la.Text.Replace("_", ""), out int ca) && int.TryParse(lb.Text.Replace("_", ""), out int cb)
             && (long)cb - ca + (r.Excl ? 0 : 1) < (plan.Heavy ? 2 : Threshold)) return null;
         if (plan.Acc != null && WalkReads(f.Body).Any(n => n.Sym == plan.Acc)) return null;
         if (plan.Acc == null && !WalkStmts(f.Body).Any(s => s is Assign { Target: IndexExpr })) return null;   // no observable effect to parallelize
@@ -118,7 +118,7 @@ public sealed partial class Lowerer
         MStmt par = plan.Acc != null
             ? new MAssign { Target = new MCode(plan.Acc.CsName), Op = "+=", Value = new MCode(call) }
             : new MExprStmt { E = new MCode(call) };
-        string min = plan.Heavy ? "2" : Threshold.ToString();
+        string min = plan.Heavy || f.Par ? "2" : Threshold.ToString();
         string distinct = string.Concat(aliasGuards.Select(g => $" && !global::System.Object.ReferenceEquals({g.W.CsName}, {g.R.CsName})"));
         return new MIf { Cond = new MCode($"{count} >= {min} && global::Alice.Runtime.Par.Workers > 1{distinct}"), Then = { par }, Else = serial };
     }

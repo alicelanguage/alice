@@ -23,6 +23,7 @@ public sealed record Diagnostic(string Severity, string Code, string File, int L
         ("yield needs", "AL0206"),
         ("owned value", "AL0207"),
         ("use after move", "AL0208"),
+        ("cannot parallelize", "AL0209"),
         ("expected", "AL0101"),
         ("unexpected", "AL0102"),
         ("unterminated", "AL0103"),

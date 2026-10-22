@@ -129,6 +129,7 @@ public sealed class Printer
                 }
                 break;
             case MBlock b:
+                if (b.Unchecked) Line("unchecked");
                 Block(b.Body);
                 break;
             case MUsing u:

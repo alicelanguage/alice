@@ -15,6 +15,7 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0206 | yield | `yield` in a def without block param | `yield needs a block parameter` | `def f(&block : A -> R)` |
 | AL0207 | owned value escapes | `own a = Array(Int32).new(n)`<br>`@@keep = a` | `owned value \`a\` escapes: ...` | keep `a` local: index it, lend it to a parameter, move it to another owned local or return it; or drop `own` |
 | AL0208 | use after move | `own b = a`<br>`a[0]` | `use after move: \`a\` was moved ...` | reassign `a` (`a = Array(Int32).new(n)`) before using it, or read through `b` |
+| AL0209 | cannot parallelize | `par for i in 1...n`<br>`  a[i] = a[i - 1] + 1` | `cannot parallelize \`par for\`: ...` | make iterations independent, or use a plain `for` |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 
 Output format (CLI):

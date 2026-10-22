@@ -26,6 +26,8 @@ Behavior follows Ruby/Crystal where they agree; the generated IL stays plain C#.
   of `n`, so the `+ - *` that compute a count wrap instead of raising. Wrapping
   and exact arithmetic agree on every low bit, so the shifted value is the one
   exact arithmetic gives (`1 << (row - c + n - 1)` carries no overflow branch).
+- `unchecked ... end` is a wrapping region: integer `+ - *` inside it wrap as
+  `&+ &- &*` do (C# `unchecked { }`); helpers such as `to_i32` and `**` still raise.
 
 Generated programs use workstation concurrent GC by default: faster startup and
 lower RSS for CLIs and short jobs. `alice.toml` `[runtime] gc = "server"` opts in

@@ -53,6 +53,7 @@ public sealed class ForStmt : Stmt
     public List<Stmt> Body = new();
     public List<LocalSym> Locals = new();
     public bool Await;           // `for await x in stream` (IAsyncEnumerable)
+    public bool Par;             // `par for`: parallel at any trip count, or AL0209
 }
 
 public sealed class When : Node
@@ -91,6 +92,7 @@ public sealed class BeginStmt : Stmt
     public List<Stmt> Body = new();
     public List<Rescue> Rescues = new();
     public List<Stmt>? Ensure;
+    public bool Unchecked;       // `unchecked ... end`: integer + - * inside wrap (ADR 0013)
 }
 
 public sealed class ReturnStmt : Stmt { public Expr? Value; }

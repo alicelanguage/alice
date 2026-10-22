@@ -14,7 +14,7 @@ public sealed partial class Lowerer
                 Into(o, inl.Stmt, tail, target);
                 break;
             case BeginStmt { Rescues.Count: 0, Ensure: null } plain:
-                o.Add(new MBlock { Body = Stmts(plain.Body, tail, target) });
+                o.Add(new MBlock { Body = Stmts(plain.Body, tail, target), Unchecked = plain.Unchecked });
                 break;
             case ExprStmt es:
                 {
@@ -214,6 +214,8 @@ public sealed partial class Lowerer
     MStmt For(ForStmt f)
     {
         if (f.Await) return SerialFor(f);
+        if (f.Par)
+            return TryParallelFor(f) ?? throw new CompileException($"{File}:{f.Line}:{Math.Max(1, f.Col)}: cannot parallelize `par for`: iterations are not provably independent (each may write only locals declared in the body, `a[i]` or `a[i * w + j]` at its own index, one `+=` reduction, and call only pure code)");
         if (TrySplitLoop(f) is MStmt split) return split;
         if (TryParallelFor(f) is MStmt par) return par;
         return SerialFor(f);

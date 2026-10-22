@@ -415,6 +415,38 @@ main_async.wait
 
 Return type inferred as `Task<T>`.
 
+### Explicit parallel loops: `par for`
+
+Counted loops already run in parallel when the compiler proves their iterations independent and the trip
+count is large (65,536+, or 2+ when the body has nested loops or calls). `par for` drops the size heuristic
+and makes the proof a requirement:
+
+```crystal
+par for y in 0...h
+  for x in 0...w
+    img[y * w + x] = shade(x, y)   # iteration y owns row y
+  end
+end
+```
+
+If the iterations are not provably independent (a write outside `a[i]` / `a[i * w + j]`, a loop-carried
+read such as `a[i - 1]` of the written array, an impure call) it is compile error AL0209 rather than a silent
+serial loop.
+
+### Wrapping regions: `unchecked`
+
+Integer `+ - *` raise `OverflowException` on overflow (ADR 0013). Inside `unchecked ... end` they wrap, the
+region form of `&+ &- &*` for hashes and PRNGs:
+
+```crystal
+h = 0
+unchecked
+  for c in s.chars
+    h = h * 31 + c.ord
+  end
+end
+```
+
 ### Race safety (AL0202)
 
 Concurrent contexts: `spawn`, `Par.For`, `par_each`, `Task.Run` lambdas, `Actor` handlers.

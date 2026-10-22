@@ -84,7 +84,11 @@ public sealed class MTry : MStmt
     public List<MStmt>? Finally;
 }
 
-public sealed class MBlock : MStmt { public List<MStmt> Body = new(); }
+public sealed class MBlock : MStmt
+{
+    public List<MStmt> Body = new();
+    public bool Unchecked;   // C# `unchecked { }`
+}
 
 public sealed class MUsing : MStmt
 {
