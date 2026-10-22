@@ -11,29 +11,33 @@ public static class Par
 
     [ThreadStatic] static int forkDepth;
 
+    internal static int ForkDepth { get => forkDepth; set => forkDepth = value; }
+
     /// <summary>Forks spawn tasks only near the root: 2^depth tasks cover the cores, deeper forks run as plain calls.</summary>
     static readonly int MaxForkDepth = System.Numerics.BitOperations.Log2((uint)Math.Max(1, Environment.ProcessorCount)) + 3;
 
     public static bool Forkable => forkDepth < MaxForkDepth && Environment.ProcessorCount > 1;
 
-    /// <summary>Runs <paramref name="left"/> as a task and <paramref name="right"/> on this thread, then joins.
-    /// A task the pool has not started yet is run inline by the join, so nested forks never block the pool.</summary>
+    /// <summary>Offers <paramref name="left"/> to the pool and runs <paramref name="right"/> on this thread, then joins.
+    /// A left half no pool thread has started yet is run inline by the join, so nested forks never block the pool.
+    /// Exceptions surface as themselves, the left one first.</summary>
     public static (A, B) Fork<A, B>(Func<A> left, Func<B> right)
     {
         int depth = forkDepth + 1;
-        var task = Task.Factory.StartNew(() =>
-        {
-            int saved = forkDepth;
-            forkDepth = depth;
-            try { return left(); }
-            finally { forkDepth = saved; }
-        }, CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+        var job = new ForkJob<A>(left, depth);
+        ThreadPool.UnsafeQueueUserWorkItem(job, preferLocal: true);
         int outer = forkDepth;
         forkDepth = depth;
         B b;
         try { b = right(); }
-        finally { forkDepth = outer; }
-        return (task.GetAwaiter().GetResult(), b);   // rethrows the original exception, not an AggregateException
+        catch
+        {
+            forkDepth = outer;
+            job.Join();   // the left half may still be running on our data: finish it before unwinding
+            throw;
+        }
+        forkDepth = outer;
+        return (job.Join(), b);
     }
 
     /// <summary>Calls body(lo, hi) over disjoint contiguous ranges covering [0, n).</summary>
