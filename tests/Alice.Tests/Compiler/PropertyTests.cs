@@ -14,7 +14,7 @@ public class PropertyTests
         { "inferred int return", "def add(a : Int32, b : Int32)\n  a + b\nend\nputs add(2, 3).even?", "false" },
         { "inferred string return", "def greet(n : String)\n  \"hi #{n}\"\nend\nputs greet(\"x\").upcase", "HI X" },
         { "inference across later defs", "def a\n  b + 1\nend\ndef b\n  41\nend\nputs a.even?", "true" },
-        { "local inference", "def avg(xs : Array(Float64))\n  s = 0.0\n  for x in xs\n    s += x\n  end\n  s / xs.size\nend\nputs avg([1.0, 4.0]).floor", "2" },
+        { "local inference", "def avg(xs : Array(Float64))\n  s = 0.0\n  for x in xs\n    s += x\n  end\n  s / xs.size\nend\nputs avg([1.0, 4.0]).floor", "2.0" },
         { "inferred method in class", "class C\n  getter v : Int32 = 4\n  def twice\n    v * 2\n  end\nend\nputs C.new.twice.even?", "true" },
         // dynamic like Ruby
         { "Any is dynamic", "def len(x : Any)\n  x.Length\nend\nputs len(\"abcd\")\nputs len([1, 2])", "4\n2" },
@@ -26,7 +26,7 @@ public class PropertyTests
         { "case expression", "x = 5\nz = case x\nwhen 5 then 1\nelse 0\nend\nputs z + 1", "2" },
         // safe like Rust (allowed forms)
         { "val is readable", "val k = 3\nputs k * 2", "6" },
-        { "spawn may use channels", "ch = Channel(Int32).new\nt = spawn { ch.send(5) }\nt.wait\nputs ch.receive", "5" },
+        { "spawn may use channels", "ch = Channel(Int32).new(1)\nt = spawn { ch.send(5) }\nt.wait\nputs ch.receive", "5" },
         // fast like C
         { "inline attribute", "@[Inline]\ndef sq(x : Int32) : Int32\n  x * x\nend\nputs sq(9)", "81" },
         { "stack struct", "@[Stack]\nstruct P\n  getter x : Int32\n  def initialize(@x : Int32)\n  end\nend\np = P.new(7)\nputs p.x", "7" },

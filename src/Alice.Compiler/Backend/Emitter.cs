@@ -87,6 +87,7 @@ public sealed class Emitter
 
     string Print(List<MStmt> body, int ind)
     {
+        Optimizer.Pipeline.Run(body);
         var p = new Printer(file, ind);
         p.Stmts(body);
         return p.ToString();

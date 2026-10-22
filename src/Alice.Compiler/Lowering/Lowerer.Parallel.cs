@@ -45,14 +45,14 @@ public sealed partial class Lowerer
         var captured = Captured(c);
         if (captured == null) { pre.AddRange(serial); return rSerial; }
         string helper = $"__par_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
-        string ps = string.Join(", ", captured.Select(l => $"{TypeCs(l.Type)} {l.CsName}"));
+        string ps = string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
         string args = string.Join(", ", captured.Select(l => l.CsName));
         var big = new MCode($"{n} >= {Threshold} && global::Alice.Runtime.Par.Workers > 1");
         var hp = new Backend.Printer("", 1);
         if (resultType == null)
         {
             var range = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel } } };
-            hp.Stmt(new MExprStmt { E = range });
+            hp.Root(new MExprStmt { E = range });
             Extra.Add($"private static void {helper}({ps})\n{{\n{hp}}}\n");
             pre.Add(new MIf { Cond = big, Then = { new MExprStmt { E = new MCode($"{helper}({args})") } }, Else = serial });
             return MCode.Empty;
@@ -66,7 +66,7 @@ public sealed partial class Lowerer
             Name = $"Reduce<{T}>",
             Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode(combine!) },
         };
-        hp.Stmt(new MReturn { Value = reduce });
+        hp.Root(new MReturn { Value = reduce });
         Extra.Add($"private static {T} {helper}({ps})\n{{\n{hp}}}\n");
         pre.Add(new MDecl { Name = res, TypeCs = T, Init = new MCode("default") });
         serial.Add(new MAssign { Target = new MCode(res), Value = rSerial });

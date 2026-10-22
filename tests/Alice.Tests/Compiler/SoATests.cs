@@ -28,7 +28,7 @@ public class SoATests
 
     [Fact]
     public void Store_and_column_loops_are_correct()
-        => Assert.Equal("1000\n10.5\n4000\n999\n999.5", Run(Particles));
+        => Assert.Equal("1000\n10.5\n4000.0\n999\n999.5", Run(Particles));
 
     [Fact]
     public void Store_type_usable_in_signatures_before_declaration()

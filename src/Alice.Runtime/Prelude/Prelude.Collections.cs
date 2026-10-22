@@ -53,6 +53,15 @@ public static partial class Prelude
     public static T max_by<T, K>(this IEnumerable<T> a, Func<T, K> f) => a.MaxBy(f)!;
     public static T min_by<T, K>(this IEnumerable<T> a, Func<T, K> f) => a.MinBy(f)!;
     public static T[] sort<T>(this IEnumerable<T> a) { var r = a.ToArray(); Array.Sort(r); return r; }
+
+    /// <summary>Arrays: a clone sorted in place; large primitive arrays use the fork/join merge sort.</summary>
+    public static T[] sort<T>(this T[] a)
+    {
+        var r = (T[])a.Clone();
+        if (r.Length >= ParSort.MinLength && typeof(T).IsPrimitive && Par.Workers > 1) ParSort.Sort(r);
+        else Array.Sort(r);
+        return r;
+    }
     public static T[] sort_by<T, K>(this IEnumerable<T> a, Func<T, K> f) => a.OrderBy(f).ToArray();
     public static T[] reverse<T>(this IEnumerable<T> a) { var r = a.ToArray(); Array.Reverse(r); return r; }
     public static T[] uniq<T>(this IEnumerable<T> a) => a.Distinct().ToArray();
@@ -66,4 +75,28 @@ public static partial class Prelude
     public static K[] keys<K, V>(this Dictionary<K, V> d) where K : notnull => d.Keys.ToArray();
     public static V[] values<K, V>(this Dictionary<K, V> d) where K : notnull => d.Values.ToArray();
     public static bool has_key_q<K, V>(this Dictionary<K, V> d, K k) where K : notnull => d.ContainsKey(k);
+
+    /// <summary>`Array(T).new(n, v)`: n copies of v (no zeroing pass first: the fill writes every element).</summary>
+    public static T[] filled<T>(int n, T v)
+    {
+        var a = GC.AllocateUninitializedArray<T>(n);
+        a.AsSpan().Fill(v);
+        return a;
+    }
+
+    /// <summary>`Array(T).new(n) { |i| ... }`: element i is the block's value for i.</summary>
+    public static T[] filled<T>(int n, Func<int, T> f)
+    {
+        var a = GC.AllocateUninitializedArray<T>(n);
+        for (int i = 0; i < a.Length; i++) a[i] = f(i);
+        return a;
+    }
+
+    /// <summary>`Array(T).new(n) { ... }` without an index parameter: the block runs once per element.</summary>
+    public static T[] filled<T>(int n, Func<T> f)
+    {
+        var a = GC.AllocateUninitializedArray<T>(n);
+        for (int i = 0; i < a.Length; i++) a[i] = f();
+        return a;
+    }
 }

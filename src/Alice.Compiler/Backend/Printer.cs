@@ -57,6 +57,13 @@ public sealed class Printer
         Line("}");
     }
 
+    /// <summary>Entry for a standalone body (helper methods): run the MIR pass pipeline, then print.</summary>
+    public void Root(MStmt s)
+    {
+        Optimizer.Pipeline.Run([s]);
+        Stmt(s);
+    }
+
     public void Stmt(MStmt s)
     {
         LineDir(s.Line);
@@ -88,7 +95,7 @@ public sealed class Printer
                 Block(w.Body);
                 break;
             case MFor f:
-                Line($"for (var {f.Var} = {E(f.Start)}; {f.Var} {f.Cmp} {E(f.End)}; {f.Var}{f.Step})");
+                Line($"for ({f.VarType ?? "var"} {f.Var} = {E(f.Start)}; {f.Var} {f.Cmp} {E(f.End)}; {f.Var}{f.Step})");
                 Block(f.Body);
                 break;
             case MForeach fe:
@@ -131,7 +138,8 @@ public sealed class Printer
         }
     }
 
-    static bool Atomic(MExpr e) => e is MCode or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp;
+    // a negative literal (`-5`) is not atomic: `-5.abs()` in C# is `-(5.abs())`
+    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp;
 
     static string P(MExpr e) => Atomic(e) ? E(e) : "(" + E(e) + ")";
 

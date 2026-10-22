@@ -6,12 +6,14 @@ namespace Alice.Runtime;
 /// <summary>sprintf-style `format`: %d %i %s %f %e %x %X %o %b %c %%, flags `-0+ `, width, precision.</summary>
 public static partial class Prelude
 {
-    static readonly Regex FormatSpec = new(@"%([-0+ ]*)(\d+)?(?:\.(\d+))?([disfeExXobc%])", RegexOptions.Compiled);
+    // source-generated: a static `new Regex(..., Compiled)` here ran Reflection.Emit on every program's startup
+    [GeneratedRegex(@"%([-0+ ]*)(\d+)?(?:\.(\d+))?([disfeExXobc%])")]
+    private static partial Regex FormatSpecRegex();
 
     public static string format(string fmt, params object?[] args)
     {
         int ai = 0;
-        return FormatSpec.Replace(fmt, m =>
+        return FormatSpecRegex().Replace(fmt, m =>
         {
             char conv = m.Groups[4].Value[0];
             if (conv == '%') return "%";

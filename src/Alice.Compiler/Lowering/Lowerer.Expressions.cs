@@ -37,9 +37,19 @@ public sealed partial class Lowerer
                 {
                     var args = Args(ne.Args);
                     if (ne.Block != null) args.Add(Lambda(ne.Block));
-                    if (ne.Type.Kind == "array") return new MNewArray { ElemCs = ne.Type.Elem!.Cs, Size = args.Count > 0 ? args[0] : new MCode("0") };
+                    if (ne.Type.Kind == "array")
+                    {
+                        // Array(T).new(n, v): a default fill (0, 0.0, false, nil) is what `new T[n]` already gives
+                        if (ne.Block != null && ne.Args.Count == 1)   // Array(T).new(n) { |i| ... }
+                            return new MCall { Target = new MCode("Prelude"), Name = $"filled<{ne.Type.Elem!.Cs}>", Args = { args[0], args[1] } };
+                        if (ne.Args.Count >= 2 && !(ne.Args[1].Value is LitExpr { Text: "0" or "0.0" or "false" or "nil" or "0L" }))
+                            return new MCall { Target = new MCode("Prelude"), Name = $"filled<{ne.Type.Elem!.Cs}>", Args = { args[0], args[1] } };
+                        return new MNewArray { ElemCs = ne.Type.Elem!.Cs, Size = args.Count > 0 ? args[0] : new MCode("0") };
+                    }
                     return new MNew { TypeCs = ne.Type.Cs == "var" ? ne.TypeRef.Name : ne.Type.Cs, Args = args };
                 }
+            case IndexExpr ix when TryFlatIndex(ix) is MExpr flat:
+                return flat;
             case IndexExpr ix:
                 return new MIndex { Target = Expr(ix.Target), Args = Args(ix.Args) };
             case BinaryExpr b:
@@ -96,6 +106,7 @@ public sealed partial class Lowerer
     {
         var v = Expr(h);
         var t = h.Type;
+        if (IsFloat(t)) return new MCall { Target = new MCode("Prelude"), Name = "str", Args = { v } };   // 2.0 prints "2.0", not "2"
         if (t.IsString || t.IsNumeric || t.Cs == "char" || (t.Clr != null && t.Clr.IsEnum)) return v;
         if (t.IsBool) return new MCond { C = v, A = new MCode("\"true\""), B = new MCode("\"false\"") };
         return new MCall { Target = new MCode("Prelude"), Name = "str", Args = { v } };
@@ -161,6 +172,8 @@ public sealed partial class Lowerer
         if (b.Res == "coalesce") return new MBinary { Op = "??", L = l, R = r };
         if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
         if (Contract(b, l, r) is MExpr fused) return fused;
+        if (b.Op is "&+" or "&-" or "&*") return new MCall { Name = "unchecked", Args = { new MBinary { Op = b.Op[1..], L = l, R = r } } };
+        if (FlooredHelper(b.Op, b.Type) is string fl) return new MCall { Target = new MCode("Prelude"), Name = fl, Args = { l, r } };
         return b.Op switch
         {
             "**" => new MCall { Target = new MCode("Prelude"), Name = "pow", Args = { l, r } },
@@ -168,6 +181,15 @@ public sealed partial class Lowerer
             _ => new MBinary { Op = b.Op, L = l, R = r },
         };
     }
+
+    /// <summary>Signed `/` and `%` are floored (-7 / 2 == -4, -7 % 3 == 2), float `%` too; tdiv/remainder truncate.</summary>
+    internal static string? FlooredHelper(string op, AType t) => (op, t.Cs) switch
+    {
+        ("/", "int" or "long") => "floor_div",
+        ("%", "int" or "long") => "floor_mod",
+        ("%", "double" or "float") => "floor_fmod",   // a distinct name: passes may treat floor_mod as integer-only
+        _ => null,
+    };
 
     bool StrictMath => Method?.Decl?.Attrs.Contains("StrictMath") == true;
 

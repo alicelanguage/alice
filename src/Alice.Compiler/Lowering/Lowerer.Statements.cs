@@ -40,7 +40,22 @@ public sealed partial class Lowerer
                 break;
             case MultiAssign ma:
                 {
-                    var v = ma.Values.Count == 1 ? Expr(ma.Values[0]) : new MTuple { Items = ma.Values.Select(Expr).ToList() };
+                    MExpr v;
+                    // q, r = a.divmod(b): straight into the two floored results, no [q, r] array
+                    if (ma.Values is [CallExpr { Name: "divmod", Res: "ext", Args.Count: 1, Block: null, Recv: { Type.Cs: "int" or "long" } dr } dm] && ma.Names.Count == 2)
+                    {
+                        string a = Temp("dv"), d = Temp("dv");
+                        o.Add(new MDecl { Name = a, Init = Expr(dr) });
+                        o.Add(new MDecl { Name = d, Init = Expr(dm.Args[0].Value!) });
+                        v = new MTuple { Items = { new MCall { Target = new MCode("Prelude"), Name = "floor_div", Args = { new MCode(a), new MCode(d) } }, new MCall { Target = new MCode("Prelude"), Name = "floor_mod", Args = { new MCode(a), new MCode(d) } } } };
+                    }
+                    else if (ma.Values.Count == 1 && ma.Names.Count > 1 && ma.Values[0].Type.Kind != "tuple" && !ma.Values[0].Type.IsString && Builtins.ElemOf(ma.Values[0].Type).IsKnown)
+                    {
+                        string seq = Temp("m");
+                        o.Add(new MDecl { Name = seq, Init = Expr(ma.Values[0]) });
+                        v = new MTuple { Items = Enumerable.Range(0, ma.Names.Count).Select(k => (MExpr)new MIndex { Target = new MCode(seq), Args = { new MCode(k.ToString()) } }).ToList() };
+                    }
+                    else v = ma.Values.Count == 1 ? Expr(ma.Values[0]) : new MTuple { Items = ma.Values.Select(Expr).ToList() };
                     o.Add(new MDeconstruct { Names = ma.Locals.Select(l => l.CsName).ToList(), Declare = ma.Declares && !ma.Locals.Any(hoisted.Contains), Value = v });
                     break;
                 }
@@ -108,6 +123,8 @@ public sealed partial class Lowerer
     void AssignStmt(List<MStmt> o, Assign a)
     {
         if (a.Declares == null && TryCounterUpdate(o, a)) return;
+        if (TryStackArrayInit(o, a)) return;
+        if (TryFlatDecl(o, a) || TryFlatRowWrite(o, a)) return;
         if (a.Declares != null)
         {
             var v = Expr(a.Value);
@@ -135,6 +152,9 @@ public sealed partial class Lowerer
         }
         switch (a.Op)
         {
+            case "/=" or "%=" when FlooredHelper(a.Op[..1], a.Target.Type) is string fl:
+                o.Add(new MAssign { Target = target, Value = new MCast { TypeCs = a.Target.Type.Cs, E = new MCall { Target = new MCode("Prelude"), Name = fl, Args = { target, value } } } });
+                break;
             case "**=":
                 o.Add(new MAssign { Target = target, Value = new MCall { Target = new MCode("Prelude"), Name = "pow", Args = { target, value } } });
                 break;
@@ -204,7 +224,9 @@ public sealed partial class Lowerer
         if (f.Iter is RangeExpr re)
         {
             var end = re.B is NameExpr { Sym: LocalSym bl } && lengthAlias.TryGetValue(bl, out var len) && re.Excl ? new MCode(len) : Expr(re.B);
-            r = new MFor { Var = f.Locals[0].CsName, Start = Expr(re.A), Cmp = re.Excl ? "<" : "<=", End = end, Body = Stmts(f.Body, Tail.None, null) };
+            // the counter has the unified type of both bounds: `0...m` with m : Int64 is a long loop, not an int one
+            var loop = new MFor { Var = f.Locals[0].CsName, VarType = f.Locals[0].Type.IsInteger ? f.Locals[0].Type.Cs : null, Start = Expr(re.A), Cmp = re.Excl ? "<" : "<=", End = end, Body = Stmts(f.Body, Tail.None, null) };
+            r = loop;
         }
         else
         {

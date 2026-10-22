@@ -76,9 +76,9 @@ public class LanguageTests
         { "generic binary tree", Tree, "1,3,4,5,8,9" },
         { "generic class", "class Box(T)\n  getter item : T\n  def initialize(@item : T)\n  end\nend\nputs Box(String).new(\"hi\").item.upcase", "HI" },
         { "generic method constraint", "def biggest(a : T, b : T) : T forall T where T : IComparable(T)\n  a.CompareTo(b) >= 0 ? a : b\nend\nputs biggest(3, 7)\nputs biggest(\"a\", \"b\")", "7\nb" },
-        { "sum type match", Shapes, "9\ntrue" },
+        { "sum type match", Shapes, "9.0\ntrue" },
         { "record", "record Point(x : Int32, y : Int32)\np = Point.new(1, 2)\nputs p.x + p.y\nputs p == Point.new(1, 2)\nputs p", "3\ntrue\nPoint { x = 1, y = 2 }" },
-        { "record struct with method", "record struct Vec(x : Float64, y : Float64)\n  def len : Float64\n    Math.Sqrt(x * x + y * y)\n  end\nend\nputs Vec.new(3.0, 4.0).len", "5" },
+        { "record struct with method", "record struct Vec(x : Float64, y : Float64)\n  def len : Float64\n    Math.Sqrt(x * x + y * y)\n  end\nend\nputs Vec.new(3.0, 4.0).len", "5.0" },
         { "monkey patch String", "class String\n  def shout : String\n    upcase + \"!\"\n  end\nend\nputs \"hey\".shout", "HEY!" },
         { "monkey patch Int32", "struct Int32\n  def double : Int32\n    self * 2\n  end\nend\nputs 21.double", "42" },
         { "reopen alice class", "class Dog\n  def name : String\n    \"rex\"\n  end\nend\nclass Dog\n  def bark : String\n    name + \" woof\"\n  end\nend\nputs Dog.new.bark", "rex woof" },
@@ -93,7 +93,7 @@ public class LanguageTests
         { "Hash(K, V) type annotation", "module M\n  X : Hash(String, Int32) = {\"a\" => 1}\nend\nh : Hash(String, Int32) = Hash(String, Int32).new\nh[\"b\"] = 2\nputs M::X[\"a\"] + h[\"b\"]", "3" },
         { "exhaustive case over plain enum", "enum S\n  A\n  B\nend\ndef name(s : S) : String\n  case s\n  when S::A then \"a\"\n  when S::B then \"b\"\n  end\nend\nputs name(S::B)", "b" },
         { "duck typing is monomorphized", "def len(x)\n  x.Length\nend\nputs len(\"abcd\")\nputs len([1, 2])", "4\n2" },
-        { "duck typed arithmetic", "def twice(x)\n  x * 2\nend\nputs twice(2)\nputs twice(1.5)", "4\n3" },
+        { "duck typed arithmetic", "def twice(x)\n  x * 2\nend\nputs twice(2)\nputs twice(1.5)", "4\n3.0" },
     };
 
     [Theory, MemberData(nameof(Programs))]

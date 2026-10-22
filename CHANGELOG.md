@@ -2,6 +2,35 @@
 
 ## 0.12.0 - Unreleased
 
+- Breaking (ADR 0013): signed `/` and `%` are floored like `divmod` (`-7 / 2 == -4`); `tdiv`/`remainder` truncate. Float `%` follows the divisor.
+- Breaking (ADR 0013): integer overflow raises `OverflowException`; `&+ &- &*` wrap. `2 ** -1` raises instead of returning 1.
+- Breaking (ADR 0013): `to_u8` and the other sized conversions raise when out of range (NaN too); `to_X!` wraps. `2.5.round` is `3.0` (half away from zero).
+- Breaking: floats print with a decimal point and Ruby exponent rules everywhere (`2.0`, `1.0e-07`, `1.0e+16`).
+- Generated programs default to workstation GC (faster startup, lower RSS); `[runtime] gc = "server" | "low-memory"` in `alice.toml`.
+- Startup: the `format` regex is source-generated (no Reflection.Emit on every launch); an `if`/`case` with a `raise` branch no longer becomes `dynamic` (the C# runtime binder was loading at startup).
+- Fix `(-5).abs` and `-7.5.abs` returning negative values (the C# emitter dropped the parentheses).
+- Fix `round(n)`/`floor(n)`/`ceil(n)` on decimal fractions (`0.29.floor(2)` was `0.28`).
+- `[a, b, c].min`/`.max` on a literal lower to `Math.Min`/`Math.Max` with no array allocation (editdist inner loop).
+- Compiler: MIR pass pipeline (ADR 0014) in `src/Alice.Compiler/Optimizer`: constant folding, strength reduction (`x / 8` is `x >> 3`, `x % 16` is `x & 15` with floored semantics), literal `[a, b].min/max` without allocation, unchecked counted-loop steps. `ALICE_DISABLE_PASSES` for A/B runs.
+- Compiler: fork/join of independent pure recursive calls (ADR 0015): `a = f(x)` / `b = f(y)` run in parallel with lazy task creation (only the top log2(cores)+3 levels spawn tasks). Writes into arrays allocated in the method keep it pure. Suite `tree-radix` at 1M elements: 3226 ms → 319 ms (C# 665 ms).
+- Breaking: `Channel(T).new` is unbuffered (a rendezvous, as in Crystal): `send` waits for a receiver. It was silently unbounded. `Channel(T).new(n)` buffers n. The channel is a lock-guarded ring (no Task per blocking call, no allocation per message); `send` after `close` raises `ClosedChannelError`.
+- Row flattening: an array of fixed-width literal rows filled by a full `for i in 0...n` loop and never escaping (`points[i] = [x, y]`) is one flat array `points[i * k + j]` with the column still bounds-checked (suite kmeans at 1M points: 0.44 s / 95 MB → 0.38 s / 63 MB).
+- Fix `Array(T).new(n) { |i| ... }` ignoring its block.
+- Heap-free small arrays: a local array of literal size (<= 256 unmanaged elements, or a literal of <= 32 items) that never escapes lives in one `stackalloc` buffer at method entry, also when declared inside a loop.
+- Fix `Array(T).new(n, v)` ignoring `v` (it returned zeros); a non-default fill uses an uninitialized allocation plus one `Fill`.
+- Range analysis: counted loops bounded by `.Length`/`.Count` and their `i ± k` offsets drop provably dead overflow checks (editdist: 998 → 884 ms, C# 841 ms).
+- Stdlib fork/join: `sort` of a large primitive array is a parallel merge sort with a pooled buffer (10M `Int32`: 756 → 207 ms).
+- Docs: [fork/join](docs/fork-join.md) (idea credited to Victor Taelin's BendRT) and [heap and GC](docs/heap-gc.md).
+- Fork/join also forks Bend's single-statement parallel call `a, b = f(x), g(y)` (pure, independent, recursive), including into existing variables.
+- Startup: Prelude's dynamic/reflection/regex caches are created on first use instead of when every program starts.
+- Compiler: a loop nested in a serial loop is no longer auto-parallelized with the "heavy" threshold of 2 (game of life dispatched its 3-cell neighbourhood loop to the thread pool per cell: 197 ms → 60 ms); constant short trip counts emit no parallel path.
+- Fix `for k in 0...m` with `m : Int64` (and `n.times` on Int64) declaring an `int` counter that could never reach the bound.
+- Allocation-free: `round(n)`/`floor(n)`/`ceil(n)`, `q, r = a.divmod(b)` (no array), `a.step(limit, k)` with a literal step (inlined loop), and `puts`/`str`/`inspect` of numbers (no boxing).
+- `Digest::SHA256.hexdigest`, `Digest::SHA1`, `Digest::MD5` (Ruby API).
+- New primitives: `to_i8`..`to_u64`, `to_i32`, `to_f64`, `fdiv`, `sign`, `popcount`, `leading_zeros_count`, `trailing_zeros_count`, `bit_length`, `finite?`; `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`; snake_case .NET statics (`Math.sqrt`, `Math.atan2`).
+- `q, r = 7.divmod(2)`: multiple assignment destructures arrays and lists.
+- Hex and binary literals accept `_` separators and type suffixes (`0xFFFF_FFFF_i64`, `0xFF_u8`).
+
 - Windows installer: launch Microsoft's .NET SDK installer with a child-process execution policy override, preserving the user's policy and reporting SDK installation failures.
 
 - Root npm commands build/test Alice and generate VSIX/Zed packages from the companion `extensions/` checkout.

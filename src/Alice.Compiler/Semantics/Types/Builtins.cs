@@ -323,7 +323,35 @@ public static class Builtins
             case "to_f32":
                 return AType.Float;
             case "to_i64":
+            case "to_i64_b":
                 return AType.Long;
+            case "to_i_b":
+            case "to_i32":
+            case "to_i32_b":
+            case "sign":
+            case "popcount":
+            case "trailing_zeros_count":
+            case "leading_zeros_count":
+            case "bit_length":
+                return AType.Int;
+            case "to_i8" or "to_i8_b":
+                return AType.SByte;
+            case "to_i16" or "to_i16_b":
+                return AType.Short;
+            case "to_u8" or "to_u8_b":
+                return AType.Byte;
+            case "to_u16" or "to_u16_b":
+                return AType.UShort;
+            case "to_u32" or "to_u32_b":
+                return AType.UInt;
+            case "to_u64" or "to_u64_b":
+                return AType.ULong;
+            case "to_f64":
+            case "fdiv":
+                return AType.Double;
+            case "tdiv":
+            case "remainder":
+                return recv;
             case "to_list":
                 return e.IsKnown ? Generic(typeof(List<>), e) : AType.Unknown;
             case "chars":

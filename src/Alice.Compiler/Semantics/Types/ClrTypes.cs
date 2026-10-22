@@ -172,6 +172,13 @@ public sealed class ClrTypes
         catch (ArgumentException) { return null; }
     }
 
+    /// <summary>snake_case -> PascalCase (`write_line` -> `WriteLine`); null when the name is not lower snake case.</summary>
+    public static string? Pascal(string name)
+    {
+        if (name.Length == 0 || !char.IsLower(name[0]) || name.Any(ch => !(char.IsAsciiLetterLower(ch) || char.IsAsciiDigit(ch) || ch == '_'))) return null;
+        return string.Concat(name.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
+    }
+
     public sealed record Member(string Kind, AType Type, bool IsStatic, MethodInfo? Method = null);
 
     /// <summary>Instance or static member lookup: property, field, or method with a compatible arity.</summary>

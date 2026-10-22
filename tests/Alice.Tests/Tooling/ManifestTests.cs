@@ -73,4 +73,30 @@ public class ManifestTests
         Assert.Equal("13.0.3", t["dependencies"]["Newtonsoft.Json"]);
         Assert.Equal("../geo", ((Dictionary<string, object>)t["dependencies"]["geo"])["path"]);
     }
+
+    [Theory]
+    [InlineData("", "false", "true", null)]
+    [InlineData("[runtime]\ngc = \"server\"\n", "true", "true", null)]
+    [InlineData("[runtime]\ngc = \"low-memory\"\n", "false", "false", "7")]
+    public void Runtime_gc_mode_maps_to_msbuild(string runtime, string server, string concurrent, string? conserve)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "alice-gc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"gc\"\n" + runtime);
+        var xml = File.ReadAllText(Manifest.Sync(dir));
+        Assert.Contains($"<ServerGarbageCollection>{server}</ServerGarbageCollection>", xml);
+        Assert.Contains($"<ConcurrentGarbageCollection>{concurrent}</ConcurrentGarbageCollection>", xml);
+        if (conserve is null) Assert.DoesNotContain("GCConserveMemory", xml);
+        else Assert.Contains($"System.GC.ConserveMemory\" Value=\"{conserve}\"", xml);
+    }
+
+    [Fact]
+    public void Unknown_gc_mode_is_rejected()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "alice-gc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"gc\"\n[runtime]\ngc = \"fast\"\n");
+        var ex = Assert.Throws<InvalidOperationException>(() => Manifest.Sync(dir));
+        Assert.Contains("workstation, server, low-memory", ex.Message);
+    }
 }

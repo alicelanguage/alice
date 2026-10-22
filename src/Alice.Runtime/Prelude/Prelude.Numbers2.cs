@@ -23,9 +23,6 @@ public static partial class Prelude
 
     public static T clamp<T>(this T x, T lo, T hi) where T : INumber<T> => T.Clamp(x, lo, hi);
     public static bool between_q<T>(this T x, T lo, T hi) where T : INumber<T> => x >= lo && x <= hi;
-    public static double round(this double d, int n) => Math.Round(d, n, MidpointRounding.AwayFromZero);
-    public static double floor(this double d, int n) { double f = Math.Pow(10, n); return Math.Floor(d * f) / f; }
-    public static double ceil(this double d, int n) { double f = Math.Pow(10, n); return Math.Ceiling(d * f) / f; }
 
     public static void step(this int a, int limit, int by, Action<int> f)
     {
@@ -58,6 +55,7 @@ public static partial class Prelude
     public static double truncate(this double d) => Math.Truncate(d);
     public static bool nan_q(this double d) => double.IsNaN(d);
     public static bool infinite_q(this double d) => double.IsInfinity(d);
+    public static bool finite_q(this double d) => double.IsFinite(d);
     public static bool positive_q<T>(this T n) where T : INumber<T> => T.IsPositive(n) && !T.IsZero(n);
     public static bool negative_q<T>(this T n) where T : INumber<T> => T.IsNegative(n);
 }

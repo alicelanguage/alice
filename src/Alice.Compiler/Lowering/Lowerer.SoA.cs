@@ -56,7 +56,7 @@ public sealed partial class Lowerer
         }
         ctx.RemoveAt(ctx.Count - 1);
         soa = saved;
-        pre.Add(new MFor { Var = idx, Start = new MCode(vi), Cmp = "<", End = boundHi != null ? new MCode(boundHi) : new MMember { Target = new MCode(store), Name = "Count" }, Body = body });
+        pre.Add(new MFor { VarType = "int", Var = idx, Start = new MCode(vi), Cmp = "<", End = boundHi != null ? new MCode(boundHi) : new MMember { Target = new MCode(store), Name = "Count" }, Body = body });
         return sinkName == "each" ? MCode.Empty : new MCode(res);
     }
 

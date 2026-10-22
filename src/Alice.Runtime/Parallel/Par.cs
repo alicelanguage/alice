@@ -7,6 +7,35 @@ public static class Par
 {
     public static int Workers => Environment.ProcessorCount;
 
+    // ---- fork/join of independent pure calls (`a = f(x)` / `b = f(y)`), lazy task creation like BendRT's parallel let ----
+
+    [ThreadStatic] static int forkDepth;
+
+    /// <summary>Forks spawn tasks only near the root: 2^depth tasks cover the cores, deeper forks run as plain calls.</summary>
+    static readonly int MaxForkDepth = System.Numerics.BitOperations.Log2((uint)Math.Max(1, Environment.ProcessorCount)) + 3;
+
+    public static bool Forkable => forkDepth < MaxForkDepth && Environment.ProcessorCount > 1;
+
+    /// <summary>Runs <paramref name="left"/> as a task and <paramref name="right"/> on this thread, then joins.
+    /// A task the pool has not started yet is run inline by the join, so nested forks never block the pool.</summary>
+    public static (A, B) Fork<A, B>(Func<A> left, Func<B> right)
+    {
+        int depth = forkDepth + 1;
+        var task = Task.Factory.StartNew(() =>
+        {
+            int saved = forkDepth;
+            forkDepth = depth;
+            try { return left(); }
+            finally { forkDepth = saved; }
+        }, CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+        int outer = forkDepth;
+        forkDepth = depth;
+        B b;
+        try { b = right(); }
+        finally { forkDepth = outer; }
+        return (task.GetAwaiter().GetResult(), b);   // rethrows the original exception, not an AggregateException
+    }
+
     /// <summary>Calls body(lo, hi) over disjoint contiguous ranges covering [0, n).</summary>
     public static void Range(int n, Action<int, int> body, int grain = 1)
     {

@@ -20,6 +20,7 @@ public sealed partial class Lowerer
         }
         if (c.Res == "ext" && c.Block != null && TryInline(c) is MExpr inlined) return inlined;
         if (c.Res == "ext" && c.Block == null && TryFuseSink(c) is MExpr fused) return fused;
+        if (c.Res == "ext" && c.Block == null && c.Args.Count == 0 && Binder.Mangle(c.Name) is "size" or "length" && TryFlatSize(c) is MExpr rows) return rows;
         // xs.size / s.length -> the Length/Count member itself (no call; the JIT sees the array length)
         if (c.Res == "ext" && c.Block == null && c.Args.Count == 0 && c.Recv != null && Binder.Mangle(c.Name) is "size" or "length" or "count")
         {

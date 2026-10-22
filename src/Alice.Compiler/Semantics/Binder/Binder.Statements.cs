@@ -218,6 +218,9 @@ public sealed partial class Binder
     {
         var vts = ma.Values.Select(BindExpr).ToList();
         if (ma.Values.Count == 1 && vts[0].Kind == "tuple" && vts[0].Args.Count == ma.Names.Count) vts = vts[0].Args;
+        // `q, r = 7.divmod(2)` / `a, b = xs`: destructure an array or list by position
+        else if (ma.Values.Count == 1 && ma.Names.Count > 1 && Builtins.ElemOf(vts[0]) is { IsKnown: true } el && vts[0].Kind != "tuple" && !vts[0].IsString)
+            vts = Enumerable.Repeat(el, ma.Names.Count).ToList();
         ma.Locals = new List<LocalSym>();
         ma.Declares = false;
         var existing = ma.Names.Select(FindLocal).ToList();

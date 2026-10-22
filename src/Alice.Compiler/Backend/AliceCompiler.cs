@@ -138,6 +138,7 @@ public static class AliceCompiler
         var opts = new CSharpCompilationOptions(exe ? OutputKind.ConsoleApplication : OutputKind.DynamicallyLinkedLibrary)
             .WithOptimizationLevel(OptimizationLevel.Release)
             .WithAllowUnsafe(true)
+            .WithOverflowChecks(true)   // Int32::MAX + 1 raises (ADR 0013); `&+ &- &*` wrap
             .WithNullableContextOptions(NullableContextOptions.Enable)
             .WithSpecificDiagnosticOptions(diag);
         var refs = Refs.Value.Concat((extraRefs ?? []).Select(r => (MetadataReference)MetadataReference.CreateFromFile(Path.GetFullPath(r))));
@@ -166,6 +167,7 @@ public static class AliceCompiler
             ? OutputKind.ConsoleApplication : OutputKind.DynamicallyLinkedLibrary;
         var opts = new CSharpCompilationOptions(kind)
             .WithAllowUnsafe(true)
+            .WithOverflowChecks(true)   // Int32::MAX + 1 raises (ADR 0013); `&+ &- &*` wrap
             .WithNullableContextOptions(NullableContextOptions.Enable)
             .WithSpecificDiagnosticOptions(NullErrors.ToDictionary(x => x, _ => ReportDiagnostic.Error));
         var runtimeNames = Refs.Value.OfType<PortableExecutableReference>().Select(r => Path.GetFileName(r.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);

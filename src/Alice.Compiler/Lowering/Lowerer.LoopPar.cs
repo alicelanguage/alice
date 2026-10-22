@@ -17,6 +17,7 @@ public sealed partial class Lowerer
         public LocalSym? Acc;
         public bool Heavy;               // nested loops: parallel even for small trip counts
         public readonly HashSet<LocalSym> Inner = new();
+        public HashSet<LocalSym> Fresh = new();   // locals only ever bound to arrays allocated in this body
     }
 
     MStmt? TryParallelFor(ForStmt f)
@@ -26,6 +27,12 @@ public sealed partial class Lowerer
         var plan = new LoopPlan { LoopVar = f.Locals[0] };
         plan.Inner.Add(plan.LoopVar);
         if (!LoopBody(f.Body, plan, 0)) return null;
+        // inside a serial loop, a parallel dispatch per outer iteration only pays off for long inner loops
+        bool nested = ctx.Contains("loop");
+        if (nested) plan.Heavy = false;
+        // constant trip count below the threshold: no parallel path at all
+        if (r.A is LitExpr { Kind: "int" } la && r.B is LitExpr { Kind: "int" } lb && int.TryParse(la.Text.Replace("_", ""), out int ca) && int.TryParse(lb.Text.Replace("_", ""), out int cb)
+            && (long)cb - ca + (r.Excl ? 0 : 1) < (plan.Heavy ? 2 : Threshold)) return null;
         if (plan.Acc != null && WalkReads(f.Body).Any(n => n.Sym == plan.Acc)) return null;
         if (plan.Acc == null && !WalkStmts(f.Body).Any(s => s is Assign { Target: IndexExpr })) return null;   // no observable effect to parallelize
 
@@ -61,16 +68,16 @@ public sealed partial class Lowerer
         string? accT = plan.Acc != null ? TypeCs(plan.Acc.Type) : null;
         if (plan.Acc != null) chunk.Add(new MDecl { Name = plan.Acc.CsName, TypeCs = accT, Init = new MCode("default") });
         chunk.AddRange(bodyPre);
-        chunk.Add(new MFor { Var = i, Start = new MCode($"{start} + {lo}"), Cmp = "<", End = new MCode($"{start} + {hi}"), Body = body });
+        chunk.Add(new MFor { VarType = "int", Var = i, Start = new MCode($"{start} + {lo}"), Cmp = "<", End = new MCode($"{start} + {hi}"), Body = body });
         string grain = plan.Heavy ? "1" : "8192";
         string helper = $"__parfor_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
-        var ps = captured.Select(l => $"{TypeCs(l.Type)} {l.CsName}").Append($"int {start}").Append($"int {count}");
+        var ps = captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}").Append($"int {start}").Append($"int {count}");
         var args = captured.Select(l => l.CsName).Append(start).Append(count);
         var hp = new Backend.Printer("", 1);
         if (plan.Acc != null)
         {
             chunk.Add(new MReturn { Value = new MCode(plan.Acc.CsName) });
-            hp.Stmt(new MReturn
+            hp.Root(new MReturn
             {
                 Value = new MCall
                 {
@@ -83,7 +90,7 @@ public sealed partial class Lowerer
         }
         else
         {
-            hp.Stmt(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk }, new MCode(grain) } } });
+            hp.Root(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk }, new MCode(grain) } } });
             Extra.Add($"private {HelperStatic}void {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
         }
         string call = $"{helper}({string.Join(", ", args)})";
@@ -147,6 +154,7 @@ public sealed partial class Lowerer
         NameExpr { Res: "local" or "field" } => true,
         IvarExpr or SelfExpr => true,
         TypeTestExpr tt => tt.E == null || PureRead(tt.E, plan),
+        NewExpr { Type.Kind: "array", Block: null, AsCall: null } ne => ne.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),   // allocation is not an effect
         BinaryExpr b => PureRead(b.L, plan) && PureRead(b.R, plan),
         UnaryExpr { Op: "-" or "!" or "~" } u => PureRead(u.E, plan),
         TernaryExpr t => PureRead(t.C, plan) && PureRead(t.A, plan) && PureRead(t.B, plan),
@@ -181,7 +189,7 @@ public sealed partial class Lowerer
         if (purity.TryGetValue(m, out var known)) return known;
         if (m.Decl == null || !m.Decl.HasBody || m.UsesYield || m.IsAsync || m.Mutates && !m.IsCtor) return purity[m] = false;
         purity[m] = true;
-        var plan = new LoopPlan { LoopVar = new LocalSym() };
+        var plan = new LoopPlan { LoopVar = new LocalSym(), Fresh = FreshArrays(m.Decl.Body) };
         bool ok = PureMethodBody(m.Decl.Body, plan, m.IsCtor);
         purity[m] = ok;
         return ok;
@@ -202,8 +210,10 @@ public sealed partial class Lowerer
             {
                 ExprStmt es => PureRead(es.Expr, plan),
                 LocalDecl d => d.Value == null || PureRead(d.Value, plan),
-                Assign a => PureRead(a.Value, plan) && (a.Declares != null || a.Target is NameExpr { Res: "local" } || (ctor && a.Target is IvarExpr)),
+                Assign a => PureRead(a.Value, plan) && (a.Declares != null || a.Target is NameExpr { Res: "local" } || (ctor && a.Target is IvarExpr)
+                    || (a.Target is IndexExpr { Target: NameExpr { Sym: LocalSym fl } } ix && plan.Fresh.Contains(fl) && ix.Args.All(x => x.Mod == "" && PureRead(x.Value!, plan)))),
                 ReturnStmt r => r.Value == null || PureRead(r.Value, plan),
+                MultiAssign ma => ma.Values.All(v => PureRead(v, plan)),   // targets are locals
                 IfStmt i => i.Conds.All(c => PureRead(c, plan)) && i.Bodies.All(b => PureMethodBody(b, plan, ctor)) && (i.Else == null || PureMethodBody(i.Else, plan, ctor)),
                 WhileStmt w => PureRead(w.Cond, plan) && PureMethodBody(w.Body, plan, ctor),
                 ForStmt f => PureRead(f.Iter is RangeExpr rr ? rr.A : f.Iter, plan) && (f.Iter is not RangeExpr r2 || PureRead(r2.B, plan)) && PureMethodBody(f.Body, plan, ctor),
@@ -213,6 +223,26 @@ public sealed partial class Lowerer
             if (!ok) return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// Locals whose every assignment in the body is a new array: writes through them cannot reach any caller's
+    /// data (no alias of a parameter, field or other local), so they do not make the method impure.
+    /// </summary>
+    static HashSet<LocalSym> FreshArrays(List<Stmt> body)
+    {
+        var fresh = new HashSet<LocalSym>();
+        var tainted = new HashSet<LocalSym>();
+        foreach (var s in WalkStmts(body))
+        {
+            if (s is not Assign a) continue;
+            var l = a.Declares ?? (a.Target as NameExpr)?.Sym as LocalSym;
+            if (l == null) continue;
+            if (a.Op == "=" && a.Value is NewExpr { Type.Kind: "array" } or ArrayLit) fresh.Add(l);
+            else tainted.Add(l);
+        }
+        fresh.ExceptWith(tainted);
+        return fresh;
     }
 
     /// <summary>Every expression read in the body (assignment targets excluded, their indices included).</summary>

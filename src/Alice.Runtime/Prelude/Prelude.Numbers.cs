@@ -7,8 +7,6 @@ namespace Alice.Runtime;
 
 public static partial class Prelude
 {
-    public static int pow(int b, int e) { int r = 1; while (e-- > 0) r *= b; return r; }
-    public static long pow(long b, int e) { long r = 1; while (e-- > 0) r *= b; return r; }
     public static double pow(double b, double e) => Math.Pow(b, e);
 
     /// <summary>a*b+c with one rounding when the CPU has FMA (x64 FMA3 / ARM64), else plain a*b+c. Inlined; the check folds away.</summary>
@@ -51,49 +49,13 @@ public static partial class Prelude
     public static T abs<T>(this T n) where T : INumber<T> => T.Abs(n);
     public static T succ<T>(this T n) where T : INumber<T> => n + T.One;
     public static T pred<T>(this T n) where T : INumber<T> => n - T.One;
-    public static int to_i(this double d) => (int)d;
-    public static int to_i(this float d) => (int)d;
-    public static double to_f(this float d) => d;
-    public static float to_f32(this float d) => d;
-    public static float to_f32(this long d) => d;
-    public static int to_i(this long d) => (int)d;
-    public static int to_i(this int d) => d;
     public static int to_i(this char c) => c;
-    public static int to_i(this byte v) => v;
-    public static int to_i(this sbyte v) => v;
-    public static int to_i(this short v) => v;
-    public static int to_i(this ushort v) => v;
-    public static int to_i(this uint v) => unchecked((int)v);
-    public static int to_i(this ulong v) => unchecked((int)v);
-    public static double to_f(this byte v) => v;
-
-    // narrow conversions (wrapping, like Crystal's to_u8! etc.)
-    public static byte to_u8(this int v) => unchecked((byte)v);
-    public static byte to_u8(this long v) => unchecked((byte)v);
-    public static byte to_u8(this double v) => unchecked((byte)(int)v);
-    public static sbyte to_i8(this int v) => unchecked((sbyte)v);
-    public static short to_i16(this int v) => unchecked((short)v);
-    public static short to_i16(this long v) => unchecked((short)v);
-    public static ushort to_u16(this int v) => unchecked((ushort)v);
-    public static ushort to_u16(this long v) => unchecked((ushort)v);
-    public static uint to_u32(this int v) => unchecked((uint)v);
-    public static uint to_u32(this long v) => unchecked((uint)v);
-    public static ulong to_u64(this long v) => unchecked((ulong)v);
-    public static ulong to_u64(this int v) => unchecked((ulong)v);
     public static int to_i(this string s) => int.Parse(s.Trim(), Inv);
-    public static long to_i64(this int d) => d;
-    public static long to_i64(this double d) => (long)d;
     public static long to_i64(this string s) => long.Parse(s.Trim(), Inv);
-    public static double to_f(this int d) => d;
-    public static double to_f(this long d) => d;
-    public static double to_f(this double d) => d;
     public static double to_f(this string s) => double.Parse(s.Trim(), Inv);
-    public static float to_f32(this double d) => (float)d;
-    public static float to_f32(this int d) => d;
     public static char chr(this int c) => (char)c;
     public static int ord(this char c) => c;
     public static double floor(this double d) => Math.Floor(d);
     public static double ceil(this double d) => Math.Ceiling(d);
-    public static double round(this double d) => Math.Round(d);
     public static double sqrt(this double d) => Math.Sqrt(d);
 }

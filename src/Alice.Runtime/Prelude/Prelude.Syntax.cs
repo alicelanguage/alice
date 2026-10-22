@@ -8,10 +8,11 @@ namespace Alice.Runtime;
 /// <summary>Runtime support for operator-level Ruby syntax: regex literals, =~, "%" formatting, "*" and "<<".</summary>
 public static partial class Prelude
 {
-    static readonly ConcurrentDictionary<(string, string), Regex> RegexCache = new();
+    // lazy: initialized on first use, not when a program first touches Prelude (StartupTests)
+    static class RegexCacheHolder { public static readonly ConcurrentDictionary<(string, string), Regex> Value = new(); }
 
     /// <summary>Regex literals compile once per (pattern, flags) and are reused.</summary>
-    public static Regex regex(string pattern, string flags) => RegexCache.GetOrAdd((pattern, flags), static k =>
+    public static Regex regex(string pattern, string flags) => RegexCacheHolder.Value.GetOrAdd((pattern, flags), static k =>
     {
         var o = RegexOptions.CultureInvariant;
         foreach (var f in k.Item2)

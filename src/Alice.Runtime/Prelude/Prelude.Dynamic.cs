@@ -10,11 +10,12 @@ namespace Alice.Runtime;
 /// </summary>
 public static partial class Prelude
 {
-    static readonly ConcurrentDictionary<(Type, string, int), MethodInfo[]> SendCache = new();
+    // lazy: initialized on first use, not when a program first touches Prelude (StartupTests)
+    static class SendCacheHolder { public static readonly ConcurrentDictionary<(Type, string, int), MethodInfo[]> Value = new(); }
 
     [UnconditionalSuppressMessage("Trimming", "IL2080", Justification = "Dynamic dispatch is opt-in Ruby semantics.")]
     static MethodInfo[] Candidates(Type t, string name, int argc) =>
-        SendCache.GetOrAdd((t, name, argc), static k =>
+        SendCacheHolder.Value.GetOrAdd((t, name, argc), static k =>
         {
             var r = new List<MethodInfo>();
             foreach (var m in k.Item1.GetMethods(BindingFlags.Public | BindingFlags.Instance))
@@ -41,15 +42,17 @@ public static partial class Prelude
     public static bool respond_to_q(object? target, string name) =>
         target != null && (target.GetType().GetMember(name).Length > 0 || DefinedMethod(target.GetType(), name) != null);
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, string), Delegate> Defined = new();
+    // lazy: initialized on first use, not when a program first touches Prelude (StartupTests)
+
+    static class DefinedHolder { public static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, string), Delegate> Value = new(); }
 
     /// <summary>Runtime `define_method name { ... }`: callable through send / public_send, visible to respond_to?.</summary>
-    public static void define_method(Type owner, string name, Delegate body) => Defined[(owner, name)] = body;
+    public static void define_method(Type owner, string name, Delegate body) => DefinedHolder.Value[(owner, name)] = body;
 
     static Delegate? DefinedMethod(Type t, string name)
     {
         for (var ty = t; ty != null; ty = ty.BaseType)
-            if (Defined.TryGetValue((ty, name), out var d)) return d;
+            if (DefinedHolder.Value.TryGetValue((ty, name), out var d)) return d;
         return null;
     }
 

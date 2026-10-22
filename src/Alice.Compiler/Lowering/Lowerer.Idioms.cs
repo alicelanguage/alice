@@ -157,7 +157,7 @@ public sealed partial class Lowerer
         string d = "__dict", text = "__text";
         string deltaCs = Backend.Printer.E(Expr(delta));
         var ps = new List<string> { $"string {text}", $"global::System.Collections.Generic.Dictionary<string, {V}> {d}" };
-        ps.AddRange(captured.Select(l => $"{TypeCs(l.Type)} {l.CsName}"));
+        ps.AddRange(captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
         string body = $$"""
                 int parts = global::System.Math.Min(global::Alice.Runtime.Par.Workers, {{text}}.Length / 16384 + 1);   // one partial dictionary per core keeps the merge small
                 var cuts = new global::System.Collections.Generic.List<int> { -1 };

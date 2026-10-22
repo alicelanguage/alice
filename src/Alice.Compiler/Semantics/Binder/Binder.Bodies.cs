@@ -129,6 +129,9 @@ public sealed partial class Binder
         return u.IsUnknown ? AType.Dynamic : u;
     }
 
+    /// <summary>A branch that ends in `raise` never produces a value: Unknown is skipped by Unify instead of voiding the whole if/case.</summary>
+    static AType? BranchType(List<Stmt> b) => b.Count > 0 && b[^1] is RaiseStmt ? AType.Unknown : TailType(b);
+
     /// <summary>Type of the value a statement list produces in tail position, or null when it produces none.</summary>
     public static AType? TailType(List<Stmt> body)
     {
@@ -143,7 +146,7 @@ public sealed partial class Binder
                     var ts = new List<AType>();
                     foreach (var b in i.Bodies.Append(i.Else))
                     {
-                        var t = TailType(b);
+                        var t = BranchType(b);
                         if (t == null) return null;
                         ts.Add(t);
                     }
@@ -155,7 +158,7 @@ public sealed partial class Binder
                     var ts = new List<AType>();
                     foreach (var b in c.Else == null ? c.Whens.Select(w => w.Body) : c.Whens.Select(w => w.Body).Append(c.Else))
                     {
-                        var t = TailType(b);
+                        var t = BranchType(b);
                         if (t == null) return null;
                         ts.Add(t);
                     }

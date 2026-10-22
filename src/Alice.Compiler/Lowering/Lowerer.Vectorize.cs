@@ -115,7 +115,7 @@ public sealed partial class Lowerer
                         Then =
                     {
                         new MAssign { Target = new MCode(res), Value = new MCode($"{acc}[0]") },
-                        new MFor { Var = k, Start = new MCode("1"), Cmp = "<", End = new MCode($"{vt}.Count"), Body = { new MAssign { Target = new MCode(res), Value = new MCode($"global::System.Math.{fn}({res}, {acc}[{k}])") } } },
+                        new MFor { VarType = "int", Var = k, Start = new MCode("1"), Cmp = "<", End = new MCode($"{vt}.Count"), Body = { new MAssign { Target = new MCode(res), Value = new MCode($"global::System.Math.{fn}({res}, {acc}[{k}])") } } },
                         new MAssign { Target = new MCode(count!), Value = new MCode("true") },
                     },
                     });
