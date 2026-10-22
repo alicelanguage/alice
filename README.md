@@ -194,7 +194,7 @@ Measured against idiomatic C# doing the same work ([`benchmarks/gc`](benchmarks/
 
 | workload | allocated per run: Alice / C# | collections: Alice / C# | GC pause: Alice / C# | time: Alice / C# |
 |---|---:|---:|---:|---:|
-| rolling DP rows | 0.06 / 61.4 MiB | 0 / 174 | 0 / 8.0 ms | 39.0 / 37.3 ms |
+| rolling DP rows | 0.00 / 61.4 MiB | 0 / 172 | 0 / 16.0 ms | 43.0 / 50.0 ms |
 | per-call scratch buffers | 0.00 / 596.6 MiB | 0 / 1672 | 0 / 92.2 ms | 258.8 / 315.0 ms |
 | 4 MiB frames | 0.00 / 484.0 MiB | 0 / 192 | 0 / 131.6 ms | 197.5 / 471.2 ms |
 | binary trees (objects) | 34.0 / 68.0 MiB | 83 / 63 | 32.7 / 46.9 ms | 21.6 / 29.5 ms |

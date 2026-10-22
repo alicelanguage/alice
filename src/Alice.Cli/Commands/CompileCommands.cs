@@ -175,11 +175,31 @@ public static class CompileCommands
     }
 
     /// <summary>NativeAOT for loose files: wrap them in a throwaway .alproj and publish.</summary>
+    /// <summary>
+    /// Copies the entry file and everything it `require`s under their common root, keeping relative paths: a flat copy
+    /// broke `require "../lib/x"` (multi-file programs could not be built with --native). The staging directory is
+    /// emptied first, so a file from an earlier build is never compiled.
+    /// </summary>
+    public static void StageNativeSources(List<SourceFile> files, string work)
+    {
+        var full = files.Select(f => Path.GetFullPath(f.Path)).ToList();
+        string root = Path.GetDirectoryName(full[0])!;
+        foreach (var p in full.Skip(1))
+            while (!(Path.GetDirectoryName(p)! + Path.DirectorySeparatorChar).StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                root = Path.GetDirectoryName(root) ?? root;
+        foreach (var old in Directory.Exists(work) ? Directory.GetFiles(work, "*.al", SearchOption.AllDirectories) : []) File.Delete(old);
+        foreach (var p in full)
+        {
+            var dest = Path.Combine(work, "src", Path.GetRelativePath(root, p));
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.Copy(p, dest, true);
+        }
+    }
+
     static int NativeSingle(List<SourceFile> files, string name, string dir, List<string> refs)
     {
         var work = Path.Combine(dir, "obj", "alice-native", name);
-        Directory.CreateDirectory(work);
-        foreach (var f in files) File.Copy(f.Path, Path.Combine(work, Path.GetFileName(f.Path)), true);
+        StageNativeSources(files, work);
         var proj = Path.Combine(work, name + ".alproj");
         File.WriteAllText(proj, ProjectFiles.ProjectXml("exe").Replace("</PropertyGroup>",
             "  <PublishAot>true</PublishAot>\n    <OptimizationPreference>Speed</OptimizationPreference>\n    <IlcInstructionSet>native</IlcInstructionSet>\n  </PropertyGroup>"));

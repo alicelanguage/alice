@@ -123,7 +123,13 @@ public sealed partial class Lowerer
         var saved = pre;
         pre = new List<MStmt>();
         var produced = new List<MStmt>();
+        var lent = tail == Tail.None ? LendOwnedResults(s) : [];
         Stmt(produced, s, tail, target);
+        foreach (var (call, temp, el) in lent)
+        {
+            forkedCalls.Remove(call);
+            produced.Add(Release(temp, el));
+        }
         foreach (var m in pre) if (m.Line == 0) m.Line = s.Line;
         foreach (var m in produced) if (m.Line == 0) m.Line = s.Line;
         outp.AddRange(pre);

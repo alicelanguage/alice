@@ -228,6 +228,16 @@ public class LoopParallelizeTests
         Assert.Equal(expected, AliceCompiler.Run(src).Trim());
     }
 
+    [Fact]
+    public void Node_by_node_tree_walks_stay_serial()
+    {
+        // forking `1 + a.count + b.count` over nullable children gives each task under a microsecond of work:
+        // measured 21.5 -> 32.6 ms on benchmarks/gc trees, so it stays serial
+        const string src = "class Node\n  getter l : Node?\n  getter r : Node?\n  def initialize(@l : Node?, @r : Node?)\n  end\n  def count : Int32\n    a = l\n    b = r\n    if a.nil? || b.nil?\n      1\n    else\n      1 + a.count + b.count\n    end\n  end\nend\ndef build(d : Int32) : Node\n  d > 0 ? Node.new(build(d - 1), build(d - 1)) : Node.new(nil, nil)\nend\nputs build(12).count\n";
+        Assert.DoesNotContain("Par.Fork(", AliceCompiler.Transpile(src));
+        Assert.Equal("8191", AliceCompiler.Run(src).Trim());
+    }
+
     [Theory]
     [InlineData("def f(n : Int32) : Bool\n  return true if n < 1\n  n > 3 && f(n - 1) && f(n - 2)\nend\n")]                   // short-circuit: the second call may never run
     [InlineData("def f(n : Int32) : Int32\n  return 0 if n < 1\n  n > 3 ? f(n - 1) : f(n - 2)\nend\n")]                     // only one branch runs

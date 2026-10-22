@@ -228,4 +228,17 @@ public class OwnershipTests
         var src = "def source(n : Int32) : Array(Int32)\n  xs = Array(Int32).new(n)\n  @@keep = xs\n  xs\nend\ndef f(n : Int32) : Int32\n  src = source(n)\n  src[0]\nend\n";
         Assert.DoesNotContain("Release(src)", AliceCompiler.Transpile(src));
     }
+
+    [Fact]
+    public void Owned_results_passed_to_borrowing_calls_are_recycled()
+    {
+        // `dist(source(n), source(n))`: never stored in a local, but each result is lent to a borrowing parameter,
+        // so it lives in a temporary for the statement and goes back to the pool after it
+        var src = Source + "def dist(a : Array(Int32), b : Array(Int32)) : Int32\n  s = 0\n  for i in 0...a.size\n    s += a[i] - b[i]\n  end\n  s\nend\ndef f(n : Int32) : Int32\n  t = 0\n  t += dist(source(n), source(n))\n  t\nend\n";
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(cs, @"Own<int>\.Release\(__arg\d+\)").Count);
+        var f = Compile(src).CreateDelegate<Func<int, int>>();
+        Assert.Equal(0, f(1000));
+        Assert.True(AllocatedPerCall(f, 1000) < 64);
+    }
 }

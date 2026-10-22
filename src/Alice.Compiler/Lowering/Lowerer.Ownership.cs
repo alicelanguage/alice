@@ -181,6 +181,37 @@ public sealed partial class Lowerer
         return ownedResults[m] = true;
     }
 
+    /// <summary>
+    /// `t += dist(source(n), source(m))`: an owned result lent straight to a borrowing parameter is bound to a temporary
+    /// before the statement (into `pre`) and released after it. Only when every other argument is a pure read, so
+    /// evaluating the owned results first moves no effect. Returns the temporaries to release.
+    /// </summary>
+    List<(CallExpr Call, LocalSym Temp, string Elem)> LendOwnedResults(Stmt s)
+    {
+        var lent = new List<(CallExpr, LocalSym, string)>();
+        if (inParallelGen || noHoist > 0 || Method == null || ctx.Contains("lambda")) return lent;
+        var root = s switch { Assign { Op: not "||=" and not "&&=" } a => a.Value, ExprStmt es => es.Expr, _ => null };
+        if (root == null) return lent;
+        var plan = new LoopPlan { LoopVar = new LocalSym() };
+        foreach (var c in WalkExpr(root).OfType<CallExpr>().Where(c => c is { Sym: MethodSym, Block: null }).ToList())
+        {
+            var m = (MethodSym)c.Sym!;
+            var picks = Enumerable.Range(0, c.Args.Count).Where(k => c.Args[k] is { Mod: "", Name: null, Value: CallExpr inner }
+                && OwnedResult(inner) && !forkedCalls.ContainsKey(inner) && Borrows(m, k, new())).ToList();
+            if (picks.Count == 0) continue;
+            if (!Enumerable.Range(0, c.Args.Count).Except(picks).All(k => c.Args[k].Value is { } v && PureRead(v, plan))) continue;
+            foreach (var k in picks)
+            {
+                var inner = (CallExpr)c.Args[k].Value!;
+                var temp = new LocalSym { Name = "__arg", CsName = Temp("arg"), Type = inner.Type };
+                pre.Add(new MDecl { Name = temp.CsName, Init = Expr(inner) });
+                forkedCalls[inner] = temp.CsName;
+                lent.Add((inner, temp, inner.Type.Elem!.Cs));
+            }
+        }
+        return lent;
+    }
+
     static LocalSym? Assigned(Assign a) => a.Declares ?? (a.Target as NameExpr)?.Sym as LocalSym;
 
     static bool Fresh(Syntax.Expr e) => Unwrap(e) is NewExpr { Type: { Kind: "array" }, Block: null, AsCall: null, Args.Count: 1 or 2 } ne && ne.Args.All(x => x.Mod == "" && x.Name == null);

@@ -93,4 +93,6 @@ Values typed `dynamic` load the C# runtime binder (tens of milliseconds). Alice 
 - `xs = xs.map { }` on an owned array overwrites it in place (Bend-style single-owner update, 0.12.2).
 - A function that returns only an owned local (`def source(n)` building and returning `xs`) hands the buffer to
   its caller: `src = source(n)` is owned, released by the caller and reused by the next `source` call (0.12.2).
+  Passed straight to a borrowing parameter (`dist(source(n), source(m))`), it lives in a temporary for the
+  statement and is released after it (0.12.3).
 - Reuse buffers across iterations when they are large: `stackalloc` covers only small, fixed-size arrays.

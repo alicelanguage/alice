@@ -63,7 +63,10 @@ public sealed partial class Lowerer
         var captured = new List<LocalSym>();
         foreach (var n in WalkExpr(c1).Concat(WalkExpr(c2)).OfType<NameExpr>())
             if (n is { Res: "local", Sym: LocalSym l } && !captured.Contains(l)) captured.Add(l);
-        if (captured.Any(l => !l.Type.IsKnown || l.Type.Nullable)) return false;   // a parameter of the helper loses flow narrowing (`a` non-nil in this branch)
+        // nullable locals (`l`, `r` of a tree node) stay serial: passing them with `!` would compile, but node-by-node tree
+        // walks give each task well under a microsecond of work. Measured on benchmarks/gc trees (8191-node trees):
+        // forking `1 + l.check + r.check` took 21.5 -> 32.6 ms. A program that knows its subtrees are big can write `par`
+        if (captured.Any(l => !l.Type.IsKnown || l.Type.Nullable)) return false;
         string helper = $"__fork_{(Method!.CsName ?? "main").TrimStart('@')}_{++helperN}";
         var hp = new Backend.Printer("", 1);
         hp.Root(new MReturn
