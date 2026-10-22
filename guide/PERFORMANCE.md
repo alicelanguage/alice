@@ -121,7 +121,8 @@ Class instances live on the .NET GC heap, as in C#. Two things help:
 
 Measured and not worth changing: turning off tiered compilation or PGO helps short programs and slows long ones
 (use `--native` instead); precompiling the Alice runtime with ReadyToRun made no measurable start-up
-difference.
+difference. Most of the JIT time a profiler reports is tier-1 recompilation on a background thread, running in
+parallel with the program: it costs no wall time, and its profile-guided code is what makes hot loops fast.
 
 ## A checklist
 
