@@ -407,7 +407,7 @@ end
 puts Shape::Rect(1.0, 2.0) == Shape::Rect(1.0, 2.0)   # true
 ```
 
-Variants are constructed with `Type::Variant(args)` (lowered to sealed nested records). `Type(args)` sugar for ordinary classes **(planned)**.
+Variants are constructed with `Type::Variant(args)` (lowered to sealed nested records). `Type(args)` also constructs ordinary classes and records (`Point(1, 2)` is `Point.new(1, 2)`); with type arguments it names a generic type (`List(Int32).new`).
 
 ### Modules
 

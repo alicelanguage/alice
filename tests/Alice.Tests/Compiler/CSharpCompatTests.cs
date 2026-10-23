@@ -51,6 +51,7 @@ public class CSharpCompatTests
         { "lambdas as blocks", "def sq(x : Int32) : Int32\n  x * x\nend\nf = ->(x : Int32) { x + 100 }\nputs [1, 2, 3].map(&->sq).join(\",\")\nputs [1, 2, 3].map(&f).join(\",\")\nputs [1, 2, 3, 4].select(&->(x : Int32) { x.even? }).join(\",\")\nt = 0\n[5, 6].each(&->(x : Int32) { t += x })\nputs t", "1,4,9\n101,102,103\n2,4\n11" },
         { "try with safe calls", "s : String? = \"abc\"\nputs s.try &.size\nn : String? = nil\nputs (n.try &.upcase) || \"none\"\nputs s.try &.upcase", "3\nnone\nABC" },
         { "tap and then", "sb = System.Text.StringBuilder.new.tap { |s| s.Append(\"a\")\n  s.Append(\"b\") }\nputs sb.ToString()\nputs 21.then { |x| x * 2 }\nputs \"abc\".then { |s| s.size }", "ab\n42\n3" },
+        { "Type(args) construction", "record Point(x : Int32, y : Int32)\nclass Box\n  getter v : Int32\n  def initialize(@v : Int32)\n  end\nend\nputs Point(1, 2).y\nputs Box(7).v\nputs List(Int32).new.Count", "2\n7\n0" },
         { "ruby methods and public_send", "class Q\n  def hi : String\n    \"hi\"\n  end\n  def add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nq = Q.new\nputs q.methods.includes?(\"hi\")\nputs q.public_send(\"add\", 2, 3)\nputs q.is_a?(Object)", "true\n5\ntrue" },
     };
 
