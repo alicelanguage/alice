@@ -18,11 +18,24 @@ public sealed partial class Lowerer
 
     int noHoist;
 
+    /// <summary>`h.each { |k, v| ... }` on a Dictionary: `foreach (var (k, v) in h)`, no closure, no delegate call.</summary>
+    MExpr? DictEach(CallExpr c)
+    {
+        if (c.Block is not { ParamSyms.Count: 2 } b || c.Recv!.Type.Clr is not { IsGenericType: true } dt || dt.GetGenericTypeDefinition() != typeof(Dictionary<,>)) return null;
+        var coll = Expr(c.Recv);
+        ctx.Add("loop");
+        var body = Stmts(b.Body, Tail.None, null);
+        ctx.RemoveAt(ctx.Count - 1);
+        pre.Add(new MForeach { Vars = { b.ParamSyms[0].CsName, b.ParamSyms[1].CsName }, Coll = coll, Body = body });
+        return MCode.Empty;   // used as a statement, like the other inlined iterators
+    }
+
     MExpr? TryInline(CallExpr c)
     {
         string name = Binder.Mangle(c.Name);
         if (noHoist > 0 || !BlockSinks.Contains(name) || c.Block == null || c.Recv == null) return null;
         if (name is "times" or "upto" or "downto" or "step") return CountedLoop(c, name);
+        if (name is "each" or "each_pair" && DictEach(c) is { } de) return de;
         return ParallelOrSerial(c, name);
     }
 

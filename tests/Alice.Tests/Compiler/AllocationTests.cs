@@ -32,6 +32,8 @@ public class AllocationTests
 
     public static TheoryData<string, string, object, object> Kernels => new()
     {
+        // an owned hash (pooled) iterated with each { |k, v| }: inlined to foreach, no closure
+        { "owned hash each", "def f(n : Int32) : Int32\n  h = Dictionary(Int32, Int32).new\n  h[1] = n\n  h[2] = n * 2\n  best = 0\n  h.each { |k, v| best = v if v > best }\n  best\nend\n", 5, 10 },
         { "numeric conversions", "def f(x : Float64)\n  x.to_i32 + x.round.to_i64.to_i32 + x.floor.to_u8.to_i\nend", 2.6, 2 + 3 + 2 },
         { "floored div and mod", "def f(x : Int32)\n  x / 3 + x % 5 + x / 8 + x % 16\nend", -7, -3 + 3 + -1 + 9 },
         { "bits and sign", "def f(x : Int32)\n  x.popcount + x.bit_length + x.trailing_zeros_count + x.sign + (x ^ 3) + (x & 6) + (x << 1)\nend", 12, 2 + 4 + 2 + 1 + 15 + 4 + 24 },

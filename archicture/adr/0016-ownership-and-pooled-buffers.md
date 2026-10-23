@@ -67,5 +67,6 @@ Amendment (0.12.3): owned hashes. A local `Dictionary(K, V)` with number keys an
 `Dictionary(K, V).new[(capacity)]`; used through indexing, `fetch`, `has_key?`, `ContainsKey`, `TryGetValue`, `Remove`,
 `Clear`, `Count`/`size`, `each`; `Keys`/`Values` are live views and count as escapes) and is rented from
 `Alice.Runtime.OwnDict(K, V)`. `Clear` keeps the buckets. `benchmarks/gc/hashes.al` (100k calls, a 64-key table each):
-140-146 ms, 2238 MiB and 374 gen0 collections, down to 108-112 ms, 19 MiB (the `each` block's closure) and 3.
+140-146 ms, 2238 MiB and 374 gen0 collections, down to 97-104 ms, 0 MiB and 0 (with `h.each { |k, v| }` inlined
+to `foreach`).
 
