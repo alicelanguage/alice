@@ -8,9 +8,10 @@ same commit as any change that moves a row.
 | Area | What works | Evidence |
 |---|---|---|
 | Compiler | Alice -> C# -> IL through Roslyn; null safety, `val`, data races (AL0202) are compile errors | `tests/Alice.Tests/Compiler/` (1180+ tests, `dotnet test`) |
-| Performance | At or ahead of idiomatic C# on the repo suite; 0-byte allocation tests; fork/join with serial clones | `benchmarks/README.md`, `AllocationTests`, `ParallelizeTests` |
+| Performance | At or ahead of idiomatic C# on the repo suite; 0-byte allocation tests; fork/join of 2 and 3 calls with serial clones; pooled arrays, lists and hashes of numbers | `benchmarks/README.md`, `AllocationTests`, `ParallelizeTests`, `OwnershipTests` |
 | C# interop | Alice types are plain CLR types; C# calls Alice and Alice calls C# both ways | `Integration/SampleTests.Interop_samples_build_and_run` |
 | F# interop | F# calls a `naming = "dotnet"` library and matches its sum types | `Integration/FSharpInteropTests` |
+| Ruby features | blocks, mixins, `case`/`in`, refinements, class discovery (`subclasses`, `ObjectSpace.each_object`), `send`/`respond_to?`, assignment in conditions, truthiness | `Compiler/Ruby*Tests`, `CSharpCompatTests` |
 | .NET API shapes | generics and constraints, LINQ, async/await, `IAsyncEnumerable`, `await using`, iterators, events, delegates, default interface methods, records with attributes, spans, `out`/`ref`, `lock`, named tuples, method references | `Compiler/CSharpCompatTests`, `examples/dotnet/library_api.al` |
 | Libraries | NuGet dependencies, lock file, workspaces; EF Core with LINQ-to-SQL; System.Text.Json (reflection and source-generated) | `Tooling/ManifestTests`, `Integration/SampleTests.Entity_framework_*`, `CSharpCompatTests` |
 | Source generators | framework and NuGet generators run on Alice types; `partial def` for `[GeneratedRegex]` / `[LibraryImport]` | `CSharpCompatTests` "System.Text.Json source generator", "partial methods for generators"; `FfiTests.LibraryImport_through_a_partial_def` |
@@ -39,4 +40,7 @@ same commit as any change that moves a row.
 | Interaction-net runtime | explored and parked: slower than fork/join on CPU (`benchmarks/inet/README.md`) | fork/join is the parallel model |
 | References and rename are name-based | top-level names are renamed project-wide by name, locals within their `def`; two unrelated methods with the same name in different types rename together | review the edit preview |
 | Ownership beyond numbers | collections of references, records and fields stay with the GC (arrays, lists and hashes of numbers are pooled) | preallocate and reuse explicitly |
-| Roadmap items in the README | GPU offload, `ObjectSpace` | see `README.md#roadmap` |
+| `class_eval` / `eval` with strings | not offered: it needs the compiler at run time, defeats NativeAOT and is an injection risk in production code | refinements, `define_method`, or a plugin assembly found with `subclasses` |
+| GPU offload | `Par` kernels run on CPU cores only | SIMD (`Simd.*`) and `@[Native]` C kernels |
+| NativeAOT `alice` compiler binary | the CLI needs the .NET runtime (it hosts Roslyn) | `dotnet tool install -g Alice.Cli` or the release archives |
+| Rules over unbounded domains | `alice prove` checks rules exhaustively over finite ranges only | keep rule domains finite |
