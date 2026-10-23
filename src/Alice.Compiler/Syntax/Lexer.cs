@@ -10,7 +10,10 @@ public sealed class Lexer
     int pos;
     int line;
     int col = 1;
-    int depth;
+    /// <summary>Open brackets, innermost last. Newlines inside ( and [ are not statement ends; a { ... } block nested
+    /// in them (`Task.Run(->() { a\n b })`) has statements again.</summary>
+    readonly Stack<char> open = new();
+    int depth => open.Count > 0 && open.Peek() != '{' ? 1 : 0;
     bool space;
     readonly List<Token> toks = new();
 
@@ -354,8 +357,9 @@ public sealed class Lexer
             if (last != null && last.Kind != "nl") Add("nl", "\n", l, c);
             return;
         }
-        if (op == "(" || op == "[" || op == "@[") depth++;
-        if ((op == ")" || op == "]") && depth > 0) depth--;
+        if (op == "(" || op == "[" || op == "@[") open.Push('(');
+        else if (op == "{" || op == "#{") open.Push('{');
+        else if ((op == ")" || op == "]" || op == "}") && open.Count > 0) open.Pop();
         Add("op", op, l, c);
     }
 }
