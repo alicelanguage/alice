@@ -182,6 +182,18 @@ public class LoopParallelizeTests
         Assert.Equal((1, 2, 3), Alice.Runtime.Par.Fork(() => 1, () => 2, () => 3));
     }
 
+    [Theory]
+    [InlineData("def f(xs : Array(Float32))\n  gpu for i in 0...xs.size\n    xs[i] = xs[i] * 2.0_f32\n  end\nend\n", "alice add ILGPU")]
+    [InlineData("def g(x : Float32) : Float32\n  x\nend\ndef f(xs : Array(Float32))\n  gpu for i in 0...xs.size\n    xs[i] = g(xs[i])\n  end\nend\n", "`g` is a call")]
+    [InlineData("def f(xs : Array(Float32))\n  t = 0.0_f32\n  gpu for i in 0...xs.size\n    t += xs[i]\n  end\nend\n", "reductions")]
+    [InlineData("def f(xs : Array(Float32))\n  gpu for i in 0...xs.size\n    xs[0] = xs[i]\n  end\nend\n", "not provably independent")]
+    [InlineData("def f(xs : Array(String))\n  gpu for i in 0...xs.size\n    xs[i] = xs[i]\n  end\nend\n", "kernels take arrays of numbers")]
+    public void Gpu_loops_explain_what_keeps_them_off_the_gpu(string src, string why)
+    {
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src));
+        Assert.Contains(why, ex.Message);
+    }
+
     const string TreeSrc = "enum Tree\n  Leaf(x : Int64)\n  Node(l : Tree, r : Tree)\nend\n"
         + "def build(d : Int32) : Tree\n  return Tree::Leaf(1_i64) if d == 0\n  l, r = build(d - 1), build(d - 1)\n  Tree::Node(l, r)\nend\n"
         + "def total(t : Tree) : Int64\n  case t\n  when Tree::Leaf(x) then x\n  when Tree::Node(l, r) then total(l) + total(r)\n  end\nend\n";

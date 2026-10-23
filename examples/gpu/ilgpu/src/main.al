@@ -28,3 +28,16 @@ using ctx = Context.CreateDefault
     end
   end
 end
+
+# The same computation without writing a kernel: `gpu for` turns the loop body into one (arrays of numbers and
+# number scalars only; each iteration writes its own element). Arrays are uploaded, and the written ones copied back.
+def saxpy(a : Float32, xs : Array(Float32), ys : Array(Float32))
+  gpu for i in 0...xs.size
+    ys[i] = a * xs[i] + ys[i]
+  end
+end
+
+xs2 = Array(Float32).new(4096) { |k| k.to_f32 }
+ys2 = Array(Float32).new(4096, 1.0_f32)
+saxpy(2.0_f32, xs2, ys2)
+puts "gpu for: y[0]=#{ys2[0]} y[10]=#{ys2[10]} y[4095]=#{ys2[4095]}"

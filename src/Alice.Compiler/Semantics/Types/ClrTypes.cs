@@ -37,6 +37,32 @@ public sealed class ClrTypes
         }
     }
 
+    /// <summary>The C# name of the static class declaring extension method <paramref name="name"/> whose first
+    /// parameter accepts <paramref name="receiver"/> (and whose second, when given, is <paramref name="second"/>-like),
+    /// so generated code can call it fully qualified without importing its namespace.</summary>
+    public string? ExtensionHost(string name, Type receiver, Func<Type, bool>? second = null)
+    {
+        foreach (var a in asms)
+        {
+            Type?[] types;
+            try { types = a.GetExportedTypes(); }
+            catch (Exception) { continue; }
+            foreach (var t in types)
+            {
+                if (t is not { IsSealed: true, IsAbstract: true }) continue;
+                foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                {
+                    if (m.Name != name || !m.IsDefined(typeof(System.Runtime.CompilerServices.ExtensionAttribute), false)) continue;
+                    var ps = m.GetParameters();
+                    var p0 = ps[0].ParameterType;
+                    bool fits = p0.IsAssignableFrom(receiver) || p0.IsGenericType && receiver.IsGenericType && p0.GetGenericTypeDefinition() == receiver.GetGenericTypeDefinition();
+                    if (fits && (second == null || ps.Length > 1 && second(ps[1].ParameterType))) return "global::" + t.FullName!.Replace('+', '.');
+                }
+            }
+        }
+        return null;
+    }
+
     HashSet<string>? extensionNames;
 
     /// <summary>

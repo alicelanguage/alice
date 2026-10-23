@@ -215,7 +215,10 @@ public sealed partial class Lowerer
 
     static bool IsFloat(AType t) => t.Cs is "double" or "float";
 
-    static MExpr Fma(MExpr a, MExpr b, MExpr c) => new MCall { Target = new MCode("Prelude"), Name = "fma", Args = { a, b, c } };
+    /// <summary>Inside a `gpu for` kernel: no CPU intrinsics (Prelude.fma tests Fma.IsSupported, which no GPU backend has).</summary>
+    bool inGpuKernel;
+
+    MExpr Fma(MExpr a, MExpr b, MExpr c, AType t) => new MCall { Target = new MCode("Prelude"), Name = "fma", Args = { a, b, c } };
 
     /// <summary>
     /// Floating-point contraction, like clang's default -ffp-contract=on: a*b+c, c+a*b, a*b-c, c-a*b become one
@@ -223,11 +226,13 @@ public sealed partial class Lowerer
     /// </summary>
     MExpr? Contract(BinaryExpr b, MExpr l, MExpr r)
     {
-        if (StrictMath || b.Op is not ("+" or "-") || !IsFloat(b.Type) || !IsFloat(b.L.Type) || !IsFloat(b.R.Type)) return null;
+        // in a GPU kernel the device compiler contracts a*b+c itself (OpenCL mad, CUDA fmad); an explicit
+        // FusedMultiplyAdd was rejected by an OpenCL driver, and Prelude.fma's CPU feature test cannot compile there
+        if (StrictMath || inGpuKernel || b.Op is not ("+" or "-") || !IsFloat(b.Type) || !IsFloat(b.L.Type) || !IsFloat(b.R.Type)) return null;
         if (l is MBinary { Op: "*" } ml && b.L is BinaryExpr { Op: "*" } bl && IsFloat(bl.L.Type) && IsFloat(bl.R.Type))
-            return Fma(ml.L, ml.R, b.Op == "+" ? r : new MUnary { Op = "-", E = r });
+            return Fma(ml.L, ml.R, b.Op == "+" ? r : new MUnary { Op = "-", E = r }, b.Type);
         if (r is MBinary { Op: "*" } mr && b.R is BinaryExpr { Op: "*" } br && IsFloat(br.L.Type) && IsFloat(br.R.Type))
-            return Fma(b.Op == "+" ? mr.L : new MUnary { Op = "-", E = mr.L }, mr.R, l);
+            return Fma(b.Op == "+" ? mr.L : new MUnary { Op = "-", E = mr.L }, mr.R, l, b.Type);
         return null;
     }
 

@@ -167,9 +167,9 @@ public sealed partial class Lowerer
             return;
         }
         // x += a*b / x -= a*b on floats -> x = fma(+-a, b, x)
-        if (!StrictMath && a.Op is "+=" or "-=" && IsFloat(a.Target.Type) && a.Value is BinaryExpr { Op: "*" } vb && IsFloat(vb.L.Type) && IsFloat(vb.R.Type) && value is MBinary { Op: "*" } mv)
+        if (!StrictMath && !inGpuKernel && a.Op is "+=" or "-=" && IsFloat(a.Target.Type) && a.Value is BinaryExpr { Op: "*" } vb && IsFloat(vb.L.Type) && IsFloat(vb.R.Type) && value is MBinary { Op: "*" } mv)
         {
-            o.Add(new MAssign { Target = target, Value = Fma(a.Op == "+=" ? mv.L : new MUnary { Op = "-", E = mv.L }, mv.R, target) });
+            o.Add(new MAssign { Target = target, Value = Fma(a.Op == "+=" ? mv.L : new MUnary { Op = "-", E = mv.L }, mv.R, target, a.Target.Type) });
             return;
         }
         switch (a.Op)
@@ -238,6 +238,7 @@ public sealed partial class Lowerer
     MStmt For(ForStmt f)
     {
         if (f.Await) return SerialFor(f);
+        if (f.Gpu) return GpuFor(f);
         if (f.Par)
             return TryParallelFor(f) ?? throw new CompileException($"{File}:{f.Line}:{Math.Max(1, f.Col)}: cannot parallelize `par for`: iterations are not provably independent (each may write only locals declared in the body, `a[i]` or `a[i * w + j]` at its own index, one `+=` reduction, and call only pure code)");
         if (TrySplitLoop(f) is MStmt split) return split;

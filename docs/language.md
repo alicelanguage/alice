@@ -467,6 +467,20 @@ Tests: `ModuleTests`.
 - Refinements scope a reopening to the files that ask for it: `module Shouting; refine String do def shout ... end end end`,
   then `using Shouting` in a file. Without the `using`, `"hi".shout` is an undefined method there.
 
+### gpu for
+
+```crystal
+def saxpy(a : Float32, xs : Array(Float32), ys : Array(Float32))
+  gpu for i in 0...xs.size          # the body is compiled to a GPU kernel (ILGPU: CUDA, OpenCL, or CPU)
+    ys[i] = a * xs[i] + ys[i]
+  end
+end
+```
+
+Needs `alice add ILGPU`. The body may capture arrays of numbers and numbers, and use arithmetic, indexing, `Math.*`
+and number conversions; each iteration writes its own element. Anything else is a compile error that says why.
+`ALICE_GPU=cpu` runs on ILGPU's CPU accelerator. Design: [ADR 0021](../archicture/adr/0021-gpu-loops.md).
+
 ### lock
 
 `lock obj ... end` is C#'s `lock` (a `System.Threading.Lock` or any object). It is for .NET APIs that need Monitor

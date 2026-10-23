@@ -69,7 +69,7 @@ public static class Formatter
             string w = words[i];
             if (w is "unchecked" or "scope" or "unsafe" && words.Count == 1) { yield return w; continue; }   // `unchecked` / `scope` block (a call has arguments or a receiver)
             if (!Openers.Contains(w)) continue;
-            bool atStart = i == 0 || (i == 1 && words[0] is "abstract" or "private" or "protected" or "async" or "par" or "pure" or "safe" or "unsafe" or "partial" or "inline");
+            bool atStart = i == 0 || (i == 1 && words[0] is "abstract" or "private" or "protected" or "async" or "par" or "gpu" or "pure" or "safe" or "unsafe" or "partial" or "inline");
             bool asValue = i > 0 && words[i - 1] is "=" or "(" or "," or "+=" or "||=";   // `return if c` is always postfix
             if (!atStart && !asValue) continue;
             if (w == "def" && (owner == "interface" || (i > 0 && words[0] is "abstract" or "partial"))) continue;   // signatures without bodies

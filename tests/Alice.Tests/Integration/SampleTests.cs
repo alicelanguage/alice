@@ -73,5 +73,6 @@ public class SampleTests
         Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
         var output = Dotnet("run", "--no-build", "--project", Path.Combine(dir, ".alice", "ilgpu_saxpy.alproj"));
         Assert.Contains("y[0]=1.0 y[10]=21.0 y[1023]=2047.0", output);
+        Assert.Contains("gpu for: y[0]=1.0 y[10]=21.0 y[4095]=8191.0", output);   // the loop compiled to a kernel
     }
 }

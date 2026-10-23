@@ -44,6 +44,8 @@ public sealed class Emitter
         }
     }
 
+    bool gpuHostEmitted;
+
     public string EmitFile(FileNode f)
     {
         file = f.Path;
@@ -64,6 +66,11 @@ public sealed class Emitter
         var prog = new StringBuilder();
         Items(sb, prog, f.Items);
         // refinements: extension classes in `__Refine_<module>`, so only files with `using <module>` see them in C# too
+        if (lowerer.UsesGpu && !gpuHostEmitted)   // the shared accelerator, once per program
+        {
+            sb.Append(Lowering.Lowerer.GpuHost);
+            gpuHostEmitted = true;
+        }
         foreach (var r in Refinements(f.Items))
             sb.Append($"namespace __Refine_{r.RefineScope}\n{{\n{Type(r)}}}\n");
         var bodies = ClassBodies(f.Items).ToList();

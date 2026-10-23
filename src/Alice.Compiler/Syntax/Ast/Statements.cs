@@ -55,6 +55,7 @@ public sealed class ForStmt : Stmt
     public List<LocalSym> Locals = new();
     public bool Await;           // `for await x in stream` (IAsyncEnumerable)
     public bool Par;             // `par for`: parallel at any trip count, or AL0209
+    public bool Gpu;             // `gpu for`: the body runs as an ILGPU kernel (ADR 0021); also Par, so races are checked
 }
 
 public sealed class When : Node
