@@ -63,3 +63,9 @@ method that builds a scratch list per call keeps the grown backing array. A retu
 array does. Measured (`benchmarks/gc/lists.al`, 200k calls building a 100-element list): 59 ms, 2926 MiB allocated
 and 489 gen0 collections, down to 31 ms, 0 MiB and 0 collections.
 
+Amendment (0.12.3): owned hashes. A local `Dictionary(K, V)` with number keys and values follows the same rules (fed by
+`Dictionary(K, V).new[(capacity)]`; used through indexing, `fetch`, `has_key?`, `ContainsKey`, `TryGetValue`, `Remove`,
+`Clear`, `Count`/`size`, `each`; `Keys`/`Values` are live views and count as escapes) and is rented from
+`Alice.Runtime.OwnDict(K, V)`. `Clear` keeps the buckets. `benchmarks/gc/hashes.al` (100k calls, a 64-key table each):
+140-146 ms, 2238 MiB and 374 gen0 collections, down to 108-112 ms, 19 MiB (the `each` block's closure) and 3.
+

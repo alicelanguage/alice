@@ -62,6 +62,8 @@ public sealed partial class Lowerer
                 cands.TryAdd(l, el.Cs);
             else if (s is Assign { Op: "=" } la && Assigned(la) is { } ll && ListElem(ll.Type) is { } lel)
                 cands.TryAdd(ll, ListPrefix + lel);   // owned lists: pooled List(T) of numbers
+            else if (s is Assign { Op: "=" } da && Assigned(da) is { } dl && DictElems(dl.Type) is { } kv)
+                cands.TryAdd(dl, DictPrefix + kv);   // owned hashes: pooled Dictionary(K, V) of numbers
         var edges = new List<(LocalSym, LocalSym)>();
         foreach (var s in WalkStmts(body))
         {
@@ -217,7 +219,26 @@ public sealed partial class Lowerer
     static LocalSym? Assigned(Assign a) => a.Declares ?? (a.Target as NameExpr)?.Sym as LocalSym;
 
     static bool Fresh(Syntax.Expr e) => Unwrap(e) is NewExpr { Block: null, AsCall: null } ne && ne.Args.All(x => x.Mod == "" && x.Name == null)
-        && (ne.Type.Kind == "array" && ne.Args.Count is 1 or 2 || ListElem(ne.Type) != null && ne.Args.Count <= 1);   // List(T).new / List(T).new(capacity)
+        && (ne.Type.Kind == "array" && ne.Args.Count is 1 or 2 || (ListElem(ne.Type) != null || DictElems(ne.Type) != null) && ne.Args.Count <= 1);   // List/Dictionary .new[(capacity)]
+
+    const string DictPrefix = "dict:";
+
+    /// <summary>"K, V" of a Dictionary(K, V) of numbers (ownable), else null.</summary>
+    static string? DictElems(AType t)
+    {
+        if (t.Clr is not { IsGenericType: true } c || c.GetGenericTypeDefinition() != typeof(Dictionary<,>) || t.Cs.EndsWith('?')) return null;
+        var a = c.GetGenericArguments().Select(x => ClrTypes.FromClr(x).Cs).ToArray();
+        return a.All(Unmanaged.Contains) ? a[0] + ", " + a[1] : null;
+    }
+
+    static readonly HashSet<string> DictMethods = ["Add", "TryAdd", "Clear", "ContainsKey", "ContainsValue", "TryGetValue", "Remove", "EnsureCapacity", "GetValueOrDefault"];
+    static readonly HashSet<string> DictExts = ["size", "length", "count", "empty_q", "has_key_q", "key_q", "include_q", "fetch", "each", "each_pair", "sum", "any_q", "all_q", "count", "max_by", "min_by"];
+
+    /// <summary>The pool class for an owned local's element string.</summary>
+    static string OwnPool(string el) =>
+        el.StartsWith(ListPrefix) ? $"global::Alice.Runtime.OwnList<{el[ListPrefix.Length..]}>"
+        : el.StartsWith(DictPrefix) ? $"global::Alice.Runtime.OwnDict<{el[DictPrefix.Length..]}>"
+        : $"global::Alice.Runtime.Own<{el}>";
 
     const string ListPrefix = "list:";
 
@@ -266,6 +287,9 @@ public sealed partial class Lowerer
                     && (lc.Res == "field" ? lc.Name is "Count" or "Capacity" : ListMethods.Contains(lc.Name)): allowed++; break;
                 case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "ext" } lx when x == l && cands[l].StartsWith(ListPrefix) && ListExts.Contains(Binder.Mangle(lx.Name)): allowed++; break;
                 case BinaryExpr { Op: "<<", L: NameExpr { Sym: LocalSym x } } when x == l && cands[l].StartsWith(ListPrefix): allowed++; break;
+                case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "clr" or "field" } dc when x == l && cands[l].StartsWith(DictPrefix)
+                    && (dc.Res == "field" ? dc.Name is "Count" : DictMethods.Contains(dc.Name)): allowed++; break;
+                case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "ext" } dx when x == l && cands[l].StartsWith(DictPrefix) && DictExts.Contains(Binder.Mangle(dx.Name)): allowed++; break;
                 case LambdaExpr lam when WalkExpr(lam).OfType<NameExpr>().Any(n => n.Sym == l): Drop(cands, reasons, l, lam, "it is captured by a block"); return;
                 case CallExpr { Block: { } blk } cb when Walk(blk.Body).OfType<NameExpr>().Any(n => n.Sym == l): Drop(cands, reasons, l, cb, "it is captured by a block"); return;
                 case CallExpr { Sym: MethodSym m, Block: null } call:
@@ -353,9 +377,9 @@ public sealed partial class Lowerer
     {
         if (Assigned(a) is not { } l || OwnedElem(l) is not { } el) return false;
         if (a.Declares == null && TryInPlaceMap(o, a, l)) return true;
-        bool list = el.StartsWith(ListPrefix);
+        bool list = el.StartsWith(ListPrefix) || el.StartsWith(DictPrefix);   // not an array: no RentLength
         MExpr value = Fresh(a.Value) && Unwrap(a.Value) is NewExpr ne
-            ? new MCall { Target = new MCode(list ? $"global::Alice.Runtime.OwnList<{el[ListPrefix.Length..]}>" : $"global::Alice.Runtime.Own<{el}>"), Name = "Rent", Args = ne.Args.Select(x => Expr(x.Value!)).ToList() }
+            ? new MCall { Target = new MCode(OwnPool(el)), Name = "Rent", Args = ne.Args.Select(x => Expr(x.Value!)).ToList() }
             : Expr(a.Value);
         if (releaseBefore.Contains(a))
         {
@@ -379,7 +403,7 @@ public sealed partial class Lowerer
 
     static MStmt Release(LocalSym l, string el) => new MExprStmt { E = new MCall
     {
-        Target = new MCode(el.StartsWith(ListPrefix) ? $"global::Alice.Runtime.OwnList<{el[ListPrefix.Length..]}>" : $"global::Alice.Runtime.Own<{el}>"),
+        Target = new MCode(OwnPool(el)),
         Name = "Release", Args = { new MCode(l.CsName) },
     } };
 

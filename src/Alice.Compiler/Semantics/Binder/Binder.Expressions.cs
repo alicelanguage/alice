@@ -467,7 +467,16 @@ public sealed partial class Binder
     void BindLambdaCore(LambdaExpr lam, List<AType> expected, bool conc)
     {
         if (lam.MethodRef is { } mr) expected = lam.MethodRefTypes ??= ExpandMethodRef(lam, mr.Recv, mr.Name, expected);
-        if (!lam.BranchLocalsPromoted) { PromoteBranchLocals(lam.Body, lam.Params.Select(p => p.Name).ToHashSet()); lam.BranchLocalsPromoted = true; }
+        if (!lam.BranchLocalsPromoted)
+        {
+            // an assignment inside a branch of the block to a variable of the enclosing method assigns that variable
+            // (Ruby closures); only names unknown outside become block locals. Before, `best = v if v > best` in
+            // `h.each { }` declared a new `best` and the method's stayed 0
+            var known = lam.Params.Select(p => p.Name).ToHashSet();
+            foreach (var scope in scopes) known.UnionWith(scope.Keys);
+            PromoteBranchLocals(lam.Body, known);
+            lam.BranchLocalsPromoted = true;
+        }
         lam.Captures = false;
         lam.ParamSyms = new List<LocalSym>();
         lambdas.Add(lam);

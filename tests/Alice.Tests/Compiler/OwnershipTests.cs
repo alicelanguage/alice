@@ -277,4 +277,20 @@ public class OwnershipTests
         Assert.Equal([1], a);
         Assert.Equal([2], b);
     }
+
+    [Fact]
+    public void A_local_hash_of_numbers_that_never_escapes_stops_allocating()
+    {
+        var src = "def f(n : Int32) : Int32\n  counts = Dictionary(Int32, Int32).new\n  i = 0\n  while i < n\n    k = i % 7\n    counts[k] = counts.fetch(k, 0) + 1\n    i += 1\n  end\n  counts[3] + counts.size\nend\n";
+        var f = Compile(src);
+        Assert.Equal(143 + 7, (int)f.Invoke(null, [1000])!);
+        Assert.Contains("OwnDict<int, int>.Rent", AliceCompiler.Transpile(src));
+        Assert.True(AllocatedPerCall(n => (int)f.Invoke(null, [n])!, 1000) < 200, "owned hash should be pooled");
+    }
+
+    [Theory]
+    [InlineData("def f(n : Int32) : Int32\n  h = Dictionary(Int32, Int32).new\n  h[1] = n\n  ks = h.Keys\n  ks.Count\nend\n")]          // a live view
+    [InlineData("def f(n : Int32) : Dictionary(Int32, Int32)\n  h = Dictionary(Int32, Int32).new\n  h[1] = n\n  @@keep = h\n  h\nend\n")]   // stored
+    [InlineData("def f(n : Int32) : Int32\n  h = Dictionary(String, Int32).new\n  h[\"a\"] = n\n  h.size\nend\n")]               // reference keys
+    public void Hashes_that_may_escape_stay_with_the_gc(string src) => Assert.DoesNotContain("OwnDict<", AliceCompiler.Transpile(src));
 }
