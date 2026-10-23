@@ -254,6 +254,18 @@ def twice(&block : Int32 ->)        # no result
 end
 ```
 
+### Named tuples
+
+```crystal
+t = {name: "ada", age: 36}          # C# (string name, int age): a value, no allocation
+puts t[:name], t.age
+def bounds(xs : Array(Int32)) : {min: Int32, max: Int32}
+  {min: xs.min, max: xs.max}
+end
+```
+
+`{k: v}` is a named tuple (as in Crystal). Hashes use `=>`: `{"k" => v}` or `{:k => v}`.
+
 ### Iterators
 
 A method whose return type is `IEnumerable(T)`, `IEnumerator(T)` or `IAsyncEnumerable(T)` and that has no block

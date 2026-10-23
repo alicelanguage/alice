@@ -168,6 +168,14 @@ public sealed partial class Binder
             return CallRet(xm, argTypes);
         }
 
+        // named tuple element: t.a
+        if (recv.TupleNames is { } names && !hasArgs && c.Block == null && names.IndexOf(c.Name) is int ti and >= 0)
+        {
+            c.Res = "field";
+            c.Name = Mangle(c.Name);
+            return recv.Args[ti];
+        }
+
         // Alice instance members
         if (recv.Sym != null && recv.Sym.Kind is not ("module" or "program" or "lib" or "enum"))
         {

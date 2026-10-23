@@ -9,8 +9,22 @@ public sealed partial class Parser
         {
             Next();
             var tr = At(new TypeRef { Special = "tuple" }, tok);
-            tr.Args.Add(Type());
-            while (IsOp(",")) { Next(); tr.Args.Add(Type()); }
+            if (t[p].Kind == "id" && Peek(1).Kind == "op" && Peek(1).Text == ":")   // named: {min: Int32, max: Int32}
+            {
+                tr.TupleNames = [];
+                do
+                {
+                    if (IsOp(",")) Next();
+                    tr.TupleNames.Add(Next().Text);
+                    Expect(":");
+                    tr.Args.Add(Type());
+                } while (IsOp(","));
+            }
+            else
+            {
+                tr.Args.Add(Type());
+                while (IsOp(",")) { Next(); tr.Args.Add(Type()); }
+            }
             Expect("}");
             return tr;
         }

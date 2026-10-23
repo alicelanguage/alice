@@ -14,4 +14,5 @@ public sealed class TypeRef : Node
     public bool Nullable;
     public bool Pointer;
     public string Special = "";   // "" | "tuple" | "proc"
+    public List<string>? TupleNames;   // `{min: Int32, max: Int32}`
 }

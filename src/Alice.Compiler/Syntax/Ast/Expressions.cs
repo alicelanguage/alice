@@ -63,6 +63,7 @@ public sealed class NewExpr : Expr
 
 public sealed class IndexExpr : Expr
 {
+    public string? TupleElement;   // `t[:a]` on a named tuple: the element name
     public Expr Target = null!;
     public List<Arg> Args = new();
 }
@@ -108,7 +109,11 @@ public sealed class HashLit : Expr
     public TypeRef? V;
 }
 
-public sealed class TupleLit : Expr { public List<Expr> Items = new(); }
+public sealed class TupleLit : Expr
+{
+    public List<Expr> Items = new();
+    public List<string>? Names;   // `{a: 1, b: "x"}`: a named tuple, C# `(a: 1, b: "x")`
+}
 
 public sealed class LambdaExpr : Expr
 {

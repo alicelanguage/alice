@@ -11,6 +11,7 @@ public sealed class AType
     public Type? Clr;
     public TypeSym? Sym;
     public List<AType> Args = new();
+    public List<string>? TupleNames;   // named tuple elements, in order
     public AType? Elem;
     /// <summary>Open generic CLR definition when the type can't be closed (Alice type arguments: List(Entity)).</summary>
     public Type? OpenClr;

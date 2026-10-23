@@ -54,6 +54,8 @@ public sealed partial class Lowerer
                 }
             case IndexExpr ix when TryFlatIndex(ix) is MExpr flat:
                 return flat;
+            case IndexExpr { TupleElement: { } el } te:
+                return new MMember { Target = Expr(te.Target), Name = el };
             case IndexExpr ix:
                 return new MIndex { Target = Expr(ix.Target), Args = Args(ix.Args) };
             case BinaryExpr b:
@@ -87,6 +89,8 @@ public sealed partial class Lowerer
                     var init = h.Keys.Select((k, i) => (MExpr)new MPair { K = Expr(k), V = Expr(h.Values[i]) }).ToList();
                     return new MNew { TypeCs = h.Type.Cs, Init = init };
                 }
+            case TupleLit { Names: { } names } ntl:   // (a: 1, b: "x")
+                return new MTuple { Items = ntl.Items.Select((x, i) => (MExpr)new MArg { Prefix = Binder.Mangle(names[i]) + ": ", E = Expr(x) }).ToList() };
             case TupleLit tl:
                 return new MTuple { Items = tl.Items.Select(Expr).ToList() };
             case LambdaExpr lam:

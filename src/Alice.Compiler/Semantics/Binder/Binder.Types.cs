@@ -41,7 +41,7 @@ public sealed partial class Binder
     AType ResolveCore(TypeRef r)
     {
         var args = r.Args.Select(ResolveType).ToList();
-        if (r.Special == "tuple") return Tuple(args);
+        if (r.Special == "tuple") return r.TupleNames is { } tn ? NamedTuple(Tuple(args), tn) : Tuple(args);
         if (r.Special == "proc") return Func(args.Take(args.Count - 1).ToList(), args[^1]);
         string name = r.Name;
         if (args.Count == 0 && PrimNames.TryGetValue(name, out var prim)) return prim;
@@ -97,6 +97,10 @@ public sealed partial class Binder
         int tick = n.IndexOf('`');
         return "global::" + (tick >= 0 ? n.Substring(0, tick) : n).Replace('+', '.');
     }
+
+    /// <summary>C# spells element names into the type: (int min, int max).</summary>
+    static AType NamedTuple(AType tt, List<string> names) =>
+        new("tuple", "(" + string.Join(", ", tt.Args.Select((a, i) => a.Cs + " " + Mangle(names[i]))) + ")", tt.Clr) { Args = tt.Args, TupleNames = names };
 
     static AType Tuple(List<AType> items)
     {

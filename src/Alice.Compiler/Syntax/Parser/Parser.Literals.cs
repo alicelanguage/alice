@@ -25,6 +25,24 @@ public sealed partial class Parser
     {
         Token tok = Next();
         SkipNl();
+        // `{name: value, ...}` (a key directly followed by `: `): Crystal's NamedTuple, a C# named tuple
+        if (t[p].Kind == "id" && Peek(1).Kind == "op" && Peek(1).Text == ":")
+        {
+            var names = new List<string>();
+            var nt = At(new TupleLit { Names = names }, tok);
+            while (!IsOp("}"))
+            {
+                names.Add(Next().Text);
+                Expect(":");
+                SkipNl();
+                nt.Items.Add(Expression());
+                SkipNl();
+                if (IsOp(",")) { Next(); SkipNl(); }
+            }
+            Next();
+            if (names.Distinct().Count() != names.Count) throw Err("a named tuple cannot repeat a name");
+            return nt;
+        }
         if (IsOp("}"))
         {
             Next();

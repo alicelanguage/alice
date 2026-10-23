@@ -93,7 +93,11 @@ public sealed partial class Binder
                     return kt.IsKnown && vt.IsKnown ? Builtins.Generic(typeof(Dictionary<,>), kt, vt) : AType.Unknown;
                 }
             case TupleLit tl:
-                return Tuple(tl.Items.Select(BindExpr).ToList());
+                {
+                    var tt = Tuple(tl.Items.Select(BindExpr).ToList());
+                    if (tl.Names == null) return tt;
+                    return NamedTuple(tt, tl.Names);
+                }
             case LambdaExpr lam:
                 pendingConcurrent = concurrentLambdas.Contains(lam);
                 BindLambda(lam, new List<AType>());
@@ -307,6 +311,14 @@ public sealed partial class Binder
     {
         var t = BindExpr(ix.Target);
         BindArgs(ix.Args);
+        // t[:a] on a named tuple: the element, resolved at compile time
+        if (t.TupleNames is { } tn && ix.Args is [{ Value: LitExpr { Kind: "str" } key }])
+        {
+            int at = tn.IndexOf(key.Text.TrimStart(':'));
+            if (at < 0) throw Err(ix, $"named tuple has no element `{key.Text.TrimStart(':')}` (elements: {string.Join(", ", tn)})");
+            ix.TupleElement = Mangle(tn[at]);
+            return t.Args[at];
+        }
         if (t.Kind == "array" && t.Elem != null) return t.Elem;
         if (t.IsString) return AType.Char;
         if (t.Sym != null)
