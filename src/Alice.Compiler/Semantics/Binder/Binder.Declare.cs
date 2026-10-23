@@ -220,6 +220,10 @@ public sealed partial class Binder
             }
         }
         DeclareClassVars(d, s);
+        // Ruby `@count` + `def count`: the private field and the method would share a C# name; the field yields
+        foreach (var fd in d.Members.OfType<FieldDecl>())
+            if (fd.Sym is FieldSym fs && s.Methods.Values.SelectMany(x => x).Any(m => m.CsName == fs.CsName))
+                fs.CsName = "_" + fs.CsName.TrimStart('@');
         typeParams = new List<string>();
     }
 

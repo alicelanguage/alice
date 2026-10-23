@@ -345,7 +345,7 @@ public sealed partial class Parser
                 d.Members.Add(al);
                 EndStmt();
             }
-            else if (IsKw("getter") || IsKw("property") || IsKw("setter") || IsKw("event") && Peek(1).Kind == "id")
+            else if (IsKw("getter") || IsKw("property") || IsKw("setter") || IsKw("event") && Peek(1).Kind is "id" or "const")   // `event PropertyChanged : ...` implements a .NET interface event
             {
                 var a = At(new AccessorDecl { Kind = Next().Text, Attrs = TakeAttrs() }, tok);
                 a.Name = Next().Text;
