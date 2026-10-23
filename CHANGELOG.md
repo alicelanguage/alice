@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Incremental package builds: `alice gen` runs only when a source, the reference or analyzer list, the compiler or the project changed (MSBuild `Inputs`/`Outputs` on `AliceGenerate`, with a sources list so that added and deleted files rebuild). A no-op `alice build` takes 1.0 s instead of 2.35 s. Covered by an integration test for no-op, added-file and deleted-file builds.
 - `partial def` (no body): a declaration a source generator completes, for `[GeneratedRegex]` (regex compiled at build time) and `[LibraryImport]` (.NET's source-generated P/Invoke) next to Alice's own `lib`/`fun`.
 - `docs/production.md`: what is ready for production, the test behind each claim, recommended `alice.toml` settings per workload, and the known gaps.
 - F# consumes Alice libraries built with `naming = "dotnet"`: `Geometry.Distance`, `IsEmpty`, records, and sum types matched with `:? Shape.Circle as c -> c.R` (`Integration/FSharpInteropTests`, a real `.fsproj`).

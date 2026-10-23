@@ -118,4 +118,28 @@ public class PackageTests
         var cfg = File.ReadAllText(Directory.GetFiles(Path.Combine(dir, "bin"), "gcauto.runtimeconfig.json", SearchOption.AllDirectories).Single());
         Assert.Contains($"\"System.GC.Server\": {(server ? "true" : "false")}", cfg);
     }
+
+    [Fact]
+    public void Builds_are_incremental_and_track_added_and_deleted_sources()
+    {
+        var dir = Temp("incr");
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"incr\"\nkind = \"lib\"\n");
+        Directory.CreateDirectory(Path.Combine(dir, "src"));
+        File.WriteAllText(Path.Combine(dir, "src", "a.al"), "module A\n  def self.one : Int32\n    1\n  end\nend\n");
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
+        var stamp = Directory.GetFiles(Path.Combine(dir, "obj"), "alice.stamp", SearchOption.AllDirectories).Single();
+        var gen = Path.GetDirectoryName(stamp)!;
+        var t0 = File.GetLastWriteTimeUtc(stamp);
+
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));   // nothing changed: alice gen does not run
+        Assert.Equal(t0, File.GetLastWriteTimeUtc(stamp));
+
+        File.WriteAllText(Path.Combine(dir, "src", "b.al"), "module B\n  def self.two : Int32\n    2\n  end\nend\n");
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));   // an added file is generated and compiled
+        Assert.Contains(Directory.GetFiles(gen, "*.g.cs"), f => Path.GetFileName(f).StartsWith("b."));
+
+        File.Delete(Path.Combine(dir, "src", "b.al"));
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));   // a deleted file's C# goes away with it
+        Assert.DoesNotContain(Directory.GetFiles(gen, "*.g.cs"), f => Path.GetFileName(f).StartsWith("b."));
+    }
 }

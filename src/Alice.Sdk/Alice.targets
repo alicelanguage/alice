@@ -40,20 +40,33 @@
     </ItemGroup>
   </Target>
 
-  <Target Name="AliceGenerate" BeforeTargets="CoreCompile" DependsOnTargets="ResolveReferences" Condition="'@(AliceSource)' != ''">
+  <Target Name="AlicePrepare" DependsOnTargets="ResolveReferences" Condition="'@(AliceSource)' != ''">
     <!-- evaluated at execution time: IntermediateOutputPath is defined by the SDK targets imported after this file -->
     <PropertyGroup>
       <AliceGenDir>$(ProjectDir)$(IntermediateOutputPath)alice/</AliceGenDir>
       <AliceGenDir Condition="$([System.IO.Path]::IsPathRooted('$(IntermediateOutputPath)'))">$(IntermediateOutputPath)alice/</AliceGenDir>
     </PropertyGroup>
     <MakeDir Directories="$(AliceGenDir)" />
+    <!-- written only when their content changes, so their timestamps tell AliceGenerate whether anything moved -->
     <WriteLinesToFile File="$(AliceGenDir)refs.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
     <!-- source generators (System.Text.Json, Regex, NuGet ones): alice gen's type check runs them as csc will -->
     <WriteLinesToFile File="$(AliceGenDir)analyzers.txt" Lines="@(Analyzer->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <!-- an added or deleted .al file changes this list: its generated C# must be rewritten or removed -->
+    <WriteLinesToFile File="$(AliceGenDir)sources.txt" Lines="@(AliceSource->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+
+  <!-- incremental: alice gen runs only when a source, the references, the compiler or the project changed -->
+  <Target Name="AliceGenerate" BeforeTargets="CoreCompile" DependsOnTargets="AlicePrepare" Condition="'@(AliceSource)' != ''"
+          Inputs="@(AliceSource);$(AliceGenDir)refs.txt;$(AliceGenDir)analyzers.txt;$(AliceGenDir)sources.txt;$(AliceCompiler);$(MSBuildProjectFullPath)"
+          Outputs="$(AliceGenDir)alice.stamp">
     <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --analyzers-file &quot;$(AliceGenDir)analyzers.txt&quot; --native-lib=$(AssemblyName)_native --naming=$(AliceNaming) @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
+    <Touch Files="$(AliceGenDir)alice.stamp" AlwaysCreate="true" />
+  </Target>
+
+  <Target Name="AliceCompileItems" AfterTargets="AliceGenerate" BeforeTargets="CoreCompile" Condition="'@(AliceSource)' != ''">
     <ItemGroup>
       <Compile Include="$(AliceGenDir)*.g.cs" />
-      <FileWrites Include="$(AliceGenDir)*.g.cs" />
+      <FileWrites Include="$(AliceGenDir)*.g.cs;$(AliceGenDir)alice.stamp" />
     </ItemGroup>
   </Target>
 

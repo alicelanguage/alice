@@ -32,7 +32,7 @@ same commit as any change that moves a row.
 
 | Gap | Impact | Workaround |
 |---|---|---|
-| Incremental compilation | every `alice build` recompiles the package | `alice run` caches unchanged single files |
+| Incremental compilation within a package | a changed file regenerates the whole package's C# (unchanged packages are skipped: a no-op build takes 1.0 s) | split large code bases into workspace members |
 | ASP.NET Core in CI on machines without the shared framework | `examples/web/aspnet` builds and is checked only where ASP.NET Core is installed | `examples/verify.sh` on a full SDK |
 | UI frameworks (WPF, MAUI, Avalonia) | not exercised by tests; XAML code-behind needs `partial` classes, which Alice emits, but no sample exists | write the UI layer in C#, logic in Alice |
 | Assignment in `elsif` (`elsif x = f`) | rejected with an explanation | assign before the `if` |
