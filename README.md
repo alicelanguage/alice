@@ -252,6 +252,19 @@ Arrays a function returns are recycled by its caller, immutable objects built fr
 `fib(n - 1) + fib(n - 2)` forks directly. `alice explain file.al` lists, per method, which of these the compiler
 applied.
 
+### New in 0.13
+
+- **FFI**: blittable `lib`/`fun` imports behind inlined wrappers, C callbacks, `unsafe ... end` for `Pointer(T)`.
+- **All of .NET**: iterators, events, delegates, default interface methods, `await using`, `partial def`, source
+  generators, method references (`->sq`), named tuples, `lock`; EF Core, Avalonia and F# interop examples.
+- **GPU**: `gpu for` loops and `gpu ... end` regions compiled to ILGPU kernels (CUDA, OpenCL, CPU).
+- **Distribution**: `naming = "dotnet"` for C#/F#-style public APIs; Alice.Sdk, Alice.Cli and Alice.Runtime on NuGet;
+  `alice pack` / `alice publish` for libraries and tools.
+- **Runtime**: owned lists and hashes of any type (0 bytes allocated), `gc = "auto"` server GC for parallel programs,
+  forks run a serial clone below the split depth (`trib(32)`: 335 to 43 ms).
+- **Tooling**: incremental package builds that type-check once, LSP references and rename, `alice prove --smt`
+  (opt-in Z3: rules over whole Int32/Int64 ranges).
+
 ### Rules and proofs
 
 Inspired by Bend's `LAWS.bend`: write the properties your program must never break in `RULES.al`, over finite

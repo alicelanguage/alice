@@ -133,7 +133,10 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-          sparse-checkout: scripts
+          sparse-checkout: |
+            scripts
+            CHANGELOG.md
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           pattern: alice-*
@@ -150,6 +153,9 @@ jobs:
           RELEASE_VERSION: ${{ needs.version.outputs.version }}
         run: |
           cp scripts/install.sh scripts/install.ps1 dist/
+          # release notes: this version's CHANGELOG section
+          awk -v v="$RELEASE_VERSION" '$0 ~ "^## "v" " {on=1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
+          printf '\nArchives built from %s. Build and package checks: %s\n' "$RELEASE_COMMIT" "$RELEASE_RUN_URL" >> notes.md
           cd dist
           sha256sum --check *.sha256
           if [ "$RELEASE_CHANNEL" = "nightly" ]; then
@@ -160,6 +166,27 @@ jobs:
               --notes "Nightly $RELEASE_VERSION built from $RELEASE_COMMIT. Not for production. Install: \`alice toolchain install nightly\`. Build: $RELEASE_RUN_URL"
           else
             gh release create "$RELEASE_TAG" ./*.tar.gz ./*.zip ./*.sha256 ./install.sh ./install.ps1 \
-              --target "$RELEASE_COMMIT" --title "Alice $RELEASE_TAG" --generate-notes --latest \
-              --notes "Archives built from $RELEASE_COMMIT. Build and package checks: $RELEASE_RUN_URL"
+              --target "$RELEASE_COMMIT" --title "Alice $RELEASE_TAG" --latest --notes-file ../notes.md
           fi
+
+  nuget:
+    name: Publish NuGet packages
+    # ADR 0020: Alice.Sdk (MSBuild SDK), Alice.Cli (dotnet tool), Alice.Runtime; stable releases only
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.version.outputs.channel == 'stable' }}
+    needs: [version, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Pack and push
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          for p in src/Alice.Runtime src/Alice.Sdk src/Alice.Cli; do dotnet pack "$p" -c Release -o nupkgs; done
+          if [ -z "$NUGET_API_KEY" ]; then echo "::warning::NUGET_API_KEY is not set; packages built but not pushed"; exit 0; fi
+          dotnet nuget push "nupkgs/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
