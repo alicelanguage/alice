@@ -468,6 +468,20 @@ Tests: `ModuleTests`.
 locking. It does not exempt writes from the race checker (AL0202): shared Alice data uses `Mutex(T)`, which ties the
 lock to the data it guards.
 
+### Source generators
+
+Roslyn source generators run on Alice code: Alice types are emitted as `partial`, so a generator can add the other
+half. In a package build they come from MSBuild (framework and NuGet generators alike); single-file `alice run` uses
+the framework's (System.Text.Json, Regex, LibraryImport, logging). A framework generator runs only when its attribute
+appears, so other programs compile no slower.
+
+```crystal
+@[JsonSerializable(typeof(Order))]
+class AppJson < JsonSerializerContext     # reflection-free, NativeAOT-safe JSON
+end
+json = JsonSerializer.Serialize(order, AppJson.Default.Order)
+```
+
 ### Events, delegates, default interface methods
 
 ```crystal

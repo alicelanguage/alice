@@ -17,6 +17,7 @@ public static class CompileCommands
         public bool Release;
         public bool Native;
         public string? RefsFile;
+        public string? AnalyzersFile;   // MSBuild @(Analyzer): source generators run in the type check too
         public string? Project;
         public List<string> Rest = new();
     }
@@ -32,6 +33,7 @@ public static class CompileCommands
                 case "-o": o.Output = Value(a, ref i); break;
                 case "-r": o.Refs.Add(Value(a, ref i)); break;
                 case "--refs-file": o.RefsFile = Value(a, ref i); break;
+                case "--analyzers-file": o.AnalyzersFile = Value(a, ref i); break;
                 case "--release": o.Release = true; break;
                 case "--native": o.Native = true; break;
                 default:
@@ -334,7 +336,9 @@ public static class CompileCommands
             var runtimeRefs = (((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")) ?? "")
                 .Split(Path.PathSeparator).Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var checkRefs = o.Refs.Where(r => !runtimeRefs.Contains(Path.GetFileName(r)) && !Path.GetFileName(r).StartsWith("Alice.Runtime") && File.Exists(r)).ToList();
-            AliceCompiler.Emit(cs, "check", cs.Any(c => c.Contains("public static void Main(string[] ARGV)")), checkRefs);
+            var analyzers = o.AnalyzersFile != null && File.Exists(o.AnalyzersFile)
+                ? File.ReadAllLines(o.AnalyzersFile).Where(l => l.Length > 0).ToList() : null;
+            AliceCompiler.Emit(cs, "check", cs.Any(c => c.Contains("public static void Main(string[] ARGV)")), checkRefs, analyzers);
             var used = new HashSet<string>();
             foreach (var old in Directory.GetFiles(o.Output, "*.g.cs")) File.Delete(old);
             for (int i = 0; i < files.Count; i++)

@@ -48,7 +48,9 @@
     </PropertyGroup>
     <MakeDir Directories="$(AliceGenDir)" />
     <WriteLinesToFile File="$(AliceGenDir)refs.txt" Lines="@(ReferencePath->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
-    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --native-lib=$(AssemblyName)_native --naming=$(AliceNaming) @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
+    <!-- source generators (System.Text.Json, Regex, NuGet ones): alice gen's type check runs them as csc will -->
+    <WriteLinesToFile File="$(AliceGenDir)analyzers.txt" Lines="@(Analyzer->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --analyzers-file &quot;$(AliceGenDir)analyzers.txt&quot; --native-lib=$(AssemblyName)_native --naming=$(AliceNaming) @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
     <ItemGroup>
       <Compile Include="$(AliceGenDir)*.g.cs" />
       <FileWrites Include="$(AliceGenDir)*.g.cs" />

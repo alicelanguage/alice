@@ -142,7 +142,77 @@ public static class AliceCompiler
     static readonly string[] NullErrors = ["CS8600", "CS8601", "CS8602", "CS8603", "CS8604", "CS8625"];
 
     /// <summary>Compiles lowered C# to an IL image. Throws CompileException with Alice file:line diagnostics.</summary>
-    public static byte[] Emit(IReadOnlyList<string> csharp, string assemblyName, bool exe, IEnumerable<string>? extraRefs = null)
+    /// <summary>
+    /// Runs the Roslyn source generators of the given analyzer assemblies over the generated C#, as MSBuild would:
+    /// `[JsonSerializable]` contexts, `[GeneratedRegex]`, `[LoggerMessage]`... written in Alice get their generated half.
+    /// </summary>
+    static CSharpCompilation RunGenerators(CSharpCompilation comp, IEnumerable<string> analyzers)
+    {
+        var gens = new List<ISourceGenerator>();
+        foreach (var path in analyzers)
+        {
+            try { gens.AddRange(new Microsoft.CodeAnalysis.Diagnostics.AnalyzerFileReference(path, AnalyzerLoader.Instance).GetGenerators(LanguageNames.CSharp)); }
+            catch (Exception) { }   // an analyzer that cannot load is skipped, as MSBuild warns and continues
+        }
+        if (gens.Count == 0) return comp;
+        CSharpGeneratorDriver.Create(gens, parseOptions: Parse).RunGeneratorsAndUpdateCompilation(comp, out var updated, out _);
+        return (CSharpCompilation)updated;
+    }
+
+    /// <summary>
+    /// Framework generators fire only on their attributes, and loading + running them costs ~0.5 s per compile:
+    /// keep one only when the code uses its trigger. Generators from packages always run (referencing them is opt-in).
+    /// </summary>
+    static readonly (string Assembly, string[] Triggers)[] FrameworkGenerators =
+    [
+        ("System.Text.Json.SourceGeneration", ["JsonSerializable"]),
+        ("System.Text.RegularExpressions.Generator", ["GeneratedRegex"]),
+        ("Microsoft.Interop.LibraryImportGenerator", ["LibraryImport"]),
+        ("Microsoft.Interop.ComInterfaceGenerator", ["GeneratedComInterface", "GeneratedComClass"]),
+        ("Microsoft.Interop.JavaScript.JSImportGenerator", ["JSImport", "JSExport"]),
+        ("Microsoft.Interop.SourceGeneration", ["LibraryImport", "GeneratedComInterface", "JSImport"]),
+        ("Microsoft.Extensions.Logging.Generators", ["LoggerMessage"]),
+        ("Microsoft.Extensions.Options.SourceGeneration", ["OptionsValidator"]),
+        ("Microsoft.AspNetCore.Http.RequestDelegateGenerator", ["MapGet", "MapPost", "MapPut", "MapDelete"]),
+    ];
+
+    static IEnumerable<string> Triggered(IEnumerable<string> analyzers, IReadOnlyList<string> csharp)
+    {
+        foreach (var path in analyzers)
+        {
+            string name = Path.GetFileNameWithoutExtension(path);
+            var known = FrameworkGenerators.FirstOrDefault(g => g.Assembly == name);
+            if (known.Assembly == null || known.Triggers.Any(t => csharp.Any(c => c.Contains(t)))) yield return path;
+        }
+    }
+
+    sealed class AnalyzerLoader : Microsoft.CodeAnalysis.IAnalyzerAssemblyLoader
+    {
+        public static readonly AnalyzerLoader Instance = new();
+        public void AddDependencyLocation(string fullPath) { }
+        public System.Reflection.Assembly LoadFromPath(string fullPath) => System.Reflection.Assembly.LoadFrom(fullPath);
+    }
+
+    /// <summary>The source generators that ship with the targeting pack (System.Text.Json, Regex, logging...), for
+    /// single-file builds that have no MSBuild to supply them.</summary>
+    static readonly Lazy<List<string>> FrameworkAnalyzers = new(() =>
+    {
+        try
+        {
+            var shared = Path.GetDirectoryName(typeof(object).Assembly.Location)!;   // dotnet/shared/Microsoft.NETCore.App/10.0.x
+            var root = Path.GetFullPath(Path.Combine(shared, "..", "..", ".."));
+            var packs = Path.Combine(root, "packs", "Microsoft.NETCore.App.Ref");
+            if (!Directory.Exists(packs)) return [];
+            string major = Environment.Version.Major + ".";
+            var ver = Directory.GetDirectories(packs).Select(Path.GetFileName).Where(v => v!.StartsWith(major)).OrderByDescending(v => Version.TryParse(v!.Split('-')[0], out var x) ? x : new Version()).FirstOrDefault();
+            if (ver == null) return [];
+            var dir = Path.Combine(packs, ver, "analyzers", "dotnet", "cs");
+            return Directory.Exists(dir) ? [.. Directory.GetFiles(dir, "*.dll")] : [];
+        }
+        catch (Exception) { return []; }
+    });
+
+    public static byte[] Emit(IReadOnlyList<string> csharp, string assemblyName, bool exe, IEnumerable<string>? extraRefs = null, IEnumerable<string>? analyzers = null)
     {
         var trees = csharp.Select((c, i) => CSharpSyntaxTree.ParseText(c, Parse, path: $"{assemblyName}.{i}.g.cs")).ToList();
         var diag = NullErrors.ToDictionary(x => x, _ => ReportDiagnostic.Error);
@@ -154,6 +224,7 @@ public static class AliceCompiler
             .WithSpecificDiagnosticOptions(diag);
         var refs = Refs.Value.Concat((extraRefs ?? []).Select(r => (MetadataReference)MetadataReference.CreateFromFile(Path.GetFullPath(r))));
         var comp = CSharpCompilation.Create(assemblyName, trees, refs, opts);
+        comp = RunGenerators(comp, Triggered(analyzers ?? FrameworkAnalyzers.Value, csharp));
         using var ms = new MemoryStream();
         var res = comp.Emit(ms);
         if (!res.Success)
