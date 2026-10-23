@@ -53,6 +53,7 @@ public class CSharpCompatTests
         { "tap and then", "sb = System.Text.StringBuilder.new.tap { |s| s.Append(\"a\")\n  s.Append(\"b\") }\nputs sb.ToString()\nputs 21.then { |x| x * 2 }\nputs \"abc\".then { |s| s.size }", "ab\n42\n3" },
         { "Type(args) construction", "record Point(x : Int32, y : Int32)\nclass Box\n  getter v : Int32\n  def initialize(@v : Int32)\n  end\nend\nputs Point(1, 2).y\nputs Box(7).v\nputs List(Int32).new.Count", "2\n7\n0" },
         { "System.Text.Json source generator", "using System.Text.Json\nusing System.Text.Json.Serialization\nrecord Order(id : Int32, item : String)\n@[JsonSerializable(typeof(Order))]\nclass AppJson < JsonSerializerContext\nend\njson = JsonSerializer.Serialize(Order.new(7, \"tea\"), AppJson.Default.Order)\nputs json\nputs JsonSerializer.Deserialize(json, AppJson.Default.Order).not_nil!.item", "{\"id\":7,\"item\":\"tea\"}\ntea" },
+        { "partial methods for generators", "using System.Text.RegularExpressions\nmodule Patterns\n  @[GeneratedRegex(\"[0-9]+\")]\n  partial def self.digits : Regex\nend\nputs Patterns.digits.Match(\"ab123c\").Value\nputs Patterns.digits.IsMatch(\"none\")", "123\nfalse" },
         { "ruby methods and public_send", "class Q\n  def hi : String\n    \"hi\"\n  end\n  def add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nq = Q.new\nputs q.methods.includes?(\"hi\")\nputs q.public_send(\"add\", 2, 3)\nputs q.is_a?(Object)", "true\n5\ntrue" },
     };
 

@@ -162,7 +162,7 @@ public sealed partial class Parser
         return neg ? -v : v;
     }
 
-    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"));
+    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"));
 
     bool IsStructNew() => t[p].Kind == "const" && Peek(1).Text == "=" && Peek(2).Text == "Struct" && Peek(3).Text == "." && Peek(4).Text == "new";
 
@@ -479,7 +479,7 @@ public sealed partial class Parser
     {
         var m = At(new MethodDecl(), Cur);
         bool inline = false;
-        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("inline"))
+        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline"))
         {
             string mod = Next().Text;
             if (mod == "abstract") m.IsAbstract = true;
@@ -487,6 +487,7 @@ public sealed partial class Parser
             else if (mod == "pure") m.IsPure = true;
             else if (mod == "safe") m.IsSafe = true;
             else if (mod == "unsafe") m.IsUnsafe = true;
+            else if (mod == "partial") m.IsPartial = true;
             else if (mod == "inline") inline = true;
             else m.Vis = mod;
         }
@@ -531,7 +532,7 @@ public sealed partial class Parser
             while (IsOp(",") && Peek(1).Kind == "const" && !(Peek(2).Kind == "op" && Peek(2).Text == ":")) { Next(); m.TypeParams.Add(Next().Text); }
         }
         if (IsKw("where")) m.Constraints = Where();
-        if (m.IsAbstract || ownerKind == "interface" && !InterfaceBodyAhead())
+        if (m.IsAbstract || m.IsPartial || ownerKind == "interface" && !InterfaceBodyAhead())
         {
             m.HasBody = false;
             EndStmt();

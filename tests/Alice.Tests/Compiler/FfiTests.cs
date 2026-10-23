@@ -140,4 +140,12 @@ public class FfiTests
             + "rc = LibC.clock_gettime(0, out ts)\nputs rc\nputs ts.sec > 1_600_000_000_i64\nputs ts.nsec < 1_000_000_000_i64\ne = 0\nm = LibC.frexp(8.0, ref e)\nputs \"#{m} #{e}\"\n";
         Assert.Equal("0\ntrue\ntrue\n0.5 4", Run(src));
     }
+
+    [Fact]
+    public void LibraryImport_through_a_partial_def()
+    {
+        // .NET's own source-generated P/Invoke works too: the generator writes the marshalling for the partial method
+        var src = "using System.Runtime.InteropServices\nmodule Native\n  @[LibraryImport(\"" + LibC + "\", EntryPoint = \"strlen\", StringMarshalling = StringMarshalling.Utf8)]\n  partial def self.c_strlen(s : String) : UInt64\nend\nputs Native.c_strlen(\"héllo\")\n";
+        Assert.Equal("6", Run(src));
+    }
 }

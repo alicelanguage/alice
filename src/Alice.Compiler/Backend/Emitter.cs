@@ -617,6 +617,8 @@ public sealed class Emitter
         string where = Constraints(d.Constraints);
         if (owner.Kind == "interface" && !d.HasBody) return $"{dir}{ret} {m.CsName}{gen}({plist}){where};\n";
         if (d.IsAbstract) return $"{dir}{d.Vis} abstract {ret} {m.CsName}{gen}({plist}){where};\n";
+        if (d.IsPartial)   // the generator supplies the body; the declaration carries the attributes it reads
+            return $"{dir}{Attrs(d.Attrs)}{d.Vis}{(m.IsStatic || owner.Kind is "module" or "program" ? " static" : "")} partial {ret} {m.CsName}{gen}({plist}){where};\n";
 
         lowerer.Type = owner;
         lowerer.Method = m;

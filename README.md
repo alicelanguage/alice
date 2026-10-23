@@ -311,6 +311,8 @@ hashmap (1.45×) and merkle (1.2×). The other 7 are within 2–12 %. See
 
 ## Docs
 
+Is it ready for production? See [docs/production.md](docs/production.md): what is covered, by which tests, and the known gaps.
+
 [Language](https://alice-lang.org/documentation) · [Tooling & REPL](https://alice-lang.org/documentation) · [Errors](https://alice-lang.org/documentation) ·
 [Performance](https://alice-lang.org/documentation) · [Architecture](https://alice-lang.org/documentation) · [Changelog](https://alice-lang.org/documentation)
 

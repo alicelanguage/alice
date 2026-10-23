@@ -475,6 +475,15 @@ half. In a package build they come from MSBuild (framework and NuGet generators 
 the framework's (System.Text.Json, Regex, LibraryImport, logging). A framework generator runs only when its attribute
 appears, so other programs compile no slower.
 
+A body-less `partial def` is a declaration a generator completes:
+
+```crystal
+module Patterns
+  @[GeneratedRegex("[0-9]+")]
+  partial def self.digits : Regex           # compiled at build time, no runtime Regex parsing
+end
+```
+
 ```crystal
 @[JsonSerializable(typeof(Order))]
 class AppJson < JsonSerializerContext     # reflection-free, NativeAOT-safe JSON
