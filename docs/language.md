@@ -98,7 +98,7 @@ while line = reader.ReadLine
 end
 ```
 
-`s.try &.Length` **(planned)**.
+`s.try &.size` is the safe call `s&.size` (Crystal spelling): nil when `s` is nil.
 
 ### Any (dynamic)
 

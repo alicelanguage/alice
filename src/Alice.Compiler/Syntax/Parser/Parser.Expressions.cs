@@ -151,6 +151,8 @@ public sealed partial class Parser
                     e = inv;
                     continue;
                 }
+                // Crystal's `x.try &.m(args)` is the safe call `x&.m(args)`: continue as if `&.` followed x
+                if (name == "try" && IsOp("&.")) continue;
                 if (name == "nil?" || name == "not_nil!") { e = At(new TypeTestExpr { Kind = name, E = e }, tok); continue; }
                 if (name == "is_a?" || name == "as")
                 {
