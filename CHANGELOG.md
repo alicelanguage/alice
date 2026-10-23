@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Lambdas as blocks: `xs.sum(&->sq)`, `xs.select(&->(x : Int32) { x.even? })` and `xs.map(&f)`. A lambda literal or method reference passed this way is inlined into the loop like a literal block, with no delegate.
 - Named tuples: `{name: "ada", age: 36}` and the type `{min: Int32, max: Int32}` are C# named tuples (`(string name, int age)`, no allocation), read with `t.name` or `t[:name]`, where an unknown element is a compile error. Hashes keep `=>`.
 - Assignment as a condition: `if user = find(id)` and `while line = reader.ReadLine`. The `while` form assigns before every test; `elsif x = ...` is an error that explains why.
 - Flow narrowing for nullable numbers: inside `if n` and after a guard clause (`return unless n`, `break`/`next unless n`, `raise ... unless n`), an `Int32?` local reads as `Int32` (`n.Value`). Narrowing stops where the branch reassigns the local. C# already narrows nullable references.

@@ -308,6 +308,8 @@ f = ->sq                             # method reference: parameter types from `d
 g = ->sq(Int32)                      # explicit types (needed when sq is overloaded)
 h = ->shape.area                     # bound to a receiver; ->Geometry.dist for a module function
 [1, 2, 3].map(->sq)                  # works anywhere a lambda, Func or delegate is expected
+xs.sum(&->sq)                        # as the block: inlined into a plain loop, like a literal block
+xs.map(&f)                           # a lambda in a variable as the block (one-argument iterators)
 inc = proc { |x : Int32| x + 1 }
 puts ["a", "b"].map(&:upcase).join  # &:sym -> { |x| x.upcase }
 ```

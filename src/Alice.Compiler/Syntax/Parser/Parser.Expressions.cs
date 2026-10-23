@@ -203,6 +203,13 @@ public sealed partial class Parser
         else if (CanStartArg()) args.AddRange(CommandArgs());
         block = OptBlock();
         // `&:name` argument: Ruby's symbol-to-proc, i.e. { |x| x.name }
+        int bp = args.FindIndex(a => a.Mod == "&blk");
+        if (bp >= 0)
+        {
+            if (block != null) throw Err("both a block argument (&f) and a literal block");
+            block = (LambdaExpr)args[bp].Value!;
+            args.RemoveAt(bp);
+        }
         int sp = args.FindIndex(a => a.Mod == "&sym");
         if (sp >= 0)
         {
@@ -274,6 +281,24 @@ public sealed partial class Parser
     Arg Argument()
     {
         var a = At(new Arg(), Cur);
+        // `&->sq` / `&->(x) { ... }` / `&f`: a lambda passed as the block
+        if (IsOp("&") && Peek(1).Kind == "op" && Peek(1).Text == "->")
+        {
+            Next();
+            a.Mod = "&blk";
+            a.Value = LambdaLiteral();
+            return a;
+        }
+        if (IsOp("&") && Peek(1).Kind == "id" && !(Peek(2).Kind == "op" && Peek(2).Text is "." or "(" or "["))
+        {
+            Next();
+            Token v = Next();
+            // { |__it| f.call(__it) }: one-argument iterators (each, map, select...)
+            a.Mod = "&blk";
+            a.Value = At(new LambdaExpr { Params = { At(new Param { Name = "__it" }, v) },
+                Body = { At(new ExprStmt { Expr = At(new InvokeExpr { Target = At(new NameExpr { Name = v.Text }, v), Args = { new Arg { Value = At(new NameExpr { Name = "__it" }, v) } } }, v) }, v) } }, v);
+            return a;
+        }
         if (IsOp("&") && Peek(1).Kind == "sym")
         {
             Next();
