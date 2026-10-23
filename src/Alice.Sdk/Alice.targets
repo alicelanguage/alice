@@ -14,13 +14,24 @@
   <ItemGroup>
     <AliceSource Include="$(AliceSourceRoot)**/*.al" Exclude="$(AliceSourceRoot)bin/**;$(AliceSourceRoot)obj/**;$(AliceSourceRoot).alice/**;$(AliceSourceRoot)test/**" Condition="'$(AliceSourceRoot)' != ''" />
     <AliceSource Include="**/*.al" Exclude="bin/**;obj/**;$(DefaultItemExcludes)" Condition="'$(AliceSourceRoot)' == ''" />
-    <ProjectReference Include="$(AliceRuntimeProject)" Condition="'$(AliceRuntimeProject)' != ''" />
+    <ProjectReference Include="$(AliceRuntimeProject)" Condition="'$(AliceRuntimeProject)' != ''" PrivateAssets="all" />
     <Reference Include="Alice.Runtime" Condition="'$(AliceRuntimeProject)' == ''">
       <HintPath>$(AliceHome)Alice.Runtime.dll</HintPath>
     </Reference>
     <ProjectReference Include="$(AliceCliProject)" Condition="'$(AliceCliProject)' != ''"
                       ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
+
+  <!-- alice pack: Alice.Runtime is not on nuget.org, so a library package carries it next to its own assembly
+       (tools already ship their whole publish output) -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);AlicePackRuntime</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+  <Target Name="AlicePackRuntime" DependsOnTargets="ResolveReferences" Condition="'$(PackAsTool)' != 'true'">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(ReferencePath)" Condition="'%(Filename)' == 'Alice.Runtime'" />
+    </ItemGroup>
+  </Target>
 
   <Target Name="AliceGenerate" BeforeTargets="CoreCompile" DependsOnTargets="ResolveReferences" Condition="'@(AliceSource)' != ''">
     <!-- evaluated at execution time: IntermediateOutputPath is defined by the SDK targets imported after this file -->

@@ -26,6 +26,8 @@ public static class Manifest
 
         var props = new StringBuilder();
         props.Append($"    <OutputType>{(kind == "lib" ? "Library" : "Exe")}</OutputType>\n");
+        var (pkgProps, pkgItems) = PackageMetadata.Render(dir, name, kind, pkg);
+        props.Append(pkgProps);
         if (pkg.TryGetValue("version", out var v)) props.Append($"    <Version>{v}</Version>\n");
         if (pkg.TryGetValue("target", out var tf)) props.Append($"    <TargetFramework>{tf}</TargetFramework>\n");
         var build = toml.GetValueOrDefault("build") ?? new Dictionary<string, object>();
@@ -52,7 +54,7 @@ public static class Manifest
             throw new InvalidOperationException($"[runtime] globalization = \"{glob}\" is not a mode (expected one of: culture, invariant)");
         if (glob == "invariant") props.Append("    <InvariantGlobalization>true</InvariantGlobalization>\n");
 
-        var items = new StringBuilder();
+        var items = new StringBuilder(pkgItems);
         if (conserve != null) items.Append($"    <RuntimeHostConfigurationOption Include=\"System.GC.ConserveMemory\" Value=\"{conserve}\" />\n");
         foreach (var (dep, spec) in toml.GetValueOrDefault("dependencies") ?? new Dictionary<string, object>())
         {

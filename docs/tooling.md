@@ -158,6 +158,26 @@ Restores use `dotnet restore`, so packages live in the standard .NET global cach
 | `alice install` | restore all dependencies (refreshes alice.lock) |
 | `alice install --tool <name>` | install/update a .NET global tool |
 | `alice cache [--clear]` | show or clear the shared package cache |
+| `alice pack [dir] [-o out]` | build a `.nupkg` (lib or tool) into `bin/package/` |
+| `alice publish [dir] [--source url\|dir] [--api-key k] [--dry-run]` | pack and push; default source nuget.org, key from `--api-key` or `NUGET_API_KEY` |
+
+### Publishing
+
+```toml
+[package]
+name = "wand"
+id = "Acme.Wand"             # NuGet id, default: name
+version = "1.0.0"
+kind = "tool"                # lib: a library; tool: a .NET tool (dotnet tool install -g Acme.Wand)
+command = "wand"             # tool command, default: name
+description = "Scaffolding for Acme apps"
+authors = ["Ada"]
+license = "Apache-2.0"       # SPDX expression
+repository = "https://github.com/acme/wand"
+tags = ["cli"]               # "alice" is always added
+```
+
+A library package bundles `Alice.Runtime.dll` next to its assembly, so C# projects consume it with a plain `PackageReference`. Games are not packable. Tests: `Tooling/ManifestTests`, `Integration/PackageTests`.
 
 ## REPL
 

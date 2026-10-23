@@ -114,4 +114,71 @@ public class ManifestTests
         var ex = Assert.Throws<InvalidOperationException>(() => Manifest.Sync(dir));
         Assert.Contains("workstation, server, low-memory", ex.Message);
     }
+
+    static string SyncToml(string toml)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "alice-pkg-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), toml);
+        return File.ReadAllText(Manifest.Sync(dir));
+    }
+
+    [Fact]
+    public void Package_metadata_maps_to_nuget_properties()
+    {
+        var xml = SyncToml("""
+            [package]
+            name = "geo"
+            id = "Acme.Geo"
+            version = "1.2.3"
+            kind = "lib"
+            description = "Geometry for Alice & C#"
+            authors = ["Ada", "Grace"]
+            license = "Apache-2.0"
+            repository = "https://github.com/acme/geo"
+            homepage = "https://acme.dev/geo"
+            tags = ["geometry", "math"]
+            """);
+        Assert.Contains("<PackageId>Acme.Geo</PackageId>", xml);
+        Assert.Contains("<Description>Geometry for Alice &amp; C#</Description>", xml);
+        Assert.Contains("<Authors>Ada;Grace</Authors>", xml);
+        Assert.Contains("<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>", xml);
+        Assert.Contains("<RepositoryUrl>https://github.com/acme/geo</RepositoryUrl>", xml);
+        Assert.Contains("<PackageProjectUrl>https://acme.dev/geo</PackageProjectUrl>", xml);
+        Assert.Contains("<PackageTags>geometry;math;alice</PackageTags>", xml);
+        Assert.Contains("<IsPackable>true</IsPackable>", xml);
+    }
+
+    [Fact]
+    public void Tool_kind_packs_as_a_dotnet_tool()
+    {
+        var xml = SyncToml("[package]\nname = \"rails-al\"\nkind = \"tool\"\ncommand = \"ral\"\n");
+        Assert.Contains("<OutputType>Exe</OutputType>", xml);
+        Assert.Contains("<PackAsTool>true</PackAsTool>", xml);
+        Assert.Contains("<ToolCommandName>ral</ToolCommandName>", xml);
+        // default command is the package name
+        Assert.Contains("<ToolCommandName>tl</ToolCommandName>", SyncToml("[package]\nname = \"tl\"\nkind = \"tool\"\n"));
+    }
+
+    [Fact]
+    public void Readme_is_packed_when_present()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "alice-readme-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"r\"\nkind = \"lib\"\n");
+        File.WriteAllText(Path.Combine(dir, "README.md"), "# r\n");
+        var xml = File.ReadAllText(Manifest.Sync(dir));
+        Assert.Contains("<PackageReadmeFile>README.md</PackageReadmeFile>", xml);
+        Assert.Contains("Pack=\"true\" PackagePath=\"/\"", xml);
+    }
+
+    [Theory]
+    [InlineData("kind = \"app\"", "exe, lib, tool, game")]
+    [InlineData("id = \"bad id!\"", "not a valid NuGet package id")]
+    [InlineData("version = \"one\"", "not a valid version")]
+    public void Bad_package_fields_are_rejected(string field, string message)
+    {
+        var ex = Assert.Throws<InvalidOperationException>(() => SyncToml("[package]\nname = \"x\"\n" + field + "\n"));
+        Assert.Contains(message, ex.Message);
+    }
 }

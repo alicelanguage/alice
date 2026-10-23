@@ -256,7 +256,7 @@ public static class CompileCommands
         UiH.Status(T("locked"), string.Join(", ", resolved.Select(kv => $"{kv.Key} {kv.Value}")));
     }
 
-    static void Report(DotNet.Result r)
+    internal static void Report(DotNet.Result r)
     {
         // MSB3073 ("the command alice gen exited with code 1") only repeats the Alice errors above it
         var errors = r.Diagnostics.Where(d => d.Severity == "error").ToList();
