@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Alice on NuGet (ADR 0020): `Alice.Sdk` is an MSBuild project SDK carrying the compiler, so `<Project Sdk="Alice.Sdk/x.y.z">` compiles `.al` files in any project with nothing installed (tested with an empty NuGet cache). `Alice.Cli` installs the `alice` command with `dotnet tool install -g Alice.Cli`. `Alice.Runtime` is packable for C# hosts. `scripts/pack-nuget.sh` builds all three packages, and the release guide covers pushing them.
 - `alice new <name> --tool` creates a .NET tool package (`kind = "tool"`, `command`, an ARGV template). `alice new --lib` now writes `description` and `naming = "dotnet"`, so a new library is ready for `alice publish`.
 - `[package] naming = "dotnet"` (ADR 0019): a library's public members compile to .NET names (`total_area` -> `TotalArea`, record `x` -> `X`, `empty?` -> `IsEmpty`), so C# and F# callers see a conventional API. Alice code keeps the Alice spelling, and `send`/`respond_to?` fall back to the .NET name. Private members and Ruby hooks are unchanged. Default `"alice"` leaves output as before.
 - `await using r = x ... end` in `async def`: `DisposeAsync` is awaited at `end` (EF Core contexts, async streams). `alice fmt` now indents `using` / `await using` blocks, which it never did, as well as interface default methods and `unsafe def`.

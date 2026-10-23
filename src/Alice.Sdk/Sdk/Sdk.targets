@@ -1,0 +1,4 @@
+<Project>
+  <Import Project="$(AliceHome)sdk/Alice.targets" />
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

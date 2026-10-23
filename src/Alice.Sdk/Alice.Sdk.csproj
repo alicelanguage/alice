@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Packs the MSBuild project SDK "Alice.Sdk": Sdk/ (entry points) + tools/ (the alice compiler, Alice.Runtime, sdk/). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Alice.Sdk</PackageId>
+    <PackageType>MSBuildSdk</PackageType>
+    <Description>MSBuild SDK for the Alice language: &lt;Project Sdk="Alice.Sdk/x.y.z"&gt; compiles .al files to .NET IL.</Description>
+    <PackageTags>alice;msbuild;sdk;compiler</PackageTags>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
+    <AliceToolsDir>$(MSBuildThisFileDirectory)../Alice.Cli/bin/$(Configuration)/net10.0/</AliceToolsDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Alice.Cli/Alice.Cli.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <None Include="Sdk/Sdk.props;Sdk/Sdk.targets" Pack="true" PackagePath="Sdk/" />
+  </ItemGroup>
+  <!-- the compiler's build output exists only after the reference builds: collect it at pack time -->
+  <Target Name="AlicePackTools" BeforeTargets="_GetPackageFiles" DependsOnTargets="ResolveProjectReferences">
+    <ItemGroup>
+      <!-- top-level assemblies + sdk/ only: RID folders left by earlier publishes do not belong in the package -->
+      <None Include="$(AliceToolsDir)*" Exclude="$(AliceToolsDir)*.pdb" Pack="true" PackagePath="tools/" />
+      <None Include="$(AliceToolsDir)sdk/*" Pack="true" PackagePath="tools/sdk/" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -16,6 +16,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationIcon>../../assets/brand/alice.ico</ApplicationIcon>
+    <!-- dotnet tool install -g Alice.Cli: the `alice` command, with sdk/ next to it -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>alice</ToolCommandName>
+    <PackageId>Alice.Cli</PackageId>
+    <Description>The Alice language CLI: build, run, test, format and publish Alice (.al) programs on .NET.</Description>
+    <PackageTags>alice;compiler;cli;language</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

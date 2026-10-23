@@ -99,3 +99,20 @@ PowerShell 7 and the .NET 10 SDK are required. Run on the same OS and architectu
 Use `win-x64`, `osx-x64` or `osx-arm64` on the respective host. Packages use ReadyToRun: their DLLs contain architecture-specific code, so `dotnet alice.dll` cannot run an Intel package on an ARM64 host. The packaging script rejects mismatched hosts before publishing. Choose a new output directory for each attempt. Successful output lives under `dist/`; `publish/`, `build/` and `smoke/` retain the build and extracted files for inspection. The script creates no tag and uploads nothing.
 
 References: [.NET publishing](https://learn.microsoft.com/en-us/dotnet/core/deploying/), [GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), [GitHub CLI release creation](https://cli.github.com/manual/gh_release_create).
+
+## NuGet packages
+
+`scripts/pack-nuget.sh [out]` builds `Alice.Sdk`, `Alice.Cli` and `Alice.Runtime` into `artifacts/nuget/`
+([ADR 0020](../archicture/adr/0020-nuget-distribution.md)). Publish them after the release checks pass:
+
+```bash
+scripts/pack-nuget.sh
+dotnet nuget push "artifacts/nuget/*.nupkg" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
+```
+
+| Consumer | How |
+|---|---|
+| any .NET project | `<Project Sdk="Alice.Sdk/0.12.3">`: `.al` files compile with the C# ones |
+| a machine | `dotnet tool install -g Alice.Cli`, then `alice` |
+| C# using the runtime | `dotnet add package Alice.Runtime` |
+
