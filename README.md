@@ -318,11 +318,11 @@ Is it ready for production? See [docs/production.md](docs/production.md): what i
 
 ## Roadmap
 
-- File-level incremental compilation (packages are incremental since 0.12.3).
-- Ownership for collections held in fields (local arrays of numbers and local lists and hashes of any type are owned since 0.12.3).
+- File-level incremental compilation (packages are incremental since 0.13.0).
+- Ownership for collections held in fields (local arrays of numbers and local lists and hashes of any type are owned since 0.13.0).
 - Rules over unbounded domains (induction) in `RULES.al`.
-- Multi-device and overlapped transfers for GPU code (`gpu for`, regions and ILGPU kernels are in since 0.12.3); more `@[Native]` coverage (structs, strings).
-- `class_eval` with strings (refinements and class discovery via `ObjectSpace` are in since 0.12.3).
+- Multi-device and overlapped transfers for GPU code (`gpu for`, regions and ILGPU kernels are in since 0.13.0); more `@[Native]` coverage (structs, strings).
+- `class_eval` with strings (refinements and class discovery via `ObjectSpace` are in since 0.13.0).
 - NativeAOT single-file `alice` binary (libraries are distributed on NuGet: `alice publish`, ADR 0020).
 
 ## License

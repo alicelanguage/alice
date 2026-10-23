@@ -112,7 +112,7 @@ dotnet nuget push "artifacts/nuget/*.nupkg" --source https://api.nuget.org/v3/in
 
 | Consumer | How |
 |---|---|
-| any .NET project | `<Project Sdk="Alice.Sdk/0.12.3">`: `.al` files compile with the C# ones |
+| any .NET project | `<Project Sdk="Alice.Sdk/0.13.0">`: `.al` files compile with the C# ones |
 | a machine | `dotnet tool install -g Alice.Cli`, then `alice` |
 | C# using the runtime | `dotnet add package Alice.Runtime` |
 

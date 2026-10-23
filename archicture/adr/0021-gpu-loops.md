@@ -1,6 +1,6 @@
 # ADR 0021: `gpu for` loops through ILGPU
 
-Status: Accepted (0.12.3)
+Status: Accepted (0.13.0)
 
 `par for` spreads independent iterations over CPU cores. Data-parallel loops over large arrays of numbers often run
 faster on a GPU, but writing CUDA or OpenCL means leaving the language. ILGPU is a pure-C# compiler from .NET IL to

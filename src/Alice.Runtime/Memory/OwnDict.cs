@@ -1,7 +1,7 @@
 namespace Alice.Runtime;
 
 /// <summary>
-/// Pooled dictionaries of owned locals (ADR 0016, 0.12.3): a local `Dictionary(K, V)` of numbers that the compiler
+/// Pooled dictionaries of owned locals (ADR 0016, 0.13.0): a local `Dictionary(K, V)` of numbers that the compiler
 /// proves is the only reference to it is rented here and released at its last use; `Clear` keeps the buckets, so a
 /// per-call counting or memo table stops allocating once warm. Per-thread slots, no locks.
 /// </summary>

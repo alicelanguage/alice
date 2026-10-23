@@ -3,7 +3,7 @@ using Alice.Runtime;
 using Bench.Inet;
 
 // pow2(n) = pow2(n-1) + pow2(n-1): the fork/join example of docs/fork-join.md, 2^n leaves.
-// plain recursion; fork/join as Alice emitted it up to 0.12.2 (Forkable read on every call) and from 0.12.3 (serial
+// plain recursion; fork/join as Alice emitted it up to 0.12.2 (Forkable read on every call) and from 0.13.0 (serial
 // clone below the fork depth); then the interaction-net reducer of Net.cs on 1..N threads.
 if (args.Length > 0 && args[0] == "hvm2") { Hvm2Bench.Run(args[1..]); return; }
 int n = args.Length > 0 ? int.Parse(args[0]) : 22;

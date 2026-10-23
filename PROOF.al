@@ -2,7 +2,7 @@
 # Every rule marked proven returned true on every case of its domain. Rules are pure, so this is a proof by
 # exhaustion of the program as Alice compiles it. `alice prove --check` fails when the sources change.
 #
-# alice 0.12.2
+# alice 0.13.0
 # sources sha256 6935e8c4f9de7e282ca1e9d868ba6460ed9c87d728c2de0e0822e5c2f2e87753
 # rule divmod_matches: proven over 40501 cases
 # rule floored_div_mod: proven over 361201 cases

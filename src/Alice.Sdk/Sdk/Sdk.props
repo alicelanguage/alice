@@ -1,6 +1,6 @@
 <Project>
   <!--
-    Alice.Sdk from NuGet: <Project Sdk="Alice.Sdk/0.12.2"> compiles every *.al file in the project, in a .csproj
+    Alice.Sdk from NuGet: <Project Sdk="Alice.Sdk/0.13.0"> compiles every *.al file in the project, in a .csproj
     or an .alproj, with no Alice installation. The compiler and Alice.Runtime ship in this package's tools/ folder.
   -->
   <PropertyGroup>

@@ -1,6 +1,6 @@
 # ADR 0019: .NET names for a library's public API
 
-Status: Accepted (0.12.3)
+Status: Accepted (0.13.0)
 
 Alice code uses Ruby spelling (`total_area`, `empty?`) and compiles members under that name. A C# or F# project
 consuming an Alice library therefore saw `Geometry.total_area` and `point.x`, which no .NET API looks like and

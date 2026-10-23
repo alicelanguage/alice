@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.12.3 - unreleased
+## 0.13.0 - unreleased
 
+- Version 0.13.0. This release was tracked as 0.12.3 until its scope (FFI, NuGet distribution, GPU, Avalonia, EF Core, source generators...) made a minor version the honest number. A bare `alice prove` skips nested directories that have their own `alice.toml`.
 - Integration tests delete their temporary projects, feeds and NuGet caches. A full session had filled a 7.7 GB `/tmp` RAM disk with 2021 leftover directories, 175 MB per SDK-package run.
 - `gpu ... end` regions keep the arrays of the `gpu for` loops inside on the device: each is uploaded once, and written ones are copied back at `end`. A CPU read inside the region is a compile error. 51 launches over 1M floats: 29 ms in a region against 132 ms with per-launch transfers.
 - `gpu for` reductions: `t += e` into an outer Int32/Int64/Float32/Float64 is an atomic add on the device (100k-element Int64 sum, exact on the OpenCL GPU and the CPU accelerator).

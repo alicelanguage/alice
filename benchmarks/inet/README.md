@@ -17,7 +17,7 @@ timed region. `dotnet run -c Release -- 22 5` (add `noinet` to skip the net).
 |---|---:|---:|
 | plain recursion | 12-16 | 1.00x |
 | fork/join, `Par.Forkable` read on every call (Alice ≤ 0.12.2) | 24-32 | 0.5x |
-| fork/join + serial clone below the fork depth (Alice 0.12.3) | 2.0-2.1 | 6.3x |
+| fork/join + serial clone below the fork depth (Alice 0.13.0) | 2.0-2.1 | 6.3x |
 | interaction net, 1 thread | 670-1050 | 0.015x |
 | interaction net, 12 threads | 225-470 | 0.03-0.05x |
 
@@ -40,7 +40,7 @@ pow2(26) 51.3 -> 15.7 ms.
    .NET.
 3. **The experiment found a real fork/join cost.** Alice's fork/join was 2x *slower* than plain recursion on
    this workload. A thread-static `Par.Forkable` read on every one of the 2^n calls cost more than the forks
-   gained. 0.12.3 emits `m__serial`, a clone of the forking method with no forks, which the sequential branch
+   gained. 0.13.0 emits `m__serial`, a clone of the forking method with no forks, which the sequential branch
    calls. Below the fork depth, recursion runs at plain speed, and only the top levels pay for forking. That
    is BendRT's lazy task creation without the per-call check.
 

@@ -1,6 +1,6 @@
 # Production readiness
 
-What Alice 0.12.3 is ready for, the test that backs each claim, and what is not ready yet. Update this page in the
+What Alice 0.13.0 is ready for, the test that backs each claim, and what is not ready yet. Update this page in the
 same commit as any change that moves a row.
 
 ## Ready

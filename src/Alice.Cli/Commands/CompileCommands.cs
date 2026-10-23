@@ -285,8 +285,16 @@ public static class CompileCommands
     {
         bool check = a.Remove("--check");
         var o = Parse(a);
+        // this package's sources: nested directories with their own alice.toml (examples, workspace members) are other
+        // packages, with their own dependencies and their own RULES.al
+        static bool OwnPackage(string f)
+        {
+            for (var d = Path.GetDirectoryName(Path.GetFullPath(f)); d != null && d != Path.GetFullPath("."); d = Path.GetDirectoryName(d))
+                if (File.Exists(Path.Combine(d, Manifest.FileName))) return false;
+            return true;
+        }
         var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories)
-            .Where(f => !f.Contains("/obj/") && !f.Contains("/bin/") && !f.Contains("/.alice/") && Path.GetFileName(f) != Prove.ProofFile).ToList();
+            .Where(f => !f.Contains("/obj/") && !f.Contains("/bin/") && !f.Contains("/.alice/") && Path.GetFileName(f) != Prove.ProofFile && OwnPackage(f)).ToList();
         var files = Read(paths);
         try { return Prove.Run(files, o.Refs, check, "."); }
         catch (CompileException e)

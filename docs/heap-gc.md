@@ -102,5 +102,5 @@ Values typed `dynamic` load the C# runtime binder (tens of milliseconds). Alice 
 - A function that returns only an owned local (`def source(n)` building and returning `xs`) hands the buffer to
   its caller: `src = source(n)` is owned, released by the caller and reused by the next `source` call (0.12.2).
   Passed straight to a borrowing parameter (`dist(source(n), source(m))`), it lives in a temporary for the
-  statement and is released after it (0.12.3).
+  statement and is released after it (0.13.0).
 - Reuse buffers across iterations when they are large: `stackalloc` covers only small, fixed-size arrays.

@@ -1,7 +1,7 @@
 namespace Alice.Runtime;
 
 /// <summary>
-/// Pooled lists of owned locals (ADR 0016, 0.12.3): a local `List(T)` of numbers that the compiler proves is the only
+/// Pooled lists of owned locals (ADR 0016, 0.13.0): a local `List(T)` of numbers that the compiler proves is the only
 /// reference to its list is rented here and released at its last use, so a method that builds a scratch list per call
 /// keeps the grown backing array instead of reallocating it (and its log2(n) growth steps) every call. Per-thread
 /// slots, no locks; a list never released is ordinary garbage.

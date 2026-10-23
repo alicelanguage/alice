@@ -53,7 +53,7 @@ pass `owned-bounds` (ADR 0014) rewrites such a loop's bound to `buf.Length` when
 only by its own: the two values are equal everywhere, and the JIT then drops the
 checks as it does for `new`. Measured in `benchmarks/gc` (`scratch`).
 
-Amendment (0.12.3): owned lists. A local `List(T)` of unmanaged elements is owned under the same rules: fed only by
+Amendment (0.13.0): owned lists. A local `List(T)` of unmanaged elements is owned under the same rules: fed only by
 `List(T).new` / `List(T).new(capacity)` or other owned locals, and used only through operations that leave the list
 where it is (`<<`/`Add`, indexing, `Count`/`size`, `Clear`, `Contains`/`IndexOf`, `Sort`, `ToArray`, and Prelude
 iterators such as `each`, `sum`, `map`, `select` that never hand the list itself out). A view, an enumerator or a
@@ -63,14 +63,14 @@ method that builds a scratch list per call keeps the grown backing array. A retu
 array does. Measured (`benchmarks/gc/lists.al`, 200k calls building a 100-element list): 59 ms, 2926 MiB allocated
 and 489 gen0 collections, down to 31 ms, 0 MiB and 0 collections.
 
-Amendment (0.12.3): owned hashes. A local `Dictionary(K, V)` with number keys and values follows the same rules (fed by
+Amendment (0.13.0): owned hashes. A local `Dictionary(K, V)` with number keys and values follows the same rules (fed by
 `Dictionary(K, V).new[(capacity)]`; used through indexing, `fetch`, `has_key?`, `ContainsKey`, `TryGetValue`, `Remove`,
 `Clear`, `Count`/`size`, `each`; `Keys`/`Values` are live views and count as escapes) and is rented from
 `Alice.Runtime.OwnDict(K, V)`. `Clear` keeps the buckets. `benchmarks/gc/hashes.al` (100k calls, a 64-key table each):
 140-146 ms, 2238 MiB and 374 gen0 collections, down to 97-104 ms, 0 MiB and 0 (with `h.each { |k, v| }` inlined
 to `foreach`).
 
-Amendment (0.12.3, later): lists and hashes of any element type. Only the collection must not escape; its elements
+Amendment (0.13.0, later): lists and hashes of any element type. Only the collection must not escape; its elements
 may (they are ordinary values the program keeps or drops). `Clear` on release nulls reference slots, so a pooled
 collection never keeps an object alive. Arrays keep the unmanaged rule: their pool hands out buffers without clearing
 references.

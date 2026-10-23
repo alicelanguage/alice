@@ -1,6 +1,6 @@
 # ADR 0018: FFI through blittable imports behind inlined wrappers
 
-Status: Accepted (0.12.3)
+Status: Accepted (0.13.0)
 
 `lib` `fun` imports used .NET's runtime marshaller for every type other than numbers. A `String` return was then
 freed with the marshaller's allocator, but C's `getenv` and `strerror` return memory the library still owns, so the

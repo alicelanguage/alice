@@ -242,7 +242,7 @@ public class OwnershipTests
         Assert.True(AllocatedPerCall(f, 1000) < 64);
     }
 
-    // ---- owned lists (ADR 0016 amendment, 0.12.3): a local List(T) of numbers that never escapes is pooled ----
+    // ---- owned lists (ADR 0016 amendment, 0.13.0): a local List(T) of numbers that never escapes is pooled ----
 
     [Fact]
     public void A_local_list_that_never_escapes_stops_allocating()
