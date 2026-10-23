@@ -49,6 +49,9 @@ shared = { workspace = true }   # workspace member by name
 
 [build]
 native = true                # PublishAot
+
+[runtime]
+gc = "auto"                  # default: server GC if the program runs in parallel, else workstation; or workstation | server | low-memory
 ```
 
 | Rule | Detail |

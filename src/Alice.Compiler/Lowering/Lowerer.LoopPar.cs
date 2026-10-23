@@ -242,9 +242,20 @@ public sealed partial class Lowerer
         CallExpr { Res: "ext" } x => PureExt.Contains(Binder.Mangle(x.Name)) && x.Block == null && x.Recv != null && PureRead(x.Recv, plan) && x.Args.All(a => PureRead(a.Value!, plan)),
         CallExpr { Res: "alice", Sym: MethodSym m, Block: null } c => MarkHeavy(plan) && MethodPure(m) && (c.Recv == null || PureRead(c.Recv, plan)) && c.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         NameExpr { Res: "call", Sym: MethodSym m } => MarkHeavy(plan) && MethodPure(m),
-        NewExpr { AsCall: null, Block: null } n => n.Type.Sym is { Kind: "class" or "struct" or "record" or "record struct" } ts && CtorPure(ts, n.Args.Count) && n.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
+        NewExpr { AsCall: null, Block: null } n => n.Type.Sym is { Kind: "class" or "struct" or "record" or "record struct" or "variant" } ts && CtorPure(ts, n.Args.Count) && n.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         NewExpr { AsCall: { } ac } => PureRead(ac, plan),
+        StmtExpr { Stmt: var st } => PureMethodBody([st], plan, false),   // if / case used as a value
         _ => false,
+    };
+
+    /// <summary>A `when` pattern: type tests and bindings read nothing; compared values (`when lookup(k)`,
+    /// `when Shape::Rect(w, limit())`) must be pure reads.</summary>
+    bool PurePattern(Syntax.Expr p, LoopPlan plan) => p.Res switch
+    {
+        "destructure" => p.Sym is Destructure d && d.Parts.All(x => x.Eq == null || PureRead(x.Eq, plan)),
+        "type" => true,
+        "hashpat" or "arraypat" => true,   // literal keys/elements and bindings
+        _ => PureRead(p, plan),
     };
 
     static bool MarkHeavy(LoopPlan plan)
@@ -281,7 +292,7 @@ public sealed partial class Lowerer
 
     bool CtorPure(TypeSym t, int argc)
     {
-        if (t.Kind is "record" or "record struct") return true;   // positional records only store their arguments
+        if (t.Kind is "record" or "record struct" or "variant") return true;   // positional records (and sum-type variants) only store their arguments
         var ctor = t.Methods.TryGetValue("initialize", out var list) ? list.FirstOrDefault(c => c.Accepts(argc)) : null;
         return ctor == null || MethodPure(ctor);
     }
@@ -302,6 +313,10 @@ public sealed partial class Lowerer
                 WhileStmt w => PureRead(w.Cond, plan) && PureMethodBody(w.Body, plan, ctor),
                 ForStmt f => PureRead(f.Iter is RangeExpr rr ? rr.A : f.Iter, plan) && (f.Iter is not RangeExpr r2 || PureRead(r2.B, plan)) && PureMethodBody(f.Body, plan, ctor),
                 BreakStmt or NextStmt { Value: null } => true,
+                // a match over a value: patterns only bind fresh locals, so it is pure when the subject, guards and arms are
+                CaseStmt cs => (cs.Subject == null || PureRead(cs.Subject, plan))
+                    && cs.Whens.All(w => w.Patterns.All(p => PurePattern(p, plan)) && (w.Guard == null || PureRead(w.Guard, plan)) && PureMethodBody(w.Body, plan, ctor))
+                    && (cs.Else == null || PureMethodBody(cs.Else, plan, ctor)),
                 _ => false,
             };
             if (!ok) return false;

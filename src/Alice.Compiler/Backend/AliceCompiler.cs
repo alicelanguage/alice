@@ -22,6 +22,13 @@ public static class AliceCompiler
     public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, bool dotnetNames = false) =>
         TranspileFull(files, extraRefs, nativeLib, null, dotnetNames);
 
+    /// <summary>
+    /// Whether the compiled program runs code in parallel (forks, parallel loops): `[runtime] gc = "auto"` then picks
+    /// server GC. Parallel code allocating long-lived data is collection-bound on workstation GC (benchmarks/inet
+    /// tree: 85 vs 24 ms); serial programs keep workstation GC.
+    /// </summary>
+    public static bool UsesParallel(IEnumerable<string> csharp) => csharp.Any(c => c.Contains("global::Alice.Runtime.Par."));
+
     /// <summary>One file with `[package] naming = "dotnet"`: public members get .NET names.</summary>
     public static string TranspileDotnetNames(string src, string file = "main.al") =>
         TranspileFull([new SourceFile(file, src)], null, "alice_native", null, true).CSharp[0];

@@ -24,6 +24,11 @@
                       ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 
+  <!-- [runtime] gc = "auto" (the alice.toml default): no fixed GC mode; AliceGcAuto sets it from what the compiler emitted -->
+  <PropertyGroup Condition="'$(AliceGc)' == 'auto'">
+    <ServerGarbageCollection></ServerGarbageCollection>
+  </PropertyGroup>
+
   <!-- alice pack: Alice.Runtime is not on nuget.org, so a library package carries it next to its own assembly
        (tools already ship their whole publish output) -->
   <PropertyGroup>
@@ -47,6 +52,17 @@
     <ItemGroup>
       <Compile Include="$(AliceGenDir)*.g.cs" />
       <FileWrites Include="$(AliceGenDir)*.g.cs" />
+    </ItemGroup>
+  </Target>
+
+  <!-- server GC exactly when the program runs in parallel: parallel code building long-lived data is collection-bound
+       on workstation GC, and server GC (DATAS) starts as fast with ~1 MB more memory -->
+  <Target Name="AliceGcAuto" AfterTargets="AliceGenerate" Condition="'$(AliceGc)' == 'auto' and Exists('$(AliceGenDir)alice.gc')">
+    <ReadLinesFromFile File="$(AliceGenDir)alice.gc">
+      <Output TaskParameter="Lines" PropertyName="AliceGcPicked" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <RuntimeHostConfigurationOption Include="System.GC.Server" Value="$([MSBuild]::ValueOrDefault('$(AliceGcPicked)', '').Equals('server'))" />
     </ItemGroup>
   </Target>
 

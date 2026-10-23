@@ -35,17 +35,20 @@ public static class Manifest
             props.Append("    <PublishAot>true</PublishAot>\n    <OptimizationPreference>Speed</OptimizationPreference>\n");
 
         var runtime = toml.GetValueOrDefault("runtime") ?? new Dictionary<string, object>();
-        string gc = runtime.TryGetValue("gc", out var g) ? (string)g : "workstation";
+        string gc = runtime.TryGetValue("gc", out var g) ? (string)g : "auto";
         var (server, concurrent, conserve) = gc switch
         {
+            // decided by the compiler: server GC when the program forks or runs parallel loops (alice gen reports it)
+            "auto" => ((bool?)null, true, (string?)null),
             // short-lived CLIs and benchmarks: one heap, fast startup, low RSS
-            "workstation" => (false, true, (string?)null),
+            "workstation" => (false, true, null),
             // long-running, allocation-heavy parallel work: one heap per core (DATAS keeps it adaptive)
             "server" => (true, true, null),
             "low-memory" => (false, false, "7"),
-            _ => throw new InvalidOperationException($"[runtime] gc = \"{gc}\" is not a GC mode (expected one of: workstation, server, low-memory)"),
+            _ => throw new InvalidOperationException($"[runtime] gc = \"{gc}\" is not a GC mode (expected one of: auto, workstation, server, low-memory)"),
         };
-        props.Append($"    <ServerGarbageCollection>{(server ? "true" : "false")}</ServerGarbageCollection>\n");
+        if (server is null) props.Append("    <AliceGc>auto</AliceGc>\n");
+        else props.Append($"    <ServerGarbageCollection>{(server == true ? "true" : "false")}</ServerGarbageCollection>\n");
         props.Append($"    <ConcurrentGarbageCollection>{(concurrent ? "true" : "false")}</ConcurrentGarbageCollection>\n");
         // invariant: ICU is not loaded (2-4 MB less memory per process, measured); strings then sort and compare
         // ordinally (Ruby order: "A" < "B" < "a") instead of linguistically. Numbers already print invariantly either way

@@ -75,7 +75,7 @@ public class ManifestTests
     }
 
     [Theory]
-    [InlineData("", "false", "true", null)]
+    [InlineData("[runtime]\ngc = \"workstation\"\n", "false", "true", null)]
     [InlineData("[runtime]\ngc = \"server\"\n", "true", "true", null)]
     [InlineData("[runtime]\ngc = \"low-memory\"\n", "false", "false", "7")]
     public void Runtime_gc_mode_maps_to_msbuild(string runtime, string server, string concurrent, string? conserve)
@@ -112,7 +112,7 @@ public class ManifestTests
         Directory.CreateDirectory(dir);
         File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"gc\"\n[runtime]\ngc = \"fast\"\n");
         var ex = Assert.Throws<InvalidOperationException>(() => Manifest.Sync(dir));
-        Assert.Contains("workstation, server, low-memory", ex.Message);
+        Assert.Contains("auto, workstation, server, low-memory", ex.Message);
     }
 
     static string SyncToml(string toml)
@@ -180,5 +180,17 @@ public class ManifestTests
     {
         var ex = Assert.Throws<InvalidOperationException>(() => SyncToml("[package]\nname = \"x\"\n" + field + "\n"));
         Assert.Contains(message, ex.Message);
+    }
+
+    [Fact]
+    public void Default_gc_is_decided_by_the_compiler()
+    {
+        // auto: the build picks server GC when the compiled code forks or runs parallel loops (alice gen reports it)
+        var dir = Path.Combine(Path.GetTempPath(), "alice-gcauto-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"gc\"\n");
+        var xml = File.ReadAllText(Manifest.Sync(dir));
+        Assert.Contains("<AliceGc>auto</AliceGc>", xml);
+        Assert.DoesNotContain("<ServerGarbageCollection>", xml);
     }
 }

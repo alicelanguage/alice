@@ -169,7 +169,7 @@ public static class CompileCommands
         foreach (var r in o.Refs) File.Copy(r, Path.Combine(dir, Path.GetFileName(r)), true);
         if (exe)
             File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"),
-                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":false,\"System.GC.Concurrent\":true}}}");
+                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":" + (AliceCompiler.UsesParallel(cs) ? "true" : "false") + ",\"System.GC.Concurrent\":true}}}");
         UiH.Status(T("finished"), dll);
         return 0;
     }
@@ -326,6 +326,8 @@ public static class CompileCommands
             string lib = o.Rest.FirstOrDefault(r => r.StartsWith("--native-lib="))?["--native-lib=".Length..] ?? "alice_native";
             string naming = o.Rest.FirstOrDefault(r => r.StartsWith("--naming="))?["--naming=".Length..] ?? "alice";
             var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib, naming == "dotnet");
+            // read by Alice.targets when alice.toml leaves [runtime] gc at "auto"
+            File.WriteAllText(Path.Combine(o.Output, "alice.gc"), AliceCompiler.UsesParallel(cs) ? "server" : "workstation");
             if (csrc != null) File.WriteAllText(Path.Combine(o.Output, lib + ".c"), csrc);
             // type-check here (in-process Roslyn) so errors are reported in Alice terms, never as raw csc output
             // Emit already references the running framework. Keep other framework packs (e.g. ASP.NET).

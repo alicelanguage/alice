@@ -102,4 +102,20 @@ public class PackageTests
         File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"g\"\nkind = \"game\"\n");
         Assert.Equal(2, Alice.Cli.App.Run(["-q", "pack", dir]));
     }
+
+    [Theory]
+    [InlineData("def fib(n : Int32) : Int64\n  return n.to_i64 if n < 2\n  fib(n - 1) + fib(n - 2)\nend\nputs fib(20)\n", true)]
+    [InlineData("puts 1 + 2\n", false)]
+    public void Auto_gc_is_server_exactly_when_the_program_runs_in_parallel(string main, bool server)
+    {
+        // benchmarks/inet tree(20): building a tree from forked calls took 85 ms on workstation GC (57 gen0
+        // collections copying the live tree) and 24 ms on server GC with DATAS, which starts as fast as workstation
+        var dir = Temp("gcauto");
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"gcauto\"\n");
+        Directory.CreateDirectory(Path.Combine(dir, "src"));
+        File.WriteAllText(Path.Combine(dir, "src", "main.al"), main);
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
+        var cfg = File.ReadAllText(Directory.GetFiles(Path.Combine(dir, "bin"), "gcauto.runtimeconfig.json", SearchOption.AllDirectories).Single());
+        Assert.Contains($"\"System.GC.Server\": {(server ? "true" : "false")}", cfg);
+    }
 }

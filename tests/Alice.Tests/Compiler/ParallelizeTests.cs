@@ -156,6 +156,32 @@ public class LoopParallelizeTests
         Assert.Equal(75025L, f.Invoke(null, [25]));
     }
 
+    const string TreeSrc = "enum Tree\n  Leaf(x : Int64)\n  Node(l : Tree, r : Tree)\nend\n"
+        + "def build(d : Int32) : Tree\n  return Tree::Leaf(1_i64) if d == 0\n  l, r = build(d - 1), build(d - 1)\n  Tree::Node(l, r)\nend\n"
+        + "def total(t : Tree) : Int64\n  case t\n  when Tree::Leaf(x) then x\n  when Tree::Node(l, r) then total(l) + total(r)\n  end\nend\n";
+
+    [Fact]
+    public void Building_and_folding_sum_types_fork()
+    {
+        // benchmarks/inet tree: constructing a variant is allocation, not an effect, and a `case` over the
+        // parameter with pure arms is pure; before, neither recursion forked
+        var cs = AliceCompiler.Transpile(TreeSrc);
+        Assert.Contains("__fork_build_", cs);
+        Assert.Contains("__fork_total_", cs);
+        var t = AliceCompiler.Load(AliceCompiler.Emit([cs], "treefork", exe: false)).GetType("Program")!;
+        var tree = t.GetMethod("build")!.Invoke(null, [16]);
+        Assert.Equal(65536L, t.GetMethod("total")!.Invoke(null, [tree]));
+    }
+
+    [Fact]
+    public void Case_with_an_impure_pattern_does_not_fork()
+        => Assert.DoesNotContain("__fork_total_", AliceCompiler.Transpile(
+            "def side : Int64\n  puts 1\n  1_i64\nend\n" + TreeSrc.Replace("when Tree::Leaf(x) then x", "when Tree::Leaf(side()) then 0_i64\n  when Tree::Leaf(x) then x")));
+
+    [Fact]
+    public void Case_with_an_impure_arm_does_not_fork()
+        => Assert.DoesNotContain("__fork_total_", AliceCompiler.Transpile(TreeSrc.Replace("then x\n", "then puts(x)\n    x\n")));
+
     [Theory]
     [InlineData("def pow2(n : Int32) : Int64\n  return 1_i64 if n == 0\n  a, b = pow2(n - 1), pow2(n - 1)\n  a + b\nend\n", "pow2", 20, 1048576L)]
     [InlineData(Fib, "fib", 25, 75025L)]
