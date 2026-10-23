@@ -212,4 +212,17 @@ public class LspTests
         bad["newName"] = "not valid";
         Assert.Null(s.Request("textDocument/rename", bad));
     }
+
+    [Fact]
+    public void Rename_is_type_aware_for_methods_of_unrelated_classes()
+    {
+        // Square#area and Invoice#area share a name, not a symbol: renaming one leaves the other alone
+        const string src = "class Square\n  def initialize(@s : Int32)\n  end\n  def area : Int32\n    @s * @s\n  end\nend\nclass Invoice\n  def area : String\n    \"billing\"\n  end\nend\nputs Square.new(2).area\nputs Invoice.new.area\n";
+        var s = Started();
+        s.Open(src);
+        var rn = Pos(3, 7);   // `area` in Square
+        rn["newName"] = "surface";
+        var edits = s.Request("textDocument/rename", rn)!["changes"]![Uri]!.AsArray();
+        Assert.Equal(new[] { 3, 12 }, edits.Select(e => e!["range"]!["start"]!["line"]!.GetValue<int>()).OrderBy(x => x).ToArray());
+    }
 }

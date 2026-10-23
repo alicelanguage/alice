@@ -136,8 +136,11 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
                         if (doc == null || !IsAlice(doc)) break;
                         int line = p["position"]?["line"]?.GetValue<int>() ?? 0;
                         int ch = p["position"]?["character"]?.GetValue<int>() ?? 0;
-                        var sources = Project.Sources(doc, documents.Values).Where(d => d.Uri != doc.Uri).ToList();
-                        foreach (var src in sources) if (src.Ast == null) Analyzer.Parse(src);
+                        var project = Project.For(doc.Path);
+                        var all = Project.Sources(doc, documents.Values);
+                        // bind the project together: every name then carries the symbol it resolved to (type-aware rename)
+                        Analyzer.Quick(doc, project, all);
+                        var sources = all.Where(d => d.Uri != doc.Uri).ToList();
                         result = method == "textDocument/references"
                             ? References.Find(doc, sources, line, ch)
                             : References.Rename(doc, sources, line, ch, p["newName"]?.GetValue<string>() ?? "");

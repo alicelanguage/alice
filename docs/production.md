@@ -38,7 +38,7 @@ same commit as any change that moves a row.
 | ASP.NET Core in CI on machines without the shared framework | `examples/web/aspnet` builds and is checked only where ASP.NET Core is installed | `examples/verify.sh` on a full SDK |
 | UI frameworks (WPF, MAUI, Avalonia) | XAML code-behind in Alice is untested; view models are tested (`INotifyPropertyChanged`, `ObservableCollection`) | XAML and code-behind in C#, view models and logic in Alice |
 | Interaction-net runtime | explored and parked: slower than fork/join on CPU (`benchmarks/inet/README.md`) | fork/join is the parallel model |
-| References and rename are name-based | top-level names are renamed project-wide by name, locals within their `def`; two unrelated methods with the same name in different types rename together | review the edit preview |
+| References and rename on unbound code | where the binder could not resolve a name (code with errors), matching falls back to the name | fix the errors first, or review the edit preview |
 | Ownership of fields and arrays of objects | collections stored in fields, and arrays of references, stay with the GC (local arrays of numbers and local lists and hashes of any type are pooled) | preallocate and reuse explicitly |
 | `class_eval` / `eval` with strings | not offered: it needs the compiler at run time, defeats NativeAOT and is an injection risk in production code | refinements, `define_method`, or a plugin assembly found with `subclasses` |
 | GPU offload | `Par` kernels run on CPU cores only | SIMD (`Simd.*`) and `@[Native]` C kernels |

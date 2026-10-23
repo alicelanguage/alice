@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Alice.Compiler;
+using Alice.Compiler.Semantics;
+using Alice.Compiler.Syntax;
 
 namespace Alice.Cli.Lsp;
 
@@ -52,6 +54,66 @@ public static class References
         return null;
     }
 
+    // ---- type-aware filtering: the binder's symbols, when the analysis attached them ----
+
+    /// <summary>(line, name, symbol) of every bound name, call and declaration in the document's AST.</summary>
+    static List<(int Line, string Name, object Sym)> Index(Document doc)
+    {
+        var r = new List<(int, string, object)>();
+        if (doc.Ast == null) return r;
+        void Node(Node n)
+        {
+            switch (n)
+            {
+                case NameExpr { Sym: { } s } ne: r.Add((ne.Line - 1, ne.Name, s)); break;
+                case CallExpr { Sym: { } s } ce: r.Add((ce.Line - 1, ce.Name, s)); break;
+            }
+        }
+        void Items(IEnumerable<Item> items)
+        {
+            foreach (var it in items)
+                switch (it)
+                {
+                    case MethodDecl m:
+                        if (m.Sym != null) r.Add((m.Line - 1, m.Name, m.Sym));
+                        AstWalk.Each(m.Body.Cast<Node>(), Node);
+                        break;
+                    case TypeDecl t:
+                        if (t.Sym != null) r.Add((t.Line - 1, t.Name, t.Sym));
+                        Items(t.Members);
+                        break;
+                    case NamespaceItem ns: Items(ns.Items); break;
+                    case StmtItem st: AstWalk.Each(st.Stmt, Node); break;
+                }
+        }
+        Items(doc.Ast.Items);
+        return r;
+    }
+
+    /// <summary>Same symbol, or a method and its overrides in one class hierarchy.</summary>
+    static bool Related(object a, object b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is not MethodSym ma || b is not MethodSym mb || ma.Name != mb.Name) return false;
+        static bool Under(TypeSym? x, TypeSym y) { for (; x != null; x = x.BaseClass) if (x == y) return true; return false; }
+        return Under(ma.Owner, mb.Owner) || Under(mb.Owner, ma.Owner);
+    }
+
+    /// <summary>Drops occurrences bound to a different symbol than the one under the cursor; unbound ones stay.</summary>
+    static List<(int Line, int Col, int Len)> SameSymbol(Document d, string name, List<(int Line, int Col, int Len)> hits, object? target)
+    {
+        if (target == null) return hits;
+        var idx = Index(d).Where(e => e.Name == name).ToLookup(e => e.Line);
+        return hits.Where(h =>
+        {
+            var here = idx[h.Line].ToList();
+            return here.Count == 0 || here.Any(e => Related(e.Sym, target));
+        }).ToList();
+    }
+
+    static object? SymbolAt(Document doc, int line, string name) =>
+        Index(doc).Where(e => e.Line == line && e.Name == name).Select(e => e.Sym).FirstOrDefault();
+
     /// <summary>Documents and line range the name lives in.</summary>
     static IEnumerable<(Document Doc, (int, int)? Lines)> Scope(Document doc, IEnumerable<Document> project, string name, int line)
     {
@@ -69,8 +131,9 @@ public static class References
         var arr = new JsonArray();
         string name = doc.WordAt(line, ch).Word;
         if (name.Length == 0) return arr;
+        var target = SymbolAt(doc, line, name);
         foreach (var (d, lines) in Scope(doc, project, name, line))
-            foreach (var (l, c, len) in Occurrences(d, name, lines))
+            foreach (var (l, c, len) in SameSymbol(d, name, Occurrences(d, name, lines), target))
                 arr.Add(new JsonObject { ["uri"] = d.Uri, ["range"] = Range(l, c, len) });
         return arr;
     }
@@ -81,10 +144,11 @@ public static class References
         string name = doc.WordAt(line, ch).Word;
         if (name.Length == 0 || !Ident.IsMatch(newName)) return null;
         var changes = new JsonObject();
+        var target = SymbolAt(doc, line, name);
         foreach (var (d, lines) in Scope(doc, project, name, line))
         {
             var edits = new JsonArray();
-            foreach (var (l, c, len) in Occurrences(d, name, lines))
+            foreach (var (l, c, len) in SameSymbol(d, name, Occurrences(d, name, lines), target))
                 edits.Add(new JsonObject { ["range"] = Range(l, c, len), ["newText"] = newName });
             if (edits.Count > 0) changes[d.Uri] = edits;
         }

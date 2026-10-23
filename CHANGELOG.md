@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Type-aware references and rename. The language server binds the project and keeps only occurrences resolving to the symbol under the cursor, or to an override of it in the same class hierarchy: `Square#area` renames without touching `Invoice#area`. Unresolved code falls back to name matching.
 - Owned lists and hashes of any element type (`List(String)`, `Dictionary(String, Int32)`), not only of numbers. Only the collection must stay local, and `Clear` on release drops element references, so the pool keeps nothing alive.
 - Class discovery: `Controller.subclasses`, `Controller.descendants` and `ObjectSpace.each_object(typeof(Controller)) { |c| }` over the program's own classes, which is what a framework needs to find controllers or plugins. Live-object enumeration is not offered: it has no safe .NET equivalent.
 - Refinements: `refine String do ... end` inside a module is a monkey patch visible only in files that write `using <module>`. In C# it is an extension class in namespace `__Refine_<module>`, imported only by those files, so the scope holds there too.
