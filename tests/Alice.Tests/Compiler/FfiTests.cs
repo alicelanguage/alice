@@ -101,4 +101,33 @@ public class FfiTests
         Assert.Equal("AL0214", d.Code);
         Assert.Contains("unsafe", d.Message);
     }
+
+    const string Qsort = "  fun qsort(base : Array(Int32), n : UInt64, size : UInt64, cmp : Callback(Pointer(Int32), Pointer(Int32), Int32)) : Void\n";
+
+    [Fact]
+    public void Lambdas_become_c_function_pointers()
+    {
+        var src = Lib(Qsort) + "xs = [5, 3, 9, 1]\nLibC.qsort(xs, 4_u64, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { a[0] <=> b[0] })\nputs xs.join(\",\")\n";
+        Assert.Equal("1,3,5,9", Run(src));
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("[global::System.Runtime.InteropServices.UnmanagedCallersOnly(CallConvs = new[] { typeof(global::System.Runtime.CompilerServices.CallConvCdecl) })]", cs);
+        Assert.Contains("delegate* unmanaged[Cdecl]<int*, int*, int>", cs);
+        Assert.DoesNotContain("GetFunctionPointerForDelegate", cs);   // no delegate, no GC handle
+    }
+
+    [Fact]
+    public void Capturing_callback_is_a_compile_error()
+    {
+        var src = Lib(Qsort) + "k = 1\nxs = [2, 1]\nLibC.qsort(xs, 2_u64, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { k })\n";
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src));
+        Assert.Contains("AL0215", ex.Message + string.Join("", ex.Diagnostics.Select(d => d.Code)));
+    }
+
+    [Fact]
+    public void Exception_in_a_callback_surfaces_after_the_c_call()
+    {
+        // an exception must not unwind through C frames (that kills the process): it is rethrown once qsort returns
+        var src = Lib(Qsort) + "xs = [2, 1, 3]\nbegin\n  LibC.qsort(xs, 3_u64, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { raise \"boom\" })\nrescue e\n  puts e.message\nend\nputs \"alive\"\n";
+        Assert.Equal("boom\nalive", Run(src));
+    }
 }

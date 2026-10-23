@@ -445,7 +445,18 @@ end
 | `String`, `String?` (parameter) | NUL-terminated UTF-8 on every OS: stack buffer up to 85 chars, no allocation; `nil` is `NULL`; an embedded NUL raises `ArgumentException` |
 | `String?` (return) | borrowed `char*` (never freed), UTF-8; `NULL` is `nil`. `String` raises on `NULL` |
 | `Array(number)` | pointer to the pinned elements, no copy |
+| `Callback(A, B, R)` | C function pointer. Pass a lambda literal: it is lifted to a static `[UnmanagedCallersOnly]` method (no delegate, no allocation); captures are error AL0215; an exception inside is rethrown after the C call returns |
+| `Pointer(T)` | raw pointer, only inside `unsafe` (AL0214) |
 | `@[Fast]` on `fun` | no GC transition (short, non-blocking C functions only) |
+
+```crystal
+@[Link("libc.so.6")]
+lib LibC
+  fun qsort(base : Array(Int32), n : UInt64, size : UInt64, cmp : Callback(Pointer(Int32), Pointer(Int32), Int32)) : Void
+end
+xs = [5, 3, 9, 1]
+LibC.qsort(xs, 4_u64, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { a[0] <=> b[0] })   # callback bodies may use pointers
+```
 
 `Pointer(T)` values (`fun malloc(n : UInt64) : Pointer(UInt8)`, `p[i]`) are allowed only inside `unsafe ... end` or an
 `unsafe def`; elsewhere they are error AL0214. Strings, arrays and numbers need no `unsafe`.

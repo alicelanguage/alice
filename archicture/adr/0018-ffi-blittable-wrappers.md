@@ -18,7 +18,9 @@ compiler emits an inlined wrapper that converts:
 | `String?` return | `byte*` | borrowed: decoded as UTF-8, never freed; `NULL` is `nil` |
 | `String` return | `byte*` | as above; `NULL` raises `NullReferenceException` |
 | `Array(number)` | `T*` | pinned with `fixed`, no copy |
-| other (blittable structs, delegates) | runtime marshaller | unchanged |
+| `Callback(A..., R)` | `delegate* unmanaged[Cdecl]<A..., R>` | public type `Alice.Runtime.NativeFn` (safe at the call site); a lambda literal is lifted to a static `[UnmanagedCallersOnly]` method, captures are AL0215, exceptions are caught there and rethrown by the wrapper after C returns |
+| `Pointer(T)` | `T*` | none; allowed only in `unsafe` (AL0214) |
+| other (blittable structs) | runtime marshaller | unchanged |
 
 Costs (12-char string, `strlen`, Release): 15.5 ns per call against 15.6 ns for `[MarshalAs(LPUTF8Str)]`, zero
 bytes allocated; the call itself is 2.5 ns. Rejecting NUL closes truncation bugs where C sees a shorter string

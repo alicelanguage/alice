@@ -50,6 +50,8 @@ public sealed partial class Binder
         {
             case "Array" when args.Count == 1: return AType.Array(args[0]);
             case "Pointer" when args.Count == 1: return new AType("prim", args[0].Cs + "*", args[0].Clr?.MakePointerType());
+            // C function pointer (`lib` `fun` parameters): arguments then return type; a capture-free lambda is lifted to it
+            case "Callback" when args.Count >= 1: return new AType("prim", $"delegate* unmanaged[Cdecl]<{string.Join(", ", args.Select(a => a.IsVoid ? "void" : a.Cs))}>");
             case "Tuple": return Tuple(args);
             case "Proc" when args.Count >= 1: return Func(args.Take(args.Count - 1).ToList(), args[^1]);
             case "Hash" when args.Count == 2:
@@ -126,7 +128,7 @@ public sealed partial class Binder
     {
         if (args.Count == 0 && PrimNames.TryGetValue(name, out var prim) && !prim.IsVoid && prim.Kind != "dynamic") return prim;
         if (args.Count == 0 && typeParams.Contains(name)) return new AType("param", name);
-        if (name is "Array" or "Pointer" or "Tuple" or "Proc" or "SoA" or "Hash" && args.Count > 0) return ResolveType(new TypeRef { Name = name, Args = args });
+        if (name is "Array" or "Pointer" or "Callback" or "Tuple" or "Proc" or "SoA" or "Hash" && args.Count > 0) return ResolveType(new TypeRef { Name = name, Args = args });
         if (Types.ContainsKey(name)) return ResolveType(new TypeRef { Name = name, Args = args });
         if (Clr.Find(name, args.Count, usings) != null) return ResolveType(new TypeRef { Name = name, Args = args });
         return null;

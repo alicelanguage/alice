@@ -271,14 +271,16 @@ public sealed class Emitter
     /// </summary>
     static FfiArg? FfiParam(string cs, string name)
     {
+        string id = name.TrimStart('@');   // `@base`: derived names must not carry the keyword escape
         if (cs == "bool") return new(cs, "byte", $"{name} ? (byte)1 : (byte)0", null);
-        if (BlittableCs(cs)) return new(cs, cs, name, null);
+        if (cs.StartsWith("delegate* unmanaged")) return new("global::Alice.Runtime.NativeFn", cs, $"({cs}){name}.Address", null);
+        if (BlittableCs(cs) || cs.EndsWith('*')) return new(cs, cs, name, null);
         if (cs is "string" or "string?")
-            return new(cs, "byte*", $"__u_{name}.Pointer", $"using var __u_{name} = new global::Alice.Runtime.Utf8Arg({name}, stackalloc byte[global::Alice.Runtime.Utf8Arg.StackBytes]);");
+            return new(cs, "byte*", $"__u_{id}.Pointer", $"using var __u_{id} = new global::Alice.Runtime.Utf8Arg({name}, stackalloc byte[global::Alice.Runtime.Utf8Arg.StackBytes]);");
         if (cs.EndsWith("[]") && cs[..^2] is var el && BlittableCs(el) && el != "bool" || cs.EndsWith("[]?") && BlittableCs(cs[..^3]) && cs[..^3] != "bool")
         {
             string e = cs.TrimEnd('?')[..^2];
-            return new(cs, e + "*", $"__p_{name}", $"fixed ({e}* __p_{name} = {name})");
+            return new(cs, e + "*", $"__p_{id}", $"fixed ({e}* __p_{id} = {name})");
         }
         return null;
     }
@@ -290,7 +292,7 @@ public sealed class Emitter
         "bool" => ("byte", "{0} != 0"),
         "string?" => ("byte*", "global::Alice.Runtime.Utf8Arg.Decode({0})"),
         "string" => ("byte*", $"global::Alice.Runtime.Utf8Arg.DecodeNonNull({{0}}, \"{fun}\")"),
-        _ when BlittableCs(cs) => (cs, "{0}"),
+        _ when BlittableCs(cs) || cs.EndsWith('*') => (cs, "{0}"),
         _ => null,
     };
 
@@ -313,8 +315,9 @@ public sealed class Emitter
             var ret = FfiReturn(retCs, f.Name);
             if (parts.All(x => x != null) && ret != null)
             {
-                string sig = string.Join(", ", m.Params.Select(p => p.Type.Cs + " " + p.CsName));
-                if (parts.All(x => x!.Raw == x.Cs && x.Setup == null) && ret.Value.Raw == retCs)
+                string sig = string.Join(", ", m.Params.Select((p, i) => parts[i]!.Cs + " " + p.CsName));
+                bool callbacks = m.Params.Any(p => p.Type.Cs.StartsWith("delegate* unmanaged"));
+                if (parts.All(x => x!.Raw == x.Cs && x.Setup == null) && ret.Value.Raw == retCs && !callbacks)
                 {
                     sb.Append(import).Append($"public static extern {retCs} {m.CsName}({sig});\n");   // already blittable
                     continue;
@@ -324,15 +327,19 @@ public sealed class Emitter
                 string call = string.Format(ret.Value.Wrap, $"{raw}({string.Join(", ", parts.Select(x => x!.Arg))})");
                 var setup = parts.Where(x => x!.Setup != null).Select(x => x!.Setup).ToList();
                 sb.Append(Inline);
+                if (callbacks) setup.Add(null);   // forces a block body: the rethrow follows the call
                 if (setup.Count == 0) sb.Append($"public static {retCs} {m.CsName}({sig}) => {call};\n");
                 else
                 {
                     // `using var` lines first, then one nested `fixed` block per pinned array around the call
                     var body = new StringBuilder();
-                    foreach (var x in setup.Where(x => !x!.StartsWith("fixed"))) body.Append("    ").Append(x).Append('\n');
-                    var pins = setup.Where(x => x!.StartsWith("fixed")).ToList();
+                    foreach (var x in setup.Where(x => x != null && !x.StartsWith("fixed"))) body.Append("    ").Append(x).Append('\n');
+                    var pins = setup.Where(x => x != null && x.StartsWith("fixed")).ToList();
                     foreach (var x in pins) body.Append("    ").Append(x).Append("\n    {\n");
-                    body.Append($"    {(retCs == "void" ? "" : "return ")}{call};\n");
+                    if (callbacks)   // an exception raised in an Alice callback resurfaces here, after the C frames are gone
+                        body.Append(retCs == "void" ? $"    {call};\n    global::Alice.Runtime.NativeCallback.Rethrow();\n"
+                            : $"    var __r = {call};\n    global::Alice.Runtime.NativeCallback.Rethrow();\n    return __r;\n");
+                    else body.Append($"    {(retCs == "void" ? "" : "return ")}{call};\n");
                     foreach (var _ in pins) body.Append("    }\n");
                     sb.Append($"public static {retCs} {m.CsName}({sig})\n{{\n{body}}}\n");
                 }
