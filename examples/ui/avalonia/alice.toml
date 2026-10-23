@@ -1,0 +1,9 @@
+[package]
+name = "avalonia_counter"
+version = "0.1.0"
+kind = "exe"
+
+[dependencies]
+Avalonia = "11.*"
+"Avalonia.Headless" = "11.*"
+"Avalonia.Themes.Simple" = "11.*"

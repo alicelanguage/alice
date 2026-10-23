@@ -26,6 +26,10 @@ public sealed partial class Lowerer
                     // a declared/inferred non-void result means the tail IS the value, even when its static type is unknown
                     bool value = tail != Tail.None && (Binder.ValueOf(es.Expr) != null || (tail == Tail.Return && es.Expr.Type.IsUnknown));
                     var e = Expr(es.Expr);
+                    // `builder.Setup` alone on a line: a member read cannot be a statement, so a paren-less name of an
+                    // unknown receiver is a call there (C#'s rule, and what the Ruby spelling means)
+                    if (!value && e is MMember { } mm && es.Expr is CallExpr { Res: "unknown-member", Args.Count: 0 })
+                        e = new MCall { Target = mm.Target, Name = mm.Name, Safe = mm.Safe };
                     if (value)
                     {
                         if (tail == Tail.Return)

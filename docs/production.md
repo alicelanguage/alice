@@ -12,6 +12,7 @@ same commit as any change that moves a row.
 | C# interop | Alice types are plain CLR types; C# calls Alice and Alice calls C# both ways | `Integration/SampleTests.Interop_samples_build_and_run` |
 | F# interop | F# calls a `naming = "dotnet"` library and matches its sum types | `Integration/FSharpInteropTests` |
 | Ruby features | blocks, mixins, `case`/`in`, refinements, class discovery (`subclasses`, `ObjectSpace.each_object`), `send`/`respond_to?`, assignment in conditions, truthiness | `Compiler/Ruby*Tests`, `CSharpCompatTests` |
+| UI | Avalonia windows with XAML and Alice code-behind; MVVM view models | `Integration/SampleTests.Avalonia_window_*`, `examples/ui/avalonia` |
 | .NET API shapes | generics and constraints, LINQ, async/await, `IAsyncEnumerable`, `await using`, iterators, events, delegates, default interface methods, records with attributes, spans, `out`/`ref`, `lock`, named tuples, method references | `Compiler/CSharpCompatTests`, `examples/dotnet/library_api.al` |
 | Libraries | NuGet dependencies, lock file, workspaces; EF Core with LINQ-to-SQL; System.Text.Json (reflection and source-generated) | `Tooling/ManifestTests`, `Integration/SampleTests.Entity_framework_*`, `CSharpCompatTests` |
 | Source generators | framework and NuGet generators run on Alice types; `partial def` for `[GeneratedRegex]` / `[LibraryImport]` | `CSharpCompatTests` "System.Text.Json source generator", "partial methods for generators"; `FfiTests.LibraryImport_through_a_partial_def` |
@@ -36,7 +37,7 @@ same commit as any change that moves a row.
 |---|---|---|
 | Incremental compilation within a package | a changed file regenerates the whole package's C# (unchanged packages are skipped: a no-op build takes 1.0 s) | split large code bases into workspace members |
 | ASP.NET Core in CI on machines without the shared framework | `examples/web/aspnet` builds and is checked only where ASP.NET Core is installed | `examples/verify.sh` on a full SDK |
-| UI frameworks (WPF, MAUI, Avalonia) | XAML code-behind in Alice is untested; view models are tested (`INotifyPropertyChanged`, `ObservableCollection`) | XAML and code-behind in C#, view models and logic in Alice |
+| WPF and MAUI code-behind | Avalonia XAML + Alice code-behind is tested; WPF (Windows-only) and MAUI are not exercised here | Avalonia for cross-platform UI, or XAML code-behind in C# with Alice view models |
 | Interaction-net runtime | explored and parked: slower than fork/join on CPU (`benchmarks/inet/README.md`) | fork/join is the parallel model |
 | References and rename on unbound code | where the binder could not resolve a name (code with errors), matching falls back to the name | fix the errors first, or review the edit preview |
 | Ownership of fields and arrays of objects | collections stored in fields, and arrays of references, stay with the GC (local arrays of numbers and local lists and hashes of any type are pooled) | preallocate and reuse explicitly |

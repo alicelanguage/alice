@@ -366,6 +366,13 @@ public sealed partial class Binder
             c.Res = "clr";
             return inherited.Type;
         }
+        // an extension method on a .NET base class, called with implicit self (`FindControl<TextBlock>("x")` in an
+        // Avalonia window): C# needs the receiver spelled, so make it `self.FindControl...`
+        if (BaseClr(curType) is not null && curMethod is { IsStatic: false } && char.IsUpper(c.Name[0]) && Clr.IsExtensionName(c.Name))
+        {
+            c.Recv = new SelfExpr { Line = c.Line };
+            return BindCall(c);
+        }
         if (c.Block != null)
         {
             BindLambda(c.Block, new List<AType>());

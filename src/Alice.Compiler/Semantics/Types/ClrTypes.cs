@@ -28,7 +28,7 @@ public sealed class ClrTypes
         {
             try
             {
-                var path = Path.GetFullPath(r);
+                var path = ImplementationOf(Path.GetFullPath(r));
                 var assembly = loadAssembly(path);
                 if (assembly.Location.Length == 0) Sources.GetValue(assembly, _ => new Source(path));
                 if (!asms.Contains(assembly)) asms.Add(assembly);
@@ -63,6 +63,31 @@ public sealed class ClrTypes
             }
         }
         return extensionNames.Contains(name);
+    }
+
+    /// <summary>
+    /// The implementation assembly behind a reference assembly, for reflection. Reference assemblies (NuGet `ref/`,
+    /// a project's `obj/.../ref/`) strip private members, private interface implementations included, so the runtime
+    /// cannot load their types (Avalonia's StyledElement: TypeLoadException). Roslyn still compiles against `r`.
+    /// </summary>
+    public static string ImplementationOf(string r)
+    {
+        var dir = Path.GetDirectoryName(r);
+        var file = Path.GetFileName(r);
+        if (dir == null) return r;
+        var tfm = Path.GetFileName(dir);
+        var parent = Path.GetDirectoryName(dir);
+        if (parent != null && Path.GetFileName(parent) == "ref")   // NuGet: <pkg>/ref/<tfm>/X.dll -> <pkg>/lib/<tfm>/X.dll
+        {
+            var lib = Path.Combine(Path.GetDirectoryName(parent)!, "lib", tfm, file);
+            if (File.Exists(lib)) return lib;
+        }
+        if (tfm is "ref" or "refint" && parent != null)   // a project's obj/<cfg>/<tfm>/ref/X.dll -> obj/<cfg>/<tfm>/X.dll
+        {
+            var impl = Path.Combine(parent, file);
+            if (File.Exists(impl)) return impl;
+        }
+        return r;
     }
 
     void LoadAll()

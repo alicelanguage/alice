@@ -353,6 +353,18 @@ public sealed partial class Parser
                 return At(new IvarExpr { Name = c.Text }, c);
             case "const":
                 Next();
+                // `FindControl<TextBlock>("x")`: a .NET-style method name (capitalized) with type arguments, no receiver
+                if (IsOp("<") && !Cur.Space && Peek(1).Kind == "const" && GenericCallAhead())
+                {
+                    var gc = At(new CallExpr { Name = c.Text }, c);
+                    Next();
+                    gc.TypeArgs.Add(Type());
+                    while (IsOp(",")) { Next(); gc.TypeArgs.Add(Type()); }
+                    Expect(">");
+                    gc.Parens = IsOp("(") && !Cur.Space;
+                    CallTail(gc.Args, out gc.Block);
+                    return gc;
+                }
                 if (IsCtorCall()) return CtorCall(new TypeRef { Name = c.Text, Line = c.Line }, c);
                 return At(new ConstExpr { Ref = TypeFromName(c.Text, c) }, c);
             case "id":

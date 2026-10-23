@@ -53,4 +53,14 @@ public class SampleTests
         Assert.Contains("names starting with b: 1", output);
         Assert.Contains("WHERE \"b\".\"rating\" > 3", output);
     }
+
+    [Fact]
+    public void Avalonia_window_with_alice_code_behind()
+    {
+        // MainWindow.axaml + an Alice class deriving Window: the XAML loads, FindControl finds the named TextBlock
+        // (an extension method called with implicit self), and the click handler updates it. Headless: no display
+        var dir = Path.Combine(Root(), "examples", "ui", "avalonia");
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
+        Assert.Contains("clicked 2", Dotnet("run", "--no-build", "--project", Path.Combine(dir, ".alice", "avalonia_counter.alproj")));
+    }
 }

@@ -105,6 +105,8 @@ public static class Manifest
             {props}  </PropertyGroup>
               <ItemGroup>
                 <Compile Include="$(AliceSourceRoot)src/**/*.cs" />
+                <!-- UI markup: default item globs are off in .alproj, so XAML for Avalonia is listed here (inert elsewhere) -->
+                <AvaloniaXaml Include="$(AliceSourceRoot)src/**/*.axaml" />
             {items}  </ItemGroup>
               <Import Project="{sdk}/Alice.targets" Condition="'$(AliceCliProject)' == ''" />
               <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
