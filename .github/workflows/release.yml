@@ -172,7 +172,8 @@ jobs:
   nuget:
     name: Publish NuGet packages
     # ADR 0020: Alice.Sdk (MSBuild SDK), Alice.Cli (dotnet tool), Alice.Runtime; stable releases only
-    if: ${{ !cancelled() && needs.release.result == 'success' && needs.version.outputs.channel == 'stable' }}
+    # disabled for now: releases ship through the install scripts (scripts/install.sh, install.ps1)
+    if: ${{ false }}
     needs: [version, release]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
