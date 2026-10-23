@@ -24,6 +24,17 @@ public static class SmtProver
     /// <summary>Z3's native library: the system one (`pacman -S z3`, `apt install libz3-4`) or ALICE_Z3=/path/libz3.so.</summary>
     public static string? Unavailable()
     {
+        // Probe runs in its own method: a missing Microsoft.Z3 assembly fails when the method using Context is compiled
+        try { Probe(); return null; }
+        catch (Exception e) when (e is DllNotFoundException or TypeInitializationException or EntryPointNotFoundException or BadImageFormatException or FileNotFoundException or FileLoadException)
+        {
+            return "Z3 is not installed: install it (pacman -S z3, apt install libz3-4, brew install z3) or set ALICE_Z3=/path/to/libz3";
+        }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static void Probe()
+    {
         if (!resolverSet)
         {
             resolverSet = true;
@@ -36,16 +47,8 @@ public static class SmtProver
                 return IntPtr.Zero;
             });
         }
-        // Probe runs in its own method: a missing Microsoft.Z3 assembly fails when the method using Context is compiled
-        try { Probe(); return null; }
-        catch (Exception e) when (e is DllNotFoundException or TypeInitializationException or EntryPointNotFoundException or BadImageFormatException or FileNotFoundException or FileLoadException)
-        {
-            return "Z3 is not installed: install it (pacman -S z3, apt install libz3-4, brew install z3) or set ALICE_Z3=/path/to/libz3";
-        }
+        using var ctx = new Context();
     }
-
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    static void Probe() { using var ctx = new Context(); }
 
     public static List<Outcome> Prove(List<SourceFile> files, IEnumerable<string> refs)
     {
