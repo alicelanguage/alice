@@ -141,6 +141,7 @@ public static class CompileCommands
         int rc = BuildProject(proj, o.Release);
         if (rc != 0) return rc;
         UiH.Status(T("running"), Path.GetFileNameWithoutExtension(proj));
+        if (ProjectFiles.Kind(proj) == "wasm") return RunWasm(proj, o.Rest);
         var args = new List<string> { "run", "--no-build", "--project", proj, "-c", o.Release ? "Release" : "Debug", "--" };
         args.AddRange(o.Rest);
         return DotNet.Run(args, inherit: true).ExitCode;
@@ -229,6 +230,7 @@ public static class CompileCommands
         string name = Path.GetFileNameWithoutExtension(proj);
         int built = 0;
         UiH.Status(T("compiling"), $"{name} ({(release ? "release" : "debug")})");
+        if (ProjectFiles.Kind(proj) == "wasm") return BuildWasm(proj, release, sw);
         var r = UiH.Spin($"{T("building")} {name}…", () => DotNet.Run(["build", proj, "-c", release ? "Release" : "Debug", "-v", "q", "-nologo", "-clp:NoSummary"],
             line => { if (line.Contains(" -> ")) Interlocked.Increment(ref built); }));
         if (r.ExitCode != 0 || r.Diagnostics.Any(d => d.Severity == "error"))
@@ -239,6 +241,45 @@ public static class CompileCommands
         UiH.Status(T("finished"), T("finished.detail", Math.Max(1, built), UiH.Elapsed(sw)));
         RecordLock(proj);
         return 0;
+    }
+
+    /// <summary>A wasm package publishes: dist/wwwroot is the whole site (index.html, main.js, _framework/), ready
+    /// for any static host.</summary>
+    static int BuildWasm(string proj, bool release, Stopwatch sw)
+    {
+        string name = Path.GetFileNameWithoutExtension(proj);
+        string dist = Path.Combine(ProjectFiles.PackageDir(proj), "dist");
+        var r = UiH.Spin($"{T("building")} {name}…", () => DotNet.Run(["publish", proj, "-c", release ? "Release" : "Debug", "-o", dist,
+            "-v", "q", "-nologo", "-clp:NoSummary"]));
+        if (r.ExitCode != 0 || r.Diagnostics.Any(d => d.Severity == "error"))
+        {
+            Report(r);
+            return r.ExitCode == 0 ? 1 : r.ExitCode;
+        }
+        UiH.Status(T("finished"), $"{Path.GetRelativePath(".", Path.Combine(dist, "wwwroot"))} ({UiH.Elapsed(sw)})");
+        RecordLock(proj);
+        return 0;
+    }
+
+    /// <summary>`alice run` on a wasm package: the bundle under Node, which runs the same .NET WebAssembly runtime.</summary>
+    static int RunWasm(string proj, List<string> rest)
+    {
+        string pkg = ProjectFiles.PackageDir(proj);
+        string runner = Path.Combine(pkg, ".alice", "run.mjs");
+        File.WriteAllText(runner, WasmTemplates.NodeRunner(Path.Combine(pkg, "dist", "wwwroot", "_framework", "dotnet.js")));
+        var psi = new ProcessStartInfo("node") { UseShellExecute = false };
+        psi.ArgumentList.Add(runner);
+        foreach (var a in rest) psi.ArgumentList.Add(a);
+        try
+        {
+            using var p = Process.Start(psi)!;
+            p.WaitForExit();
+            return p.ExitCode;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            throw new UsageException("alice run on a wasm package needs Node.js", "install node, or serve dist/wwwroot with any static web server and open it in a browser");
+        }
     }
 
     /// <summary>After a successful restore, pin the exact NuGet versions in alice.lock.</summary>

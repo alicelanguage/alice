@@ -21,9 +21,9 @@ public static class ProjectCommands
             UiH.Status(T("created"), $"workspace `{wname}`");
             return 0;
         }
-        string kind = a.Contains("--lib") ? "lib" : a.Contains("--tool") ? "tool" : a.Contains("--game") ? "game" : "exe";
+        string kind = a.Contains("--lib") ? "lib" : a.Contains("--tool") ? "tool" : a.Contains("--game") ? "game" : a.Contains("--wasm") ? "wasm" : "exe";
         string? name = a.FirstOrDefault(x => !x.StartsWith("--"));
-        if (name == null) throw UsageException.Usage("alice new <name> [--lib | --tool | --game | --workspace]");
+        if (name == null) throw UsageException.Usage("alice new <name> [--lib | --tool | --game | --wasm | --workspace]");
         string dir = Path.GetFullPath(name);
         if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any()) throw new UsageException(T("exists", name), null, 1);
         string proj = Path.GetFileName(dir);
@@ -38,9 +38,15 @@ public static class ProjectCommands
         };
         File.WriteAllText(Path.Combine(dir, Manifest.FileName), $"[package]\nname = \"{proj}\"\nversion = \"0.1.0\"\nkind = \"{kind}\"\n{publish}\n[dependencies]\n");
         Manifest.Sync(dir);
-        File.WriteAllText(Path.Combine(dir, "src", kind == "lib" ? "lib.al" : "main.al"), ProjectFiles.MainSource(proj, kind));
+        File.WriteAllText(Path.Combine(dir, "src", kind == "lib" ? "lib.al" : "main.al"), kind == "wasm" ? WasmTemplates.Source(proj) : ProjectFiles.MainSource(proj, kind));
+        if (kind == "wasm")
+        {
+            Directory.CreateDirectory(Path.Combine(dir, "wwwroot"));
+            File.WriteAllText(Path.Combine(dir, "wwwroot", "index.html"), WasmTemplates.Index(proj));
+            File.WriteAllText(Path.Combine(dir, "wwwroot", "main.js"), WasmTemplates.MainJs);
+        }
         File.WriteAllText(Path.Combine(dir, "test", "basics_test.al"), ProjectFiles.TestSource(proj));
-        File.WriteAllText(Path.Combine(dir, ".gitignore"), "bin/\nobj/\n.alice/\n");
+        File.WriteAllText(Path.Combine(dir, ".gitignore"), kind == "wasm" ? "bin/\nobj/\n.alice/\ndist/\n" : "bin/\nobj/\n.alice/\n");
         GuideCommand.WriteAgentFiles(dir);
         RegisterMember(dir);
         UiH.Status(T("created"), $"{kind} `{proj}`");

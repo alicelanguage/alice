@@ -38,7 +38,7 @@ transpiling and the Roslyn compile: a hello world goes from 1.2 s to 0.13 s on t
 [package]
 name = "demo-app"
 version = "0.2.0"
-kind = "exe"                 # exe | lib | game (game adds MonoGame.Framework.DesktopGL 3.8.*)
+kind = "exe"                 # exe | lib | tool | game (adds MonoGame.Framework.DesktopGL 3.8.*) | wasm (browser)
 target = "net10.0"           # optional TargetFramework
 
 [dependencies]
@@ -182,6 +182,40 @@ naming = "dotnet"            # public API in .NET style for C#/F# callers: total
 ```
 
 A library package bundles `Alice.Runtime.dll` next to its assembly, so C# projects consume it with a plain `PackageReference`. Games are not packable. Tests: `Tooling/ManifestTests`, `Integration/PackageTests`.
+
+## WebAssembly (`kind = "wasm"`)
+
+An Alice program that runs in the browser, with no hand-written project file:
+
+```bash
+alice new web --wasm     # src/main.al, wwwroot/index.html, wwwroot/main.js
+cd web
+alice run                # builds, then runs the bundle under Node (same .NET WebAssembly runtime)
+alice build --release    # dist/wwwroot: the whole static site, for any static host
+```
+
+Mark methods `@[JSExport]` to call them from JavaScript, and declare `@[JSImport("globalThis.console.log")]`
+`partial def`s to call JavaScript from Alice (`using System.Runtime.InteropServices.JavaScript`):
+
+```ruby
+module App
+  @[JSExport]
+  def self.greet(who : String) : String
+    "Hello, #{who}!"
+  end
+end
+```
+
+```js
+const { getAssemblyExports, getConfig, runMain } = await dotnet.create();
+const app = await getAssemblyExports(getConfig().mainAssemblyName);
+app.App.greet('browser');
+await runMain();          // the program's top-level code
+```
+
+`wwwroot/` is copied to the site root. Release sites are trimmed (a hello world is about 2 MB over the wire with
+Brotli); `[runtime] globalization = "invariant"` drops the ICU data (about 2.5 MB uncompressed). No workload is
+needed: the browser runtime comes from NuGet. Threads, files and native libraries are not available in the browser.
 
 ## REPL
 

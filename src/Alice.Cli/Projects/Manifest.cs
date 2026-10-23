@@ -47,9 +47,15 @@ public static class Manifest
             "low-memory" => (false, false, "7"),
             _ => throw new InvalidOperationException($"[runtime] gc = \"{gc}\" is not a GC mode (expected one of: auto, workstation, server, low-memory)"),
         };
-        if (server is null) props.Append("    <AliceGc>auto</AliceGc>\n");
-        else props.Append($"    <ServerGarbageCollection>{(server == true ? "true" : "false")}</ServerGarbageCollection>\n");
-        props.Append($"    <ConcurrentGarbageCollection>{(concurrent ? "true" : "false")}</ConcurrentGarbageCollection>\n");
+        if (kind == "wasm")
+            // the browser runtime has one GC mode; JS interop attributes are browser-only by design (CA1416)
+            props.Append("    <NoWarn>$(NoWarn);CA1416</NoWarn>\n");
+        else
+        {
+            if (server is null) props.Append("    <AliceGc>auto</AliceGc>\n");
+            else props.Append($"    <ServerGarbageCollection>{(server == true ? "true" : "false")}</ServerGarbageCollection>\n");
+            props.Append($"    <ConcurrentGarbageCollection>{(concurrent ? "true" : "false")}</ConcurrentGarbageCollection>\n");
+        }
         // invariant: ICU is not loaded (2-4 MB less memory per process, measured); strings then sort and compare
         // ordinally (Ruby order: "A" < "B" < "a") instead of linguistically. Numbers already print invariantly either way
         string glob = runtime.TryGetValue("globalization", out var gl) ? (string)gl : "culture";
@@ -87,7 +93,11 @@ public static class Manifest
         if (kind == "game" && !items.ToString().Contains("MonoGame"))
             items.Append("    <PackageReference Include=\"MonoGame.Framework.DesktopGL\" Version=\"3.8.*\" />\n");
 
+        if (kind == "wasm")   // the package's wwwroot (index.html, main.js) is the site's root
+            items.Append("    <Content Include=\"$(AliceSourceRoot)wwwroot/**\" Link=\"wwwroot/%(RecursiveDir)%(Filename)%(Extension)\" CopyToPublishDirectory=\"PreserveNewest\" />\n");
+
         string sdk = ProjectFiles.SdkDir.Replace('\\', '/');
+        string netSdk = kind == "wasm" ? "Microsoft.NET.Sdk.WebAssembly" : "Microsoft.NET.Sdk";
         // Hidden MSBuild project: sources and bin/obj stay in the package directory, nothing to hand-edit.
         string xml = $"""
             <!-- generated from alice.toml by alice: edit alice.toml instead -->
@@ -99,7 +109,7 @@ public static class Manifest
                 <AssemblyName>{name}</AssemblyName>
                 <RootNamespace>{name}</RootNamespace>
               </PropertyGroup>
-              <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+              <Import Project="Sdk.props" Sdk="{netSdk}" />
               <Import Project="{sdk}/Alice.props" Condition="'$(AliceCliProject)' == ''" />
               <PropertyGroup>
             {props}  </PropertyGroup>
@@ -109,7 +119,7 @@ public static class Manifest
                 <AvaloniaXaml Include="$(AliceSourceRoot)src/**/*.axaml" />
             {items}  </ItemGroup>
               <Import Project="{sdk}/Alice.targets" Condition="'$(AliceCliProject)' == ''" />
-              <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+              <Import Project="Sdk.targets" Sdk="{netSdk}" />
             </Project>
 
             """;

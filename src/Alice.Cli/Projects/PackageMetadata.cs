@@ -10,7 +10,7 @@ namespace Alice.Cli.Projects;
 /// </summary>
 public static class PackageMetadata
 {
-    public static readonly string[] Kinds = ["exe", "lib", "tool", "game"];
+    public static readonly string[] Kinds = ["exe", "lib", "tool", "game", "wasm"];
 
     static readonly Regex Id = new(@"^[A-Za-z0-9_]+([.-][A-Za-z0-9_]+)*$");
     static readonly Regex SemVer = new(@"^\d+(\.\d+){1,3}(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$");

@@ -5,6 +5,18 @@ public static class ProjectFiles
 {
     public static string SdkDir => Path.Combine(AppContext.BaseDirectory, "sdk");
 
+    /// <summary>The package directory of a generated project (.alice/name.alproj sits inside it).</summary>
+    public static string PackageDir(string proj) => Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(proj))!)!;
+
+    /// <summary>`kind` from the package's alice.toml ("exe" when there is none).</summary>
+    public static string Kind(string proj)
+    {
+        string toml = Path.Combine(PackageDir(proj), Manifest.FileName);
+        if (!File.Exists(toml)) return "exe";
+        var pkg = TomlLite.Parse(File.ReadAllText(toml)).GetValueOrDefault("package");
+        return pkg != null && pkg.TryGetValue("kind", out var k) ? (string)k : "exe";
+    }
+
     public static string? Find(string dir)
     {
         if (File.Exists(dir) && dir.EndsWith(".alproj")) return Path.GetFullPath(dir);

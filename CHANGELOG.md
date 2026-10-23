@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.2 - unreleased
+
+- WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
+  `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
+  Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
+
 ## 0.13.1 - 2026-10-23
 
 - Errors that come from the generated C# point at the right Alice column: the name they quote (`frob`, or `to_widget`
