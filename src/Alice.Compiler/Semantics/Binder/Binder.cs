@@ -13,6 +13,9 @@ public sealed partial class Binder
     public readonly Dictionary<string, TypeSym> Types = new();
     public readonly TypeSym Program = new() { Name = "Program", Kind = "program" };
     public readonly List<TypeSym> Extensions = new();
+
+    /// <summary>`using` names of the file being bound (refinements are active only where their module is used).</summary>
+    HashSet<string> fileUsings = [];
     readonly HashSet<string> usings = new();
 
     // per-body state

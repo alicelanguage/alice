@@ -50,7 +50,11 @@ public sealed class Emitter
         lowerer.File = f.Path;
         var sb = new StringBuilder(Header);
         foreach (var it in f.Items)
-            if (it is UsingItem u) sb.Append(UsingLine(u.Name));
+            if (it is UsingItem u)
+            {
+                sb.Append(UsingLine(u.Name));
+                if (binder.Extensions.Any(x => x.RefineScope == u.Name)) sb.Append($"using __Refine_{u.Name};\n");   // its refinements
+            }
         if (!moduleAttrsEmitted)
         {
             // Alice guarantees definite assignment, so zero-initialising locals/stackalloc is wasted work.
@@ -59,6 +63,9 @@ public sealed class Emitter
         }
         var prog = new StringBuilder();
         Items(sb, prog, f.Items);
+        // refinements: extension classes in `__Refine_<module>`, so only files with `using <module>` see them in C# too
+        foreach (var r in Refinements(f.Items))
+            sb.Append($"namespace __Refine_{r.RefineScope}\n{{\n{Type(r)}}}\n");
         var bodies = ClassBodies(f.Items).ToList();
         if (bodies.Count > 0)
             prog.Append($"[global::System.Runtime.CompilerServices.ModuleInitializer]\ninternal static void __alice_class_bodies{classBodyN++}()\n{{\n")
@@ -84,6 +91,16 @@ public sealed class Emitter
     }
 
     /// <summary>`using X` on a type (an Alice module, a static class) imports its members, like Ruby's include.</summary>
+    static IEnumerable<TypeDecl> Refinements(IEnumerable<Item> items)
+    {
+        foreach (var it in items)
+        {
+            if (it is TypeDecl { RefineScope: not null } r) yield return r;
+            if (it is TypeDecl td) foreach (var x in Refinements(td.Members)) yield return x;
+            if (it is NamespaceItem n) foreach (var x in Refinements(n.Items)) yield return x;
+        }
+    }
+
     string UsingLine(string name) =>
         binder.IsTypeName(name) ? $"using static {binder.ResolveType(new TypeRef { Name = name }).Cs};\n" : $"using {name};\n";
 
@@ -185,6 +202,7 @@ public sealed class Emitter
                 case ConstDecl c: body.Append(Const(c, s)); break;
                 case MethodDecl { IsTemplate: true }: break;
                 case MethodDecl m: body.Append(Method(m, s)); break;
+                case TypeDecl { RefineScope: not null }: break;   // emitted at file level, in its own namespace (EmitFile)
                 case TypeDecl nested: body.Append(Type(nested)); break;
                 case EnumDecl e: body.Append(Enum(e)); break;
             }

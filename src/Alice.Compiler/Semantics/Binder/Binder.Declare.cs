@@ -45,7 +45,8 @@ public sealed partial class Binder
                     break;
                 case TypeDecl d when IsMonkeyPatch(d):
                     {
-                        var x = new TypeSym { Name = d.Name.Replace(".", "_") + "_AliceExt", Kind = "extension", Namespace = ns, Decl = d };
+                        // a refinement lives in its own namespace, so that C# (like the binder) sees it only under `using`
+                        var x = new TypeSym { Name = d.Name.Replace(".", "_") + "_AliceExt", Kind = "extension", Namespace = d.RefineScope != null ? "__Refine_" + d.RefineScope : ns, Decl = d, RefineScope = d.RefineScope };
                         d.Sym = x;
                         Extensions.Add(x);
                         break;

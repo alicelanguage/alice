@@ -8,6 +8,7 @@ public sealed class TypeSym
     public string Name = "";
     public string Kind = "";          // class struct module interface enum lib program
     public string Namespace = "";
+    public string? RefineScope;   // a refinement: the module whose `using` activates it
     public TypeDecl? Decl;
     public List<string> TypeParams = new();
     public List<AType> Bases = new();

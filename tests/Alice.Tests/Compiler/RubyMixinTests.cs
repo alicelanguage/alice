@@ -79,4 +79,26 @@ public class RubyMixinTests
         _ = name;
         Assert.Equal(expected, Run(src));
     }
+
+    // refinements: monkey patches active only where `using` asks for them
+
+    const string Shouting = "module Shouting\n  refine String do\n    def shout : String\n      upcase + \"!\"\n    end\n  end\nend\n";
+
+    [Fact]
+    public void Refinement_applies_where_the_file_uses_it()
+    {
+        var src = Shouting + "using Shouting\nputs \"hi\".shout\n";
+        Assert.Equal("HI!", AliceCompiler.Run(src).Trim());
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("namespace __Refine_Shouting", cs);   // C# scopes it the same way: only files with the using see it
+        Assert.Contains("using __Refine_Shouting;", cs);
+    }
+
+    [Fact]
+    public void Refinement_is_invisible_without_using()
+    {
+        var files = new List<SourceFile> { new("lib.al", Shouting), new("main.al", "puts \"hi\".shout\n") };
+        var ex = Assert.ThrowsAny<Exception>(() => AliceCompiler.Load(AliceCompiler.Emit(AliceCompiler.TranspileAll(files), "refine", exe: true)));
+        Assert.Contains("shout", ex.Message + (ex is CompileException ce ? string.Join("", ce.Diagnostics.Select(d => d.Message)) : ""));
+    }
 }

@@ -16,6 +16,7 @@ public sealed partial class Binder
         foreach (var f in Files)
         {
             file = f.Path;
+            fileUsings = f.Items.OfType<UsingItem>().Select(u => u.Name).ToHashSet();
             BindItems(f.Items, Program);
             BeginBody(Program, null, f.Hoisted);
             typeParams = new List<string>();

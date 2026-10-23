@@ -28,6 +28,7 @@ public sealed class NamespaceItem : Item
 
 public sealed class TypeDecl : Item
 {
+    public string? RefineScope;   // `refine String do ... end` inside module M: active only under `using M`
     public string Kind = "";     // class struct module interface
     public string Name = "";
     public bool IsAbstract;

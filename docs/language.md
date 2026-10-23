@@ -461,6 +461,8 @@ Tests: `ModuleTests`.
 
 - Reopening an Alice class merges members.
 - Reopening a .NET type (`class String`, `struct Int32`) emits extension methods: `"hey".shout`, `21.double`.
+- Refinements scope a reopening to the files that ask for it: `module Shouting; refine String do def shout ... end end end`,
+  then `using Shouting` in a file. Without the `using`, `"hi".shout` is an undefined method there.
 
 ### lock
 

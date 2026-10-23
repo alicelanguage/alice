@@ -159,6 +159,7 @@ public sealed partial class Binder
         foreach (var x in Extensions)
         {
             if (x.ExtTarget == null || x.ExtTarget.Cs != recv.Cs.TrimEnd('?')) continue;
+            if (x.RefineScope != null && !fileUsings.Contains(x.RefineScope) && curType != x) continue;   // a refinement: only under `using`
             var xm = x.FindMethod(c.Name, argc);
             if (xm == null) continue;
             CheckMutatingCall(c, recv, xm);

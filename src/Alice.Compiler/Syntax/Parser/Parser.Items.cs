@@ -296,6 +296,17 @@ public sealed partial class Parser
             if (IsKw("end") || t[p].Kind == "eof") return;
             Token tok = Cur;
             if (IsOp("@[")) Attr();
+            else if (IsKw("refine") && d.Kind == "module")
+            {
+                // Ruby refinement: a monkey patch of a type that only files with `using <module>` see
+                Next();
+                var r = At(new TypeDecl { Kind = "class", Name = Type().Name, RefineScope = d.Name }, tok);
+                if (IsKw("do")) Next();
+                Body(r);
+                ExpectKw("end");
+                d.Members.Add(r);
+                EndStmt();
+            }
             else if (IsKw("include") || IsKw("extend"))
             {
                 bool ext = Next().Text == "extend";
