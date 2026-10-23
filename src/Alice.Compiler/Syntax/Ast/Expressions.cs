@@ -116,6 +116,9 @@ public sealed class LambdaExpr : Expr
     public bool Captures;
     public bool DiscardValue;   // passed where an Action is expected: the tail value is dropped
     public bool BranchLocalsPromoted;
+    /// <summary>`->name` / `->recv.name` without parameter types: the binder fills parameters and body from the method.</summary>
+    public (Expr? Recv, string Name)? MethodRef;
+    public List<AType>? MethodRefTypes;   // filled on first bind; later binds reuse them
 }
 
 public sealed class TypeTestExpr : Expr

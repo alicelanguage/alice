@@ -399,6 +399,26 @@ public sealed partial class Binder
         return g == typeof(IEnumerable<>) || g == typeof(IEnumerator<>) || g == typeof(IAsyncEnumerable<>) || g == typeof(IAsyncEnumerator<>) ? c.GetGenericArguments()[0] : null;
     }
 
+    /// <summary>`->name`: parameters and body from the referenced Alice method; returns their types.</summary>
+    List<AType> ExpandMethodRef(LambdaExpr lam, Expr? recv, string name, List<AType> expected)
+    {
+        TypeSym? owner = recv switch
+        {
+            null => curType.FindMethod(name, -1) != null || curType.Methods.ContainsKey(name) ? curType : Program,
+            ConstExpr ce => TypeByName(ce.Ref.Name, ce.Ref.Args)?.Sym,
+            _ => BindExpr(recv).Sym,
+        };
+        var cands = owner != null && owner.Methods.TryGetValue(name, out var list) ? list : [];
+        if (expected.Count > 0 && cands.Count > 1) cands = cands.Where(m => m.Params.Count(p => !p.Block) == expected.Count).ToList();
+        if (cands.Count == 0) throw Err(lam, $"->{name}: no method `{name}`{(owner != null ? " in " + owner.Name : "")}");
+        if (cands.Count > 1) throw Err(lam, $"->{name} is overloaded; give the parameter types: ->{name}(T1, T2)");
+        var m = cands[0];
+        var ps = m.Params.Where(p => !p.Block).ToList();
+        lam.Params = ps.Select((p, i) => new Param { Name = "__m" + i, Line = lam.Line }).ToList();
+        lam.Body = [new ExprStmt { Line = lam.Line, Expr = new CallExpr { Recv = recv, Name = name, Line = lam.Line, Args = lam.Params.Select(p => new Arg { Value = new NameExpr { Name = p.Name, Line = lam.Line } }).ToList() } }];
+        return ps.Select(p => p.Type).ToList();
+    }
+
     static AType ResolveNonNull(AType t) =>
         new(t.Kind, t.Cs.EndsWith("?") ? t.Cs[..^1] : t.Cs, t.Clr) { Sym = t.Sym, Args = t.Args, Elem = t.Elem };
 
@@ -428,6 +448,7 @@ public sealed partial class Binder
 
     void BindLambdaCore(LambdaExpr lam, List<AType> expected, bool conc)
     {
+        if (lam.MethodRef is { } mr) expected = lam.MethodRefTypes ??= ExpandMethodRef(lam, mr.Recv, mr.Name, expected);
         if (!lam.BranchLocalsPromoted) { PromoteBranchLocals(lam.Body, lam.Params.Select(p => p.Name).ToHashSet()); lam.BranchLocalsPromoted = true; }
         lam.Captures = false;
         lam.ParamSyms = new List<LocalSym>();

@@ -278,6 +278,10 @@ sq = ->(x : Int32) { x * x }
 puts sq.call(7)
 puts sq.(3)
 cube = lambda { |x : Int32| x * x * x }
+f = ->sq                             # method reference: parameter types from `def sq`
+g = ->sq(Int32)                      # explicit types (needed when sq is overloaded)
+h = ->shape.area                     # bound to a receiver; ->Geometry.dist for a module function
+[1, 2, 3].map(->sq)                  # works anywhere a lambda, Func or delegate is expected
 inc = proc { |x : Int32| x + 1 }
 puts ["a", "b"].map(&:upcase).join  # &:sym -> { |x| x.upcase }
 ```

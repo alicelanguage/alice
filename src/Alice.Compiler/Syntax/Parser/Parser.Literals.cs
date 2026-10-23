@@ -67,7 +67,8 @@ public sealed partial class Parser
 
     LambdaExpr LambdaLiteral()
     {
-        Next();
+        Token arrow = Next();
+        if (t[p].Kind is "id" or "const" && !IsKw("do")) return MethodRef(arrow);
         var ps = new List<Param>();
         if (IsOp("("))
         {
@@ -82,6 +83,36 @@ public sealed partial class Parser
             Next();
         }
         return LambdaBody(ps);
+    }
+
+    /// <summary>
+    /// Crystal's method reference: `->sq`, `->sq(Int32)`, `->shape.area`, `->Geometry.dist(Point, Point)`. With
+    /// types it is the lambda `->(a : Int32) { sq(a) }`; without, the binder takes them from the method.
+    /// </summary>
+    LambdaExpr MethodRef(Token arrow)
+    {
+        Expr? recv = null;
+        Token first = Next();
+        string name = first.Text;
+        if (IsOp(".") && !Cur.Space)
+        {
+            recv = first.Kind == "const" ? At(new ConstExpr { Ref = new TypeRef { Name = first.Text } }, first) : At(new NameExpr { Name = first.Text }, first);
+            while (IsOp(".")) { Next(); name = Next().Text; if (IsOp(".") && t[p + 1].Kind is "id" or "const") { recv = At(new CallExpr { Recv = recv, Name = name }, first); } }
+        }
+        if (IsOp("(") && !Cur.Space)
+        {
+            Next();
+            var ps = new List<Param>();
+            while (!IsOp(")"))
+            {
+                ps.Add(At(new Param { Name = "__m" + ps.Count, Type = Type() }, first));
+                if (IsOp(",")) Next();
+            }
+            Next();
+            var call = At(new CallExpr { Recv = recv, Name = name, Args = ps.Select(x => new Arg { Value = At(new NameExpr { Name = x.Name }, first) }).ToList() }, first);
+            return At(new LambdaExpr { Params = ps, Body = [At(new ExprStmt { Expr = call }, first)] }, arrow);
+        }
+        return At(new LambdaExpr { MethodRef = (recv, name) }, arrow);
     }
 
     LambdaExpr BlockLambda()

@@ -261,7 +261,8 @@ public sealed partial class Lowerer
         for (int i = 0; i < lam.ParamSyms.Count; i++)
         {
             var p = lam.Params[i];
-            ps.Add(p.Type != null ? Lowerer.TypeCs(lam.ParamSyms[i].Type) + " " + lam.ParamSyms[i].CsName : lam.ParamSyms[i].CsName);
+            bool typed = p.Type != null || lam.MethodRef != null && lam.ParamSyms[i].Type.IsKnown;   // `->sq`: types from the method
+            ps.Add(typed ? Lowerer.TypeCs(lam.ParamSyms[i].Type) + " " + lam.ParamSyms[i].CsName : lam.ParamSyms[i].CsName);
         }
         if (ps.Any(x => x.Contains(' ')) && ps.Any(x => !x.Contains(' ')))
             for (int i = 0; i < ps.Count; i++)
