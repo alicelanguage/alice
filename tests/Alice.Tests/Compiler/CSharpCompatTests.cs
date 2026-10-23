@@ -35,6 +35,7 @@ public class CSharpCompatTests
         { "async iterator", "async def ticks : IAsyncEnumerable(Int32)\n  yield 1\n  await Task.Yield\n  yield 2\nend\nasync def total : Int32\n  t = 0\n  for await x in ticks\n    t += x\n  end\n  t\nend\nputs total.wait", "3" },
         { "class implementing IEnumerable via iterator", "class Trio < IEnumerable(Int32)\n  def GetEnumerator : IEnumerator(Int32)\n    yield 1\n    yield 2\n    yield 3\n  end\nend\nputs Trio.new.Sum\nputs Trio.new.Select(->(x : Int32) { x * 2 }).Last", "6\n6" },
         { "ruby block yield still works", "def twice(&b : Int32 ->)\n  yield 1\n  yield 2\nend\nt = 0\ntwice { |x| t += x }\nputs t", "3" },
+        { "nullable generic arguments", "d = Dictionary(String, String?).new\nd[\"a\"] = nil\nd[\"b\"] = \"x\"\nputs d[\"a\"].nil?\nl = List(String?).new\nl.Add(nil)\nputs l.Count\nputs (d[\"b\"] || \"\").size", "true\n1\n1" },
         { "ruby methods and public_send", "class Q\n  def hi : String\n    \"hi\"\n  end\n  def add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nq = Q.new\nputs q.methods.includes?(\"hi\")\nputs q.public_send(\"add\", 2, 3)\nputs q.is_a?(Object)", "true\n5\ntrue" },
     };
 
@@ -43,5 +44,12 @@ public class CSharpCompatTests
     {
         _ = name;
         Assert.Equal(expected, Run(src));
+    }
+
+    [Fact]
+    public void Nullable_generic_values_must_be_checked()
+    {
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Run("d = Dictionary(String, String?).new\nd[\"a\"] = \"x\"\nputs d[\"a\"].size\n"));
+        Assert.Contains(ex.Diagnostics, d => d.Code == "AL0310");
     }
 }

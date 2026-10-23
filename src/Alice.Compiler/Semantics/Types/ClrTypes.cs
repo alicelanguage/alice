@@ -189,6 +189,15 @@ public sealed class ClrTypes
         if (Pascal(name) is { } p && p != name) yield return p;
     }
 
+    /// <summary>A closed CLR generic seen from Alice. CLR generics carry no nullable-reference annotation, so
+    /// `Dictionary(String, String?)` keeps its declared argument spelling in C# (string?): `d[k] = nil` compiles.</summary>
+    public static AType Closed(Type closed, IReadOnlyList<AType> args)
+    {
+        var t = FromClr(closed);
+        if (!args.Any(a => a.Cs.EndsWith('?') && a.Clr is { IsValueType: false }) || t.Cs.IndexOf('<') is not (int lt and > 0)) return t;
+        return new AType(t.Kind, t.Cs[..lt] + "<" + string.Join(", ", args.Select(a => a.Cs)) + ">", closed) { Sym = t.Sym, Args = [.. args], Elem = t.Elem };
+    }
+
     public sealed record Member(string Kind, AType Type, bool IsStatic, MethodInfo? Method = null);
 
     /// <summary>Instance or static member lookup: property, field, or method with a compatible arity.</summary>

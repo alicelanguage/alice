@@ -80,7 +80,7 @@ public static class Builtins
     public static AType Generic(Type open, params AType[] args)
     {
         var closed = ClrTypes.Close(open, args.ToList());
-        return closed == null ? AType.Unknown : ClrTypes.FromClr(closed);
+        return closed == null ? AType.Unknown : ClrTypes.Closed(closed, args);
     }
 
     public static AType ElemOf(AType t)
