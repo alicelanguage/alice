@@ -324,6 +324,13 @@ public static class Features
         return lines.Count == 0 ? "" : "\n\n" + string.Join("\n", lines);
     }
 
+    /// <summary>Whether the document declares <paramref name="name"/> as a top-level item (type, method, constant).</summary>
+    public static bool IsDeclared(Document doc, string name)
+    {
+        if (doc.Ast == null) Analyzer.Parse(doc);
+        return doc.Ast is { } ast && FindDecl(ast.Items, name) != null;
+    }
+
     public static JsonObject? Definition(Document doc, int line, int character) => Definition(doc, doc.WordAt(line, character).Word);
 
     public static JsonObject? Definition(Document doc, string word)

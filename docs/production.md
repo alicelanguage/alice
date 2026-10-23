@@ -17,7 +17,8 @@ same commit as any change that moves a row.
 | FFI | `lib`/`fun`: numbers, Bool, UTF-8 strings, borrowed string returns, pinned arrays, `out`/`ref` structs, C callbacks from lambdas, `unsafe` for pointers; no marshalling stubs, works under NativeAOT | `Compiler/FfiTests`, `FfiStressTests`, ADR 0018 |
 | Packaging | `alice pack` / `alice publish` for libraries and .NET tools; `Alice.Sdk` MSBuild SDK, `Alice.Cli` tool and `Alice.Runtime` on NuGet | `Integration/PackageTests`, `Integration/SdkPackageTests`, ADR 0020 |
 | Deployment | NativeAOT single-file binaries with no trimming warnings; `[runtime] gc` and `globalization` settings | `benchmarks/alice` (all build native), `Tooling/ManifestTests` |
-| Tooling | `alice fmt`, `alice test` (RSpec and xUnit styles, JUnit output), LSP, REPL, `alice explain`, `alice prove` | `Tooling/*` |
+| Tooling | `alice fmt`, `alice test` (RSpec and xUnit styles, JUnit output), REPL, `alice explain`, `alice prove`; incremental package builds | `Tooling/*`, `Integration/PackageTests.Builds_are_incremental_*` |
+| Editor (LSP) | diagnostics, completion, hover, signature help, go-to-definition, document symbols, formatting, code actions, find references, rename | `Tooling/Lsp*Tests` |
 
 ## Recommended settings
 
@@ -37,4 +38,5 @@ same commit as any change that moves a row.
 | UI frameworks (WPF, MAUI, Avalonia) | not exercised by tests; XAML code-behind needs `partial` classes, which Alice emits, but no sample exists | write the UI layer in C#, logic in Alice |
 | Assignment in `elsif` (`elsif x = f`) | rejected with an explanation | assign before the `if` |
 | Interaction-net runtime | explored and parked: slower than fork/join on CPU (`benchmarks/inet/README.md`) | fork/join is the parallel model |
-| Roadmap items in the README | language server completion, ownership for collections, GPU offload, `ObjectSpace` | see `README.md#roadmap` |
+| References and rename are name-based | top-level names are renamed project-wide by name, locals within their `def`; two unrelated methods with the same name in different types rename together | review the edit preview |
+| Roadmap items in the README | ownership for collections, GPU offload, `ObjectSpace` | see `README.md#roadmap` |

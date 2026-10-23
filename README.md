@@ -318,7 +318,7 @@ Is it ready for production? See [docs/production.md](docs/production.md): what i
 
 ## Roadmap
 
-- Incremental compilation and a language server (editor completion, go-to-definition).
+- Semantic (type-aware) references and rename in the language server; file-level incremental compilation.
 - Ownership for collections and records; forks of three or more calls in one expression.
 - Rules over unbounded domains (induction) in `RULES.al`.
 - GPU offload for `Par` kernels; more `@[Native]` coverage (structs, strings).

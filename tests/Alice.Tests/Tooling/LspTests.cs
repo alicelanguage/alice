@@ -177,4 +177,39 @@ public class LspTests
 
     static List<string> Labels(JsonNode? result) =>
         result!["items"]!.AsArray().Select(i => i!["label"]!.GetValue<string>()).ToList();
+
+    const string RenameSrc = "def area(w : Int32) : Int32\n  total = w * 2\n  total\nend\ndef other : Int32\n  total = 5\n  total\nend\nputs area(3)\nputs \"area #{area(1)}\"\n# area in a comment\nputs \"area\"\n";
+
+    [Fact]
+    public void References_find_every_use_but_strings_and_comments()
+    {
+        var s = Started();
+        s.Open(RenameSrc);
+        var p = Pos(0, 5);
+        p["context"] = new JsonObject { ["includeDeclaration"] = true };
+        var refs = s.Request("textDocument/references", p)!.AsArray();
+        // declaration, the call, the call inside #{...}; not the comment or the plain string
+        Assert.Equal(new[] { 0, 8, 9 }, refs.Select(r => r!["range"]!["start"]!["line"]!.GetValue<int>()).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void Rename_of_a_method_is_project_wide_and_of_a_local_stays_in_its_def()
+    {
+        var s = Started();
+        s.Open(RenameSrc);
+        var rn = Pos(0, 5);
+        rn["newName"] = "surface";
+        var edits = s.Request("textDocument/rename", rn)!["changes"]![Uri]!.AsArray();
+        Assert.Equal(3, edits.Count);
+        Assert.All(edits, e => Assert.Equal("surface", e!["newText"]!.GetValue<string>()));
+
+        var local = Pos(1, 3);
+        local["newName"] = "sum";
+        var le = s.Request("textDocument/rename", local)!["changes"]![Uri]!.AsArray();
+        Assert.Equal(new[] { 1, 2 }, le.Select(e => e!["range"]!["start"]!["line"]!.GetValue<int>()).OrderBy(x => x).ToArray());   // not `total` in `other`
+
+        var bad = Pos(0, 5);
+        bad["newName"] = "not valid";
+        Assert.Null(s.Request("textDocument/rename", bad));
+    }
 }

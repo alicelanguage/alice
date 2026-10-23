@@ -57,7 +57,7 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
                         ["positionEncoding"] = "utf-16",
                         ["textDocumentSync"] = new JsonObject { ["openClose"] = true, ["change"] = 2, ["save"] = new JsonObject { ["includeText"] = false } },
                         ["completionProvider"] = new JsonObject { ["triggerCharacters"] = new JsonArray(".", "\""), ["resolveProvider"] = false },
-                        ["hoverProvider"] = true, ["definitionProvider"] = true,
+                        ["hoverProvider"] = true, ["definitionProvider"] = true, ["referencesProvider"] = true, ["renameProvider"] = true,
                         ["documentSymbolProvider"] = true, ["documentFormattingProvider"] = true,
                         ["codeActionProvider"] = true,
                         ["signatureHelpProvider"] = new JsonObject { ["triggerCharacters"] = new JsonArray("(", ",") },
@@ -128,6 +128,19 @@ public sealed class LspServer(Stream input, Stream output) : IDisposable
                         if (documents.Remove(uri, out var closed)) ScheduleDependents(closed, replies);
                         replies.Add(Publish(uri, null, []));
                         if (documents.Count == 0) Project.Invalidate();
+                        break;
+                    }
+                    case "textDocument/references": case "textDocument/rename":
+                    {
+                        var doc = Get(p);
+                        if (doc == null || !IsAlice(doc)) break;
+                        int line = p["position"]?["line"]?.GetValue<int>() ?? 0;
+                        int ch = p["position"]?["character"]?.GetValue<int>() ?? 0;
+                        var sources = Project.Sources(doc, documents.Values).Where(d => d.Uri != doc.Uri).ToList();
+                        foreach (var src in sources) if (src.Ast == null) Analyzer.Parse(src);
+                        result = method == "textDocument/references"
+                            ? References.Find(doc, sources, line, ch)
+                            : References.Rename(doc, sources, line, ch, p["newName"]?.GetValue<string>() ?? "");
                         break;
                     }
                     case "textDocument/completion": case "textDocument/hover": case "textDocument/definition":
