@@ -81,10 +81,12 @@ public sealed partial class Binder
             {
                 BindArgs(c.Args);
                 var gm = rc.GetMethods().FirstOrDefault(m => m.Name == c.Name && m.IsGenericMethodDefinition
-                    && m.GetGenericArguments().Length == targs.Count && m.GetParameters().Count(p => !p.IsOptional) <= c.Args.Count && m.GetParameters().Length >= c.Args.Count)
-                    ?? throw Err(c, $"{rc.Name} has no generic method {c.Name}<{targs.Count}> taking {c.Args.Count} argument(s)");
+                    && m.GetGenericArguments().Length == targs.Count && m.GetParameters().Count(p => !p.IsOptional) <= c.Args.Count && m.GetParameters().Length >= c.Args.Count);
                 c.Res = "clr";
-                return ClrTypes.FromClr(gm.MakeGenericMethod(targs.ToArray()!).ReturnType);
+                if (gm != null) return ClrTypes.FromClr(gm.MakeGenericMethod(targs.ToArray()!).ReturnType);
+                // a generic extension method of a referenced library (ILGPU's LoadAutoGroupedStreamKernel<...>): C# resolves it
+                if (Clr.IsExtensionName(c.Name) || Builtins.IsClrExtension(c.Name)) return AType.Unknown;
+                throw Err(c, $"{rc.Name} has no generic method {c.Name}<{targs.Count}> taking {c.Args.Count} argument(s)");
             }
         }
         int argc = c.Args.Count;

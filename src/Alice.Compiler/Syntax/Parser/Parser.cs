@@ -57,6 +57,13 @@ public sealed partial class Parser
         return new CompileException($"{file}:{c.Line}:{c.Col}: {msg} (found '{found}')");
     }
 
+    /// <summary>Closes a type-argument list; `>>` (lexed as a shift in `A<B<C>>`) is consumed one half at a time.</summary>
+    void ExpectCloseAngle()
+    {
+        if (IsOp(">>")) { t[p] = new Token { Kind = "op", Text = ">", Line = t[p].Line, Col = t[p].Col + 1, Space = false }; return; }
+        Expect(">");
+    }
+
     void Expect(string op)
     {
         if (!IsOp(op)) throw Err($"expected '{op}'");

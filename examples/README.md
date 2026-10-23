@@ -19,6 +19,7 @@ dotnet run --project src/Alice.Cli -- emit examples/data/invoices.al
 | [concurrency/channels.al](concurrency/channels.al) | Pass work results through a channel and aggregate safely |
 | [dotnet/library_api.al](dotnet/library_api.al) | Iterators, events, delegates, default interface methods, method references, JSON attributes, `lock` |
 | [interop/libc.al](interop/libc.al) | Call C directly: UTF-8 strings, string returns, `out` structs, an Alice comparator for `qsort` (Linux) |
+| [gpu/ilgpu/](gpu/ilgpu) | A GPU kernel written in Alice, compiled by ILGPU for CUDA, OpenCL or the CPU |
 | [ui/avalonia/](ui/avalonia) | A XAML window (Avalonia) with its code-behind written in Alice, run headless |
 | [tools/wand/](tools/wand) | A `rails generate`-style CLI packaged as a .NET tool (`alice pack`, `dotnet tool install`) |
 | [web/aspnet/](web/aspnet/README.md) | ASP.NET Core startup, routes, validation, and pricing written in Alice |

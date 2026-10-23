@@ -2,6 +2,22 @@ namespace Alice.Compiler.Syntax;
 
 public sealed partial class Parser
 {
+    /// <summary>`<` opens a balanced list of type tokens closed by `>` (or the `>>` of a nested one).</summary>
+    bool AngleTypesAhead()
+    {
+        int k = p + 1, d = 1;
+        while (k < t.Count && d > 0)
+        {
+            var x = t[k];
+            if (x.Kind == "op" && x.Text == "<") d++;
+            else if (x.Kind == "op" && x.Text == ">") d--;
+            else if (x.Kind == "op" && x.Text == ">>") d -= 2;
+            else if (!(x.Kind == "const" || x.Kind == "op" && x.Text is "," or "::" or "(" or ")" or "?")) return false;
+            k++;
+        }
+        return d <= 0;
+    }
+
     TypeRef Type()
     {
         Token tok = Cur;
@@ -46,6 +62,13 @@ public sealed partial class Parser
             r.Args.Add(Type());
             while (IsOp(",")) { Next(); r.Args.Add(Type()); }
             Expect(")");
+        }
+        else if (IsOp("<") && !Cur.Space && AngleTypesAhead())   // C# spelling inside generic calls: ArrayView1D<Float32, Stride1D::Dense>
+        {
+            Next();
+            r.Args.Add(Type());
+            while (IsOp(",")) { Next(); r.Args.Add(Type()); }
+            ExpectCloseAngle();
         }
         if (IsOp("?") && !Cur.Space) { Next(); r.Nullable = true; }
         if (IsOp("*") && !Cur.Space) { Next(); r.Pointer = true; }

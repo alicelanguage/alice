@@ -63,4 +63,15 @@ public class SampleTests
         Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
         Assert.Contains("clicked 2", Dotnet("run", "--no-build", "--project", Path.Combine(dir, ".alice", "avalonia_counter.alproj")));
     }
+
+    [Fact]
+    public void Gpu_kernel_written_in_alice_runs_through_ilgpu()
+    {
+        // ILGPU compiles the Alice module function passed as `->Kernels.saxpy` (a method group, not a lambda) and runs
+        // it on the preferred device: a GPU (CUDA/OpenCL) when present, else ILGPU's CPU accelerator
+        var dir = Path.Combine(Root(), "examples", "gpu", "ilgpu");
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
+        var output = Dotnet("run", "--no-build", "--project", Path.Combine(dir, ".alice", "ilgpu_saxpy.alproj"));
+        Assert.Contains("y[0]=1.0 y[10]=21.0 y[1023]=2047.0", output);
+    }
 }

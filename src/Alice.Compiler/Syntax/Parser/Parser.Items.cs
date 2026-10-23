@@ -520,7 +520,7 @@ public sealed partial class Parser
             Next();
             m.TypeParams.Add(Next().Text);
             while (IsOp(",")) { Next(); m.TypeParams.Add(Next().Text); }
-            Expect(">");
+            ExpectCloseAngle();
         }
         var saved = locals;
         locals = new List<HashSet<string>> { new() };

@@ -1,0 +1,7 @@
+[package]
+name = "ilgpu_saxpy"
+version = "0.1.0"
+kind = "exe"
+
+[dependencies]
+ILGPU = "1.*"

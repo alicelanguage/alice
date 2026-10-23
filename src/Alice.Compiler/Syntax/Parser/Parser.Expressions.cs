@@ -167,7 +167,7 @@ public sealed partial class Parser
                     Next();
                     call.TypeArgs.Add(Type());
                     while (IsOp(",")) { Next(); call.TypeArgs.Add(Type()); }
-                    Expect(">");
+                    ExpectCloseAngle();
                 }
                 call.Parens = IsOp("(") && !Cur.Space;
                 CallTail(call.Args, out call.Block);
@@ -360,7 +360,7 @@ public sealed partial class Parser
                     Next();
                     gc.TypeArgs.Add(Type());
                     while (IsOp(",")) { Next(); gc.TypeArgs.Add(Type()); }
-                    Expect(">");
+                    ExpectCloseAngle();
                     gc.Parens = IsOp("(") && !Cur.Space;
                     CallTail(gc.Args, out gc.Block);
                     return gc;
@@ -464,7 +464,7 @@ public sealed partial class Parser
             Next();
             call.TypeArgs.Add(Type());
             while (IsOp(",")) { Next(); call.TypeArgs.Add(Type()); }
-            Expect(">");
+            ExpectCloseAngle();
         }
         call.Parens = IsOp("(") && !Cur.Space;
         CallTail(call.Args, out call.Block);
@@ -499,6 +499,7 @@ public sealed partial class Parser
             Token x = t[k];
             if (x.Kind == "op" && x.Text == "<") d++;
             else if (x.Kind == "op" && x.Text == ">") d--;
+            else if (x.Kind == "op" && x.Text == ">>") d -= 2;   // A<B<C>>: two closers in one token
             else if (!(x.Kind == "const" || (x.Kind == "op" && (x.Text == "," || x.Text == "(" || x.Text == ")" || x.Text == "::")))) return false;
             k++;
         }

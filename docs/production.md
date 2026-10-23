@@ -12,6 +12,7 @@ same commit as any change that moves a row.
 | C# interop | Alice types are plain CLR types; C# calls Alice and Alice calls C# both ways | `Integration/SampleTests.Interop_samples_build_and_run` |
 | F# interop | F# calls a `naming = "dotnet"` library and matches its sum types | `Integration/FSharpInteropTests` |
 | Ruby features | blocks, mixins, `case`/`in`, refinements, class discovery (`subclasses`, `ObjectSpace.each_object`), `send`/`respond_to?`, assignment in conditions, truthiness | `Compiler/Ruby*Tests`, `CSharpCompatTests` |
+| GPU | Alice functions as ILGPU kernels on CUDA, OpenCL or the CPU accelerator | `Integration/SampleTests.Gpu_kernel_*`, `examples/gpu/ilgpu` (ran on OpenCL) |
 | UI | Avalonia windows with XAML and Alice code-behind; MVVM view models | `Integration/SampleTests.Avalonia_window_*`, `examples/ui/avalonia` |
 | .NET API shapes | generics and constraints, LINQ, async/await, `IAsyncEnumerable`, `await using`, iterators, events, delegates, default interface methods, records with attributes, spans, `out`/`ref`, `lock`, named tuples, method references | `Compiler/CSharpCompatTests`, `examples/dotnet/library_api.al` |
 | Libraries | NuGet dependencies, lock file, workspaces; EF Core with LINQ-to-SQL; System.Text.Json (reflection and source-generated) | `Tooling/ManifestTests`, `Integration/SampleTests.Entity_framework_*`, `CSharpCompatTests` |
@@ -42,6 +43,6 @@ same commit as any change that moves a row.
 | References and rename on unbound code | where the binder could not resolve a name (code with errors), matching falls back to the name | fix the errors first, or review the edit preview |
 | Ownership of fields and arrays of objects | collections stored in fields, and arrays of references, stay with the GC (local arrays of numbers and local lists and hashes of any type are pooled) | preallocate and reuse explicitly |
 | `class_eval` / `eval` with strings | not offered: it needs the compiler at run time, defeats NativeAOT and is an injection risk in production code | refinements, `define_method`, or a plugin assembly found with `subclasses` |
-| GPU offload | `Par` kernels run on CPU cores only | SIMD (`Simd.*`) and `@[Native]` C kernels |
+| Automatic GPU offload | `par for` / `Par` loops run on CPU cores; GPU code is written as explicit ILGPU kernels | `examples/gpu/ilgpu`: an Alice function as a CUDA/OpenCL kernel |
 | NativeAOT `alice` compiler binary | the CLI needs the .NET runtime (it hosts Roslyn) | `dotnet tool install -g Alice.Cli` or the release archives |
 | Rules over unbounded domains | `alice prove` checks rules exhaustively over finite ranges only | keep rule domains finite |

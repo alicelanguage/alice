@@ -263,6 +263,12 @@ public sealed partial class Lowerer
     /// <summary>Non-inlined block/lambda. Capture-free lambdas are `static` so the C# compiler caches the delegate (zero allocation).</summary>
     MExpr Lambda(LambdaExpr lam)
     {
+        // `->sq` of a static method: the method group itself, not a lambda around it. C# caches the delegate, and APIs
+        // that need the real method (ILGPU kernels, MethodInfo-based registration) get it
+        if (lam.MethodRef is { } mr && (mr.Recv is null or ConstExpr) && lam.Body is [ExprStmt { Expr: CallExpr { Res: "alice", Sym: MethodSym m } }]
+            && m.IsStatic && m.TypeParams.Count == 0 && m.Params.All(p => !p.HasDefault && !p.Splat && !p.Block && p.Mod == "")
+            && (m.Owner.Methods.TryGetValue(m.Name, out var same) ? same.Count == 1 : true))
+            return new MCode(m.Owner == Type || m.Owner.Kind == "program" ? m.CsName : m.Owner.Type.Cs + "." + m.CsName);
         var ps = new List<string>();
         for (int i = 0; i < lam.ParamSyms.Count; i++)
         {
