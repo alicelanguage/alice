@@ -55,11 +55,17 @@
     <WriteLinesToFile File="$(AliceGenDir)sources.txt" Lines="@(AliceSource->'%(FullPath)')" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>
 
+  <!-- csc type-checks the generated C# and `alice build` reports its errors in Alice terms; AliceGenCheck=true also
+       checks inside alice gen (Alice-worded errors under a bare `dotnet build`, one more compile per edit) -->
+  <PropertyGroup>
+    <_AliceGenCheckArg Condition="'$(AliceGenCheck)' != 'true'">--no-check</_AliceGenCheckArg>
+  </PropertyGroup>
+
   <!-- incremental: alice gen runs only when a source, the references, the compiler or the project changed -->
   <Target Name="AliceGenerate" BeforeTargets="CoreCompile" DependsOnTargets="AlicePrepare" Condition="'@(AliceSource)' != ''"
           Inputs="@(AliceSource);$(AliceGenDir)refs.txt;$(AliceGenDir)analyzers.txt;$(AliceGenDir)sources.txt;$(AliceCompiler);$(MSBuildProjectFullPath)"
           Outputs="$(AliceGenDir)alice.stamp">
-    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --analyzers-file &quot;$(AliceGenDir)analyzers.txt&quot; --native-lib=$(AssemblyName)_native --naming=$(AliceNaming) @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
+    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen $(_AliceGenCheckArg) -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --analyzers-file &quot;$(AliceGenDir)analyzers.txt&quot; --native-lib=$(AssemblyName)_native --naming=$(AliceNaming) @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
     <Touch Files="$(AliceGenDir)alice.stamp" AlwaysCreate="true" />
   </Target>
 

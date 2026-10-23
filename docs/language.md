@@ -584,7 +584,7 @@ end
 | `Callback(A, B, R)` | C function pointer. Pass a lambda literal: it is lifted to a static `[UnmanagedCallersOnly]` method (no delegate, no allocation); captures are error AL0215; an exception inside is rethrown after the C call returns |
 | `out x : T` / `ref x : T` | pointer to the caller's variable, pinned for the call: C out-parameters and structs by pointer without `unsafe` (`LibC.clock_gettime(0, out ts)`) |
 | `struct` of numbers | by value, C layout (fields in declaration order) |
-| `Pointer(T)` | raw pointer, only inside `unsafe` (AL0214) |
+| `Pointer(T)` | raw pointer, only inside `unsafe` (AL0216) |
 | `@[Fast]` on `fun` | no GC transition (short, non-blocking C functions only) |
 
 ```crystal
@@ -597,7 +597,7 @@ LibC.qsort(xs, 4_u64, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { a[0] <
 ```
 
 `Pointer(T)` values (`fun malloc(n : UInt64) : Pointer(UInt8)`, `p[i]`) are allowed only inside `unsafe ... end` or an
-`unsafe def`; elsewhere they are error AL0214. Strings, arrays and numbers need no `unsafe`.
+`unsafe def`; elsewhere they are error AL0216. Strings, arrays and numbers need no `unsafe`.
 
 Design and measurements: [ADR 0018](../archicture/adr/0018-ffi-blittable-wrappers.md). Tests: `FfiTests`.
 

@@ -163,5 +163,5 @@ public sealed class RuleDomain
     public string Name = "";
     public bool IsBool;
     public long Lo, Hi;           // inclusive
-    public long Size => IsBool ? 2 : Hi - Lo + 1;
+    public long Size => IsBool ? 2 : (long)Math.Min((double)Hi - Lo + 1, long.MaxValue);   // saturates for `x : Int64`
 }

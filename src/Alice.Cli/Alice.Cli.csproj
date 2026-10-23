@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
+    <!-- alice prove with the smt option only (opt-in): the native solver loads when a proof asks for it; compiling stays pure C# -->
+    <PackageReference Include="Microsoft.Z3" Version="4.12.2" />
   </ItemGroup>
 
   <PropertyGroup>

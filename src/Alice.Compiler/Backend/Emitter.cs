@@ -437,6 +437,9 @@ public sealed class Emitter
 
     string Method(MethodDecl d, TypeSym owner) => d.RuleName != null ? MethodCore(d, owner) + Prover(d) : MethodCore(d, owner);
 
+    /// <summary>Set by `alice prove --smt`: rules too large to enumerate get no enumerator (Z3 proves them).</summary>
+    [ThreadStatic] public static bool SkipOversizedRules;
+
     /// <summary>Largest rule domain `alice prove` enumerates: about a minute of pure calls across cores.</summary>
     const long MaxRuleCases = 1L << 32;
 
@@ -449,8 +452,9 @@ public sealed class Emitter
     {
         var m = (MethodSym)d.Sym!;
         double cases = d.Domains.Aggregate(1.0, (acc, x) => acc * x.Size);
+        if (cases > MaxRuleCases && SkipOversizedRules) return "";   // `alice prove --smt` proves it instead
         if (cases > MaxRuleCases)
-            throw new CompileException($"{file}:{d.Line}:{Math.Max(1, d.Col)}: rule domain of `{d.RuleName}` has {cases:0} cases, more than the {MaxRuleCases} `alice prove` checks exhaustively; narrow the ranges");
+            throw new CompileException($"{file}:{d.Line}:{Math.Max(1, d.Col)}: rule domain of `{d.RuleName}` has {cases:0} cases, more than the {MaxRuleCases} `alice prove` checks exhaustively; narrow the ranges, or prove it for every input with `alice prove --smt`");
         string Var(int i) => m.Params[i].CsName;
         string Ty(RuleDomain x) => x.IsBool ? "bool" : x.Lo < int.MinValue || x.Hi > int.MaxValue ? "long" : "int";
         string Loop(RuleDomain x, int i) => x.IsBool

@@ -134,8 +134,10 @@ public sealed partial class Parser
             {
                 Expect(":");
                 var ty = Type();
-                if (ty.Name != "Bool") throw Err("a rule variable is `x in lo..hi` (integer literals) or `b : Bool`");
-                d.IsBool = true;
+                // `x : Int32` / `x : Int64`: the whole range, proven by `alice prove --smt` (too large to enumerate)
+                if (ty.Name is "Int32" or "Int64") { d.Lo = ty.Name == "Int32" ? int.MinValue : long.MinValue; d.Hi = ty.Name == "Int32" ? int.MaxValue : long.MaxValue; }
+                else if (ty.Name == "Bool") d.IsBool = true;
+                else throw Err("a rule variable is `x in lo..hi` (integer literals), `x : Int32` / `x : Int64` (alice prove --smt), or `b : Bool`");
             }
             bool wide = d.Lo < int.MinValue || d.Hi > int.MaxValue;
             m.Params.Add(At(new Param { Name = d.Name, Type = new TypeRef { Name = d.IsBool ? "Bool" : wide ? "Int64" : "Int32" } }, pt));

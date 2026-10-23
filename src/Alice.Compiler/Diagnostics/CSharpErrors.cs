@@ -14,11 +14,17 @@ public static class CSharpErrors
     static string T(string cs) => AliceNames.Type(cs);
     static string M(string cs) => AliceNames.Member(cs);
 
-    public static (string Code, string Message) Translate(Microsoft.CodeAnalysis.Diagnostic d)
+    public static (string Code, string Message) Translate(Microsoft.CodeAnalysis.Diagnostic d) =>
+        Translate(d.Id, d.GetMessage(CultureInfo.InvariantCulture), () => Callee(d));
+
+    /// <summary>A csc diagnostic from build output (code and English message): package builds report errors through
+    /// MSBuild's compile, not a second in-process one. The callee name is not known there.</summary>
+    public static (string Code, string Message) Translate(string id, string message) => Translate(id, message, () => "");
+
+    static (string Code, string Message) Translate(string id, string en, Func<string> callee)
     {
-        string en = d.GetMessage(CultureInfo.InvariantCulture);
         Match m;
-        switch (d.Id)
+        switch (id)
         {
             case "CS1061" or "CS0117" when (m = Regex.Match(en, @"^'(?<t>.+?)' does not contain a definition for '(?<n>[^']+)'")).Success:
                 return ("AL0302", $"undefined method '{M(m.Groups["n"].Value)}' for {T(m.Groups["t"].Value)}");
@@ -27,18 +33,18 @@ public static class CSharpErrors
             case "CS0023" when (m = Regex.Match(en, @"Operator '(?<o>[^']+)' cannot be applied to operand of type '(?<a>.+?)'")).Success:
                 return ("AL0301", $"'{m.Groups["o"].Value}' is not defined for {T(m.Groups["a"].Value)}");
             case var _ when en.Contains("unsafe context"):   // CS0214, CS0227, CS9123...: every pointer-in-safe-code error
-                return ("AL0214", "pointer operation outside `unsafe`: wrap it in `unsafe ... end` or declare the method `unsafe def`");
+                return ("AL0216", "pointer operation outside `unsafe`: wrap it in `unsafe ... end` or declare the method `unsafe def`");
             case "CS0103" when (m = Regex.Match(en, @"The name '(?<n>[^']+)' does not exist")).Success:
                 return ("AL0303", $"undefined name '{M(m.Groups["n"].Value)}'");
             case "CS0029" or "CS0266" when (m = Regex.Match(en, @"convert type '(?<a>.+?)' to '(?<b>.+?)'")).Success:
                 return ("AL0304", $"type mismatch: expected {T(m.Groups["b"].Value)}, got {T(m.Groups["a"].Value)}" +
-                    (d.Id == "CS0266" ? $" (convert explicitly, e.g. .to_i / .to_f / .as({T(m.Groups["b"].Value)}))" : ""));
+                    (id == "CS0266" ? $" (convert explicitly, e.g. .to_i / .to_f / .as({T(m.Groups["b"].Value)}))" : ""));
             case "CS1503" when (m = Regex.Match(en, @"Argument (?<i>\d+): cannot convert from '(?<a>.+?)' to '(?<b>.+?)'")).Success:
-                return ("AL0305", $"argument {m.Groups["i"].Value}{Callee(d)}: expected {T(m.Groups["b"].Value)}, got {T(m.Groups["a"].Value)}");
+                return ("AL0305", $"argument {m.Groups["i"].Value}{callee()}: expected {T(m.Groups["b"].Value)}, got {T(m.Groups["a"].Value)}");
             case "CS1501" when (m = Regex.Match(en, @"No overload for method '(?<n>[^']+)' takes (?<k>\d+) arguments")).Success:
                 return ("AL0306", $"wrong number of arguments for {M(m.Groups["n"].Value)} (given {m.Groups["k"].Value})");
             case "CS7036":
-                return ("AL0306", $"wrong number of arguments{Callee(d)} (missing a required argument)");
+                return ("AL0306", $"wrong number of arguments{callee()} (missing a required argument)");
             case "CS0246" when (m = Regex.Match(en, @"name '(?<n>[^']+)' could not be found")).Success:
                 return ("AL0307", $"unknown type '{T(m.Groups["n"].Value)}' (missing `require`, `using` or a package?)");
             case "CS0161":

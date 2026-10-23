@@ -98,7 +98,7 @@ public class FfiTests
     {
         var ex = Assert.Throws<CompileException>(() => AliceCompiler.Run(Lib(Malloc) + "p = LibC.malloc(4_u64)\nLibC.free(p)\n"));
         var d = ex.Diagnostics.First();
-        Assert.Equal("AL0214", d.Code);
+        Assert.Equal("AL0216", d.Code);
         Assert.Contains("unsafe", d.Message);
     }
 

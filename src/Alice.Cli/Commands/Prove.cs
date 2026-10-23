@@ -16,7 +16,30 @@ namespace Alice.Cli.Commands;
 /// </summary>
 public static class Prove
 {
-    public sealed record RuleResult(string Rule, long Cases, string? Counterexample, double Ms);
+    public sealed record RuleResult(string Rule, long Cases, string? Counterexample, double Ms, bool Smt = false);
+
+    /// <summary>`--smt`: Z3 proves each rule it can translate for every input of its domain; the rest are enumerated
+    /// (when finite enough) or reported as not provable here.</summary>
+    public static List<RuleResult> CheckSmt(List<SourceFile> files, List<string> refs)
+    {
+        if (Proof.SmtProver.Unavailable() is { } why) throw new UsageException(why);
+        var results = new List<RuleResult>();
+        var fallback = new List<string>();
+        foreach (var o in Proof.SmtProver.Prove(files, refs))
+        {
+            if (o.Untranslatable == null) results.Add(new RuleResult(o.Rule, -1, o.Counterexample, 0, Smt: true));
+            else { fallback.Add(o.Rule); results.Add(new RuleResult(o.Rule, 0, "not translatable: " + o.Untranslatable, 0)); }
+        }
+        if (fallback.Count == 0) return results;
+        Alice.Compiler.Backend.Emitter.SkipOversizedRules = true;
+        try
+        {
+            foreach (var r in Check(files, refs).Where(r => fallback.Contains(r.Rule)))
+                results[results.FindIndex(x => x.Rule == r.Rule)] = r;   // enumerated after all
+        }
+        finally { Alice.Compiler.Backend.Emitter.SkipOversizedRules = false; }
+        return results;
+    }
 
     public const string ProofFile = "PROOF.al";
 
@@ -56,17 +79,19 @@ public static class Prove
         sb.Append("# exhaustion of the program as Alice compiles it. `alice prove --check` fails when the sources change.\n#\n");
         sb.Append($"# alice {App.Version}\n# sources sha256 {Hash(files)}\n");
         foreach (var r in results.OrderBy(r => r.Rule, StringComparer.Ordinal))
-            sb.Append(r.Counterexample == null ? $"# rule {r.Rule}: proven over {r.Cases} cases\n" : $"# rule {r.Rule}: FAILS at {r.Counterexample}\n");
+            sb.Append(r.Counterexample == null
+                ? r.Smt ? $"# rule {r.Rule}: proven for every input of its domain (smt)\n" : $"# rule {r.Rule}: proven over {r.Cases} cases\n"
+                : $"# rule {r.Rule}: FAILS at {r.Counterexample}\n");
         return sb.ToString();
     }
 
-    public static int Run(List<SourceFile> files, List<string> refs, bool checkOnly, string dir)
+    public static int Run(List<SourceFile> files, List<string> refs, bool checkOnly, string dir, bool smt = false)
     {
         if (!files.Any(f => f.Text.Contains("rule "))) throw new UsageException("no rules found", "declare them in RULES.al: `rule name(x in 0..100)` ... `end`");
-        var results = Check(files, refs);
+        var results = smt ? CheckSmt(files, refs) : Check(files, refs);
         var table = new Table().Border(TableBorder.Rounded).AddColumn("rule").AddColumn(new TableColumn("cases").RightAligned()).AddColumn("result").AddColumn(new TableColumn("ms").RightAligned());
         foreach (var r in results)
-            table.AddRow(Markup.Escape(r.Rule), r.Cases.ToString("N0"), r.Counterexample == null ? "[green]proven[/]" : $"[red]fails at {Markup.Escape(r.Counterexample)}[/]", r.Ms.ToString("0"));
+            table.AddRow(Markup.Escape(r.Rule), r.Smt ? "all" : r.Cases.ToString("N0"), r.Counterexample == null ? "[green]proven[/]" : $"[red]fails at {Markup.Escape(r.Counterexample)}[/]", r.Ms.ToString("0"));
         AnsiConsole.Write(table);
         bool ok = results.All(r => r.Counterexample == null);
         string cert = Certificate(files, results), path = Path.Combine(dir, ProofFile);

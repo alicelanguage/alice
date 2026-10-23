@@ -36,7 +36,6 @@ same commit as any change that moves a row.
 
 | Gap | Impact | Workaround |
 |---|---|---|
-| Incremental compilation within a package | a changed file regenerates the whole package's C# (unchanged packages are skipped: a no-op build takes 1.0 s) | split large code bases into workspace members |
 | ASP.NET Core in CI on machines without the shared framework | `examples/web/aspnet` builds and is checked only where ASP.NET Core is installed | `examples/verify.sh` on a full SDK |
 | WPF and MAUI code-behind | Avalonia XAML + Alice code-behind is tested; WPF (Windows-only) and MAUI are not exercised here | Avalonia for cross-platform UI, or XAML code-behind in C# with Alice view models |
 | Interaction-net runtime | explored and parked: slower than fork/join on CPU (`benchmarks/inet/README.md`) | fork/join is the parallel model |
@@ -45,4 +44,4 @@ same commit as any change that moves a row.
 | `class_eval` / `eval` with strings | not offered: it needs the compiler at run time, defeats NativeAOT and is an injection risk in production code | refinements, `define_method`, or a plugin assembly found with `subclasses` |
 | GPU: multiple devices, async overlap | one preferred device per process; a region synchronizes at its end | explicit ILGPU code for multi-device or stream overlap |
 | NativeAOT `alice` compiler binary | the CLI needs the .NET runtime (it hosts Roslyn) | `dotnet tool install -g Alice.Cli` or the release archives |
-| Rules over unbounded domains | `alice prove` checks rules exhaustively over finite ranges only | keep rule domains finite |
+| Rules with loops or recursion under `--smt` | `alice prove --smt` (Z3) proves straight-line integer rules over full Int32/Int64 ranges; others fall back to enumeration | keep such rules finite |

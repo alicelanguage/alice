@@ -284,6 +284,7 @@ public static class CompileCommands
     public static int ProveCmd(List<string> a)
     {
         bool check = a.Remove("--check");
+        bool smt = a.Remove("--smt");
         var o = Parse(a);
         // this package's sources: nested directories with their own alice.toml (examples, workspace members) are other
         // packages, with their own dependencies and their own RULES.al
@@ -296,7 +297,7 @@ public static class CompileCommands
         var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories)
             .Where(f => !f.Contains("/obj/") && !f.Contains("/bin/") && !f.Contains("/.alice/") && Path.GetFileName(f) != Prove.ProofFile && OwnPackage(f)).ToList();
         var files = Read(paths);
-        try { return Prove.Run(files, o.Refs, check, "."); }
+        try { return Prove.Run(files, o.Refs, check, ".", smt); }
         catch (CompileException e)
         {
             Ui.DiagnosticRenderer.Render(e.Diagnostics, Sources(files));
@@ -327,6 +328,9 @@ public static class CompileCommands
     /// <summary>MSBuild entry (Alice.targets): writes one .g.cs per source; errors in canonical MSBuild format.</summary>
     public static int Gen(List<string> a)
     {
+        // package builds pass --no-check: csc type-checks the output anyway, and its errors come back as Alice
+        // diagnostics (DotNet.ParseLine). The in-process check is a second, cold compile: 2.4 of 3.7 s per edit.
+        bool check = !a.Remove("--no-check");
         var o = Parse(a);
         if (o.Output == null || o.Files.Count == 0) throw new CompileException(T("no.files"));
         Directory.CreateDirectory(o.Output);
@@ -346,7 +350,7 @@ public static class CompileCommands
             var checkRefs = o.Refs.Where(r => !runtimeRefs.Contains(Path.GetFileName(r)) && !Path.GetFileName(r).StartsWith("Alice.Runtime") && File.Exists(r)).ToList();
             var analyzers = o.AnalyzersFile != null && File.Exists(o.AnalyzersFile)
                 ? File.ReadAllLines(o.AnalyzersFile).Where(l => l.Length > 0).ToList() : null;
-            AliceCompiler.Emit(cs, "check", cs.Any(c => c.Contains("public static void Main(string[] ARGV)")), checkRefs, analyzers);
+            if (check) AliceCompiler.Emit(cs, "check", cs.Any(c => c.Contains("public static void Main(string[] ARGV)")), checkRefs, analyzers);
             var used = new HashSet<string>();
             foreach (var old in Directory.GetFiles(o.Output, "*.g.cs")) File.Delete(old);
             for (int i = 0; i < files.Count; i++)

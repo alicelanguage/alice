@@ -11,12 +11,24 @@ public static class DotNet
 
     public sealed record Result(int ExitCode, List<Diagnostic> Diagnostics, List<string> Output);
 
+    /// <summary>One MSBuild diagnostic line. A csc error at an Alice line (the generated C# carries `#line`) is
+    /// translated to its Alice diagnostic: package builds type-check once, in csc, not again inside `alice gen`.</summary>
+    public static Diagnostic? ParseLine(string line)
+    {
+        var m = MsBuildDiag.Match(line);
+        if (!m.Success) return null;
+        string file = m.Groups["file"].Value.Trim(), code = m.Groups["code"].Value, msg = m.Groups["msg"].Value;
+        if (code.StartsWith("CS") && file.EndsWith(".al")) (code, msg) = Alice.Compiler.Diagnostics.CSharpErrors.Translate(code, msg);
+        return new Diagnostic(m.Groups["sev"].Value, code, file, int.Parse(m.Groups["line"].Value), int.Parse(m.Groups["col"].Value), msg);
+    }
+
     public static Result Run(IEnumerable<string> args, Action<string>? onLine = null, bool inherit = false)
     {
         var psi = new ProcessStartInfo("dotnet") { RedirectStandardOutput = !inherit, RedirectStandardError = !inherit, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["DOTNET_NOLOGO"] = "1";
         psi.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+        psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";   // csc messages are matched in English (CSharpErrors)
         using var p = Process.Start(psi)!;
         var diags = new List<Diagnostic>();
         var seen = new HashSet<string>();
@@ -27,10 +39,7 @@ public static class DotNet
             lock (output)
             {
                 output.Add(line);
-                var m = MsBuildDiag.Match(line);
-                if (m.Success && seen.Add(m.Groups["file"].Value + m.Groups["line"].Value + m.Groups["code"].Value + m.Groups["msg"].Value))
-                    diags.Add(new Diagnostic(m.Groups["sev"].Value, m.Groups["code"].Value, m.Groups["file"].Value.Trim(),
-                        int.Parse(m.Groups["line"].Value), int.Parse(m.Groups["col"].Value), m.Groups["msg"].Value));
+                if (ParseLine(line) is { } d && seen.Add(d.File + d.Line + d.Code + d.Message)) diags.Add(d);
                 onLine?.Invoke(line);
             }
         }
