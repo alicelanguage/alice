@@ -258,7 +258,6 @@ public class OwnershipTests
     [InlineData("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  @@keep = xs\n  xs.size\nend\n")]                          // stored
     [InlineData("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  g = -> { xs.size }\n  g.call\nend\n")]                       // captured
     [InlineData("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  r = xs.AsReadOnly\n  r.Count\nend\n")]                     // a view outlives it
-    [InlineData("def f(n : Int32) : Int32\n  xs = List(String).new\n  xs << \"a\"\n  xs.size\nend\n")]                          // references: GC
     public void Lists_that_may_escape_stay_with_the_gc(string src)
     {
         Assert.DoesNotContain("OwnList<", AliceCompiler.Transpile(src));
@@ -291,6 +290,18 @@ public class OwnershipTests
     [Theory]
     [InlineData("def f(n : Int32) : Int32\n  h = Dictionary(Int32, Int32).new\n  h[1] = n\n  ks = h.Keys\n  ks.Count\nend\n")]          // a live view
     [InlineData("def f(n : Int32) : Dictionary(Int32, Int32)\n  h = Dictionary(Int32, Int32).new\n  h[1] = n\n  @@keep = h\n  h\nend\n")]   // stored
-    [InlineData("def f(n : Int32) : Int32\n  h = Dictionary(String, Int32).new\n  h[\"a\"] = n\n  h.size\nend\n")]               // reference keys
     public void Hashes_that_may_escape_stay_with_the_gc(string src) => Assert.DoesNotContain("OwnDict<", AliceCompiler.Transpile(src));
+
+    [Fact]
+    public void Lists_and_hashes_of_objects_are_pooled_and_cleared()
+    {
+        // elements may escape (only the collection may not); Clear drops the references, so the pool keeps no garbage alive
+        var src = "def f(n : Int32) : Int32\n  names = List(String).new\n  seen = Dictionary(String, Int32).new\n  i = 0\n  while i < n\n    s = \"k#{i % 5}\"\n    names << s\n    seen[s] = seen.fetch(s, 0) + 1\n    i += 1\n  end\n  names.size + seen.size\nend\n";
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("OwnList<string>.Rent", cs);
+        Assert.Contains("OwnDict<string, int>.Rent", cs);
+        var f = Compile(src);
+        Assert.Equal(20 + 5, (int)f.Invoke(null, [20])!);
+        Assert.Equal(20 + 5, (int)f.Invoke(null, [20])!);   // a reused, cleared pair gives the same answer
+    }
 }

@@ -319,7 +319,7 @@ Is it ready for production? See [docs/production.md](docs/production.md): what i
 ## Roadmap
 
 - Semantic (type-aware) references and rename in the language server; file-level incremental compilation.
-- Ownership for collections of references and records (arrays, lists and hashes of numbers are owned since 0.12.3).
+- Ownership for collections held in fields (local arrays of numbers and local lists and hashes of any type are owned since 0.12.3).
 - Rules over unbounded domains (induction) in `RULES.al`.
 - GPU offload for `Par` kernels; more `@[Native]` coverage (structs, strings).
 - `class_eval` with strings (refinements and class discovery via `ObjectSpace` are in since 0.12.3).

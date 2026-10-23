@@ -5,7 +5,7 @@ namespace Alice.Runtime;
 /// proves is the only reference to it is rented here and released at its last use; `Clear` keeps the buckets, so a
 /// per-call counting or memo table stops allocating once warm. Per-thread slots, no locks.
 /// </summary>
-public static class OwnDict<TKey, TValue> where TKey : unmanaged where TValue : unmanaged
+public static class OwnDict<TKey, TValue> where TKey : notnull
 {
     /// <summary>Tables with more slots than this are left to the GC instead of being kept by an idle thread.</summary>
     const int MaxCapacity = 1 << 20;

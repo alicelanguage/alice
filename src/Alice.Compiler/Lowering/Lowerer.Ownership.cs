@@ -227,8 +227,10 @@ public sealed partial class Lowerer
     static string? DictElems(AType t)
     {
         if (t.Clr is not { IsGenericType: true } c || c.GetGenericTypeDefinition() != typeof(Dictionary<,>) || t.Cs.EndsWith('?')) return null;
-        var a = c.GetGenericArguments().Select(x => ClrTypes.FromClr(x).Cs).ToArray();
-        return a.All(Unmanaged.Contains) ? a[0] + ", " + a[1] : null;
+        var g = c.GetGenericArguments();
+        if (g.Any(x => x.IsGenericParameter || x.IsPointer)) return null;
+        var a = g.Select(x => ClrTypes.FromClr(x).Cs).ToArray();
+        return a[0] + ", " + a[1];
     }
 
     static readonly HashSet<string> DictMethods = ["Add", "TryAdd", "Clear", "ContainsKey", "ContainsValue", "TryGetValue", "Remove", "EnsureCapacity", "GetValueOrDefault"];
@@ -246,8 +248,9 @@ public sealed partial class Lowerer
     static string? ListElem(AType t)
     {
         if (t.Clr is not { IsGenericType: true } c || c.GetGenericTypeDefinition() != typeof(List<>) || t.Cs.EndsWith('?')) return null;
-        var el = ClrTypes.FromClr(c.GetGenericArguments()[0]).Cs;
-        return Unmanaged.Contains(el) ? el : null;
+        // any element type: the list itself must not escape, its elements may; Clear() nulls reference slots
+        var arg = c.GetGenericArguments()[0];
+        return arg.IsGenericParameter || arg.IsPointer ? null : ClrTypes.FromClr(arg).Cs;
     }
 
     /// <summary>Uses that leave an owned list where it is: they read or edit it, or copy out of it, and never hand

@@ -70,3 +70,8 @@ Amendment (0.12.3): owned hashes. A local `Dictionary(K, V)` with number keys an
 140-146 ms, 2238 MiB and 374 gen0 collections, down to 97-104 ms, 0 MiB and 0 (with `h.each { |k, v| }` inlined
 to `foreach`).
 
+Amendment (0.12.3, later): lists and hashes of any element type. Only the collection must not escape; its elements
+may (they are ordinary values the program keeps or drops). `Clear` on release nulls reference slots, so a pooled
+collection never keeps an object alive. Arrays keep the unmanaged rule: their pool hands out buffers without clearing
+references.
+

@@ -6,7 +6,7 @@ namespace Alice.Runtime;
 /// keeps the grown backing array instead of reallocating it (and its log2(n) growth steps) every call. Per-thread
 /// slots, no locks; a list never released is ordinary garbage.
 /// </summary>
-public static class OwnList<T> where T : unmanaged
+public static class OwnList<T>
 {
     /// <summary>Lists whose backing array exceeds this are left to the GC instead of being kept by an idle thread.</summary>
     const long MaxBytes = 16L << 20;
@@ -33,7 +33,7 @@ public static class OwnList<T> where T : unmanaged
     public static void Release(List<T>? l)
     {
         if (l == null || (long)l.Capacity * System.Runtime.CompilerServices.Unsafe.SizeOf<T>() > MaxBytes) return;
-        l.Clear();   // unmanaged elements: no references to clear, Count drops to 0
+        l.Clear();   // Count drops to 0; reference slots are nulled, so the pool keeps no element alive
         s1 = s0;
         s0 = l;
     }
