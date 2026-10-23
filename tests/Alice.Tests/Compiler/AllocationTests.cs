@@ -56,7 +56,7 @@ public class AllocationTests
         { "each accumulates", "def f(xs : Array(Int32))\n  s = 0\n  xs.each { |x| s += x }\n  s\nend", new[] { 1, 2, 3 }, 6 },
         { "times", "def f(n : Int32)\n  s = 0\n  n.times { |i| s += i }\n  s\nend", 5, 10 },
         { "range reduce", "def f(n : Int32)\n  (1..n).reduce(0) { |a, b| a + b }\nend", 10, 55 },
-        { "any? / find", "def f(xs : Array(Int32))\n  xs.any? { |x| x > 2 } ? xs.find { |x| x > 1 } : 0\nend", new[] { 1, 2, 3 }, 2 },
+        { "any? / find", "def f(xs : Array(Int32))\n  xs.any? { |x| x > 2 } ? xs.find { |x| x > 1 }.not_nil! : 0\nend", new[] { 1, 2, 3 }, 2 },
         { "list each_with_index", "def f(xs : List(Int32))\n  s = 0\n  xs.each_with_index { |x, i| s += x * i }\n  s\nend", new List<int> { 5, 6, 7 }, 20 },
     };
 

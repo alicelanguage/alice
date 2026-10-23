@@ -5,6 +5,8 @@
 - Errors that come from the generated C# point at the right Alice column: the name they quote (`frob`, or `to_widget`
   for .NET's `ToWidget`), or the line's first token. `#line` maps lines only, so these carried the C# column.
 - ADR 0022 records `alice prove --smt`.
+- `find` is nilable (`T?`), as the lowering already produced: `if big = xs.find { ... }` on numbers is a nil check
+  instead of a C# error, and null safety applies to its result.
 
 ## 0.13.0 - 2026-10-23
 

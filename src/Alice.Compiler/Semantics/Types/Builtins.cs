@@ -319,11 +319,12 @@ public static class Builtins
             case "max":
             case "min":
             case "sum":
-            case "find":
             case "pop":
             case "max_by":
             case "min_by":
                 return e;
+            case "find":
+                return e.AsNullable();   // nil when nothing matches (the lowering's result is `T?`)
             case "reduce":
                 return args.Count > 0 ? args[0] : e;
             case "size":
