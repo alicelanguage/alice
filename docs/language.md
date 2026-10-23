@@ -461,6 +461,9 @@ Tests: `ModuleTests`.
 
 - Reopening an Alice class merges members.
 - Reopening a .NET type (`class String`, `struct Int32`) emits extension methods: `"hey".shout`, `21.double`.
+- Class discovery for frameworks and plugins: `Controller.subclasses`, `Controller.descendants`,
+  `ObjectSpace.each_object(typeof(Controller)) { |c| ... }` over the program's classes (types in assemblies compiled
+  against Alice.Runtime). Enumerating live objects, Ruby's other `ObjectSpace` use, is not offered on the .NET GC.
 - Refinements scope a reopening to the files that ask for it: `module Shouting; refine String do def shout ... end end end`,
   then `using Shouting` in a file. Without the `using`, `"hi".shout` is an undefined method there.
 

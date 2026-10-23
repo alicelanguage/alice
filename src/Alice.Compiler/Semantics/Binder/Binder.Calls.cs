@@ -110,6 +110,13 @@ public sealed partial class Binder
             if (owner.Sym != null)
             {
                 var m = owner.Sym.FindMethod(c.Name, argc);
+                // Ruby class discovery: Controller.subclasses / Controller.descendants (unless the class defines them)
+                if (m == null && !hasArgs && c.Block == null && c.Name is "subclasses" or "descendants")
+                {
+                    c.Res = "classq";
+                    c.Sym = owner;
+                    return AType.Array(ClrTypes.FromClr(typeof(Type)));
+                }
                 if (m != null)
                 {
                     c.Res = "alice";

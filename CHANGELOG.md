@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Class discovery: `Controller.subclasses`, `Controller.descendants` and `ObjectSpace.each_object(typeof(Controller)) { |c| }` over the program's own classes, which is what a framework needs to find controllers or plugins. Live-object enumeration is not offered: it has no safe .NET equivalent.
 - Refinements: `refine String do ... end` inside a module is a monkey patch visible only in files that write `using <module>`. In C# it is an extension class in namespace `__Refine_<module>`, imported only by those files, so the scope holds there too.
 - Forks of three calls in one expression (`trib(n - 1) + trib(n - 2) + trib(n - 3)`) via a three-way `Par.Fork`: `trib(32)` 335 -> 43 ms on 12 cores. A failing branch's exception surfaces once every branch has finished.
 - Fix: an assignment inside a branch of a block now assigns the enclosing method's variable, as in Ruby. Before, `h.each { |k, v| best = v if v > best }` declared a new block-local `best`, and the method's `best` silently stayed 0. Found while checking the owned-hash benchmark's checksum, which was 0 under the old compiler too.

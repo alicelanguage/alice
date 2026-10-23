@@ -322,7 +322,7 @@ Is it ready for production? See [docs/production.md](docs/production.md): what i
 - Ownership for collections of references and records (arrays, lists and hashes of numbers are owned since 0.12.3).
 - Rules over unbounded domains (induction) in `RULES.al`.
 - GPU offload for `Par` kernels; more `@[Native]` coverage (structs, strings).
-- `ObjectSpace`, `class_eval` with strings (refinements are in since 0.12.3).
+- `class_eval` with strings (refinements and class discovery via `ObjectSpace` are in since 0.12.3).
 - NativeAOT single-file `alice` binary (libraries are distributed on NuGet: `alice publish`, ADR 0020).
 
 ## License

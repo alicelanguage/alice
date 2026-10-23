@@ -38,6 +38,8 @@ public sealed partial class Lowerer
 
         switch (c.Res)
         {
+            case "classq":   // Controller.subclasses -> ObjectSpace.subclasses(typeof(Controller))
+                return new MCall { Target = new MCode("global::Alice.Runtime.ObjectSpace"), Name = c.Name, Args = { new MCode($"typeof({((AType)c.Sym!).Cs})") } };
             case "special":
                 switch (c.Name)
                 {
