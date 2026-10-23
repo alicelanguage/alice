@@ -83,6 +83,11 @@ public sealed class MethodSym
     public bool IsStatic;
     public bool IsCtor;
     public bool UsesYield;
+    /// <summary>Generator: yields and has no block parameter (`def nums : IEnumerable(Int32)`); `yield x` is `yield return`.</summary>
+    public bool IsIterator => UsesYield && !Params.Any(p => p.Block) || IsAsyncIterator;
+    /// <summary>`async def ticks : IAsyncEnumerable(T)`: callers see the stream itself, not a Task of it.</summary>
+    public bool IsAsyncIterator => IsAsync && Ret.Clr is { IsGenericType: true } c
+        && (c.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>) || c.GetGenericTypeDefinition() == typeof(IAsyncEnumerator<>));
     public bool IsAsync;
     public bool Mutates;              // assigns its own fields (unsafe to call on shared objects concurrently)
     public bool HasInferredGenerics;  // untyped params: monomorphized per call-site types

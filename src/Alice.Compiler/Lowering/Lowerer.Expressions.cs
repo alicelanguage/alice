@@ -99,6 +99,8 @@ public sealed partial class Lowerer
                 return new MUnary { Op = "await ", E = Expr(aw.E) };
             case SpawnExpr sp:
                 return new MCall { Target = new MCode("Prelude"), Name = "spawn", Args = { Lambda(sp.Body) } };
+            case YieldExpr { Sym: null } yi:   // iterator method
+                return new MArg { Prefix = "yield return ", E = yi.Args.Count == 1 ? Expr(yi.Args[0].Value!) : new MCode("default") };
             case YieldExpr y:
                 return new MInvoke { Target = new MCode(((ParamSym)y.Sym!).CsName), Args = Args(y.Args) };
             case StmtExpr se:

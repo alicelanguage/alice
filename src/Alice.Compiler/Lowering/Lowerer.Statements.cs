@@ -108,6 +108,9 @@ public sealed partial class Lowerer
                     o.Add(t);
                     break;
                 }
+            case ReturnStmt { Value: null } when Method is { IsIterator: true } && !InLambda:
+                o.Add(new MExprStmt { E = new MCode("yield break") });
+                break;
             case ReturnStmt r:
                 {
                     MExpr? rv = r.Value != null ? Expr(r.Value) : null;

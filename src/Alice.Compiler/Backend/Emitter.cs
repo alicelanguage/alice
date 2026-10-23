@@ -202,7 +202,11 @@ public sealed class Emitter
         if (ops.Contains("<") && !ops.Contains(">")) body.Append($"public static bool operator >({self} a, {self} b) => b < a;\n");
         if (ops.Contains("<=") && !ops.Contains(">=")) body.Append($"public static bool operator >=({self} a, {self} b) => b <= a;\n");
         if (s.SoaStore != null) body.Append(SoAStore.Emit(s));
-        if (s.EnumerableElem != null && d.Members.OfType<MethodDecl>().Any(m => m.Name == "GetEnumerator"))
+        // `class Trio < IEnumerable(Int32)` with a GetEnumerator iterator: C# also needs the non-generic bridge
+        bool implementsEnumerable = s.EnumerableElem != null
+            || s.Bases.Any(b => b.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(IEnumerable<>));
+        if (implementsEnumerable && d.Members.OfType<MethodDecl>().Any(m => m.Name == "GetEnumerator")
+            && !d.Members.OfType<MethodDecl>().Any(m => m.Name.Contains("IEnumerable.GetEnumerator")))
             body.Append("global::System.Collections.IEnumerator global::System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();\n");
         // leaf classes are sealed: the JIT devirtualizes and inlines calls and type checks get cheaper
         bool open = s.HasSubclass || d.IsAbstract || d.Attrs.Contains("Open");
@@ -574,9 +578,9 @@ public sealed class Emitter
         if (inst != null && retT.IsUnknown) retT = AType.Dynamic;
         string ret = Lowerer.TypeCs(retT);
         string asyncKw = "";
-        if (m.IsAsync)
+        if (m.IsAsync) asyncKw = "async ";
+        if (m.IsAsync && !m.IsIterator)   // an async iterator returns IAsyncEnumerable itself, not a Task of it
         {
-            asyncKw = "async ";
             ret = retT.IsVoid ? "global::System.Threading.Tasks.Task" : $"global::System.Threading.Tasks.Task<{ret}>";
         }
         var tps = inst == null ? m.TypeParams : m.TypeParams.Where(tp => !m.Params.Any(p => p.Inferred && p.Type.Cs == tp)).ToList();
@@ -597,7 +601,7 @@ public sealed class Emitter
 
         lowerer.Type = owner;
         lowerer.Method = m;
-        bool returns = !retT.IsVoid && !m.IsCtor;
+        bool returns = !retT.IsVoid && !m.IsCtor && !m.IsIterator;
         bool plain = !m.IsCtor && !(d.Name == "to_s" && m.Params.Count == 0) && d.Name != "[]" && !OpNames.ContainsKey(d.Name);
         lowerer.CloneOk = plain && Virtual(m, owner, d.Vis).Mod == "";
         lowerer.Forked = false;

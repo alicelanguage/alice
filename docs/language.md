@@ -240,6 +240,37 @@ def twice(&block : Int32 ->)        # no result
 end
 ```
 
+### Iterators
+
+A method whose return type is `IEnumerable(T)`, `IEnumerator(T)` or `IAsyncEnumerable(T)` and that has no block
+parameter is an iterator: `yield x` is C#'s `yield return`, a bare `return` ends the sequence, and the body runs
+lazily as the caller enumerates.
+
+```crystal
+def squares : IEnumerable(Int64)
+  i = 0_i64
+  while true
+    yield i * i
+    i += 1
+  end
+end
+puts squares.Take(3).ToList().join(",")   # 0,1,4
+
+class Trio < IEnumerable(Int32)          # the non-generic IEnumerable.GetEnumerator is generated
+  def GetEnumerator : IEnumerator(Int32)
+    yield 1
+    yield 2
+    yield 3
+  end
+end
+
+async def ticks : IAsyncEnumerable(Int32)   # consumed with `for await`
+  yield 1
+  await Task.Yield
+  yield 2
+end
+```
+
 ### Lambdas
 
 ```crystal

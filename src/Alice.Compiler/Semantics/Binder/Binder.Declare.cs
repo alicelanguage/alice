@@ -348,7 +348,7 @@ public sealed partial class Binder
             if (p.Auto && owner.FindField(p.Name) == null)
                 owner.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ps.Type, Kind = "auto", Owner = owner };
         }
-        if (!m.Params.Any(p => p.Block) && ImplicitBlock(d, owner) is { } bt)
+        if (!m.Params.Any(p => p.Block) && !(d.Ret != null && IteratorElement(ResolveType(d.Ret)) != null) && ImplicitBlock(d, owner) is { } bt)
         {
             m.Params.Add(new ParamSym { Name = "__block", CsName = "__block", Block = true, Type = bt });
             d.Params.Add(new Param { Name = "__block", Block = true, Line = d.Line });

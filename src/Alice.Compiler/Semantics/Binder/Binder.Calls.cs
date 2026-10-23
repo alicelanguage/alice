@@ -370,7 +370,7 @@ public sealed partial class Binder
     /// <summary>Crystal-style monomorphization: untyped parameters get one typed specialization per argument-type tuple.</summary>
     /// <summary>An `async def` returning T is seen by callers as Task&lt;T&gt; (Task when it returns nothing).</summary>
     public static AType Async(MethodSym m, AType ret) =>
-        !m.IsAsync ? ret : ret.IsVoid || ret.IsUnknown ? ClrTypes.FromClr(typeof(Task)) : Builtins.Generic(typeof(Task<>), ret);
+        !m.IsAsync || m.IsAsyncIterator ? ret : ret.IsVoid || ret.IsUnknown ? ClrTypes.FromClr(typeof(Task)) : Builtins.Generic(typeof(Task<>), ret);
 
     AType CallRet(MethodSym m, List<AType> argTypes) => Async(m, CallRetCore(m, argTypes));
 

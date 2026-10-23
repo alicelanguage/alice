@@ -132,7 +132,8 @@ public sealed partial class Binder
                     BindArgs(y.Args);
                     if (curMethod != null) curMethod.UsesYield = true;
                     var bp = curMethod?.Params.FirstOrDefault(p => p.Block);
-                    if (bp == null) throw Err(y, "yield needs a block parameter: def name(&block : A -> R)");
+                    if (bp == null && curMethod != null && IteratorElement(curMethod.Ret) != null) return AType.Void;   // generator: `yield return`
+                    if (bp == null) throw Err(y, "yield needs a block parameter (def name(&block : A -> R)), or a return type IEnumerable(T) / IEnumerator(T) / IAsyncEnumerable(T) for an iterator");
                     y.Sym = bp;
                     return bp.Type.Kind == "func" ? bp.Type.Args[^1] : AType.Unknown;
                 }
@@ -388,6 +389,14 @@ public sealed partial class Binder
             "not_nil!" => tt.E!.Type.Nullable ? ResolveNonNull(tt.E.Type) : tt.E.Type,
             _ => AType.Unknown,
         };
+    }
+
+    /// <summary>Element type of an iterator return type, null when the type is not one.</summary>
+    static Type? IteratorElement(AType t)
+    {
+        if (t.Clr is not { IsGenericType: true } c) return t.Clr == typeof(System.Collections.IEnumerable) || t.Clr == typeof(System.Collections.IEnumerator) ? typeof(object) : null;
+        var g = c.GetGenericTypeDefinition();
+        return g == typeof(IEnumerable<>) || g == typeof(IEnumerator<>) || g == typeof(IAsyncEnumerable<>) || g == typeof(IAsyncEnumerator<>) ? c.GetGenericArguments()[0] : null;
     }
 
     static AType ResolveNonNull(AType t) =>

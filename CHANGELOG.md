@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Iterators: a method returning `IEnumerable(T)`, `IEnumerator(T)` or `IAsyncEnumerable(T)` with no block parameter is a generator. `yield x` is `yield return`, a bare `return` is `yield break`, and evaluation is lazy (`nums(1_000_000_000).Take(3)`). `async def` streams work with `for await`. A class listing `IEnumerable(T)` as a base gets the non-generic `GetEnumerator` bridge. Ruby block `yield` is unchanged.
 - Attributes on record parameters: `record Span(start : Int32, @[JsonPropertyName("end")] stop : Int32)`. They target the generated property, where System.Text.Json and other serializers read them; `@[param: X]` targets the parameter. JSON keys that are Alice keywords (`end`) now map to typed records.
 - `fun` parameters can be `out x : T` / `ref x : T`. C receives a pointer to the caller's variable, pinned for the call, so out-parameters and structs passed by pointer need no `unsafe` (`LibC.clock_gettime(0, out ts)`, `LibC.frexp(8.0, ref e)`). `out` locals at the call site get the declared type.
 - Native callbacks: a `fun` parameter of type `Callback(A, B, R)` takes a lambda literal, lifted to a static `[UnmanagedCallersOnly]` C function (`qsort` with an Alice comparator). No delegate, no GC handle, no allocation; the call site needs no `unsafe`. A capturing lambda is error AL0215. An exception raised in the callback no longer kills the process: it is caught and rethrown once the C call returns.
