@@ -57,6 +57,14 @@ public sealed class EnumDecl : Item
     public bool IsAdt => Fields.Any(f => f != null);
 }
 
+/// <summary>`delegate Op(a : Int32, b : Int32) : Int32`: a .NET delegate type.</summary>
+public sealed class DelegateDecl : Item
+{
+    public string Name = "";
+    public List<Param> Params = new();
+    public TypeRef? Ret;
+}
+
 public sealed class LibDecl : Item
 {
     public string Name = "";

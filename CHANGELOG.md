@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Declaring .NET events (`event clicked : EventHandler`, raised with `clicked&.Invoke(self, args)`), delegate types (`delegate Op(a : Int32, b : Int32) : Int32`) and default interface methods (an interface `def` with a body). An Alice library can now expose the same API shapes a C# library does.
 - Nullable type arguments of .NET generics: `Dictionary(String, String?)` and `List(String?)` emitted as `string` (CLR generics carry no nullable-reference annotation), so `d[k] = nil` was rejected as AL0310. They now keep `string?`, and reading the value still has to be nil-checked.
 - Iterators: a method returning `IEnumerable(T)`, `IEnumerator(T)` or `IAsyncEnumerable(T)` with no block parameter is a generator. `yield x` is `yield return`, a bare `return` is `yield break`, and evaluation is lazy (`nums(1_000_000_000).Take(3)`). `async def` streams work with `for await`. A class listing `IEnumerable(T)` as a base gets the non-generic `GetEnumerator` bridge. Ruby block `yield` is unchanged.
 - Attributes on record parameters: `record Span(start : Int32, @[JsonPropertyName("end")] stop : Int32)`. They target the generated property, where System.Text.Json and other serializers read them; `@[param: X]` targets the parameter. JSON keys that are Alice keywords (`end`) now map to typed records.

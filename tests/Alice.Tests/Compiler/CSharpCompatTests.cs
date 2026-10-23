@@ -36,6 +36,9 @@ public class CSharpCompatTests
         { "class implementing IEnumerable via iterator", "class Trio < IEnumerable(Int32)\n  def GetEnumerator : IEnumerator(Int32)\n    yield 1\n    yield 2\n    yield 3\n  end\nend\nputs Trio.new.Sum\nputs Trio.new.Select(->(x : Int32) { x * 2 }).Last", "6\n6" },
         { "ruby block yield still works", "def twice(&b : Int32 ->)\n  yield 1\n  yield 2\nend\nt = 0\ntwice { |x| t += x }\nputs t", "3" },
         { "nullable generic arguments", "d = Dictionary(String, String?).new\nd[\"a\"] = nil\nd[\"b\"] = \"x\"\nputs d[\"a\"].nil?\nl = List(String?).new\nl.Add(nil)\nputs l.Count\nputs (d[\"b\"] || \"\").size", "true\n1\n1" },
+        { "declaring events", "class Btn\n  event clicked : EventHandler\n  def click\n    clicked&.Invoke(self, EventArgs.Empty)\n  end\nend\nb = Btn.new\nn = Atomic.new(0)\nb.click\nb.clicked += ->(s : Object?, e : EventArgs) { n.add(1) }\nb.click\nb.click\nputs n.get", "2" },
+        { "declaring delegate types", "delegate Op(a : Int32, b : Int32) : Int32\ndef apply(f : Op, x : Int32) : Int32\n  f.Invoke(x, x)\nend\nputs apply(->(a : Int32, b : Int32) { a * b }, 7)", "49" },
+        { "interface default methods", "interface IGreet\n  def name : String\n  def greet : String\n    \"hi \" + name\n  end\nend\nclass G < IGreet\n  def name : String\n    \"bo\"\n  end\nend\nputs G.new.as(IGreet).greet", "hi bo" },
         { "ruby methods and public_send", "class Q\n  def hi : String\n    \"hi\"\n  end\n  def add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nq = Q.new\nputs q.methods.includes?(\"hi\")\nputs q.public_send(\"add\", 2, 3)\nputs q.is_a?(Object)", "true\n5\ntrue" },
     };
 

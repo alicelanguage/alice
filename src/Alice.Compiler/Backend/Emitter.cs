@@ -112,6 +112,13 @@ public sealed class Emitter
                 case TypeDecl d: types.Append(Type(d)); break;
                 case EnumDecl e: types.Append(Enum(e)); break;
                 case LibDecl l: types.Append(Lib(l)); break;
+                case DelegateDecl dg:
+                    {
+                        var inv = ((TypeSym)dg.Sym!).Methods["Invoke"][0];
+                        string r = inv.Ret.IsVoid ? "void" : inv.Ret.Cs;
+                        types.Append($"{Attrs(dg.Attrs)}public delegate {r} {dg.Name}({string.Join(", ", inv.Params.Select(p => p.Type.Cs + " " + p.CsName))});\n");
+                        break;
+                    }
                 case MethodDecl m: prog.Append(Method(m, binder.Program)); break;
                 case ConstDecl c: prog.Append(Const(c, binder.Program)); break;
             }
@@ -238,6 +245,7 @@ public sealed class Emitter
     {
         var f = (FieldSym)a.Sym!;
         string st = f.IsStatic ? "static " : "";
+        if (a.Kind == "event") return $"{Attrs(a.Attrs)}{(owner.Kind == "interface" ? "" : "public ")}{st}event {f.Type.Cs} {f.CsName};\n";
         if (owner.Kind == "interface") return $"{f.Type.Cs} {f.CsName} {(a.Kind == "getter" ? "{ get; }" : "{ get; set; }")}\n";
         string acc = a.Kind switch { "getter" => "{ get; private set; }", "setter" => "{ private get; set; }", _ => "{ get; set; }" };
         string init = a.Init != null ? " = " + Init(a.Init, owner) + ";" : "";
@@ -596,7 +604,7 @@ public sealed class Emitter
         }
         string plist = string.Join(", ", ps);
         string where = Constraints(d.Constraints);
-        if (owner.Kind == "interface") return $"{dir}{ret} {m.CsName}{gen}({plist}){where};\n";
+        if (owner.Kind == "interface" && !d.HasBody) return $"{dir}{ret} {m.CsName}{gen}({plist}){where};\n";
         if (d.IsAbstract) return $"{dir}{d.Vis} abstract {ret} {m.CsName}{gen}({plist}){where};\n";
 
         lowerer.Type = owner;

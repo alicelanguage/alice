@@ -75,6 +75,9 @@ public sealed partial class Binder
                 case LibDecl l:
                     RegisterType(l.Name, "lib", ns, l);
                     break;
+                case DelegateDecl dg:
+                    RegisterType(dg.Name, "delegate", ns, dg);
+                    break;
             }
         }
     }
@@ -131,6 +134,15 @@ public sealed partial class Binder
                 case LibDecl l:
                     DeclareLib(l);
                     break;
+                case DelegateDecl dg:
+                    {
+                        // seen from Alice as a type with one method: f.Invoke(a, b)
+                        var s = (TypeSym)dg.Sym!;
+                        var inv = new MethodSym { Name = "Invoke", CsName = "Invoke", Owner = s, RetDeclared = true, Ret = dg.Ret != null ? ResolveType(dg.Ret) : AType.Void };
+                        foreach (var p in dg.Params) inv.Params.Add(new ParamSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!) });
+                        if (!s.Methods.ContainsKey("Invoke")) s.AddMethod(inv);
+                        break;
+                    }
                 case MethodDecl m:
                     DeclareMethod(m, owner);
                     break;
@@ -180,6 +192,8 @@ public sealed partial class Binder
             {
                 case AccessorDecl a:
                     var at = a.Type != null ? ResolveType(a.Type) : LiteralType(a.Init);
+                    // `event clicked : EventHandler`: reads as a nullable delegate (nil until someone subscribes)
+                    if (a.Kind == "event") at = new AType(at.Kind, at.Cs.TrimEnd('?') + "?", at.Clr) { Sym = at.Sym, Args = at.Args };
                     if (!at.IsKnown && !a.Untyped) throw Err(a, $"type required for {a.Kind} {a.Name}");
                     s.Fields[a.Name] = new FieldSym { Name = a.Name, CsName = Mangle(a.Name), Type = at, Kind = a.Kind, IsStatic = s.Kind == "module", Owner = s };
                     a.Sym = s.Fields[a.Name];

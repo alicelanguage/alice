@@ -93,7 +93,8 @@ public sealed partial class Parser
     bool IsTypeStart()
     {
         if (IsKw("abstract") && Peek(1).Kind == "id" && Peek(1).Text != "def") return true;
-        return t[p].Kind == "id" && " class struct module interface enum lib record ".Contains(" " + t[p].Text + " ");
+        return t[p].Kind == "id" && (" class struct module interface enum lib record ".Contains(" " + t[p].Text + " ")
+            || t[p].Text == "delegate" && Peek(1).Kind == "const");
     }
 
     /// <summary>
@@ -225,6 +226,26 @@ public sealed partial class Parser
         string kw = Next().Text;
         if (kw == "record" && IsKw("struct")) { Next(); kw = "record struct"; }
         if (kw == "lib") return Lib(tok);
+        if (kw == "delegate")
+        {
+            var dg = At(new DelegateDecl { Name = Next().Text, Attrs = TakeAttrs() }, tok);
+            if (IsOp("("))
+            {
+                Next();
+                while (!IsOp(")"))
+                {
+                    var pr = new Param { Name = Next().Text };
+                    Expect(":");
+                    pr.Type = Type();
+                    dg.Params.Add(pr);
+                    if (IsOp(",")) Next();
+                }
+                Next();
+            }
+            if (IsOp(":")) { Next(); dg.Ret = Type(); }
+            EndStmt();
+            return dg;
+        }
         if (kw == "enum") return Enum(tok);
         if (t[p].Kind != "const") throw Err("expected type name");
         var d = At(new TypeDecl { Kind = kw, Name = Next().Text, IsAbstract = isAbstract }, tok);
@@ -321,7 +342,7 @@ public sealed partial class Parser
                 d.Members.Add(al);
                 EndStmt();
             }
-            else if (IsKw("getter") || IsKw("property") || IsKw("setter"))
+            else if (IsKw("getter") || IsKw("property") || IsKw("setter") || IsKw("event") && Peek(1).Kind == "id")
             {
                 var a = At(new AccessorDecl { Kind = Next().Text, Attrs = TakeAttrs() }, tok);
                 a.Name = Next().Text;
@@ -507,7 +528,7 @@ public sealed partial class Parser
             while (IsOp(",") && Peek(1).Kind == "const" && !(Peek(2).Kind == "op" && Peek(2).Text == ":")) { Next(); m.TypeParams.Add(Next().Text); }
         }
         if (IsKw("where")) m.Constraints = Where();
-        if (m.IsAbstract || ownerKind == "interface")
+        if (m.IsAbstract || ownerKind == "interface" && !InterfaceBodyAhead())
         {
             m.HasBody = false;
             EndStmt();
@@ -543,6 +564,18 @@ public sealed partial class Parser
         int from = m.Line - lineBase, to = endLine - lineBase;
         if (from >= 0 && to < srcLines.Length) m.SourceText = string.Join("\n", srcLines[from..(to + 1)]);
         return m;
+    }
+
+    /// <summary>An interface method with statements on the next line is a default implementation (C# 8 default
+    /// interface method); another member, an attribute or `end` means it is abstract.</summary>
+    bool InterfaceBodyAhead()
+    {
+        int k = p;
+        while (t[k].Kind == "nl") k++;
+        if (k == p) return false;   // `def f : T` followed by something on the same line
+        var x = t[k];
+        if (x.Kind == "eof" || x.Kind == "op" && x.Text == "@[") return false;
+        return !(x.Kind == "id" && x.Text is "def" or "end" or "getter" or "property" or "setter" or "event" or "abstract" or "private" or "protected" or "async" or "pure" or "safe" or "unsafe" or "inline");
     }
 
     Param Param()

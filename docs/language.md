@@ -430,6 +430,28 @@ Tests: `ModuleTests`.
 - Reopening an Alice class merges members.
 - Reopening a .NET type (`class String`, `struct Int32`) emits extension methods: `"hey".shout`, `21.double`.
 
+### Events, delegates, default interface methods
+
+```crystal
+delegate Op(a : Int32, b : Int32) : Int32        # public delegate int Op(int a, int b)
+
+class Button
+  event clicked : EventHandler                   # public event EventHandler? clicked
+  def click
+    clicked&.Invoke(self, EventArgs.Empty)       # nil until someone subscribes
+  end
+end
+b = Button.new
+b.clicked += ->(s : Object?, e : EventArgs) { puts "hi" }
+
+interface IGreet
+  def name : String                              # abstract
+  def greet : String                             # a body on the next line: default implementation
+    "hi " + name
+  end
+end
+```
+
 ### Inheriting .NET types
 
 - `class MyList < List(Int32)`: inherited members callable unqualified (`Add(5)`, `Count`).
