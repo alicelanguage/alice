@@ -36,7 +36,6 @@ same commit as any change that moves a row.
 | Incremental compilation within a package | a changed file regenerates the whole package's C# (unchanged packages are skipped: a no-op build takes 1.0 s) | split large code bases into workspace members |
 | ASP.NET Core in CI on machines without the shared framework | `examples/web/aspnet` builds and is checked only where ASP.NET Core is installed | `examples/verify.sh` on a full SDK |
 | UI frameworks (WPF, MAUI, Avalonia) | XAML code-behind in Alice is untested; view models are tested (`INotifyPropertyChanged`, `ObservableCollection`) | XAML and code-behind in C#, view models and logic in Alice |
-| Assignment in `elsif` (`elsif x = f`) | rejected with an explanation | assign before the `if` |
 | Interaction-net runtime | explored and parked: slower than fork/join on CPU (`benchmarks/inet/README.md`) | fork/join is the parallel model |
 | References and rename are name-based | top-level names are renamed project-wide by name, locals within their `def`; two unrelated methods with the same name in different types rename together | review the edit preview |
 | Roadmap items in the README | ownership for collections, GPU offload, `ObjectSpace` | see `README.md#roadmap` |

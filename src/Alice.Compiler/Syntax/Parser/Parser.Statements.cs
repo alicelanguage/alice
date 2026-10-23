@@ -233,19 +233,30 @@ public sealed partial class Parser
         if (IsKw("then")) Next();
         s.Conds.Add(c);
         s.Bodies.Add(Block(" elsif else end "));
+        var cur = s;   // the if receiving the next branches
         while (IsKw("elsif"))
         {
-            Next();
-            if (t[p].Kind == "id" && Peek(1).Kind == "op" && Peek(1).Text == "=")
-                throw Err("assignment in `elsif` would run even when an earlier branch matched; assign before the `if` or nest an `if`");
-            s.Conds.Add(Expression());
+            Token et = Next();
+            if (CondAssign(et) is { } ea)
+            {
+                // `elsif x = f`: the rest of the chain nests in the else branch, so f runs only when every earlier
+                // condition failed (as in Ruby): `else; x = f; if x ... end; end`
+                var inner = At(new IfStmt(), et);
+                inner.Conds.Add(At(new NameExpr { Name = ((NameExpr)ea.Target).Name }, et));
+                if (IsKw("then")) Next();
+                inner.Bodies.Add(Block(" elsif else end "));
+                cur.Else = [ea, inner];
+                cur = inner;
+                continue;
+            }
+            cur.Conds.Add(Expression());
             if (IsKw("then")) Next();
-            s.Bodies.Add(Block(" elsif else end "));
+            cur.Bodies.Add(Block(" elsif else end "));
         }
         if (IsKw("else"))
         {
             Next();
-            s.Else = Block(" end ");
+            cur.Else = Block(" end ");
         }
         ExpectKw("end");
         if (ca != null) spliced.Add(ca);
