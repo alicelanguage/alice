@@ -158,7 +158,7 @@ public sealed partial class Parser
         return neg ? -v : v;
     }
 
-    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"));
+    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"));
 
     bool IsStructNew() => t[p].Kind == "const" && Peek(1).Text == "=" && Peek(2).Text == "Struct" && Peek(3).Text == "." && Peek(4).Text == "new";
 
@@ -450,13 +450,14 @@ public sealed partial class Parser
     {
         var m = At(new MethodDecl(), Cur);
         bool inline = false;
-        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("inline"))
+        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("inline"))
         {
             string mod = Next().Text;
             if (mod == "abstract") m.IsAbstract = true;
             else if (mod == "async") m.IsAsync = true;
             else if (mod == "pure") m.IsPure = true;
             else if (mod == "safe") m.IsSafe = true;
+            else if (mod == "unsafe") m.IsUnsafe = true;
             else if (mod == "inline") inline = true;
             else m.Vis = mod;
         }

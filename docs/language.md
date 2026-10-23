@@ -447,6 +447,9 @@ end
 | `Array(number)` | pointer to the pinned elements, no copy |
 | `@[Fast]` on `fun` | no GC transition (short, non-blocking C functions only) |
 
+`Pointer(T)` values (`fun malloc(n : UInt64) : Pointer(UInt8)`, `p[i]`) are allowed only inside `unsafe ... end` or an
+`unsafe def`; elsewhere they are error AL0214. Strings, arrays and numbers need no `unsafe`.
+
 Design and measurements: [ADR 0018](../archicture/adr/0018-ffi-blittable-wrappers.md). Tests: `FfiTests`.
 
 ## 10. Concurrency (ADR 0005, 0008)

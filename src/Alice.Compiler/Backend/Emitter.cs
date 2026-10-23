@@ -606,7 +606,7 @@ public sealed class Emitter
             return $"{attrs}{dir}public {ret} {opName}({plist})\n{{\n{code}}}\n{op}";
         }
         var (vis, virt) = Virtual(m, owner, d.Vis);
-        string mods = vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + virt + (asyncKw != "" ? " async" : "");
+        string mods = vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + virt + (asyncKw != "" ? " async" : "") + (d.IsUnsafe ? " unsafe" : "");
         return $"{attrs}{dir}{mods} {ret} {m.CsName}{gen}({plist}){where}\n{{\n{code}}}\n";
     }
 
@@ -622,7 +622,7 @@ public sealed class Emitter
             string extra = string.Concat(lowerer.Extra);
             lowerer.Extra.Clear();
             var plist = string.Join(", ", ps.Select(p => p.IndexOf(" = ", StringComparison.Ordinal) is int k and >= 0 ? p[..k] : p));
-            string mods = "private" + (m.IsStatic || owner.Kind == "extension" ? " static" : "");
+            string mods = "private" + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + (d.IsUnsafe ? " unsafe" : "");
             return $"{extra}{mods} {ret} {m.CsName}{Lowering.Lowerer.SerialSuffix}({plist})\n{{\n{code}}}\n";
         }
         finally { lowerer.SerialClone = false; }

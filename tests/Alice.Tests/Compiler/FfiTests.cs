@@ -76,4 +76,29 @@ public class FfiTests
         Assert.DoesNotContain("MarshalAs", cs);
         Assert.DoesNotContain("CharSet", cs);
     }
+
+    const string Malloc = "  fun malloc(n : UInt64) : Pointer(Int32)\n  fun free(p : Pointer(Int32)) : Void\n";
+
+    [Fact]
+    public void Pointers_need_an_unsafe_block()
+    {
+        var src = Lib(Malloc) + "unsafe\n  p = LibC.malloc(16_u64)\n  p[0] = 41\n  p[1] = 1\n  puts p[0] + p[1]\n  LibC.free(p)\nend\n";
+        Assert.Equal("42", Run(src));
+    }
+
+    [Fact]
+    public void Unsafe_def_marks_a_whole_method()
+    {
+        var src = Lib(Malloc) + "unsafe def sum3 : Int32\n  p = LibC.malloc(12_u64)\n  3.times { |i| p[i] = i + 1 }\n  t = p[0] + p[1] + p[2]\n  LibC.free(p)\n  t\nend\nputs sum3\n";
+        Assert.Equal("6", Run(src));
+    }
+
+    [Fact]
+    public void Pointer_use_outside_unsafe_is_an_alice_error()
+    {
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Run(Lib(Malloc) + "p = LibC.malloc(4_u64)\nLibC.free(p)\n"));
+        var d = ex.Diagnostics.First();
+        Assert.Equal("AL0214", d.Code);
+        Assert.Contains("unsafe", d.Message);
+    }
 }

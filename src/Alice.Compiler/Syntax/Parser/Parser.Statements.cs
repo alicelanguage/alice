@@ -41,6 +41,13 @@ public sealed partial class Parser
             ExpectKw("end");
             s = u;
         }
+        else if (IsKw("unsafe") && Peek(1).Kind == "nl")
+        {
+            Next();
+            var us = At(new BeginStmt { Body = Block(" end "), Unsafe = true }, tok);
+            ExpectKw("end");
+            s = us;
+        }
         else if (IsKw("scope") && Peek(1).Kind == "nl")
         {
             Next();

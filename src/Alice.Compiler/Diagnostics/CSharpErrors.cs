@@ -26,6 +26,8 @@ public static class CSharpErrors
                 return ("AL0301", $"'{m.Groups["o"].Value}' is not defined for {T(m.Groups["a"].Value)} and {T(m.Groups["b"].Value)}");
             case "CS0023" when (m = Regex.Match(en, @"Operator '(?<o>[^']+)' cannot be applied to operand of type '(?<a>.+?)'")).Success:
                 return ("AL0301", $"'{m.Groups["o"].Value}' is not defined for {T(m.Groups["a"].Value)}");
+            case var _ when en.Contains("unsafe context"):   // CS0214, CS0227, CS9123...: every pointer-in-safe-code error
+                return ("AL0214", "pointer operation outside `unsafe`: wrap it in `unsafe ... end` or declare the method `unsafe def`");
             case "CS0103" when (m = Regex.Match(en, @"The name '(?<n>[^']+)' does not exist")).Success:
                 return ("AL0303", $"undefined name '{M(m.Groups["n"].Value)}'");
             case "CS0029" or "CS0266" when (m = Regex.Match(en, @"convert type '(?<a>.+?)' to '(?<b>.+?)'")).Success:

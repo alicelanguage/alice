@@ -93,6 +93,7 @@ public sealed class MethodDecl : Item
     public bool IsAbstract;
     public bool IsAsync;
     public bool IsPure;
+    public bool IsUnsafe;   // `unsafe def`: pointers allowed in the whole method (C# unsafe)
     public string? RuleName;      // `rule name(...)` (RULES.al): a pure Bool method checked over Domains by `alice prove`
     public List<RuleDomain> Domains = new();           // `pure def`: proven free of effects, or AL0210
     public bool IsSafe;           // `safe def`: only Alice code, no interop, native or unchecked escape, or AL0212
