@@ -36,12 +36,16 @@ public static class SmtProver
                 return IntPtr.Zero;
             });
         }
-        try { using var ctx = new Context(); return null; }
-        catch (Exception e) when (e is DllNotFoundException or TypeInitializationException or EntryPointNotFoundException or BadImageFormatException)
+        // Probe runs in its own method: a missing Microsoft.Z3 assembly fails when the method using Context is compiled
+        try { Probe(); return null; }
+        catch (Exception e) when (e is DllNotFoundException or TypeInitializationException or EntryPointNotFoundException or BadImageFormatException or FileNotFoundException or FileLoadException)
         {
             return "Z3 is not installed: install it (pacman -S z3, apt install libz3-4, brew install z3) or set ALICE_Z3=/path/to/libz3";
         }
     }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static void Probe() { using var ctx = new Context(); }
 
     public static List<Outcome> Prove(List<SourceFile> files, IEnumerable<string> refs)
     {
