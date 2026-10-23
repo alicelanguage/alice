@@ -33,8 +33,9 @@ public static class DiagnosticRenderer
         AnsiConsole.MarkupLine($"[bold {color}]{sev}[[{d.Code}]][/][bold]: {Markup.Escape(d.Message)}[/]");
         if (d.Line <= 0) return;
         string gutter = new(' ', d.Line.ToString().Length);
-        AnsiConsole.MarkupLine($"[blue]{gutter}-->[/] {Markup.Escape(Relative(d.File))}:{d.Line}:{d.Col}");
         string? line = SourceLine(d.File, d.Line, sources);
+        if (line != null) d = d with { Col = AliceColumn(d.Code, d.Message, d.Col, line) };
+        AnsiConsole.MarkupLine($"[blue]{gutter}-->[/] {Markup.Escape(Relative(d.File))}:{d.Line}:{d.Col}");
         if (line != null)
         {
             AnsiConsole.MarkupLine($"[blue]{gutter} |[/]");
@@ -48,6 +49,26 @@ public static class DiagnosticRenderer
         string hint = T(hintKey);
         if (hint != hintKey) AnsiConsole.MarkupLine($"[blue]{gutter} =[/] [bold]{T("help")}[/]: {Markup.Escape(hint)}");
         AnsiConsole.WriteLine();
+    }
+
+    /// <summary>`#line` maps lines, not columns: an error from the generated C# (AL03xx) carries a C# column. It is
+    /// moved to the name the message quotes, as written in Alice (`frob`, or `to_widget` for .NET's `ToWidget`), or
+    /// to the line's first token.</summary>
+    public static int AliceColumn(string code, string message, int col, string line)
+    {
+        if (!code.StartsWith("AL03")) return col;
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(message, "'([A-Za-z_][A-Za-z0-9_?!]*)'"))
+        {
+            string name = m.Groups[1].Value;
+            string snake = System.Text.RegularExpressions.Regex.Replace(name, "(?<=[a-z0-9])([A-Z])", "_$1").ToLowerInvariant();
+            foreach (var n in new[] { name, snake })
+            {
+                var hit = System.Text.RegularExpressions.Regex.Match(line, $@"(?<![A-Za-z0-9_]){System.Text.RegularExpressions.Regex.Escape(n)}(?![A-Za-z0-9_])");
+                if (hit.Success) return hit.Index + 1;
+            }
+        }
+        int first = line.Length - line.TrimStart().Length;
+        return first + 1;
     }
 
     static int TokenLength(string line, int start)

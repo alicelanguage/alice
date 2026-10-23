@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.1 - unreleased
+
+- Errors that come from the generated C# point at the right Alice column: the name they quote (`frob`, or `to_widget`
+  for .NET's `ToWidget`), or the line's first token. `#line` maps lines only, so these carried the C# column.
+- ADR 0022 records `alice prove --smt`.
+
 ## 0.13.0 - 2026-10-23
 
 - `alice prove --smt`: opt-in Z3 (system libz3 or ALICE_Z3) proves rules over full `x : Int32` / `x : Int64` ranges, with overflow, division by zero and floored `/ %` semantics; untranslatable rules fall back to enumeration.

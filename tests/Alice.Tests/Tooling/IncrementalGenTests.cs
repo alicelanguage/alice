@@ -43,3 +43,16 @@ public class IncrementalGenTests
         finally { Directory.Delete(dir, true); }
     }
 }
+
+/// <summary>`#line` maps lines only: errors that come from the generated C# point at the name they quote in the Alice line.</summary>
+public class AliceColumnTests
+{
+    [Theory]
+    [InlineData("AL0302", "undefined method 'frob' for Int32", 14, "  x.frob", 5)]
+    [InlineData("AL0302", "undefined method 'to_widget' for String", 30, "  s.to_widget(1)", 5)]
+    [InlineData("AL0302", "undefined method 'ToWidget' for String", 30, "  s.to_widget(1)", 5)]   // .NET-cased name
+    [InlineData("AL0300", "something odd", 40, "    y = 2", 5)]                                 // no name: first token
+    [InlineData("AL0101", "expected `end`", 3, "  if x", 3)]                                    // Alice's own columns stay
+    public void Csharp_derived_errors_point_at_the_alice_token(string code, string msg, int col, string line, int expected)
+        => Assert.Equal(expected, Alice.Cli.Ui.DiagnosticRenderer.AliceColumn(code, msg, col, line));
+}
