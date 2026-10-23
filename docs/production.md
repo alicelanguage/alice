@@ -43,6 +43,6 @@ same commit as any change that moves a row.
 | References and rename on unbound code | where the binder could not resolve a name (code with errors), matching falls back to the name | fix the errors first, or review the edit preview |
 | Ownership of fields and arrays of objects | collections stored in fields, and arrays of references, stay with the GC (local arrays of numbers and local lists and hashes of any type are pooled) | preallocate and reuse explicitly |
 | `class_eval` / `eval` with strings | not offered: it needs the compiler at run time, defeats NativeAOT and is an injection risk in production code | refinements, `define_method`, or a plugin assembly found with `subclasses` |
-| GPU loops: data on the device | `gpu for` uploads its arrays and copies written ones back on every launch, and has no reductions | keep large per-launch work; explicit ILGPU kernels for device-resident data |
+| GPU loops: data on the device | `gpu for` uploads its arrays and copies written ones back on every launch | keep large per-launch work; explicit ILGPU kernels for device-resident data |
 | NativeAOT `alice` compiler binary | the CLI needs the .NET runtime (it hosts Roslyn) | `dotnet tool install -g Alice.Cli` or the release archives |
 | Rules over unbounded domains | `alice prove` checks rules exhaustively over finite ranges only | keep rule domains finite |

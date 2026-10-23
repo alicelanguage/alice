@@ -185,8 +185,8 @@ public class LoopParallelizeTests
     [Theory]
     [InlineData("def f(xs : Array(Float32))\n  gpu for i in 0...xs.size\n    xs[i] = xs[i] * 2.0_f32\n  end\nend\n", "alice add ILGPU")]
     [InlineData("def g(x : Float32) : Float32\n  x\nend\ndef f(xs : Array(Float32))\n  gpu for i in 0...xs.size\n    xs[i] = g(xs[i])\n  end\nend\n", "`g` is a call")]
-    [InlineData("def f(xs : Array(Float32))\n  t = 0.0_f32\n  gpu for i in 0...xs.size\n    t += xs[i]\n  end\nend\n", "reductions")]
     [InlineData("def f(xs : Array(Float32))\n  gpu for i in 0...xs.size\n    xs[0] = xs[i]\n  end\nend\n", "not provably independent")]
+    [InlineData("def f(xs : Array(UInt8)) : UInt8\n  t = 0_u8\n  gpu for i in 0...xs.size\n    t += xs[i]\n  end\n  t\nend\n", "reductions need an Int32, Int64, Float32 or Float64")]
     [InlineData("def f(xs : Array(String))\n  gpu for i in 0...xs.size\n    xs[i] = xs[i]\n  end\nend\n", "kernels take arrays of numbers")]
     public void Gpu_loops_explain_what_keeps_them_off_the_gpu(string src, string why)
     {

@@ -41,3 +41,14 @@ xs2 = Array(Float32).new(4096) { |k| k.to_f32 }
 ys2 = Array(Float32).new(4096, 1.0_f32)
 saxpy(2.0_f32, xs2, ys2)
 puts "gpu for: y[0]=#{ys2[0]} y[10]=#{ys2[10]} y[4095]=#{ys2[4095]}"
+
+# A reduction: `t += ...` from every GPU thread becomes an atomic add into one device value.
+def total(xs : Array(Int64)) : Int64
+  t = 0_i64
+  gpu for i in 0...xs.size
+    t += xs[i] * 2_i64
+  end
+  t
+end
+
+puts "gpu sum: #{total(Array(Int64).new(100_000) { |k| k.to_i64 })}"

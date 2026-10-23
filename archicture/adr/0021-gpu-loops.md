@@ -14,7 +14,9 @@ Decision:
   stays free of it.
 - Admission is the `par for` proof (each iteration writes only its own element, ADR 0008 race checks apply) plus GPU
   rules: captured values are arrays of numbers or numbers; the body uses arithmetic, indexing, `Math.*` and number
-  conversions; no calls, allocation, strings, objects or reductions. Each rejection is a compile error naming the
+  conversions; no calls, allocation, strings or objects. A reduction `t += e` into an outer Int32/Int64/Float32/Float64
+  becomes `ILGPU.Atomic.Add` on a one-element device buffer, added to `t` after the launch (float sums may differ in
+  the last bits from a serial sum: the order of additions varies, as in any parallel float reduction). Each rejection is a compile error naming the
   cause. Body errors come before the missing-package error.
 - Host code uploads every captured array, launches once with `(count, start, views..., scalars...)`, synchronizes and
   copies back only the arrays the body writes. The kernel delegate is compiled once per process; one accelerator is
@@ -25,6 +27,6 @@ Decision:
   compile time and called fully qualified, so generated files import nothing.
 
 Consequences: transfers are per launch, so a loop pays off when its work outweighs copying its arrays; keeping data on
-the device across loops and reductions are future work. Explicit ILGPU kernels (`examples/gpu/ilgpu`) remain the
+the device across loops is future work. Explicit ILGPU kernels (`examples/gpu/ilgpu`) remain the
 tool for everything else. Tests: `ParallelizeTests.Gpu_loops_explain_*` and `Integration/SampleTests.Gpu_kernel_*`,
 run on an OpenCL GPU and on the CPU accelerator.

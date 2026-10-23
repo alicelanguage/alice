@@ -15,6 +15,9 @@ public sealed partial class Lowerer
     /// <summary>Set when a `gpu for` was lowered: the emitter adds the shared accelerator class once.</summary>
     public bool UsesGpu;
 
+    /// <summary>The reduction variable of the `gpu for` kernel being lowered: its `+=` becomes ILGPU.Atomic.Add.</summary>
+    LocalSym? gpuAcc;
+
     MStmt GpuFor(ForStmt f)
     {
         string where = $"{File}:{f.Line}:{Math.Max(1, f.Col)}";
@@ -25,7 +28,9 @@ public sealed partial class Lowerer
         plan.Inner.Add(plan.LoopVar);
         if (!LoopBody(f.Body, plan, 0) || WalkStmts(f.Body).Any(s => s is Assign { Target: NameExpr { Sym: LocalSym c } } && c == plan.LoopVar))
             throw No("iterations are not provably independent (each may write only `a[i]` at its own index and locals declared in the body)");
-        if (plan.Acc != null) throw No("reductions (`+=` into an outer variable) are not supported yet; write per-index results to an array");
+        // a reduction `t += e` into an outer number: an atomic add on the device (ILGPU.Atomic has Int32/Int64/Float32/Float64)
+        if (plan.Acc != null && plan.Acc.Type.Cs is not ("int" or "long" or "float" or "double"))
+            throw No($"reductions need an Int32, Int64, Float32 or Float64 accumulator (`{plan.Acc.Name}` is {plan.Acc.Type.Cs})");
         foreach (var e in WalkReads(f.Body))
             switch (e)
             {
@@ -43,7 +48,7 @@ public sealed partial class Lowerer
         foreach (var n in WalkReads(f.Body).Concat(WalkExpr(r.A)).Concat(WalkExpr(r.B)).OfType<NameExpr>()
                      .Concat(WalkStmts(f.Body).OfType<Assign>().Select(a => a.Target).OfType<IndexExpr>().Select(ix => ix.Target).OfType<NameExpr>()))
         {
-            if (n is not { Res: "local", Sym: LocalSym l } || plan.Inner.Contains(l) || arrays.Contains(l) || scalars.Contains(l)) continue;
+            if (n is not { Res: "local", Sym: LocalSym l } || plan.Inner.Contains(l) || l == plan.Acc || arrays.Contains(l) || scalars.Contains(l)) continue;
             if (l.Type is { Kind: "array", Elem: { } el } && Unmanaged.Contains(el.Cs) && el.Cs is not ("bool" or "char")) arrays.Add(l);
             else if (Unmanaged.Contains(l.Type.Cs) && l.Type.Cs is not ("bool" or "char")) scalars.Add(l);
             else throw No($"`{l.Name}` is a {l.Type.Cs}; kernels take arrays of numbers and numbers");
@@ -56,7 +61,10 @@ public sealed partial class Lowerer
         int k = ++helperN;
         string kernel = $"__gpu_kernel_{k}", field = $"__gpu_k_{k}", start = Temp("ga"), count = Temp("gn");
         string View(LocalSym a) => $"global::ILGPU.Runtime.ArrayView1D<{a.Type.Elem!.Cs}, global::ILGPU.Stride1D.Dense>";
+        var acc = plan.Acc;
+        string AccView() => $"global::ILGPU.Runtime.ArrayView1D<{acc!.Type.Cs}, global::ILGPU.Stride1D.Dense>";
         var ptypes = new List<string> { "global::ILGPU.Index1D", "int" };
+        if (acc != null) ptypes.Add(AccView());
         ptypes.AddRange(arrays.Select(View));
         ptypes.AddRange(scalars.Select(s => s.Type.Cs));
 
@@ -67,16 +75,17 @@ public sealed partial class Lowerer
         pre = new List<MStmt>();
         ctx.Add("loop");
         inGpuKernel = true;
+        gpuAcc = acc;
         List<MStmt> body;
         try { body = Stmts(f.Body, Tail.None, null); }
-        finally { inGpuKernel = false; }
+        finally { inGpuKernel = false; gpuAcc = null; }
         ctx.RemoveAt(ctx.Count - 1);
         body.InsertRange(0, pre);
         pre = savedPre;
         inParallelGen = saved;
         var kp = new Backend.Printer("", 2);
         foreach (var st in body) kp.Root(st);
-        string ps = string.Join(", ", new[] { "global::ILGPU.Index1D __gi", "int __ga" }
+        string ps = string.Join(", ", new[] { "global::ILGPU.Index1D __gi", "int __ga" }.Concat(acc != null ? [$"{AccView()} __gacc"] : [])
             .Concat(arrays.Select(a => $"{View(a)} {a.CsName}")).Concat(scalars.Select(s => $"{s.Type.Cs} {s.CsName}")));
         Extra.Add($"private static void {kernel}({ps})\n{{\n    int {plan.LoopVar.CsName} = (int)__gi + __ga;\n    unchecked\n    {{\n{kp}    }}\n}}\n"
             + $"private static global::System.Action<{string.Join(", ", ptypes)}>? {field};\n");
@@ -102,9 +111,16 @@ public sealed partial class Lowerer
             Line($"{field} ??= {load}.LoadAutoGroupedStreamKernel<{string.Join(", ", ptypes)}>(__acc, {kernel})"),
         };
         foreach (var a in arrays) launch.Add(Line($"using var __gb_{a.CsName.TrimStart('@')} = {alloc}.Allocate1D(__acc, {a.CsName})"));
-        launch.Add(Line($"{field}({count}, {start}{string.Concat(arrays.Select(a => $", __gb_{a.CsName.TrimStart('@')}.View"))}{string.Concat(scalars.Select(sc => ", " + sc.CsName))})"));
+        if (acc != null) launch.Add(Line($"using var __gb_acc = {alloc}.Allocate1D(__acc, new {acc.Type.Cs}[1])"));
+        launch.Add(Line($"{field}({count}, {start}{(acc != null ? ", __gb_acc.View" : "")}{string.Concat(arrays.Select(a => $", __gb_{a.CsName.TrimStart('@')}.View"))}{string.Concat(scalars.Select(sc => ", " + sc.CsName))})"));
         launch.Add(Line("__acc.Synchronize()"));
         foreach (var a in arrays.Where(written.Contains)) launch.Add(Line($"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View, {a.CsName})"));
+        if (acc != null)
+        {
+            launch.Add(Line($"var __gsum = new {acc.Type.Cs}[1]"));
+            launch.Add(Line($"{copy}.CopyToCPU(__gb_acc.View, __gsum)"));
+            launch.Add(Line($"{acc.CsName} += __gsum[0]"));
+        }
         host.Add(new MIf { Cond = new MCode($"{count} > 0"), Then = { new MBlock { Body = launch } } });
         return new MBlock { Body = host };
     }
