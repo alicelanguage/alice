@@ -6,7 +6,46 @@ public sealed partial class Binder
 {
     void BindBlock(List<Stmt> body)
     {
-        foreach (var s in body) BindStmt(s);
+        var guarded = new List<LocalSym>();
+        for (int i = 0; i < body.Count; i++)
+        {
+            BindStmt(body[i]);
+            // guard clause: `return unless n` / `break unless n` / `next unless n` / `raise ... unless n` narrows n
+            // for the rest of the block (when the rest never reassigns it)
+            if (body[i] is IfStmt { Conds: [UnaryExpr { Op: "!", E: NameExpr { Sym: LocalSym g } }], Else: null } gi
+                && gi.Bodies[0] is [.., var last] && last is ReturnStmt or BreakStmt or NextStmt or ExprStmt { Expr: CallExpr { Name: "raise" } }
+                && NullableValue(g.Type) && !Assigns(body.Skip(i + 1), g.Name))
+            {
+                narrowed[g] = narrowed.GetValueOrDefault(g) + 1;
+                guarded.Add(g);
+            }
+        }
+        foreach (var g in guarded) Unnarrow(g);
+    }
+
+    /// <summary>Locals known non-nil in the current region (flow typing for nullable value types; C# narrows
+    /// nullable references itself).</summary>
+    readonly Dictionary<LocalSym, int> narrowed = new();
+
+    void Unnarrow(LocalSym l) { if (--narrowed[l] == 0) narrowed.Remove(l); }
+
+    /// <summary>Int32?, Float64?...: the CLR type is Nullable&lt;T&gt;, or T itself with a `?` spelling.</summary>
+    static bool NullableValue(AType t) => t.Cs.EndsWith('?') && t.Clr is { IsValueType: true };
+
+    static AType NonNullValue(AType t) => ClrTypes.FromClr(Nullable.GetUnderlyingType(t.Clr!) ?? t.Clr!);
+
+    /// <summary>Whether any statement assigns (or passes `out`) the named local.</summary>
+    static bool Assigns(IEnumerable<Stmt> stmts, string name)
+    {
+        bool hit = false;
+        AstWalk.Each(stmts.ToList(), n =>
+        {
+            if (n is Assign { Target: NameExpr t } && t.Name == name) hit = true;
+            if (n is MultiAssign ma && ma.Names.Contains(name)) hit = true;
+            if (n is Arg { OutName: var o } && o == name) hit = true;
+            if (n is Arg { Mod: "ref", Value: NameExpr r } && r.Name == name) hit = true;
+        });
+        return hit;
     }
 
     void Scoped(List<Stmt> body)
@@ -39,7 +78,14 @@ public sealed partial class Binder
             case IfStmt i:
                 HoistBranchLocals(i.Bodies.Append(i.Else));
                 foreach (var c in i.Conds) BindExpr(c);
-                foreach (var b in i.Bodies) Scoped(b);
+                for (int k = 0; k < i.Bodies.Count; k++)
+                {
+                    // `if n` with n : Int32?: n is an Int32 in the branch (unless the branch reassigns it)
+                    var nl = i.Conds[k] is NameExpr { Sym: LocalSym cl } && NullableValue(cl.Type) && !Assigns(i.Bodies[k], cl.Name) ? cl : null;
+                    if (nl != null) narrowed[nl] = narrowed.GetValueOrDefault(nl) + 1;
+                    Scoped(i.Bodies[k]);
+                    if (nl != null) Unnarrow(nl);
+                }
                 if (i.Else != null) Scoped(i.Else);
                 break;
             case WhileStmt w:

@@ -155,6 +155,12 @@ public sealed partial class Binder
             UseLocal(l);
             n.Res = "local";
             n.Sym = l;
+            if (narrowed.ContainsKey(l))
+            {
+                n.Narrowed = true;
+                return NonNullValue(l.Type);
+            }
+            n.Narrowed = false;
             return l.Type;
         }
         var f = curType.FindField(n.Name);

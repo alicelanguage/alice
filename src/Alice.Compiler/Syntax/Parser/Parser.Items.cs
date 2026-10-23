@@ -51,7 +51,10 @@ public sealed partial class Parser
             else
             {
                 if (!top) throw Err("statements are not allowed inside a namespace");
-                into.Add(At(new StmtItem { Stmt = Statement() }, tok));
+                var st = Statement();
+                foreach (var pre in spliced) into.Add(At(new StmtItem { Stmt = pre }, tok));
+                spliced.Clear();
+                into.Add(At(new StmtItem { Stmt = st }, tok));
             }
         }
     }

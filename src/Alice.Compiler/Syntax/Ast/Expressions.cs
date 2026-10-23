@@ -31,7 +31,11 @@ public sealed class InterpExpr : Expr
     public List<Expr> Holes = new();      // Chunks[i] precedes Holes[i]; Chunks has Holes.Count + 1 items
 }
 
-public sealed class NameExpr : Expr { public string Name = ""; }
+public sealed class NameExpr : Expr
+{
+    public string Name = "";
+    public bool Narrowed;   // an Int32? local read where it is known non-nil (`if n`, after `return unless n`): n.Value
+}
 public sealed class IvarExpr : Expr { public string Name = ""; }
 public sealed class SelfExpr : Expr { }
 public sealed class SuperExpr : Expr { public List<Arg>? Args; }

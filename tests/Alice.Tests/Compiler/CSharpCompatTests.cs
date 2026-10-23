@@ -45,6 +45,8 @@ public class CSharpCompatTests
         { "method references", "def sq(x : Int32) : Int32\n  x * x\nend\nclass Sh\n  def initialize(@k : Int32)\n  end\n  def scale(x : Int32) : Int32\n    x * @k\n  end\nend\nmodule M\n  def self.add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nf = ->sq(Int32)\ng = ->sq\ns = Sh.new(10)\nh = ->s.scale\nd : Func(Int32, Int32) = ->sq\nadd = ->M.add\nputs \"#{f.call(4)} #{g.call(5)} #{h.call(3)} #{d.Invoke(6)} #{add.call(2, 3)}\"\nputs [1, 2, 3].map(->sq).join(\",\")", "16 25 30 36 5\n1,4,9" },
         { "lock statement", "gate = System.Threading.Lock.new\nn = 0\nlock gate\n  n += 1\nend\no = Object.new\nlock o\n  puts \"in #{n}\"\nend", "in 1" },
         { "nil checks by truthiness", "def find(k : String) : String?\n  k == \"a\" ? \"alpha\" : nil\nend\ns = find(\"a\")\nif s\n  puts s.size\nend\nt = find(\"z\")\nputs \"none\" unless t\nputs !t\nn : Int32? = 4\nputs(n ? \"has n\" : \"no n\")\nb : Bool? = nil\nputs(b ? \"yes\" : \"no\")\nq = find(\"a\")\nwhile q\n  puts q\n  q = nil\nend", "5\nnone\ntrue\nhas n\nno\nalpha" },
+        { "assignment in conditions", "def find(k : String) : String?\n  k == \"a\" ? \"alpha\" : nil\nend\nif v = find(\"a\")\n  puts v.size\nend\nputs v\nif w = find(\"z\")\n  puts \"never\"\nelse\n  puts \"no w\"\nend\nq = Queue(Int32).new\nq.Enqueue(1)\nq.Enqueue(2)\ndef pop(q : Queue(Int32)) : Int32?\n  q.Count > 0 ? q.Dequeue : nil\nend\ntotal = 0\nwhile x = pop(q)\n  total += x\nend\nputs total", "5\nalpha\nno w\n3" },
+        { "nullable value narrowing", "def half(n : Int32?) : Int32\n  return -1 unless n\n  n / 2\nend\nm : Int32? = 9\nif m\n  puts m + 1\nend\nputs half(8)\nputs half(nil)\nf : Float64? = 1.5\nputs(f ? f * 2.0 : 0.0)", "10\n4\n-1\n3.0" },
         { "ruby methods and public_send", "class Q\n  def hi : String\n    \"hi\"\n  end\n  def add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nq = Q.new\nputs q.methods.includes?(\"hi\")\nputs q.public_send(\"add\", 2, 3)\nputs q.is_a?(Object)", "true\n5\ntrue" },
     };
 
@@ -78,5 +80,14 @@ public class CSharpCompatTests
         var src = "gate = Object.new\nlist = List(Int32).new\nt = spawn { lock gate\n  list.Add(1)\nend }\nt.wait\n";
         var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src));
         Assert.Contains("data race", ex.Message + string.Join("", ex.Diagnostics.Select(d => d.Message)));
+    }
+
+    [Fact]
+    public void Narrowing_stops_where_the_local_is_reassigned()
+    {
+        // `n = nil` inside the branch: n stays Int32? there (reading n.Value would throw); `n + 1` is lifted arithmetic
+        var src = "n : Int32? = 1\nif n\n  n = nil\n  puts n + 1\nend\n";
+        Assert.DoesNotContain(".Value", AliceCompiler.Transpile(src));
+        Assert.Contains("n.Value + 1", AliceCompiler.Transpile("n : Int32? = 1\nif n\n  puts n + 1\nend\n"));
     }
 }

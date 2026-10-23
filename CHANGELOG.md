@@ -2,6 +2,8 @@
 
 ## 0.12.3 - unreleased
 
+- Assignment as a condition: `if user = find(id)` and `while line = reader.ReadLine`. The `while` form assigns before every test; `elsif x = ...` is an error that explains why.
+- Flow narrowing for nullable numbers: inside `if n` and after a guard clause (`return unless n`, `break`/`next unless n`, `raise ... unless n`), an `Int32?` local reads as `Int32` (`n.Value`). Narrowing stops where the branch reassigns the local. C# already narrows nullable references.
 - Conditions use Ruby truthiness: `if s`, `unless t`, `while q`, `s ? a : b` and `!s` on a nullable or reference value are nil checks, and `Bool?` counts only when it holds `true`. Before, `if s` on a `String?` failed with "expected Bool", despite the guide recommending it.
 - `gc = "auto"` caps server GC's gen0 budget at 16 MB (`System.GC.Gen0MaxBudget`). Polyglot suite at its default size (cold runs of 60-110 ms, before vs after this release): uncapped server GC added 6-17 ms to some workloads (merkle 79 -> 93 ms); with the cap the cost is 0-10 ms (merkle 87.5 ms). Large parallel heaps keep the win (tree(23) build 116 vs 698 ms on workstation). Short-lived CLIs that must start fastest can set `gc = "workstation"`.
 - Examples: `data/trees.al`, `dotnet/library_api.al`, `interop/libc.al`, and `tools/wand` (a generator CLI packaged as a .NET tool). `Integration/ExampleTests` runs every standalone example and checks its output.

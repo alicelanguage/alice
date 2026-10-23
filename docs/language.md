@@ -84,6 +84,20 @@ puts s.nil?        # ok
 puts s.Length      # error CS8602
 ```
 
+Conditions use Ruby truthiness: only `nil` and `false` are falsy, so `if s`, `unless s`, `while s`, `s ? a : b`
+and `!s` are nil checks on a nullable. Inside `if n`, and after a guard clause (`return unless n`, `break unless n`,
+`next unless n`, `raise ... unless n`), a nullable number such as `n : Int32?` reads as `Int32` (narrowing stops
+where the branch reassigns `n`). An assignment can be the condition, as in Ruby:
+
+```crystal
+if user = find(id)        # user : User? here, non-nil inside the branch
+  puts user.name
+end
+while line = reader.ReadLine
+  puts line.size
+end
+```
+
 `s.try &.Length` **(planned)**.
 
 ### Any (dynamic)

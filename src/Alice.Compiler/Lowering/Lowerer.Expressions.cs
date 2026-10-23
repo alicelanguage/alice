@@ -129,7 +129,7 @@ public sealed partial class Lowerer
             case "local" when soa != null && n.Sym is LocalSym sl && soa.Ps.Contains(sl):
                 return new MIndex { Target = new MCode(soa.Store), Args = { new MCode(soa.Idx) } };
             case "local":
-                return new MCode(((LocalSym)n.Sym!).CsName);
+                return new MCode(((LocalSym)n.Sym!).CsName + (n.Narrowed ? ".Value" : ""));
             case "field":
                 return new MCode(((FieldSym)n.Sym!).CsName);
             case "call":

@@ -21,8 +21,25 @@ public sealed partial class Parser
                 throw Err($"expected '{words[^1]}'");
             }
             if (IsStop(stops)) return list;
-            list.Add(Statement());
+            var st = Statement();
+            list.AddRange(spliced);   // `if x = f` puts `x = f` right before the if
+            spliced.Clear();
+            list.Add(st);
         }
+    }
+
+    /// <summary>Statements a construct needs just before itself (`if x = f(y)` -> `x = f(y)` then `if x`).</summary>
+    readonly List<Stmt> spliced = [];
+
+    /// <summary>`name = expr` as a condition (Ruby `if m = re.match(s)`, `while line = gets`): the assignment, or null.</summary>
+    Assign? CondAssign(Token tok)
+    {
+        if (!(t[p].Kind == "id" && Peek(1).Kind == "op" && Peek(1).Text == "=")) return null;
+        string name = Next().Text;
+        Next();
+        var value = Expression();
+        DeclareLocal(name);
+        return At(new Assign { Target = At(new NameExpr { Name = name }, tok), Value = value }, tok);
     }
 
     Stmt Statement()
@@ -208,7 +225,10 @@ public sealed partial class Parser
         Token tok = Cur;
         bool neg = Next().Text == "unless";
         var s = At(new IfStmt(), tok);
-        Expr c = Expression();
+        Expr c;
+        var ca = CondAssign(tok);   // queued once the whole if is parsed: inner blocks flush `spliced` too
+        if (ca != null) c = At(new NameExpr { Name = ((NameExpr)ca.Target).Name }, tok);
+        else c = Expression();
         if (neg) c = At(new UnaryExpr { Op = "!", E = c }, tok);
         if (IsKw("then")) Next();
         s.Conds.Add(c);
@@ -216,6 +236,8 @@ public sealed partial class Parser
         while (IsKw("elsif"))
         {
             Next();
+            if (t[p].Kind == "id" && Peek(1).Kind == "op" && Peek(1).Text == "=")
+                throw Err("assignment in `elsif` would run even when an earlier branch matched; assign before the `if` or nest an `if`");
             s.Conds.Add(Expression());
             if (IsKw("then")) Next();
             s.Bodies.Add(Block(" elsif else end "));
@@ -226,6 +248,7 @@ public sealed partial class Parser
             s.Else = Block(" end ");
         }
         ExpectKw("end");
+        if (ca != null) spliced.Add(ca);
         return s;
     }
 
@@ -233,6 +256,18 @@ public sealed partial class Parser
     {
         Token tok = Cur;
         bool neg = Next().Text == "until";
+        if (!neg && CondAssign(tok) is { } wa)
+        {
+            // `while x = f` -> `while true; x = f; break unless x; ...`: the assignment runs before every test
+            if (IsKw("do")) Next();
+            var name = ((NameExpr)wa.Target).Name;
+            var exit = At(new IfStmt { Conds = { At(new UnaryExpr { Op = "!", E = At(new NameExpr { Name = name }, tok) }, tok) }, Bodies = { new List<Stmt> { At(new BreakStmt(), tok) } } }, tok);
+            var body = Block(" end ");
+            body.InsertRange(0, [wa, exit]);
+            var lw = At(new WhileStmt { Cond = At(new LitExpr { Kind = "bool", Text = "true" }, tok), Body = body }, tok);
+            ExpectKw("end");
+            return lw;
+        }
         Expr c = Expression();
         if (neg) c = At(new UnaryExpr { Op = "!", E = c }, tok);
         if (IsKw("do")) Next();
