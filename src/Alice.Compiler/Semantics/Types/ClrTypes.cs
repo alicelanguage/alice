@@ -303,10 +303,13 @@ public sealed class ClrTypes
     }
 
     /// <summary>Element type of a CLR enumerable (IEnumerable&lt;T&gt;), or null.</summary>
+    public static bool IsSpan(Type? t) => t is { IsGenericType: true } && (t.GetGenericTypeDefinition() == typeof(Span<>) || t.GetGenericTypeDefinition() == typeof(ReadOnlySpan<>));
+
     public static Type? ElementOf(Type t)
     {
         if (t.IsArray) return t.GetElementType();
         if (t == typeof(string)) return typeof(char);
+        if (IsSpan(t)) return t.GetGenericArguments()[0];   // spans are not IEnumerable but iterate like arrays
         foreach (var i in t.GetInterfaces().Prepend(t))
             if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>)) return i.GetGenericArguments()[0];
         return null;

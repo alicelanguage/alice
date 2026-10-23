@@ -4,6 +4,7 @@ namespace Alice.Tests.Integration;
 
 /// <summary>Two-way interop through MSBuild: C# consumes an Alice project and Alice consumes a C# project.</summary>
 [Trait("Category", "Integration")]
+[Collection("msbuild")]   // MSBuild runs on the same repository projects (obj/) must not overlap
 public class SampleTests
 {
     static string Root()

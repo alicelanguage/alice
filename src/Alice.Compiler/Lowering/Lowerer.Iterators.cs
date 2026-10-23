@@ -230,7 +230,7 @@ public sealed partial class Lowerer
             body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = new MCode(span), Args = { new MCode(idx) } } });
             loop = new MFor { VarType = "int", Var = idx, Start = new MCode("0"), Cmp = "<", End = new MCode(span + ".Length"), Body = body };
         }
-        else if (src.Type.Kind == "array" || src.Type.IsString || IsList(src.Type))
+        else if (src.Type.Kind == "array" || src.Type.IsString || IsList(src.Type) || ClrTypes.IsSpan(src.Type.Clr))
         {
             string idx = Temp("k");
             body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = srcExpr, Args = { new MCode(idx) } } });
@@ -239,7 +239,7 @@ public sealed partial class Lowerer
                 Var = idx,
                 Start = new MCode(vec?.Index ?? boundLo ?? "0"),
                 Cmp = "<",
-                End = boundHi != null ? new MCode(boundHi) : new MMember { Target = srcExpr, Name = src.Type.Kind == "array" || src.Type.IsString ? "Length" : "Count" },
+                End = boundHi != null ? new MCode(boundHi) : new MMember { Target = srcExpr, Name = src.Type.Kind == "array" || src.Type.IsString || ClrTypes.IsSpan(src.Type.Clr) ? "Length" : "Count" },
                 Body = body,
             };
         }

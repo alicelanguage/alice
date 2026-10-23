@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- `Span(T)` / `ReadOnlySpan(T)` take `each`, `each_with_index`, `sum`, `count` and the other inlined iterators, lowered to an indexed loop over the span (no allocation, no enumerator). Before, they failed with AL0312.
 - A `struct` with initialized properties (`property port : Int32 = 80`) failed to compile, because C# runs initializers only through a declared constructor. It now gets one. Field-only attributes on properties (`FieldOffset`, `MarshalAs`, `NonSerialized`, `ThreadStatic`) target the backing field, so `StructLayout(Explicit)` unions for C interop compile.
 - Alice on NuGet (ADR 0020): `Alice.Sdk` is an MSBuild project SDK carrying the compiler, so `<Project Sdk="Alice.Sdk/x.y.z">` compiles `.al` files in any project with nothing installed (tested with an empty NuGet cache). `Alice.Cli` installs the `alice` command with `dotnet tool install -g Alice.Cli`. `Alice.Runtime` is packable for C# hosts. `scripts/pack-nuget.sh` builds all three packages, and the release guide covers pushing them.
 - `alice new <name> --tool` creates a .NET tool package (`kind = "tool"`, `command`, an ARGV template). `alice new --lib` now writes `description` and `naming = "dotnet"`, so a new library is ready for `alice publish`.

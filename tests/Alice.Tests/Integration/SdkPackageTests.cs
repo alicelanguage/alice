@@ -4,6 +4,7 @@ namespace Alice.Tests.Integration;
 
 /// <summary>Alice.Sdk from a NuGet feed: a plain .csproj with Sdk="Alice.Sdk/x" compiles .al files, nothing installed.</summary>
 [Trait("Category", "Integration")]
+[Collection("msbuild")]   // MSBuild runs on the same repository projects (obj/) must not overlap
 public class SdkPackageTests
 {
     static string Root()
