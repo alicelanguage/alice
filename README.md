@@ -319,7 +319,7 @@ Is it ready for production? See [docs/production.md](docs/production.md): what i
 ## Roadmap
 
 - Semantic (type-aware) references and rename in the language server; file-level incremental compilation.
-- Ownership for collections and records; forks of three or more calls in one expression.
+- Ownership for hashes, lists of references and records (arrays and lists of numbers are owned since 0.12.3); forks of three or more calls in one expression.
 - Rules over unbounded domains (induction) in `RULES.al`.
 - GPU offload for `Par` kernels; more `@[Native]` coverage (structs, strings).
 - Refinements, `ObjectSpace`, `class_eval` with strings.

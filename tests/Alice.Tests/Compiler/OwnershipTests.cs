@@ -241,4 +241,40 @@ public class OwnershipTests
         Assert.Equal(0, f(1000));
         Assert.True(AllocatedPerCall(f, 1000) < 64);
     }
+
+    // ---- owned lists (ADR 0016 amendment, 0.12.3): a local List(T) of numbers that never escapes is pooled ----
+
+    [Fact]
+    public void A_local_list_that_never_escapes_stops_allocating()
+    {
+        // a scratch list filled per call: before, one List + log2(n) backing arrays per call
+        var f = Compile("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  i = 0\n  while i < n\n    xs << i * 2\n    i += 1\n  end\n  t = 0\n  xs.each { |x| t += x }\n  t + xs.size\nend\n");
+        Assert.Equal(9900 + 100, (int)f.Invoke(null, [100])!);
+        Assert.True(AllocatedPerCall(n => (int)f.Invoke(null, [n])!, 1000) < 200, "owned list should be pooled");
+        Assert.Contains("OwnList<int>.Rent", AliceCompiler.Transpile("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  xs << n\n  xs.size\nend\n"));
+    }
+
+    [Theory]
+    [InlineData("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  @@keep = xs\n  xs.size\nend\n")]                          // stored
+    [InlineData("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  g = -> { xs.size }\n  g.call\nend\n")]                       // captured
+    [InlineData("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  r = xs.AsReadOnly\n  r.Count\nend\n")]                     // a view outlives it
+    [InlineData("def f(n : Int32) : Int32\n  xs = List(String).new\n  xs << \"a\"\n  xs.size\nend\n")]                          // references: GC
+    public void Lists_that_may_escape_stay_with_the_gc(string src)
+    {
+        Assert.DoesNotContain("OwnList<", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void A_returned_list_moves_out_unreleased()
+    {
+        // like an owned array: the rented list leaves with the result and is never released by the callee
+        var cs = AliceCompiler.Transpile("def f(n : Int32) : List(Int32)\n  xs = List(Int32).new\n  xs << n\n  xs\nend\n");
+        Assert.DoesNotContain("OwnList<int>.Release", cs);
+        var t = AliceCompiler.Load(AliceCompiler.Emit([cs], "ownret", exe: false)).GetType("Program")!.GetMethod("f")!;
+        var a = (List<int>)t.Invoke(null, [1])!;
+        var b = (List<int>)t.Invoke(null, [2])!;
+        Assert.NotSame(a, b);
+        Assert.Equal([1], a);
+        Assert.Equal([2], b);
+    }
 }

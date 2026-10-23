@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Owned lists (ADR 0016 amendment): a local `List(T)` of numbers that never escapes is rented from a per-thread pool and released at its last use, keeping its grown backing array. A scratch list built per call (`benchmarks/gc/lists.al`, 200k calls) took 59 ms, allocated 2926 MiB and ran 489 gen0 collections; now it takes 31 ms with 0 MiB and 0 collections. Views, spans, enumerators, storing and capturing keep a list on the GC, and a returned list moves out unreleased.
 - View models for XAML UIs: `event PropertyChanged : PropertyChangedEventHandler` (capitalized event names, required to implement .NET interface events) and Ruby's private `@count` beside a public `def count` (the field takes another C# name instead of colliding). An `INotifyPropertyChanged` + `ObservableCollection` view model is tested.
 - Language server: find references and rename. Matches come from the lexer, so strings and comments are left alone but `#{...}` holes are found. Top-level names are renamed across the project and locals within their enclosing `def`; an invalid new name is refused.
 - Incremental package builds: `alice gen` runs only when a source, the reference or analyzer list, the compiler or the project changed (MSBuild `Inputs`/`Outputs` on `AliceGenerate`, with a sources list so that added and deleted files rebuild). A no-op `alice build` takes 1.0 s instead of 2.35 s. Covered by an integration test for no-op, added-file and deleted-file builds.

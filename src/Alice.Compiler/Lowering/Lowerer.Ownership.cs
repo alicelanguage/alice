@@ -60,6 +60,8 @@ public sealed partial class Lowerer
             if (s is Assign { Op: "=" } a && Assigned(a) is { } l && l.Type is { Kind: "array", Elem: { } el } && Unmanaged.Contains(el.Cs)
                 && !stackArrays.ContainsKey(l) && !flatRows.ContainsKey(l))
                 cands.TryAdd(l, el.Cs);
+            else if (s is Assign { Op: "=" } la && Assigned(la) is { } ll && ListElem(ll.Type) is { } lel)
+                cands.TryAdd(ll, ListPrefix + lel);   // owned lists: pooled List(T) of numbers
         var edges = new List<(LocalSym, LocalSym)>();
         foreach (var s in WalkStmts(body))
         {
@@ -214,7 +216,23 @@ public sealed partial class Lowerer
 
     static LocalSym? Assigned(Assign a) => a.Declares ?? (a.Target as NameExpr)?.Sym as LocalSym;
 
-    static bool Fresh(Syntax.Expr e) => Unwrap(e) is NewExpr { Type: { Kind: "array" }, Block: null, AsCall: null, Args.Count: 1 or 2 } ne && ne.Args.All(x => x.Mod == "" && x.Name == null);
+    static bool Fresh(Syntax.Expr e) => Unwrap(e) is NewExpr { Block: null, AsCall: null } ne && ne.Args.All(x => x.Mod == "" && x.Name == null)
+        && (ne.Type.Kind == "array" && ne.Args.Count is 1 or 2 || ListElem(ne.Type) != null && ne.Args.Count <= 1);   // List(T).new / List(T).new(capacity)
+
+    const string ListPrefix = "list:";
+
+    /// <summary>The element type of a List(T) of numbers (ownable), else null.</summary>
+    static string? ListElem(AType t)
+    {
+        if (t.Clr is not { IsGenericType: true } c || c.GetGenericTypeDefinition() != typeof(List<>) || t.Cs.EndsWith('?')) return null;
+        var el = ClrTypes.FromClr(c.GetGenericArguments()[0]).Cs;
+        return Unmanaged.Contains(el) ? el : null;
+    }
+
+    /// <summary>Uses that leave an owned list where it is: they read or edit it, or copy out of it, and never hand
+    /// the list itself (or a view, enumerator or span over it) to anyone else.</summary>
+    static readonly HashSet<string> ListMethods = ["Add", "Clear", "Contains", "IndexOf", "LastIndexOf", "Insert", "RemoveAt", "Remove", "RemoveRange", "Sort", "Reverse", "AddRange", "ToArray", "CopyTo", "EnsureCapacity", "BinarySearch", "Exists", "Find", "FindIndex", "TrueForAll", "RemoveAll"];
+    static readonly HashSet<string> ListExts = ["size", "length", "count", "empty_q", "any_q", "all_q", "none_q", "include_q", "sum", "min", "max", "each", "each_with_index", "map", "select", "reject", "join", "first", "last", "to_a", "sort", "reduce", "inject", "index", "find"];
 
     static void Drop(Dictionary<LocalSym, string> cands, Dictionary<LocalSym, (Node, string)> reasons, LocalSym l, Node? at, string why)
     {
@@ -244,6 +262,10 @@ public sealed partial class Lowerer
                 case IndexExpr { Target: NameExpr { Sym: LocalSym x } } when x == l: allowed++; break;
                 case CallExpr { Res: "ext", Args.Count: 0, Block: null, Recv: NameExpr { Sym: LocalSym x } } c when x == l && Binder.Mangle(c.Name) is "size" or "length": allowed++; break;
                 case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Name: "Length" } when x == l: allowed++; break;
+                case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "clr" or "field" } lc when x == l && cands[l].StartsWith(ListPrefix)
+                    && (lc.Res == "field" ? lc.Name is "Count" or "Capacity" : ListMethods.Contains(lc.Name)): allowed++; break;
+                case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "ext" } lx when x == l && cands[l].StartsWith(ListPrefix) && ListExts.Contains(Binder.Mangle(lx.Name)): allowed++; break;
+                case BinaryExpr { Op: "<<", L: NameExpr { Sym: LocalSym x } } when x == l && cands[l].StartsWith(ListPrefix): allowed++; break;
                 case LambdaExpr lam when WalkExpr(lam).OfType<NameExpr>().Any(n => n.Sym == l): Drop(cands, reasons, l, lam, "it is captured by a block"); return;
                 case CallExpr { Block: { } blk } cb when Walk(blk.Body).OfType<NameExpr>().Any(n => n.Sym == l): Drop(cands, reasons, l, cb, "it is captured by a block"); return;
                 case CallExpr { Sym: MethodSym m, Block: null } call:
@@ -331,8 +353,9 @@ public sealed partial class Lowerer
     {
         if (Assigned(a) is not { } l || OwnedElem(l) is not { } el) return false;
         if (a.Declares == null && TryInPlaceMap(o, a, l)) return true;
+        bool list = el.StartsWith(ListPrefix);
         MExpr value = Fresh(a.Value) && Unwrap(a.Value) is NewExpr ne
-            ? new MCall { Target = new MCode($"global::Alice.Runtime.Own<{el}>"), Name = "Rent", Args = ne.Args.Select(x => Expr(x.Value!)).ToList() }
+            ? new MCall { Target = new MCode(list ? $"global::Alice.Runtime.OwnList<{el[ListPrefix.Length..]}>" : $"global::Alice.Runtime.Own<{el}>"), Name = "Rent", Args = ne.Args.Select(x => Expr(x.Value!)).ToList() }
             : Expr(a.Value);
         if (releaseBefore.Contains(a))
         {
@@ -348,13 +371,17 @@ public sealed partial class Lowerer
             o.Add(new MDecl
             {
                 Name = l.CsName, Init = value,
-                RentLength = Unwrap(a.Value) is NewExpr { Args: [{ Value: NameExpr { Sym: LocalSym n } }] } && value is MCall { Name: "Rent" } ? n.CsName : null,
+                RentLength = !list && Unwrap(a.Value) is NewExpr { Args: [{ Value: NameExpr { Sym: LocalSym n } }] } && value is MCall { Name: "Rent" } ? n.CsName : null,
             });
         else o.Add(new MAssign { Target = new MCode(l.CsName), Value = value });
         return true;
     }
 
-    static MStmt Release(LocalSym l, string el) => new MExprStmt { E = new MCall { Target = new MCode($"global::Alice.Runtime.Own<{el}>"), Name = "Release", Args = { new MCode(l.CsName) } } };
+    static MStmt Release(LocalSym l, string el) => new MExprStmt { E = new MCall
+    {
+        Target = new MCode(el.StartsWith(ListPrefix) ? $"global::Alice.Runtime.OwnList<{el[ListPrefix.Length..]}>" : $"global::Alice.Runtime.Own<{el}>"),
+        Name = "Release", Args = { new MCode(l.CsName) },
+    } };
 
     /// <summary>Before an exit: release every owned local live there except the one being returned.</summary>
     void ReleaseOwnedAt(List<MStmt> o, Stmt exit, ref MExpr? value, Syntax.Expr? returned)

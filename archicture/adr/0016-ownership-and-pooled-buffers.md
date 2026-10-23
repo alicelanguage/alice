@@ -52,3 +52,14 @@ pass `owned-bounds` (ADR 0014) rewrites such a loop's bound to `buf.Length` when
 `n` is a local or parameter written only by its declaration and `buf` is written
 only by its own: the two values are equal everywhere, and the JIT then drops the
 checks as it does for `new`. Measured in `benchmarks/gc` (`scratch`).
+
+Amendment (0.12.3): owned lists. A local `List(T)` of unmanaged elements is owned under the same rules: fed only by
+`List(T).new` / `List(T).new(capacity)` or other owned locals, and used only through operations that leave the list
+where it is (`<<`/`Add`, indexing, `Count`/`size`, `Clear`, `Contains`/`IndexOf`, `Sort`, `ToArray`, and Prelude
+iterators such as `each`, `sum`, `map`, `select` that never hand the list itself out). A view, an enumerator or a
+span over it (`AsReadOnly`, `CollectionsMarshal.AsSpan`), storing or capturing it keeps it on the GC. Owned lists come
+from `Alice.Runtime.OwnList(T)` (two per-thread slots, cleared on release, lists above 16 MiB left to the GC), so a
+method that builds a scratch list per call keeps the grown backing array. A returned list moves out unreleased, as an
+array does. Measured (`benchmarks/gc/lists.al`, 200k calls building a 100-element list): 59 ms, 2926 MiB allocated
+and 489 gen0 collections, down to 31 ms, 0 MiB and 0 collections.
+

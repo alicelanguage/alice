@@ -38,4 +38,5 @@ same commit as any change that moves a row.
 | UI frameworks (WPF, MAUI, Avalonia) | XAML code-behind in Alice is untested; view models are tested (`INotifyPropertyChanged`, `ObservableCollection`) | XAML and code-behind in C#, view models and logic in Alice |
 | Interaction-net runtime | explored and parked: slower than fork/join on CPU (`benchmarks/inet/README.md`) | fork/join is the parallel model |
 | References and rename are name-based | top-level names are renamed project-wide by name, locals within their `def`; two unrelated methods with the same name in different types rename together | review the edit preview |
-| Roadmap items in the README | ownership for collections, GPU offload, `ObjectSpace` | see `README.md#roadmap` |
+| Ownership beyond arrays and number lists | `Hash`, lists of references and fields stay with the GC (lists of numbers and arrays are pooled) | `own`/`scope` on arrays; preallocate and reuse explicitly |
+| Roadmap items in the README | GPU offload, `ObjectSpace` | see `README.md#roadmap` |
