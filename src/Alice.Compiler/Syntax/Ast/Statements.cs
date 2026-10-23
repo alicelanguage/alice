@@ -94,6 +94,7 @@ public sealed class BeginStmt : Stmt
     public List<Stmt> Body = new();
     public List<Rescue> Rescues = new();
     public List<Stmt>? Ensure;
+    public bool GpuRegion;       // `gpu ... end`: arrays of the `gpu for` loops inside stay on the device until `end`
     public Expr? Lock;           // `lock obj ... end`: C# lock (Monitor, or System.Threading.Lock)
     public bool Unsafe;          // `unsafe ... end`: pointer operations allowed inside (C# unsafe)
     public bool Unchecked;       // `unchecked ... end`: integer + - * inside wrap (ADR 0013)

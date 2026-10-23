@@ -188,10 +188,16 @@ public class LoopParallelizeTests
     [InlineData("def f(xs : Array(Float32))\n  gpu for i in 0...xs.size\n    xs[0] = xs[i]\n  end\nend\n", "not provably independent")]
     [InlineData("def f(xs : Array(String))\n  gpu for i in 0...xs.size\n    xs[i] = xs[i]\n  end\nend\n", "kernels take arrays of numbers")]
     public void Gpu_loops_explain_what_keeps_them_off_the_gpu(string src, string why)
+        => Assert.Contains(why, Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src)).Message);
+
+    [Fact]
+    public void A_gpu_region_rejects_cpu_reads_of_device_arrays()
     {
-        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src));
-        Assert.Contains(why, ex.Message);
+        // inside `gpu ... end`, xs lives on the device until `end`: reading it on the CPU there would see stale data
+        var src = "def f(xs : Array(Float32)) : Float32\n  gpu\n    gpu for i in 0...xs.size\n      xs[i] = xs[i] * 2.0_f32\n    end\n    v = xs[0]\n  end\n  0.0_f32\nend\n";
+        Assert.Contains("is on the GPU until the region ends", Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src)).Message);
     }
+
 
     const string TreeSrc = "enum Tree\n  Leaf(x : Int64)\n  Node(l : Tree, r : Tree)\nend\n"
         + "def build(d : Int32) : Tree\n  return Tree::Leaf(1_i64) if d == 0\n  l, r = build(d - 1), build(d - 1)\n  Tree::Node(l, r)\nend\n"

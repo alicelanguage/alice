@@ -13,6 +13,9 @@ public sealed partial class Lowerer
             case ExprStmt { Expr: CallExpr { Res: "inline", Sym: StmtExpr inl } }:
                 Into(o, inl.Stmt, tail, target);
                 break;
+            case BeginStmt { GpuRegion: true } region:
+                o.Add(GpuRegion(region, tail, target));
+                break;
             case BeginStmt { Rescues.Count: 0, Ensure: null } plain:
                 {
                     var block = new MBlock { Body = Stmts(plain.Body, tail, target), Unchecked = plain.Unchecked, Unsafe = plain.Unsafe, Lock = plain.Lock != null ? Expr(plain.Lock) : null };

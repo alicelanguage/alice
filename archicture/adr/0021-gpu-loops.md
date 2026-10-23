@@ -26,7 +26,11 @@ Decision:
 - Extension classes of ILGPU (`Allocate1D`, `CopyToCPU`, `LoadAutoGroupedStreamKernel`) are found by reflection at
   compile time and called fully qualified, so generated files import nothing.
 
-Consequences: transfers are per launch, so a loop pays off when its work outweighs copying its arrays; keeping data on
-the device across loops is future work. Explicit ILGPU kernels (`examples/gpu/ilgpu`) remain the
+A `gpu ... end` region keeps the arrays of the `gpu for` loops inside on the device: each is uploaded on first use, and
+written ones are copied back once at `end` (launches queue on the device's stream, so the region synchronizes once).
+Any CPU use of such an array inside the region, other than its length, is a compile error, since it would see stale
+data. 51 launches over 1M floats: 29 ms in a region, 132 ms with per-launch transfers (OpenCL, warm).
+
+Consequences: outside a region, transfers are per launch, so a loop pays off when its work outweighs copying its arrays. Explicit ILGPU kernels (`examples/gpu/ilgpu`) remain the
 tool for everything else. Tests: `ParallelizeTests.Gpu_loops_explain_*` and `Integration/SampleTests.Gpu_kernel_*`,
 run on an OpenCL GPU and on the CPU accelerator.

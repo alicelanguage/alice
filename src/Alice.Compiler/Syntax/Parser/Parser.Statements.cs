@@ -80,6 +80,13 @@ public sealed partial class Parser
             ExpectKw("end");
             s = sc;
         }
+        else if (IsKw("gpu") && Peek(1).Kind == "nl")
+        {
+            Next();
+            var gr = At(new BeginStmt { Body = Block(" end "), GpuRegion = true }, tok);
+            ExpectKw("end");
+            s = gr;
+        }
         else if (IsKw("gpu") && Peek(1).Kind == "id" && Peek(1).Text == "for")
         {
             Next();

@@ -31,6 +31,12 @@ public class SdkPackageTests
     public void Csproj_with_alice_sdk_compiles_alice_and_csharp_together()
     {
         var work = Path.Combine(Path.GetTempPath(), "alice-sdkpkg-" + Guid.NewGuid().ToString("N"));
+        try { Run(work); }
+        finally { try { Directory.Delete(work, true); } catch (IOException) { } }   // the NuGet cache alone is ~175 MB
+    }
+
+    static void Run(string work)
+    {
         var feed = Path.Combine(work, "feed");
         var app = Path.Combine(work, "app");
         Directory.CreateDirectory(app);

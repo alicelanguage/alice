@@ -24,6 +24,12 @@ public class FSharpInteropTests
     public void Fsharp_calls_alice_with_dotnet_names_and_matches_its_sum_types()
     {
         var root = Path.Combine(Path.GetTempPath(), "alice-fs-" + Guid.NewGuid().ToString("N"));
+        try { Run(root); }
+        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+    }
+
+    static void Run(string root)
+    {
         var lib = Path.Combine(root, "geo");
         Directory.CreateDirectory(Path.Combine(lib, "src"));
         File.WriteAllText(Path.Combine(lib, "alice.toml"), "[package]\nname = \"geo\"\nkind = \"lib\"\nnaming = \"dotnet\"\n");

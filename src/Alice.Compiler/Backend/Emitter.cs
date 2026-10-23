@@ -68,7 +68,7 @@ public sealed class Emitter
         // refinements: extension classes in `__Refine_<module>`, so only files with `using <module>` see them in C# too
         if (lowerer.UsesGpu && !gpuHostEmitted)   // the shared accelerator, once per program
         {
-            sb.Append(Lowering.Lowerer.GpuHost);
+            sb.Append(lowerer.GpuHost());
             gpuHostEmitted = true;
         }
         foreach (var r in Refinements(f.Items))

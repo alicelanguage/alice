@@ -75,5 +75,6 @@ public class SampleTests
         Assert.Contains("y[0]=1.0 y[10]=21.0 y[1023]=2047.0", output);
         Assert.Contains("gpu for: y[0]=1.0 y[10]=21.0 y[4095]=8191.0", output);   // the loop compiled to a kernel
         Assert.Contains("gpu sum: 9999900000", output);                          // a reduction through atomic adds
+        Assert.Contains("gpu region: 50.0 50.0", output);                        // 51 launches on device-resident arrays
     }
 }

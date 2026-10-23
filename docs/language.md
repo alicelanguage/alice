@@ -479,7 +479,9 @@ end
 
 Needs `alice add ILGPU`. The body may capture arrays of numbers and numbers, and use arithmetic, indexing, `Math.*`
 and number conversions; each iteration writes its own element. Anything else is a compile error that says why.
-`ALICE_GPU=cpu` runs on ILGPU's CPU accelerator. Design: [ADR 0021](../archicture/adr/0021-gpu-loops.md).
+`ALICE_GPU=cpu` runs on ILGPU's CPU accelerator. A `gpu ... end` region keeps the arrays of its `gpu for` loops on the
+device until `end` (uploaded once, written ones copied back once); reading them on the CPU inside the region is an
+error. Design: [ADR 0021](../archicture/adr/0021-gpu-loops.md).
 
 ### lock
 

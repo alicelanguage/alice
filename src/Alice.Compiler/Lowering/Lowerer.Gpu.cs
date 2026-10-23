@@ -110,11 +110,17 @@ public sealed partial class Lowerer
             Line("var __acc = global::__AliceGpu.Accelerator"),
             Line($"{field} ??= {load}.LoadAutoGroupedStreamKernel<{string.Join(", ", ptypes)}>(__acc, {kernel})"),
         };
-        foreach (var a in arrays) launch.Add(Line($"using var __gb_{a.CsName.TrimStart('@')} = {alloc}.Allocate1D(__acc, {a.CsName})"));
+        gpuAlloc = alloc;
+        gpuCopy = copy;
+        foreach (var a in arrays)
+            launch.Add(Line(gpuRegion != null
+                ? $"var __gb_{a.CsName.TrimStart('@')} = {gpuRegion}.Get({a.CsName}, {(written.Contains(a) ? "true" : "false")})"   // resident until the region ends
+                : $"using var __gb_{a.CsName.TrimStart('@')} = {alloc}.Allocate1D(__acc, {a.CsName})"));
         if (acc != null) launch.Add(Line($"using var __gb_acc = {alloc}.Allocate1D(__acc, new {acc.Type.Cs}[1])"));
         launch.Add(Line($"{field}({count}, {start}{(acc != null ? ", __gb_acc.View" : "")}{string.Concat(arrays.Select(a => $", __gb_{a.CsName.TrimStart('@')}.View"))}{string.Concat(scalars.Select(sc => ", " + sc.CsName))})"));
-        launch.Add(Line("__acc.Synchronize()"));
-        foreach (var a in arrays.Where(written.Contains)) launch.Add(Line($"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View, {a.CsName})"));
+        if (gpuRegion == null || acc != null) launch.Add(Line("__acc.Synchronize()"));   // in a region, launches queue on one stream
+        if (gpuRegion == null)
+            foreach (var a in arrays.Where(written.Contains)) launch.Add(Line($"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View, {a.CsName})"));
         if (acc != null)
         {
             launch.Add(Line($"var __gsum = new {acc.Type.Cs}[1]"));
@@ -128,8 +134,62 @@ public sealed partial class Lowerer
     /// <summary>Number methods that lower to casts or math intrinsics ILGPU compiles.</summary>
     static readonly HashSet<string> GpuSafeExt = ["to_i", "to_i32", "to_i64", "to_f", "to_f32", "to_f64", "to_u8", "to_u16", "to_u32", "to_u64", "to_i8", "to_i16", "abs", "sqrt", "floor", "ceil", "round"];
 
-    /// <summary>The process-wide accelerator of `gpu for` loops (emitted once per program).</summary>
-    public const string GpuHost = """
+    string? gpuAlloc, gpuCopy;
+
+    /// <summary>The `Region` local of the enclosing `gpu ... end`, while lowering inside one.</summary>
+    string? gpuRegion;
+
+    /// <summary>`gpu ... end`: one Region keeps the arrays of every `gpu for` inside on the device, and copies the
+    /// written ones back once at `end`. A CPU use of such an array inside the region would see stale data: an error.</summary>
+    MStmt GpuRegion(BeginStmt region, Tail tail, string? target)
+    {
+        var onDevice = new HashSet<LocalSym>();
+        static IEnumerable<NameExpr> Names(IEnumerable<Node> nodes)
+        {
+            var r = new List<NameExpr>();
+            AstWalk.Each(nodes, n => { if (n is NameExpr ne) r.Add(ne); });
+            return r;
+        }
+        foreach (var f in WalkStmts(region.Body).OfType<ForStmt>().Where(f => f.Gpu))
+            foreach (var n in Names(f.Body))
+                if (n is { Res: "local", Sym: LocalSym l } && l.Type is { Kind: "array" }) onDevice.Add(l);
+        void CpuUses(List<Stmt> stmts)
+        {
+            foreach (var st in stmts)
+            {
+                if (st is ForStmt { Gpu: true } gf) { foreach (var n in Names([gf.Iter])) Check(n); continue; }   // `0...xs.size` reads only the length
+                if (st is WhileStmt w) { foreach (var n in Names([w.Cond])) Check(n); CpuUses(w.Body); continue; }
+                if (st is IfStmt i) { foreach (var n in Names(i.Conds)) Check(n); foreach (var b in i.Bodies) CpuUses(b); if (i.Else != null) CpuUses(i.Else); continue; }
+                if (st is ForStmt sf) { foreach (var n in Names([sf.Iter])) Check(n); CpuUses(sf.Body); continue; }
+                foreach (var n in Names([st])) Check(n);
+            }
+        }
+        void Check(NameExpr n)
+        {
+            if (n is { Res: "local", Sym: LocalSym l2 } && onDevice.Contains(l2) && !LengthOnly(n))
+                throw new CompileException($"{File}:{n.Line}:{Math.Max(1, n.Col)}: `{l2.Name}` is on the GPU until the region ends; read it after `end`, or use it in a `gpu for` inside the region");
+        }
+        bool LengthOnly(NameExpr n) => regionLengthReads.Contains(n);
+        regionLengthReads.Clear();
+        AstWalk.Each(region.Body, n =>
+        {
+            if (n is CallExpr { Recv: NameExpr rn, Args.Count: 0 } c && Binder.Mangle(c.Name) is "size" or "length" or "Length") regionLengthReads.Add(rn);
+        });
+        CpuUses(region.Body);
+
+        string r = Temp("gpu");
+        var saved = gpuRegion;
+        gpuRegion = r;
+        List<MStmt> body;
+        try { body = Stmts(region.Body, tail, target); }
+        finally { gpuRegion = saved; }
+        return new MUsing { Name = r, Value = new MCode("new global::__AliceGpu.Region()"), Body = body };
+    }
+
+    readonly HashSet<NameExpr> regionLengthReads = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>The process-wide accelerator and the region type of `gpu` code (emitted once per program).</summary>
+    public string GpuHost() => $$"""
         internal static class __AliceGpu
         {
             static global::ILGPU.Context? context;
@@ -148,6 +208,29 @@ public sealed partial class Lowerer
                         bool cpu = global::System.Environment.GetEnvironmentVariable("ALICE_GPU") == "cpu";
                         return accelerator ??= context.GetPreferredDevice(cpu).CreateAccelerator(context);
                     }
+                }
+            }
+
+            /// <summary>`gpu ... end`: device copies of the region's arrays, uploaded on first use, written ones copied back at the end.</summary>
+            internal sealed class Region : global::System.IDisposable
+            {
+                readonly global::System.Collections.Generic.Dictionary<object, global::System.IDisposable> buffers = new(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);
+                readonly global::System.Collections.Generic.List<global::System.Action> copyBack = new();
+                readonly global::System.Collections.Generic.HashSet<object> dirty = new(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);
+
+                public global::ILGPU.Runtime.MemoryBuffer1D<T, global::ILGPU.Stride1D.Dense> Get<T>(T[] array, bool written) where T : unmanaged
+                {
+                    if (!buffers.TryGetValue(array, out var b)) buffers[array] = b = {{gpuAlloc}}.Allocate1D(Accelerator, array);
+                    var buffer = (global::ILGPU.Runtime.MemoryBuffer1D<T, global::ILGPU.Stride1D.Dense>)b;
+                    if (written && dirty.Add(array)) copyBack.Add(() => {{gpuCopy}}.CopyToCPU(buffer.View, array));
+                    return buffer;
+                }
+
+                public void Dispose()
+                {
+                    Accelerator.Synchronize();
+                    foreach (var c in copyBack) c();
+                    foreach (var b in buffers.Values) b.Dispose();
                 }
             }
         }

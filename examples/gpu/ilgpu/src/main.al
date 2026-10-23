@@ -52,3 +52,24 @@ def total(xs : Array(Int64)) : Int64
 end
 
 puts "gpu sum: #{total(Array(Int64).new(100_000) { |k| k.to_i64 })}"
+
+# A region keeps arrays on the device across loops: uploaded once, written ones copied back at `end`.
+# (Reading xs or ys on the CPU inside the region is a compile error: the device holds the current values.)
+def smooth(xs : Array(Float32), ys : Array(Float32), steps : Int32)
+  gpu
+    k = 0
+    while k < steps
+      gpu for i in 0...xs.size
+        ys[i] = ys[i] + xs[i]
+      end
+      k += 1
+    end
+    gpu for i in 0...ys.size
+      ys[i] = ys[i] * 0.5_f32
+    end
+  end
+end
+
+rs = Array(Float32).new(4096, 0.0_f32)
+smooth(Array(Float32).new(4096, 2.0_f32), rs, 50)
+puts "gpu region: #{rs[0]} #{rs[4095]}"

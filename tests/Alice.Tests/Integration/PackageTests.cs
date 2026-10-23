@@ -6,13 +6,23 @@ namespace Alice.Tests.Integration;
 /// <summary>alice pack / alice publish: Alice libraries and tools as NuGet packages, end to end through a local feed.</summary>
 [Trait("Category", "Integration")]
 [Collection("msbuild")]   // MSBuild runs on the same repository projects (obj/) must not overlap
-public class PackageTests
+public class PackageTests : IDisposable
 {
-    static string Temp(string tag)
+    readonly List<string> created = [];
+
+    string Temp(string tag)
     {
         var d = Path.Combine(Path.GetTempPath(), $"alice-{tag}-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(d);
+        created.Add(d);
         return d;
+    }
+
+    /// <summary>Test projects, feeds and tool installs are deleted: /tmp is often a small RAM disk.</summary>
+    public void Dispose()
+    {
+        foreach (var d in created)
+            try { Directory.Delete(d, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
     static (int Code, string Output) Run(string exe, string dir, params string[] args)
