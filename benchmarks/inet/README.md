@@ -46,3 +46,13 @@ pow2(26) 51.3 -> 15.7 ms.
 
 Conclusion: keep fork/join (now with the serial clone) as Alice's parallel model. An interaction-net runtime
 on .NET is feasible, but it is a slower way to get the same parallelism for the programs Alice compiles.
+
+## HVM2 port (`Hvm2.cs`, `dotnet run -c Release -- hvm2 [n] [reps] [threads]`), parked
+
+Follows the HVM2 paper: 32-bit ports, one-word nodes, the atomic linker, safe-REF copying, a private stack plus a
+stealable shared bag per thread, and a chunked global heap (from BendRT). Correct on pow2 and on a tree built and
+consumed in the same net. Single-threaded it reaches 70-84 MIPS (the paper reports 400 in C on an M3 Max). Code
+specialized per definition did not help: the profile then points at memory stalls, not the expansion copier.
+Multi-threaded runs are erratic (60-266 MIPS). Parked: the BendRT paper's own authors dropped interaction nets for
+affine ownership plus a two-world (sequential/parallel) evaluator, which Alice already has as fork/join with
+`m__serial` clones. What came out of this work went into the compiler: forks over sum types, and `gc = "auto"`.
