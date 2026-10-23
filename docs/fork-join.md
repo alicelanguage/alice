@@ -8,6 +8,12 @@ The idea comes from **Victor Taelin** (Higher Order Company, Rio de Janeiro), cr
 
 Alice takes that idea to .NET. Bend asks the programmer to write the fork; Alice infers it from code that is already parallel in shape, and keeps the .NET garbage collector and thread pool instead of Bend's ownership-based heap and task cube.
 
+## Three calls
+
+An expression with three forkable calls, one of them recursive (`trib(n - 1) + trib(n - 2) + trib(n - 3)`), forks
+all three: `Par.Fork(f, g, h)` offers two to the pool and runs the third on this thread. `trib(32)`: 335 ms serial,
+43 ms forked on 12 cores.
+
 ## Serial clone
 
 A method that forks is emitted twice: `m`, whose forks check `Par.Forkable`, and `m__serial`, with no forks. The

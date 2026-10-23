@@ -156,6 +156,32 @@ public class LoopParallelizeTests
         Assert.Equal(75025L, f.Invoke(null, [25]));
     }
 
+    [Fact]
+    public void Three_recursive_calls_in_one_expression_fork()
+    {
+        // tribonacci: trib(n-1) + trib(n-2) + trib(n-3); two calls go to the pool, the third runs here
+        var src = "def trib(n : Int32) : Int64\n  return (n == 2 ? 1 : 0).to_i64 if n < 3\n  trib(n - 1) + trib(n - 2) + trib(n - 3)\nend\n";
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("global::Alice.Runtime.Par.Fork(", cs);
+        Assert.Contains("trib__serial(", cs);
+        var f = AliceCompiler.Load(AliceCompiler.Emit([cs], "trib", exe: false)).GetType("Program")!.GetMethod("trib")!;
+        Assert.Equal(410744L, f.Invoke(null, [24]));   // checked against a memoized reference
+    }
+
+    [Fact]
+    public void Three_way_fork_rethrows_any_branch()
+    {
+        foreach (int bad in new[] { 0, 1, 2 })
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() => Alice.Runtime.Par.Fork(
+                () => bad == 0 ? throw new InvalidOperationException("a") : 1,
+                () => bad == 1 ? throw new InvalidOperationException("b") : 2,
+                () => bad == 2 ? throw new InvalidOperationException("c") : 3));
+            Assert.Equal(((char)('a' + bad)).ToString(), ex.Message);
+        }
+        Assert.Equal((1, 2, 3), Alice.Runtime.Par.Fork(() => 1, () => 2, () => 3));
+    }
+
     const string TreeSrc = "enum Tree\n  Leaf(x : Int64)\n  Node(l : Tree, r : Tree)\nend\n"
         + "def build(d : Int32) : Tree\n  return Tree::Leaf(1_i64) if d == 0\n  l, r = build(d - 1), build(d - 1)\n  Tree::Node(l, r)\nend\n"
         + "def total(t : Tree) : Int64\n  case t\n  when Tree::Leaf(x) then x\n  when Tree::Node(l, r) then total(l) + total(r)\n  end\nend\n";

@@ -24,6 +24,33 @@ public static class Par
     /// <summary>Offers <paramref name="left"/> to the pool and runs <paramref name="right"/> on this thread, then joins.
     /// A left half no pool thread has started yet is run inline by the join, so nested forks never block the pool.
     /// Exceptions surface as themselves, the left one first.</summary>
+    /// <summary>Three independent pure calls (`f(a) + f(b) + f(c)`): the first two are offered to the pool, the third
+    /// runs here, then both are joined. A failing branch's exception surfaces as itself, after every branch finished.</summary>
+    public static (A, B, C) Fork<A, B, C>(Func<A> first, Func<B> second, Func<C> third)
+    {
+        int depth = forkDepth + 1;
+        var j1 = new ForkJob<A>(first, depth);
+        var j2 = new ForkJob<B>(second, depth);
+        ThreadPool.UnsafeQueueUserWorkItem(j1, preferLocal: true);
+        ThreadPool.UnsafeQueueUserWorkItem(j2, preferLocal: true);
+        int outer = forkDepth;
+        forkDepth = depth;
+        C c;
+        try { c = third(); }
+        catch
+        {
+            forkDepth = outer;
+            try { j1.Join(); } catch { }   // finish both halves before unwinding: they may read our data
+            try { j2.Join(); } catch { }
+            throw;
+        }
+        forkDepth = outer;
+        A a;
+        try { a = j1.Join(); }
+        catch { try { j2.Join(); } catch { } throw; }
+        return (a, j2.Join(), c);
+    }
+
     public static (A, B) Fork<A, B>(Func<A> left, Func<B> right)
     {
         int depth = forkDepth + 1;

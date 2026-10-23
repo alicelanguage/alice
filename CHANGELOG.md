@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Forks of three calls in one expression (`trib(n - 1) + trib(n - 2) + trib(n - 3)`) via a three-way `Par.Fork`: `trib(32)` 335 -> 43 ms on 12 cores. A failing branch's exception surfaces once every branch has finished.
 - Fix: an assignment inside a branch of a block now assigns the enclosing method's variable, as in Ruby. Before, `h.each { |k, v| best = v if v > best }` declared a new block-local `best`, and the method's `best` silently stayed 0. Found while checking the owned-hash benchmark's checksum, which was 0 under the old compiler too.
 - Owned hashes (ADR 0016 amendment): a local `Dictionary(K, V)` of numbers that never escapes is pooled and its buckets reused (`benchmarks/gc/hashes.al`: 137-146 -> 97-104 ms, 2239 -> 0 MiB, 374 -> 0 gen0 collections). `Keys`/`Values` views count as escapes. `h.each { |k, v| ... }` on a Dictionary is inlined to `foreach (var (k, v) in h)`, with no closure or delegate.
 - Owned lists (ADR 0016 amendment): a local `List(T)` of numbers that never escapes is rented from a per-thread pool and released at its last use, keeping its grown backing array. A scratch list built per call (`benchmarks/gc/lists.al`, 200k calls) took 59 ms, allocated 2926 MiB and ran 489 gen0 collections; now it takes 31 ms with 0 MiB and 0 collections. Views, spans, enumerators, storing and capturing keep a list on the GC, and a returned list moves out unreleased.

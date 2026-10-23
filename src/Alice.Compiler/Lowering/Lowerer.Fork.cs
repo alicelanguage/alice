@@ -77,10 +77,14 @@ public sealed partial class Lowerer
     /// The lambdas live in a helper: capturing this method's locals would allocate a closure on every call,
     /// forking or not; in the helper only the calls near the root that actually fork pay for it.
     /// </summary>
-    bool EmitFork(List<MStmt> outp, string n1, string n2, string t1, string t2, CallExpr c1, CallExpr c2, MExpr lv, MExpr rv)
+    bool EmitFork(List<MStmt> outp, string n1, string n2, string t1, string t2, CallExpr c1, CallExpr c2, MExpr lv, MExpr rv) =>
+        EmitFork(outp, [n1, n2], [t1, t2], [c1, c2], [lv, rv]);
+
+    /// <summary>Two or three calls: `if (Par.Forkable) (n1, n2[, n3]) = helper(...); else { n1 = c1; ... }`.</summary>
+    bool EmitFork(List<MStmt> outp, List<string> names, List<string> types, List<CallExpr> calls, List<MExpr> lambdas)
     {
         var captured = new List<LocalSym>();
-        foreach (var n in WalkExpr(c1).Concat(WalkExpr(c2)).OfType<NameExpr>())
+        foreach (var n in calls.SelectMany(WalkExpr).OfType<NameExpr>())
             if (n is { Res: "local", Sym: LocalSym l } && !captured.Contains(l)) captured.Add(l);
         // nullable locals (`l`, `r` of a tree node) stay serial: passing them with `!` would compile, but node-by-node tree
         // walks give each task well under a microsecond of work. Measured on benchmarks/gc trees (8191-node trees):
@@ -88,28 +92,21 @@ public sealed partial class Lowerer
         if (captured.Any(l => !l.Type.IsKnown || l.Type.Nullable)) return false;
         string helper = $"__fork_{(Method!.CsName ?? "main").TrimStart('@')}_{++helperN}";
         var hp = new Backend.Printer("", 1);
-        hp.Root(new MReturn
-        {
-            Value = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Fork", Args = { new MLambda { ExprBody = lv }, new MLambda { ExprBody = rv } } },
-        });
-        Extra.Add($"private {HelperStatic}({t1}, {t2}) {helper}({string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"))})\n{{\n{hp}}}\n");
-        var fork = new MCode($"{helper}({string.Join(", ", captured.Select(l => l.CsName))})");
+        var fork = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Fork" };
+        foreach (var lam in lambdas) fork.Args.Add(new MLambda { ExprBody = lam });
+        hp.Root(new MReturn { Value = fork });
+        Extra.Add($"private {HelperStatic}({string.Join(", ", types)}) {helper}({string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"))})\n{{\n{hp}}}\n");
+        var call = new MCode($"{helper}({string.Join(", ", captured.Select(l => l.CsName))})");
         // below the fork depth, recursion continues in `m__serial`: one Forkable check per branch, not one per call
         serialCalls = CloneOk;
         Forked |= CloneOk;
-        var e1 = Isolated(c1, []);
-        var e2 = Isolated(c2, []);
+        var serial = calls.Select(c => Isolated(c, [])).ToList();
         serialCalls = false;
-        outp.Add(new MIf
-        {
-            Cond = new MCode("global::Alice.Runtime.Par.Forkable"),
-            Then = { new MDeconstruct { Names = { n1, n2 }, Value = fork } },
-            Else = new List<MStmt>
-            {
-                new MAssign { Target = new MCode(n1), Value = e1 },
-                new MAssign { Target = new MCode(n2), Value = e2 },
-            },
-        });
+        var then = new MDeconstruct { Value = call };
+        then.Names.AddRange(names);
+        var els = new List<MStmt>();
+        for (int k = 0; k < names.Count; k++) els.Add(new MAssign { Target = new MCode(names[k]), Value = serial[k] });
+        outp.Add(new MIf { Cond = new MCode("global::Alice.Runtime.Par.Forkable"), Then = { then }, Else = els });
         return true;
     }
 
@@ -136,25 +133,24 @@ public sealed partial class Lowerer
         if (value is not (BinaryExpr or UnaryExpr)) return [];
         var calls = new List<CallExpr>();
         Operands(value, calls);
-        if (calls.Count != 2 || !calls.Any(c => c.Sym == Method) || !calls.All(ForkableCall)) return [];
+        if (calls.Count is not (2 or 3) || !calls.Any(c => c.Sym == Method) || !calls.All(ForkableCall)) return [];
         if (!PureRead(value, new LoopPlan { LoopVar = new LocalSym() })) return [];   // reordering the calls first must not move an effect
         if (!calls.All(c => c.Type.IsKnown)) return [];
-        var left = new List<MStmt>();
-        var right = new List<MStmt>();
-        var lv = Isolated(calls[0], left);
-        var rv = Isolated(calls[1], right);
-        if (left.Count > 0 || right.Count > 0) return [];
-        string n1 = $"__fl{helperN + 1}", n2 = $"__fr{helperN + 1}";
-        var decls = new List<MStmt>
+        var lambdas = new List<MExpr>();
+        foreach (var c in calls)
         {
-            new MDecl { Name = n1, TypeCs = TypeCs(calls[0].Type) },
-            new MDecl { Name = n2, TypeCs = TypeCs(calls[1].Type) },
-        };
-        if (!EmitFork(decls, n1, n2, TypeCs(calls[0].Type), TypeCs(calls[1].Type), calls[0], calls[1], lv, rv)) return [];
+            var needs = new List<MStmt>();
+            lambdas.Add(Isolated(c, needs));
+            if (needs.Count > 0) return [];   // argument lowering needed statements: keep it serial
+        }
+        var names = calls.Select((_, k) => $"__f{k}_{helperN + 1}").ToList();
+        var types = calls.Select(c => TypeCs(c.Type)).ToList();
+        var decls = new List<MStmt>();
+        for (int k = 0; k < calls.Count; k++) decls.Add(new MDecl { Name = names[k], TypeCs = types[k] });
+        if (!EmitFork(decls, names, types, calls, lambdas)) return [];
         foreach (var m in decls) m.Line = s.Line;
         outp.AddRange(decls);
-        forkedCalls[calls[0]] = n1;
-        forkedCalls[calls[1]] = n2;
+        for (int k = 0; k < calls.Count; k++) forkedCalls[calls[k]] = names[k];
         return [.. calls];
     }
 
