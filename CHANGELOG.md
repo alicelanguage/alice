@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- `lock obj ... end` (C# `lock`; `System.Threading.Lock` or any reference). A value-type target is a compile error, and writes inside are still race-checked: `Mutex(T)` remains the way to share Alice data.
 - Method references: `->sq`, `->sq(Int32)`, `->shape.area`, `->Geometry.dist`. A reference is a lambda whose parameter types come from the method (explicit types pick an overload), so it passes as a block value, a `Func` or any delegate.
 - Building and folding sum types fork. A variant constructor (`Tree::Node(l, r)`) is allocation, not an effect, and a `case` whose subject, patterns, guards and arms are pure is pure. Before, neither `build` nor `total` of `benchmarks/inet/tree.al` forked.
 - `[runtime] gc = "auto"` is the new default. The build picks server GC (DATAS) when the compiled program forks or runs parallel loops, and workstation GC otherwise. Parallel code building long-lived data was collection-bound on workstation GC: tree(20) build took 85 ms (57 gen0 collections copying the live tree) against 24 ms on server GC, and tree(23) took 698 vs 137 ms. A serial hello world starts in 0.02 s either way, with 27.9 vs 28.9 MB. `workstation`, `server` and `low-memory` still force a mode.

@@ -43,6 +43,7 @@ public class CSharpCompatTests
         { "struct field initializers and explicit layout", "@[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind::Explicit)]\nstruct U\n  @[System.Runtime.InteropServices.FieldOffset(0)]\n  property i : Int32 = 7\nend\nstruct Cfg\n  property port : Int32 = 80\n  property host : String = \"localhost\"\nend\nputs U.new.i\nc = Cfg.new\nputs \"#{c.host}:#{c.port}\"", "7\nlocalhost:80" },
         { "span iteration", "def f(xs : ReadOnlySpan(Int32)) : Int32\n  t = 0\n  xs.each { |x| t += x }\n  xs.each_with_index { |x, i| t += x * i }\n  t + xs.sum { |x| x * 2 } + xs.count { |x| x > 1 }\nend\ndef g(xs : Span(Int32))\n  xs.each_with_index { |x, i| xs[i] = x * 10 }\nend\narr = [1, 2, 3]\nputs f(arr.AsSpan)\ng(arr.AsSpan)\nputs arr.join(\",\")", "28\n10,20,30" },
         { "method references", "def sq(x : Int32) : Int32\n  x * x\nend\nclass Sh\n  def initialize(@k : Int32)\n  end\n  def scale(x : Int32) : Int32\n    x * @k\n  end\nend\nmodule M\n  def self.add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nf = ->sq(Int32)\ng = ->sq\ns = Sh.new(10)\nh = ->s.scale\nd : Func(Int32, Int32) = ->sq\nadd = ->M.add\nputs \"#{f.call(4)} #{g.call(5)} #{h.call(3)} #{d.Invoke(6)} #{add.call(2, 3)}\"\nputs [1, 2, 3].map(->sq).join(\",\")", "16 25 30 36 5\n1,4,9" },
+        { "lock statement", "gate = System.Threading.Lock.new\nn = 0\nlock gate\n  n += 1\nend\no = Object.new\nlock o\n  puts \"in #{n}\"\nend", "in 1" },
         { "ruby methods and public_send", "class Q\n  def hi : String\n    \"hi\"\n  end\n  def add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nq = Q.new\nputs q.methods.includes?(\"hi\")\nputs q.public_send(\"add\", 2, 3)\nputs q.is_a?(Object)", "true\n5\ntrue" },
     };
 
@@ -67,5 +68,14 @@ public class CSharpCompatTests
     {
         var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src));
         Assert.Contains(message, ex.Message + string.Join("", ex.Diagnostics.Select(d => d.Message)));
+    }
+
+    [Fact]
+    public void Lock_does_not_silence_the_race_checker()
+    {
+        // `lock` cannot prove every writer takes the same lock: shared Alice data still needs Mutex(T) (AL0202)
+        var src = "gate = Object.new\nlist = List(Int32).new\nt = spawn { lock gate\n  list.Add(1)\nend }\nt.wait\n";
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src));
+        Assert.Contains("data race", ex.Message + string.Join("", ex.Diagnostics.Select(d => d.Message)));
     }
 }

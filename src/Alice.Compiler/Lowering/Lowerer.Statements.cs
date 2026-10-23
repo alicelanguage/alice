@@ -15,7 +15,7 @@ public sealed partial class Lowerer
                 break;
             case BeginStmt { Rescues.Count: 0, Ensure: null } plain:
                 {
-                    var block = new MBlock { Body = Stmts(plain.Body, tail, target), Unchecked = plain.Unchecked, Unsafe = plain.Unsafe };
+                    var block = new MBlock { Body = Stmts(plain.Body, tail, target), Unchecked = plain.Unchecked, Unsafe = plain.Unsafe, Lock = plain.Lock != null ? Expr(plain.Lock) : null };
                     if (plain.Scope && tail == Tail.None && !inParallelGen && releaseAt.TryGetValue(plain, out var dying))   // lifetime region ends
                         foreach (var l in dying.Where(owned.ContainsKey)) block.Body.Add(Release(l, owned[l]));
                     o.Add(block);

@@ -48,6 +48,7 @@ public static class Formatter
             if (first == "record" && RecordHasBody(lines, li)) stack.Add("record");
             if (owner == "interface" && first == "def" && InterfaceDefHasBody(lines, li)) stack.Add("def");   // default method
             // `using r = x` / `await using r = x` resource blocks
+            if (first == "lock" && words.Count > 1 && !ClosesOnSameLine(words, "lock")) stack.Add("lock");
             int u = first == "await" ? 1 : 0;
             if (words.Count > u + 2 && words[u] == "using" && words[u + 2] == "=") stack.Add("using");
             if (words.Count > 0 && words[^1] == "do" || EndsWithDoParams(code)) stack.Add("do");

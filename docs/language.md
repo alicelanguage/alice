@@ -434,6 +434,12 @@ Tests: `ModuleTests`.
 - Reopening an Alice class merges members.
 - Reopening a .NET type (`class String`, `struct Int32`) emits extension methods: `"hey".shout`, `21.double`.
 
+### lock
+
+`lock obj ... end` is C#'s `lock` (a `System.Threading.Lock` or any object). It is for .NET APIs that need Monitor
+locking. It does not exempt writes from the race checker (AL0202): shared Alice data uses `Mutex(T)`, which ties the
+lock to the data it guards.
+
 ### Events, delegates, default interface methods
 
 ```crystal

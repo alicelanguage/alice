@@ -90,6 +90,7 @@ public sealed class MBlock : MStmt
     public List<MStmt> Body = new();
     public bool Unchecked;   // C# `unchecked { }`
     public bool Unsafe;      // C# `unsafe { }`
+    public MExpr? Lock;      // C# `lock (x) { }`
 }
 
 public sealed class MUsing : MStmt

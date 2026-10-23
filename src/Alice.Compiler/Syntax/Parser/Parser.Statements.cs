@@ -41,6 +41,14 @@ public sealed partial class Parser
             ExpectKw("end");
             s = u;
         }
+        else if (IsKw("lock") && Peek(1).Kind is "id" or "ivar" or "const" or "self")
+        {
+            Next();
+            var target = Expression();
+            var lk = At(new BeginStmt { Lock = target, Body = Block(" end ") }, tok);
+            ExpectKw("end");
+            s = lk;
+        }
         else if (IsKw("unsafe") && Peek(1).Kind == "nl")
         {
             Next();

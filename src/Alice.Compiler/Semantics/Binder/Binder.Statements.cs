@@ -54,6 +54,8 @@ public sealed partial class Binder
                 BindCase(c);
                 break;
             case BeginStmt b:
+                if (b.Lock != null && BindExpr(b.Lock) is { IsKnown: true } lt && lt.Clr is { IsValueType: true })
+                    throw Err(b, "lock needs a reference type (an Object or System.Threading.Lock), not a value");
                 Scoped(b.Body);
                 foreach (var r in b.Rescues)
                 {
