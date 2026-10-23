@@ -109,7 +109,7 @@ public sealed partial class Lowerer
         {
             // a fork consumes one statement (`a, b = f(x), g(y)`) or two (`a = f(x)` / `b = g(y)`), never the tail value
             if (TryFork(outp, body, i, body.Count - (tail == Tail.None ? 0 : 1)) is int used and > 0) { i += used - 1; continue; }
-            if (body[i] is MultiAssign { Par: true } pm)
+            if (body[i] is MultiAssign { Par: true } pm && !SerialClone)   // the clone runs the forked version's calls inline
                 throw new CompileException($"{File}:{pm.Line}:{Math.Max(1, pm.Col)}: cannot fork `par`: both values must be calls to pure methods with pure-read arguments, the second must not read the first result, and the method must not be async, generic or a lambda");
             var forked = TryForkOperands(outp, body[i]);
             Into(outp, body[i], i == body.Count - 1 ? tail : Tail.None, target);

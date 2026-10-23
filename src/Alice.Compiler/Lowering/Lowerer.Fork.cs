@@ -11,14 +11,33 @@ namespace Alice.Compiler.Lowering;
 /// b = f(y)        // the second independent of the first, at least one recursive
 /// </code>
 /// becomes `if (Par.Forkable) (a, b) = Par.Fork(() => f(x), () => f(y)); else { a = f(x); b = f(y); }`.
-/// Lazy task creation: only the top ~log2(cores)+3 levels spawn tasks, deeper levels pay one thread-static read.
+/// Lazy task creation: only the top ~log2(cores)+3 levels spawn tasks. The sequential branch calls `m__serial`, a
+/// clone of the method with no forks whose recursion stays in the clone, so deeper levels pay nothing.
 /// Purity is the same interprocedural gate as loop parallelization: impure code is never forked.
 /// </summary>
 public sealed partial class Lowerer
 {
+    /// <summary>Set by the emitter when the method may get a serial clone (non-virtual, plain method).</summary>
+    public bool CloneOk;
+
+    /// <summary>A fork was emitted in the current method: the emitter adds `m__serial`.</summary>
+    public bool Forked;
+
+    /// <summary>Lowering `m__serial`: no forks, and self-calls go to the clone.</summary>
+    public bool SerialClone;
+
+    /// <summary>Lowering a fork's sequential branch: self-calls go to the clone.</summary>
+    bool serialCalls;
+
+    public const string SerialSuffix = "__serial";
+
+    /// <summary>The C# name of a call to <paramref name="m"/>: the serial clone below the fork depth.</summary>
+    string CallName(MethodSym m) => (SerialClone || serialCalls) && m == Method ? m.CsName + SerialSuffix : m.CsName;
+
     /// <summary>Lowers a fork at body[i] and returns how many statements it consumed (0: not a fork).</summary>
     int TryFork(List<MStmt> outp, List<Stmt> body, int i, int end)
     {
+        if (SerialClone) return 0;
         if (inParallelGen || noHoist > 0 || Method == null || Method.IsAsync || Method.TypeParams.Count > 0 || ctx.Contains("lambda")) return 0;
         LocalSym l1, l2;
         CallExpr c1, c2;
@@ -75,14 +94,20 @@ public sealed partial class Lowerer
         });
         Extra.Add($"private {HelperStatic}({t1}, {t2}) {helper}({string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"))})\n{{\n{hp}}}\n");
         var fork = new MCode($"{helper}({string.Join(", ", captured.Select(l => l.CsName))})");
+        // below the fork depth, recursion continues in `m__serial`: one Forkable check per branch, not one per call
+        serialCalls = CloneOk;
+        Forked |= CloneOk;
+        var e1 = Isolated(c1, []);
+        var e2 = Isolated(c2, []);
+        serialCalls = false;
         outp.Add(new MIf
         {
             Cond = new MCode("global::Alice.Runtime.Par.Forkable"),
             Then = { new MDeconstruct { Names = { n1, n2 }, Value = fork } },
             Else = new List<MStmt>
             {
-                new MAssign { Target = new MCode(n1), Value = Isolated(c1, []) },
-                new MAssign { Target = new MCode(n2), Value = Isolated(c2, []) },
+                new MAssign { Target = new MCode(n1), Value = e1 },
+                new MAssign { Target = new MCode(n2), Value = e2 },
             },
         });
         return true;
@@ -99,6 +124,7 @@ public sealed partial class Lowerer
     /// </summary>
     CallExpr[] TryForkOperands(List<MStmt> outp, Stmt s)
     {
+        if (SerialClone) return [];
         if (inParallelGen || noHoist > 0 || Method == null || Method.IsAsync || Method.TypeParams.Count > 0 || ctx.Contains("lambda")) return [];
         var value = s switch
         {

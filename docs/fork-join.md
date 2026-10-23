@@ -8,6 +8,14 @@ The idea comes from **Victor Taelin** (Higher Order Company, Rio de Janeiro), cr
 
 Alice takes that idea to .NET. Bend asks the programmer to write the fork; Alice infers it from code that is already parallel in shape, and keeps the .NET garbage collector and thread pool instead of Bend's ownership-based heap and task cube.
 
+## Serial clone
+
+A method that forks is emitted twice: `m`, whose forks check `Par.Forkable`, and `m__serial`, with no forks. The
+sequential branch of each fork calls `m__serial`, and recursion stays there, so below the fork depth calls cost the
+same as plain recursion. A check on every call made `pow2` 2x slower than serial code; with the clone it is
+6x faster on 12 cores ([benchmarks/inet](../benchmarks/inet/README.md)). Virtual methods, constructors and
+operators keep the per-call check, because a clone would bypass overrides.
+
 ## What forks
 
 Two consecutive declarations whose values are calls

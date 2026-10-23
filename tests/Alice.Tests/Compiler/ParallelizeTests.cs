@@ -157,6 +157,26 @@ public class LoopParallelizeTests
     }
 
     [Theory]
+    [InlineData("def pow2(n : Int32) : Int64\n  return 1_i64 if n == 0\n  a, b = pow2(n - 1), pow2(n - 1)\n  a + b\nend\n", "pow2", 20, 1048576L)]
+    [InlineData(Fib, "fib", 25, 75025L)]
+    [InlineData("def fib(n : Int32) : Int64\n  return n.to_i64 if n < 2\n  fib(n - 1) + fib(n - 2)\nend\n", "fib", 25, 75025L)]
+    public void Below_the_fork_depth_recursion_runs_a_serial_clone(string src, string name, int arg, long expected)
+    {
+        // benchmarks/inet: a Forkable check on every one of 2^n calls made pow2(26) 2x slower than plain recursion;
+        // the clone has no check and calls itself, so only the top levels pay for forking (7x faster than plain)
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains($"{name}__serial(", cs);
+        int clone = cs.IndexOf($" {name}__serial(int n)");
+        Assert.True(clone > 0, cs);
+        string body = cs[clone..];
+        body = body[..(body.IndexOf("\n}\n") + 3)];
+        Assert.DoesNotContain("Forkable", body);
+        Assert.DoesNotContain($" {name}(n", body);   // the clone never re-enters the forking version
+        var f = AliceCompiler.Load(AliceCompiler.Emit([cs], "clone", exe: false)).GetType("Program")!.GetMethod(name)!;
+        Assert.Equal(expected, f.Invoke(null, [arg]));
+    }
+
+    [Theory]
     [InlineData("def g(n : Int32) : Int32\n  puts n\n  n\nend\ndef f(n : Int32) : Int32\n  return 0 if n < 1\n  a = f(n - 1)\n  b = g(n)\n  a + b\nend\n")]   // impure callee
     [InlineData("def f(n : Int32) : Int32\n  return 0 if n < 1\n  a = f(n - 1)\n  b = f(a - 1)\n  a + b\nend\n")]                                  // second call reads the first result
     [InlineData("def sq(n : Int32) : Int32\n  n * n\nend\ndef f(n : Int32) : Int32\n  a = sq(n)\n  b = sq(n + 1)\n  a + b\nend\n")]               // no recursion: too small to fork

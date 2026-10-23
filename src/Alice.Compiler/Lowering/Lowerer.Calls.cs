@@ -51,7 +51,7 @@ public sealed partial class Lowerer
                 {
                     var m = (MethodSym)c.Sym!;
                     if (m.IsStatic && recv == null && m.Owner != Type && m.Owner.Kind != "program") recv = new MCode(m.Owner.Type.Cs);
-                    return new MCall { Target = recv, Name = m.CsName, Args = args, Safe = c.Safe };
+                    return new MCall { Target = recv, Name = CallName(m), Args = args, Safe = c.Safe };
                 }
             case "field" when soa != null && c.Recv is NameExpr { Sym: LocalSym ps } && soa.Ps.Contains(ps):
                 return new MIndex { Target = new MMember { Target = new MCode(soa.Store), Name = ((FieldSym)c.Sym!).CsName }, Args = { new MCode(soa.Idx) } };

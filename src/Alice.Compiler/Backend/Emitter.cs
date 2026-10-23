@@ -523,10 +523,15 @@ public sealed class Emitter
         lowerer.Type = owner;
         lowerer.Method = m;
         bool returns = !retT.IsVoid && !m.IsCtor;
+        bool plain = !m.IsCtor && !(d.Name == "to_s" && m.Params.Count == 0) && d.Name != "[]" && !OpNames.ContainsKey(d.Name);
+        lowerer.CloneOk = plain && Virtual(m, owner, d.Vis).Mod == "";
+        lowerer.Forked = false;
         var body = lowerer.LowerBody(d.Body, returns ? Tail.Return : Tail.None, d.HoistedLocals, d.Line);
         string code = Print(body, 1);
         string extra = string.Concat(lowerer.Extra);
         lowerer.Extra.Clear();
+        if (lowerer.Forked) extra += SerialClone(d, m, owner, ret, ps, returns);
+        lowerer.CloneOk = false;
         string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) || LoopLeaves().Contains(m) || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && LoopNest(body, 0) ? Hot : "");
         if (m.IsCtor)
         {
@@ -552,6 +557,24 @@ public sealed class Emitter
         var (vis, virt) = Virtual(m, owner, d.Vis);
         string mods = vis + (m.IsStatic || owner.Kind == "extension" ? " static" : "") + virt + (asyncKw != "" ? " async" : "");
         return $"{attrs}{dir}{mods} {ret} {m.CsName}{gen}({plist}){where}\n{{\n{code}}}\n";
+    }
+
+    /// <summary>`m__serial`: the method lowered again with no forks, self-calls staying in the clone.</summary>
+    string SerialClone(MethodDecl d, MethodSym m, TypeSym owner, string ret, List<string> ps, bool returns)
+    {
+        lowerer.SerialClone = true;
+        lowerer.Forked = false;
+        try
+        {
+            var body = lowerer.LowerBody(d.Body, returns ? Tail.Return : Tail.None, d.HoistedLocals, d.Line);
+            string code = Print(body, 1);
+            string extra = string.Concat(lowerer.Extra);
+            lowerer.Extra.Clear();
+            var plist = string.Join(", ", ps.Select(p => p.IndexOf(" = ", StringComparison.Ordinal) is int k and >= 0 ? p[..k] : p));
+            string mods = "private" + (m.IsStatic || owner.Kind == "extension" ? " static" : "");
+            return $"{extra}{mods} {ret} {m.CsName}{Lowering.Lowerer.SerialSuffix}({plist})\n{{\n{code}}}\n";
+        }
+        finally { lowerer.SerialClone = false; }
     }
 
     /// <summary>Alice dispatch is virtual only where the program needs it, so the JIT can devirtualize/inline the rest.</summary>
