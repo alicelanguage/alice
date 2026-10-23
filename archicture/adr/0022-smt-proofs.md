@@ -18,8 +18,9 @@ Decision:
   timeout is treated the same way.
 - Rule parameters gain `x : Int32` and `x : Int64` (whole range). Enumeration rejects domains over 2^32 cases (AL0214)
   with a hint to use `--smt`.
-- Z3 is opt-in and stays out of the compiler and runtime (pure C#): the CLI references the managed Microsoft.Z3
-  binding and loads the system libz3 (`pacman -S z3`, `apt install libz3-4`, `brew install z3`, or `ALICE_Z3=path`).
-  Without it, `--smt` is a usage error and the SMT tests skip. Microsoft.Z3 4.12.2 is x64-only: on arm64 Z3 reports
-  unavailable.
+- Z3 is opt-in and stays out of the compiler and runtime (pure C#). The CLI calls Z3's C API directly
+  (`Proof/Z3`: `NativeLibrary` plus unmanaged function pointers into the system libz3: `pacman -S z3`,
+  `apt install libz3-4`, `brew install z3`, or `ALICE_Z3=path`). There is no managed binding: Microsoft.Z3 4.12.2 is
+  x64-only, while the C API is the same on every architecture, so osx-arm64 and linux-arm64 work. Without libz3,
+  `--smt` is a usage error and the SMT tests skip.
 - PROOF.al marks SMT proofs `proven for every input of its domain (smt)`.

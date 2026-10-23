@@ -6,9 +6,6 @@
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
-    <!-- alice prove with the smt option only (opt-in): the native solver loads when a proof asks for it; compiling stays pure C# -->
-    <PackageReference Include="Microsoft.Z3" Version="4.12.2" />
-    <!-- Microsoft.Z3 4.12.2 is built for x64: on arm64 it does not load, and alice prove (smt option) reports Z3 as unavailable -->
   </ItemGroup>
 
   <PropertyGroup>
@@ -25,7 +22,8 @@
     <PackageId>Alice.Cli</PackageId>
     <Description>The Alice language CLI: build, run, test, format and publish Alice (.al) programs on .NET.</Description>
     <PackageTags>alice;compiler;cli;language</PackageTags>
-    <NoWarn>$(NoWarn);CS8012</NoWarn>
+    <!-- Proof/Z3: function pointers into the system libz3, loaded only by alice prove with the smt option -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

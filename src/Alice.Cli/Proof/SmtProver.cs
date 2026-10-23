@@ -2,8 +2,8 @@ using System.Runtime.InteropServices;
 using Alice.Compiler;
 using Alice.Compiler.Semantics;
 using Alice.Compiler.Syntax;
-using Microsoft.Z3;
-using Expr = Microsoft.Z3.Expr;
+using Alice.Cli.Proof.Z3;
+using Expr = Alice.Cli.Proof.Z3.Expr;
 using Syntax = Alice.Compiler.Syntax;
 
 namespace Alice.Cli.Proof;
@@ -19,35 +19,16 @@ public static class SmtProver
 {
     public sealed record Outcome(string Rule, bool Proved, string? Counterexample, string? Untranslatable);
 
-    static bool resolverSet;
-
-    /// <summary>Z3's native library: the system one (`pacman -S z3`, `apt install libz3-4`) or ALICE_Z3=/path/libz3.so.</summary>
+    /// <summary>Z3's native library: the system one (`pacman -S z3`, `apt install libz3-4`, `brew install z3`) or
+    /// ALICE_Z3=/path/to/libz3. Any architecture: the C API is called directly.</summary>
     public static string? Unavailable()
     {
-        // Probe runs in its own method: a missing Microsoft.Z3 assembly fails when the method using Context is compiled
-        try { Probe(); return null; }
-        catch (Exception e) when (e is DllNotFoundException or TypeInitializationException or EntryPointNotFoundException or BadImageFormatException or FileNotFoundException or FileLoadException)
+        try
         {
-            return "Z3 is not installed: install it (pacman -S z3, apt install libz3-4, brew install z3) or set ALICE_Z3=/path/to/libz3";
+            if (Z3Native.Load()) { using var ctx = new Context(); return null; }
         }
-    }
-
-    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    static void Probe()
-    {
-        if (!resolverSet)
-        {
-            resolverSet = true;
-            NativeLibrary.SetDllImportResolver(typeof(Context).Assembly, (name, asm, path) =>
-            {
-                if (!name.Contains("z3", StringComparison.OrdinalIgnoreCase)) return IntPtr.Zero;
-                if (Environment.GetEnvironmentVariable("ALICE_Z3") is { Length: > 0 } custom && NativeLibrary.TryLoad(custom, out var h)) return h;
-                foreach (var candidate in new[] { "libz3", "libz3.so", "libz3.so.4", "z3" })
-                    if (NativeLibrary.TryLoad(candidate, asm, path, out var l)) return l;
-                return IntPtr.Zero;
-            });
-        }
-        using var ctx = new Context();
+        catch (EntryPointNotFoundException) { }   // a library named libz3 that is not Z3's
+        return "Z3 is not installed: install it (pacman -S z3, apt install libz3-4, brew install z3) or set ALICE_Z3=/path/to/libz3";
     }
 
     public static List<Outcome> Prove(List<SourceFile> files, IEnumerable<string> refs)
@@ -59,7 +40,7 @@ public static class SmtProver
         var r = new List<Outcome>();
         foreach (var rule in rules)
         {
-            using var ctx = new Context(new Dictionary<string, string> { ["model"] = "true" });
+            using var ctx = new Context();
             try
             {
                 var ex = new Exec(ctx, methods);
@@ -112,30 +93,15 @@ public static class SmtProver
                 inputs.Add((d.Name, v));
             }
             var result = Body(rule.Body, env);
-            var s = z.MkSolver();
-            var prm = z.MkParams();
-            prm.Add("timeout", 20000u);   // ms; a nonlinear 64-bit query can run for hours: give up, enumerate instead
-            s.Parameters = prm;
+            using var s = z.MkSolver();
+            s.TimeoutMs = 20000;   // a nonlinear 64-bit query can run for hours: give up, enumerate instead
             s.Assert(domain.ToArray());
             s.Assert(z.MkOr(err, z.MkNot((BoolExpr)result)));   // an input that raises or returns false
             var status = s.Check();
             if (status == Status.UNSATISFIABLE) return new Outcome(rule.RuleName!, true, null, null);
             if (status == Status.UNKNOWN) throw new Untranslatable("Z3 could not decide the rule: " + s.ReasonUnknown);
-            var m = s.Model;
-            string ce = string.Join(", ", inputs.Select(x => $"{x.Name} = {Show(m.Eval(x.Var, true), x.Var)}"));
+            string ce = string.Join(", ", inputs.Select(x => $"{x.Name} = {s.Value(x.Var)}"));
             return new Outcome(rule.RuleName!, false, ce, null);
-        }
-
-        static string Show(Expr value, Expr var)
-        {
-            if (value is BitVecNum n)
-            {
-                var u = n.BigInteger;
-                uint w = ((BitVecSort)var.Sort).Size;
-                if (u >= System.Numerics.BigInteger.One << (int)(w - 1)) u -= System.Numerics.BigInteger.One << (int)w;   // two's complement
-                return u.ToString();
-            }
-            return value.ToString();
         }
 
         static uint Width(AType t) => t.Cs switch
