@@ -118,6 +118,15 @@ public sealed class Emitter
         }
     }
 
+    /// <summary>Attributes of a positional record parameter. They target the generated property (where serializers
+    /// look) unless written with an explicit target (`@[param: X]`).</summary>
+    static string ParamAttrs(TypeDecl d, string field)
+    {
+        var p = d.RecordParams.FirstOrDefault(r => r.Name == field);
+        if (p == null || p.Attrs.Count == 0) return "";
+        return string.Concat(p.Attrs.Select(a => System.Text.RegularExpressions.Regex.IsMatch(a, @"^\w+\s*:\s") ? $"[{a}] " : $"[property: {a}] "));
+    }
+
     static string Attrs(List<string> attrs)
     {
         var sb = new StringBuilder();
@@ -206,7 +215,7 @@ public sealed class Emitter
             "record struct" => "public readonly partial record struct",
             _ => d.IsAbstract ? "public abstract partial class" : open ? "public partial class" : "public sealed partial class",
         };
-        string prm = d.RecordParams.Count > 0 ? "(" + string.Join(", ", s.FieldOrder.Select(f => s.Fields[f].Type.Cs + " " + s.Fields[f].CsName)) + ")" : "";
+        string prm = d.RecordParams.Count > 0 ? "(" + string.Join(", ", s.FieldOrder.Select(f => ParamAttrs(d, f) + s.Fields[f].Type.Cs + " " + s.Fields[f].CsName)) + ")" : "";
         string bases = s.Bases.Count > 0 ? " : " + string.Join(", ", s.Bases.Select(b => b.Cs)) : "";
         string where = Constraints(d.Constraints);
         if (d.Kind.StartsWith("record") && body.Length == 0) return $"{Attrs(d.Attrs)}{head} {self}{prm}{bases}{where};\n";

@@ -317,6 +317,7 @@ end
 | `enum Color ... end` | enum; `Color::Green` |
 | `record Point(x : Int32, y : Int32)` | `record` class: value equality, `Point { x = 1, y = 2 }` |
 | `record struct Vec(x : Float64, y : Float64) ... end` | `record struct`, body may add methods |
+| `record Span(start : Int32, @[JsonPropertyName("end")] stop : Int32)` | parameter attributes target the property (what serializers read); `@[param: X]` targets the parameter |
 | `class Box(T)` / `class Node(T) where T : IComparable(T)` | generic class + constraint |
 | `abstract`, `private` | parsed; not covered by tests |
 

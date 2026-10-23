@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Attributes on record parameters: `record Span(start : Int32, @[JsonPropertyName("end")] stop : Int32)`. They target the generated property, where System.Text.Json and other serializers read them; `@[param: X]` targets the parameter. JSON keys that are Alice keywords (`end`) now map to typed records.
 - `fun` parameters can be `out x : T` / `ref x : T`. C receives a pointer to the caller's variable, pinned for the call, so out-parameters and structs passed by pointer need no `unsafe` (`LibC.clock_gettime(0, out ts)`, `LibC.frexp(8.0, ref e)`). `out` locals at the call site get the declared type.
 - Native callbacks: a `fun` parameter of type `Callback(A, B, R)` takes a lambda literal, lifted to a static `[UnmanagedCallersOnly]` C function (`qsort` with an Alice comparator). No delegate, no GC handle, no allocation; the call site needs no `unsafe`. A capturing lambda is error AL0215. An exception raised in the callback no longer kills the process: it is caught and rethrown once the C call returns.
 - `unsafe ... end` blocks and `unsafe def`: the only places where `Pointer(T)` values (from `fun malloc ... : Pointer(UInt8)`, `p[i]`) are allowed. Elsewhere they are AL0214 with a hint, instead of a raw C# error. Safe FFI types (numbers, strings, arrays) need no `unsafe`.

@@ -242,7 +242,11 @@ public sealed partial class Parser
             SkipNl();
             while (!IsOp(")"))
             {
-                d.RecordParams.Add(Param());
+                while (IsOp("@[")) { Attr(); SkipNl(); }
+                var held = TakeAttrs();
+                var rp = Param();
+                rp.Attrs = held;
+                d.RecordParams.Add(rp);
                 if (IsOp(",")) { Next(); SkipNl(); }
             }
             Next();
