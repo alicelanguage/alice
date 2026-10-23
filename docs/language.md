@@ -446,6 +446,8 @@ end
 | `String?` (return) | borrowed `char*` (never freed), UTF-8; `NULL` is `nil`. `String` raises on `NULL` |
 | `Array(number)` | pointer to the pinned elements, no copy |
 | `Callback(A, B, R)` | C function pointer. Pass a lambda literal: it is lifted to a static `[UnmanagedCallersOnly]` method (no delegate, no allocation); captures are error AL0215; an exception inside is rethrown after the C call returns |
+| `out x : T` / `ref x : T` | pointer to the caller's variable, pinned for the call: C out-parameters and structs by pointer without `unsafe` (`LibC.clock_gettime(0, out ts)`) |
+| `struct` of numbers | by value, C layout (fields in declaration order) |
 | `Pointer(T)` | raw pointer, only inside `unsafe` (AL0214) |
 | `@[Fast]` on `fun` | no GC transition (short, non-blocking C functions only) |
 

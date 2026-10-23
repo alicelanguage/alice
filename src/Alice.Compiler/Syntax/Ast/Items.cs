@@ -83,6 +83,7 @@ public sealed class Param : Node
     public bool Block;    // &blk : A -> R
     public bool Own;      // own xs : Array(T)   (the caller moves its array in, ADR 0016)
     public bool Borrow;   // borrow xs : Array(T)   (checked: never retained, AL0213)
+    public string Mod = "";   // `out` / `ref` on a `lib` `fun` parameter: C pointer to the caller's variable
 }
 
 public sealed class MethodDecl : Item

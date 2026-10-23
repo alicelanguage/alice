@@ -430,7 +430,8 @@ public sealed partial class Parser
                 Next();
                 while (!IsOp(")"))
                 {
-                    var pr = new Param { Name = Next().Text };
+                    string mod = (IsKw("out") || IsKw("ref")) && Peek(1).Kind == "id" ? Next().Text : "";
+                    var pr = new Param { Name = Next().Text, Mod = mod };
                     Expect(":");
                     pr.Type = Type();
                     f.Params.Add(pr);

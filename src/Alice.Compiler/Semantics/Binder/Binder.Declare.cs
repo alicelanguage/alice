@@ -311,7 +311,7 @@ public sealed partial class Binder
         foreach (var f in l.Funs)
         {
             var m = new MethodSym { Name = f.Name, CsName = Mangle(f.Name), Owner = s, IsStatic = true, RetDeclared = true, Ret = f.Ret != null ? ResolveType(f.Ret) : AType.Void };
-            foreach (var p in f.Params) m.Params.Add(new ParamSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!) });
+            foreach (var p in f.Params) m.Params.Add(new ParamSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!), Mod = p.Mod });
             s.AddMethod(m);
         }
     }

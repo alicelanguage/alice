@@ -285,6 +285,14 @@ public sealed class Emitter
         return null;
     }
 
+    /// <summary>`out ts : Timespec` / `ref e : Int32`: C gets a pointer to the caller's variable, pinned for the call.</summary>
+    static FfiArg FfiByRef(string mod, string cs, string name)
+    {
+        string id = name.TrimStart('@');
+        string init = mod == "out" ? $"{name} = default;\n    " : "";   // C# requires an out parameter assigned before its address is taken
+        return new($"{mod} {cs}", cs + "*", $"__p_{id}", $"{init}fixed ({cs}* __p_{id} = &{name})");
+    }
+
     /// <summary>Raw return type and a format turning the raw call `{0}` into the Alice value.</summary>
     static (string Raw, string Wrap)? FfiReturn(string cs, string fun) => cs switch
     {
@@ -310,7 +318,7 @@ public sealed class Emitter
             var m = s.Methods[f.Name][0];
             string import = $"[global::System.Runtime.InteropServices.DllImport(\"{l.LibName}\", EntryPoint = \"{f.Entry}\", ExactSpelling = true)]\n"
                 + (f.Attrs.Contains("Fast") ? "[global::System.Runtime.InteropServices.SuppressGCTransition]\n" : "");
-            var parts = m.Params.Select(p => FfiParam(p.Type.Cs, p.CsName)).ToList();
+            var parts = m.Params.Select(p => p.Mod != "" ? FfiByRef(p.Mod, p.Type.Cs, p.CsName) : FfiParam(p.Type.Cs, p.CsName)).ToList();
             string retCs = m.Ret.IsVoid ? "void" : m.Ret.Cs;
             var ret = FfiReturn(retCs, f.Name);
             if (parts.All(x => x != null) && ret != null)
@@ -333,8 +341,8 @@ public sealed class Emitter
                 {
                     // `using var` lines first, then one nested `fixed` block per pinned array around the call
                     var body = new StringBuilder();
-                    foreach (var x in setup.Where(x => x != null && !x.StartsWith("fixed"))) body.Append("    ").Append(x).Append('\n');
-                    var pins = setup.Where(x => x != null && x.StartsWith("fixed")).ToList();
+                    foreach (var x in setup.Where(x => x != null && !x.Contains("fixed ("))) body.Append("    ").Append(x).Append('\n');
+                    var pins = setup.Where(x => x != null && x.Contains("fixed (")).ToList();
                     foreach (var x in pins) body.Append("    ").Append(x).Append("\n    {\n");
                     if (callbacks)   // an exception raised in an Alice callback resurfaces here, after the C frames are gone
                         body.Append(retCs == "void" ? $"    {call};\n    global::Alice.Runtime.NativeCallback.Rethrow();\n"

@@ -130,4 +130,14 @@ public class FfiTests
         var src = Lib(Qsort) + "xs = [2, 1, 3]\nbegin\n  LibC.qsort(xs, 3_u64, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { raise \"boom\" })\nrescue e\n  puts e.message\nend\nputs \"alive\"\n";
         Assert.Equal("boom\nalive", Run(src));
     }
+
+    [Fact]
+    public void Out_and_ref_struct_parameters_need_no_pointers()
+    {
+        if (OperatingSystem.IsWindows()) return;   // clock_gettime / timespec layout: Unix (64-bit time_t)
+        var src = "struct Timespec\n  getter sec : Int64\n  getter nsec : Int64\n  def initialize(@sec : Int64, @nsec : Int64)\n  end\nend\n"
+            + Lib("  fun clock_gettime(clock : Int32, out ts : Timespec) : Int32\n  fun frexp(x : Float64, ref exp : Int32) : Float64\n")
+            + "rc = LibC.clock_gettime(0, out ts)\nputs rc\nputs ts.sec > 1_600_000_000_i64\nputs ts.nsec < 1_000_000_000_i64\ne = 0\nm = LibC.frexp(8.0, ref e)\nputs \"#{m} #{e}\"\n";
+        Assert.Equal("0\ntrue\ntrue\n0.5 4", Run(src));
+    }
 }

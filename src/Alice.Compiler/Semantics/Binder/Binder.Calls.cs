@@ -114,6 +114,9 @@ public sealed partial class Binder
                 {
                     c.Res = "alice";
                     c.Sym = m;
+                    // `LibC.clock_gettime(0, out ts)`: the out local takes the declared parameter type
+                    for (int i = 0; i < c.Args.Count && i < m.Params.Count; i++)
+                        if (c.Args[i].OutLocal is { } ol && !ol.Type.IsKnown) ol.Type = m.Params[i].Type;
                     pendingConcurrent = conc && c.Block != null;
                     BindBlockFor(c, m);
                     return m.Ret;

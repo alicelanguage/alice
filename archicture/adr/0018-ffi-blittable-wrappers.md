@@ -19,6 +19,7 @@ compiler emits an inlined wrapper that converts:
 | `String` return | `byte*` | as above; `NULL` raises `NullReferenceException` |
 | `Array(number)` | `T*` | pinned with `fixed`, no copy |
 | `Callback(A..., R)` | `delegate* unmanaged[Cdecl]<A..., R>` | public type `Alice.Runtime.NativeFn` (safe at the call site); a lambda literal is lifted to a static `[UnmanagedCallersOnly]` method, captures are AL0215, exceptions are caught there and rethrown by the wrapper after C returns |
+| `out x : T` / `ref x : T` | `T*` | `fixed (T* p = &x)`: C writes the caller's variable in place; `out` locals take `T` |
 | `Pointer(T)` | `T*` | none; allowed only in `unsafe` (AL0214) |
 | other (blittable structs) | runtime marshaller | unchanged |
 
