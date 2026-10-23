@@ -45,6 +45,15 @@ public static class ProjectFiles
 
             """,
         "game" => Templates.Game(Pascal(name)),
+        "tool" => $$"""
+            # {{name}}: a command-line tool. alice pack, then dotnet tool install -g --add-source bin/package {{name}}
+            if ARGV.size == 0 || ARGV[0] == "--help"
+              puts "usage: {{name}} <name>"
+              exit 0
+            end
+            puts "Hello, #{ARGV[0]}!"
+
+            """,
         _ => $$"""
             # {{name}}
             def greet(who : String)

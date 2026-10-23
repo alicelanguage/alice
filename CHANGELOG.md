@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- `alice new <name> --tool` creates a .NET tool package (`kind = "tool"`, `command`, an ARGV template). `alice new --lib` now writes `description` and `naming = "dotnet"`, so a new library is ready for `alice publish`.
 - `[package] naming = "dotnet"` (ADR 0019): a library's public members compile to .NET names (`total_area` -> `TotalArea`, record `x` -> `X`, `empty?` -> `IsEmpty`), so C# and F# callers see a conventional API. Alice code keeps the Alice spelling, and `send`/`respond_to?` fall back to the .NET name. Private members and Ruby hooks are unchanged. Default `"alice"` leaves output as before.
 - `await using r = x ... end` in `async def`: `DisposeAsync` is awaited at `end` (EF Core contexts, async streams). `alice fmt` now indents `using` / `await using` blocks, which it never did, as well as interface default methods and `unsafe def`.
 - Declaring .NET events (`event clicked : EventHandler`, raised with `clicked&.Invoke(self, args)`), delegate types (`delegate Op(a : Int32, b : Int32) : Int32`) and default interface methods (an interface `def` with a body). An Alice library can now expose the same API shapes a C# library does.

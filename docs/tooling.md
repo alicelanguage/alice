@@ -6,7 +6,7 @@ Run from source: `dotnet run --project src/Alice.Cli -- <command>`.
 
 | Command | Action |
 |---|---|
-| `alice new <name> [--lib\|--game]` | create package (exe, library, or MonoGame game): `alice.toml`, `src/`, `test/`, `.gitignore`; inside a workspace it is added to `members` |
+| `alice new <name> [--lib\|--tool\|--game]` | create package (exe, library with `naming = "dotnet"`, .NET tool, or MonoGame game): `alice.toml`, `src/`, `test/`, `.gitignore`; inside a workspace it is added to `members` |
 | `alice new <name> --workspace` | create workspace root (`[workspace] members = []`) |
 | `alice build [dir\|files] [--release] [--native] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT |
 | `alice run [dir\|file.al] [member] [-- args]` | build and run; workspace with several exe members: `alice run <member>` |

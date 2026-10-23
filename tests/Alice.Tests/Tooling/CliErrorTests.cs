@@ -122,4 +122,18 @@ public class CliErrorTests : IDisposable
         Assert.Equal(1, mc);
         Assert.Contains("not a dependency: Nope.Package", mo);
     }
+
+    [Fact]
+    public void New_lib_and_tool_are_ready_to_publish()
+    {
+        Assert.Equal(0, Cli("new", "geo", "--lib").Code);
+        string lib = File.ReadAllText("geo/alice.toml");
+        Assert.Contains("naming = \"dotnet\"", lib);   // C#/F# callers see a .NET-style API (ADR 0019)
+        Assert.Contains("description = ", lib);
+        Assert.Equal(0, Cli("new", "wand", "--tool").Code);
+        string tool = File.ReadAllText("wand/alice.toml");
+        Assert.Contains("kind = \"tool\"", tool);
+        Assert.Contains("command = \"wand\"", tool);
+        Assert.Contains("ARGV", File.ReadAllText("wand/src/main.al"));
+    }
 }

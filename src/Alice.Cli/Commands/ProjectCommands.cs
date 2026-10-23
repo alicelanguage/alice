@@ -21,15 +21,22 @@ public static class ProjectCommands
             UiH.Status(T("created"), $"workspace `{wname}`");
             return 0;
         }
-        string kind = a.Contains("--lib") ? "lib" : a.Contains("--game") ? "game" : "exe";
+        string kind = a.Contains("--lib") ? "lib" : a.Contains("--tool") ? "tool" : a.Contains("--game") ? "game" : "exe";
         string? name = a.FirstOrDefault(x => !x.StartsWith("--"));
-        if (name == null) throw UsageException.Usage("alice new <name> [--lib | --game | --workspace]");
+        if (name == null) throw UsageException.Usage("alice new <name> [--lib | --tool | --game | --workspace]");
         string dir = Path.GetFullPath(name);
         if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any()) throw new UsageException(T("exists", name), null, 1);
         string proj = Path.GetFileName(dir);
         Directory.CreateDirectory(Path.Combine(dir, "src"));
         Directory.CreateDirectory(Path.Combine(dir, "test"));
-        File.WriteAllText(Path.Combine(dir, Manifest.FileName), $"[package]\nname = \"{proj}\"\nversion = \"0.1.0\"\nkind = \"{kind}\"\n\n[dependencies]\n");
+        // libraries and tools are made to be published (alice publish): metadata and the .NET-facing API up front
+        string publish = kind switch
+        {
+            "lib" => $"description = \"{proj}: an Alice library\"\nnaming = \"dotnet\"            # public API as TotalArea / IsEmpty for C# and F#\n",
+            "tool" => $"description = \"{proj}: a command-line tool\"\ncommand = \"{proj}\"            # dotnet tool install -g {proj}, then run `{proj}`\n",
+            _ => "",
+        };
+        File.WriteAllText(Path.Combine(dir, Manifest.FileName), $"[package]\nname = \"{proj}\"\nversion = \"0.1.0\"\nkind = \"{kind}\"\n{publish}\n[dependencies]\n");
         Manifest.Sync(dir);
         File.WriteAllText(Path.Combine(dir, "src", kind == "lib" ? "lib.al" : "main.al"), ProjectFiles.MainSource(proj, kind));
         File.WriteAllText(Path.Combine(dir, "test", "basics_test.al"), ProjectFiles.TestSource(proj));
