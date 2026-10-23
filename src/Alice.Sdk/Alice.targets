@@ -20,7 +20,8 @@
     <Reference Include="Alice.Runtime" Condition="'$(AliceRuntimeProject)' == ''">
       <HintPath>$(AliceHome)Alice.Runtime.dll</HintPath>
     </Reference>
-    <ProjectReference Include="$(AliceCliProject)" Condition="'$(AliceCliProject)' != ''"
+    <!-- not when `alice build` drives the build: that alice.dll is running (Windows locks its files) and already built -->
+    <ProjectReference Include="$(AliceCliProject)" Condition="'$(AliceCliProject)' != '' and '$(AliceFromCli)' != 'true'"
                       ReferenceOutputAssembly="false" Private="false" SkipGetTargetFrameworkProperties="true" />
   </ItemGroup>
 

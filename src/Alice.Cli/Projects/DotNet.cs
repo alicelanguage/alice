@@ -28,7 +28,8 @@ public static class DotNet
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["DOTNET_NOLOGO"] = "1";
         psi.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
-        psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";   // csc messages are matched in English (CSharpErrors)
+        psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
+        psi.Environment["AliceFromCli"] = "true";   // MSBuild property: skip rebuilding the running alice.dll (Alice.targets)   // csc messages are matched in English (CSharpErrors)
         using var p = Process.Start(psi)!;
         var diags = new List<Diagnostic>();
         var seen = new HashSet<string>();
