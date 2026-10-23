@@ -209,6 +209,10 @@ public sealed class Emitter
         if (ops.Contains("<") && !ops.Contains(">")) body.Append($"public static bool operator >({self} a, {self} b) => b < a;\n");
         if (ops.Contains("<=") && !ops.Contains(">=")) body.Append($"public static bool operator >=({self} a, {self} b) => b <= a;\n");
         if (s.SoaStore != null) body.Append(SoAStore.Emit(s));
+        // C# runs struct field initializers only through a declared constructor: give `Cfg.new` one
+        if (d.Kind == "struct" && !d.Members.OfType<MethodDecl>().Any(m => m.Name == "initialize")
+            && d.Members.Any(m => m is AccessorDecl { Init: not null } or FieldDecl { Init: not null }))
+            body.Append($"public {s.Name}() {{ }}\n");
         // `class Trio < IEnumerable(Int32)` with a GetEnumerator iterator: C# also needs the non-generic bridge
         bool implementsEnumerable = s.EnumerableElem != null
             || s.Bases.Any(b => b.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(IEnumerable<>));
@@ -249,7 +253,14 @@ public sealed class Emitter
         if (owner.Kind == "interface") return $"{f.Type.Cs} {f.CsName} {(a.Kind == "getter" ? "{ get; }" : "{ get; set; }")}\n";
         string acc = a.Kind switch { "getter" => "{ get; private set; }", "setter" => "{ private get; set; }", _ => "{ get; set; }" };
         string init = a.Init != null ? " = " + Init(a.Init, owner) + ";" : "";
-        return $"{Attrs(a.Attrs)}public {st}{Lowerer.TypeCs(f.Type)} {f.CsName} {acc}{init}\n";
+        return $"{Attrs(a.Attrs.Select(FieldTarget).ToList())}public {st}{Lowerer.TypeCs(f.Type)} {f.CsName} {acc}{init}\n";
+    }
+
+    /// <summary>Attributes valid only on fields (struct layout, marshalling) go to an accessor's backing field.</summary>
+    static string FieldTarget(string attr)
+    {
+        string name = attr.Split('(')[0].Split('.')[^1].Trim();
+        return name is "FieldOffset" or "FieldOffsetAttribute" or "NonSerialized" or "ThreadStatic" or "MarshalAs" or "FixedBuffer" && !attr.Contains(':') ? "field: " + attr : attr;
     }
 
     string Const(ConstDecl c, TypeSym owner)
