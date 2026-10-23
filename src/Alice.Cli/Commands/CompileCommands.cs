@@ -324,7 +324,8 @@ public static class CompileCommands
         {
             var files = Read(o.Files);
             string lib = o.Rest.FirstOrDefault(r => r.StartsWith("--native-lib="))?["--native-lib=".Length..] ?? "alice_native";
-            var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib);
+            string naming = o.Rest.FirstOrDefault(r => r.StartsWith("--naming="))?["--naming=".Length..] ?? "alice";
+            var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib, naming == "dotnet");
             if (csrc != null) File.WriteAllText(Path.Combine(o.Output, lib + ".c"), csrc);
             // type-check here (in-process Roslyn) so errors are reported in Alice terms, never as raw csc output
             // Emit already references the running framework. Keep other framework packs (e.g. ASP.NET).

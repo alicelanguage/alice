@@ -175,6 +175,7 @@ authors = ["Ada"]
 license = "Apache-2.0"       # SPDX expression
 repository = "https://github.com/acme/wand"
 tags = ["cli"]               # "alice" is always added
+naming = "dotnet"            # public API in .NET style for C#/F# callers: total_area -> TotalArea, empty? -> IsEmpty (ADR 0019)
 ```
 
 A library package bundles `Alice.Runtime.dll` next to its assembly, so C# projects consume it with a plain `PackageReference`. Games are not packable. Tests: `Tooling/ManifestTests`, `Integration/PackageTests`.

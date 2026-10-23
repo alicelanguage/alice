@@ -53,6 +53,15 @@ public sealed partial class Binder
 
     CompileException Err(Node n, string msg) => new($"{file}:{n.Line}:{Math.Max(1, n.Col)}: {msg}");
 
+    /// <summary>`[package] naming = "dotnet"`: public members compile to .NET names (TotalArea, X, IsEmpty).</summary>
+    public bool DotnetNames;
+
+    /// <summary>Ruby hooks found by name (initialize, to_s, method_missing, each...): never renamed.</summary>
+    static readonly HashSet<string> Hooks = ["initialize", "to_s", "inspect", "method_missing", "respond_to_missing?", "each", "<=>", "hash", "eql?", "call", "coerce"];
+
+    /// <summary>The C# name of a public member: its .NET spelling when <see cref="DotnetNames"/> is on.</summary>
+    string PublicName(string n) => DotnetNames && !Hooks.Contains(n) && Alice.Runtime.Names.Dotnet(n) is var d && d != n ? d : Mangle(n);
+
     public static string Mangle(string n)
     {
         if (n.EndsWith("?")) n = n[..^1] + "_q";

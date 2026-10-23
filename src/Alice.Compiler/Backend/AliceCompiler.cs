@@ -19,10 +19,14 @@ public static class AliceCompiler
     public static List<string> TranspileAll(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, Semantics.ClrTypes clr) =>
         TranspileFull(files, extraRefs, "alice_native", clr).CSharp;
 
-    public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib) =>
-        TranspileFull(files, extraRefs, nativeLib, null);
+    public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, bool dotnetNames = false) =>
+        TranspileFull(files, extraRefs, nativeLib, null, dotnetNames);
 
-    static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, Semantics.ClrTypes? clr)
+    /// <summary>One file with `[package] naming = "dotnet"`: public members get .NET names.</summary>
+    public static string TranspileDotnetNames(string src, string file = "main.al") =>
+        TranspileFull([new SourceFile(file, src)], null, "alice_native", null, true).CSharp[0];
+
+    static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, Semantics.ClrTypes? clr, bool dotnetNames = false)
     {
         var asts = files.Select(f =>
         {
@@ -30,7 +34,7 @@ public static class AliceCompiler
             if (f.LibraryOnly) ast.Items.RemoveAll(i => i is Syntax.StmtItem);
             return ast;
         }).ToList();
-        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs));
+        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs)) { DotnetNames = dotnetNames };
         binder.Bind();
         var emitter = new Backend.Emitter(binder) { NativeLib = nativeLib };
         var cs = asts.Select(emitter.EmitFile).ToList();

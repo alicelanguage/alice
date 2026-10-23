@@ -40,6 +40,10 @@ public static class PackageMetadata
         if (pkg.TryGetValue("authors", out var a)) Prop("Authors", Join(a));
         var tags = pkg.TryGetValue("tags", out var t) ? Join(t) : "";
         Prop("PackageTags", tags.Length == 0 ? "alice" : tags + ";alice");
+        string naming = pkg.TryGetValue("naming", out var nm) ? (string)nm : "alice";
+        if (naming is not ("alice" or "dotnet"))
+            throw new InvalidOperationException($"[package] naming = \"{naming}\" is not a naming (expected one of: alice, dotnet)");
+        Prop("AliceNaming", naming);
         if (kind == "tool")
         {
             Prop("PackAsTool", "true");

@@ -177,7 +177,7 @@ public sealed partial class Binder
         if (s.FieldOrder.Count == 0)
             foreach (var p in d.RecordParams)
             {
-                s.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = s };
+                s.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = PublicName(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = s };
                 s.FieldOrder.Add(p.Name);
             }
         foreach (var b in d.Bases)
@@ -195,7 +195,7 @@ public sealed partial class Binder
                     // `event clicked : EventHandler`: reads as a nullable delegate (nil until someone subscribes)
                     if (a.Kind == "event") at = new AType(at.Kind, at.Cs.TrimEnd('?') + "?", at.Clr) { Sym = at.Sym, Args = at.Args };
                     if (!at.IsKnown && !a.Untyped) throw Err(a, $"type required for {a.Kind} {a.Name}");
-                    s.Fields[a.Name] = new FieldSym { Name = a.Name, CsName = Mangle(a.Name), Type = at, Kind = a.Kind, IsStatic = s.Kind == "module", Owner = s };
+                    s.Fields[a.Name] = new FieldSym { Name = a.Name, CsName = PublicName(a.Name), Type = at, Kind = a.Kind, IsStatic = s.Kind == "module", Owner = s };
                     a.Sym = s.Fields[a.Name];
                     break;
                 case FieldDecl fd:
@@ -263,7 +263,7 @@ public sealed partial class Binder
             if (vs.FieldOrder.Count > 0) continue;
             foreach (var p in e.Fields[i] ?? new List<Param>())
             {
-                vs.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = vs };
+                vs.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = PublicName(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = vs };
                 vs.FieldOrder.Add(p.Name);
             }
         }
@@ -279,7 +279,7 @@ public sealed partial class Binder
             typeParams = s.TypeParams;
             foreach (var p in s.Decl.RecordParams)
             {
-                s.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = s };
+                s.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = PublicName(p.Name), Type = ResolveType(p.Type!), Kind = "getter", Owner = s };
                 s.FieldOrder.Add(p.Name);
             }
             typeParams = saved;
@@ -338,7 +338,7 @@ public sealed partial class Binder
         var m = new MethodSym
         {
             Name = d.Name,
-            CsName = d.Name == "<=>" ? "op_Cmp" : Mangle(d.Name),
+            CsName = d.Name == "<=>" ? "op_Cmp" : d.Vis is "private" or "protected" ? Mangle(d.Name) : PublicName(d.Name),
             Owner = owner,
             Decl = d,
             IsStatic = d.IsStatic,
@@ -360,7 +360,7 @@ public sealed partial class Binder
             }
             m.Params.Add(ps);
             if (p.Auto && owner.FindField(p.Name) == null)
-                owner.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = Mangle(p.Name), Type = ps.Type, Kind = "auto", Owner = owner };
+                owner.Fields[p.Name] = new FieldSym { Name = p.Name, CsName = PublicName(p.Name), Type = ps.Type, Kind = "auto", Owner = owner };
         }
         if (!m.Params.Any(p => p.Block) && !(d.Ret != null && IteratorElement(ResolveType(d.Ret)) != null) && ImplicitBlock(d, owner) is { } bt)
         {

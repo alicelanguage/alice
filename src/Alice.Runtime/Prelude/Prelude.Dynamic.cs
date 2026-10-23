@@ -18,9 +18,14 @@ public static partial class Prelude
         SendCacheHolder.Value.GetOrAdd((t, name, argc), static k =>
         {
             var r = new List<MethodInfo>();
+            // the Alice spelling, then the .NET one (a library built with naming = "dotnet": send("total_area") finds TotalArea)
+            string dotnet = Names.Dotnet(k.Item2);
             foreach (var m in k.Item1.GetMethods(BindingFlags.Public | BindingFlags.Instance))
                 if (m.Name == k.Item2 && m.GetParameters().Length == k.Item3) r.Add(m);
-            var p = k.Item3 == 0 ? k.Item1.GetProperty(k.Item2, BindingFlags.Public | BindingFlags.Instance) : null;
+            if (r.Count == 0 && dotnet != k.Item2)
+                foreach (var m in k.Item1.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                    if (m.Name == dotnet && m.GetParameters().Length == k.Item3) r.Add(m);
+            var p = k.Item3 == 0 ? k.Item1.GetProperty(k.Item2, BindingFlags.Public | BindingFlags.Instance) ?? k.Item1.GetProperty(dotnet, BindingFlags.Public | BindingFlags.Instance) : null;
             if (p?.GetMethod != null) r.Add(p.GetMethod);
             return r.ToArray();
         });
@@ -40,7 +45,8 @@ public static partial class Prelude
 
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Dynamic dispatch is opt-in Ruby semantics.")]
     public static bool respond_to_q(object? target, string name) =>
-        target != null && (target.GetType().GetMember(name).Length > 0 || DefinedMethod(target.GetType(), name) != null);
+        target != null && (target.GetType().GetMember(name).Length > 0 || target.GetType().GetMember(Names.Dotnet(name)).Length > 0
+            || DefinedMethod(target.GetType(), name) != null);
 
     // lazy: initialized on first use, not when a program first touches Prelude (StartupTests)
 

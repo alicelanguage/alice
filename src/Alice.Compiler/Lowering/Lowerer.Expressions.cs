@@ -19,7 +19,7 @@ public sealed partial class Lowerer
             case IvarExpr { Sym: FieldSym { IsStatic: true } cv }:
                 return new MMember { Target = new MCode(cv.Owner.Type.Cs), Name = cv.CsName };
             case IvarExpr iv:
-                return new MMember { Target = new MCode("this"), Name = Binder.Mangle(iv.Name) };
+                return new MMember { Target = new MCode("this"), Name = iv.Sym is FieldSym ivf ? ivf.CsName : Binder.Mangle(iv.Name) };
             case SelfExpr:
                 return new MCode(Type.Kind == "extension" ? "self" : "this");
             case SuperExpr sup:
