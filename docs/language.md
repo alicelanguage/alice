@@ -63,6 +63,10 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 
 Any other .NET type is used by name.
 
+.NET members answer to their declared name or the Alice spelling: `Console.write_line`, `sw.elapsed.total_milliseconds`,
+`sb.append_line(x)`, `d.contains_key?(k)` (a `?` name tries `IsX`, then `X`, and must return `Bool`). Where a Prelude
+method of the same name fits the receiver (`split`, `sum`, `wait`), the Prelude method wins.
+
 ### Inference
 
 - Locals: from initializer. `s : String? = nil` annotates.

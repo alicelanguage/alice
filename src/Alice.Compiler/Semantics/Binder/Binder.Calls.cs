@@ -221,6 +221,18 @@ public sealed partial class Binder
         if (clr != null)
         {
             var mem = ClrTypes.Lookup(clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, false, argTypes);
+            // Alice spelling of a .NET member: sw.elapsed / sb.append_line / d.contains_key?(k) / uri.absolute_uri?.
+            // Prelude names (split, sum, empty?...) keep their Ruby meaning on the types Prelude extends
+            bool preludeOwns = Builtins.ExtNames.Contains(Mangle(c.Name)) && Builtins.ExtAccepts(Mangle(c.Name), clr);
+            if (mem == null && !preludeOwns)
+                foreach (var alt in ClrTypes.ClrSpellings(c.Name))
+                    if (ClrTypes.Lookup(clr, alt, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, false, argTypes) is { } am
+                        && (!c.Name.EndsWith('?') || am.Type == AType.Bool))
+                    {
+                        c.Name = alt;
+                        mem = am;
+                        break;
+                    }
             if (mem != null)
             {
                 c.Res = mem.Kind == "method" ? "clr" : "field";

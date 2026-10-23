@@ -179,6 +179,16 @@ public sealed class ClrTypes
         return string.Concat(name.Split('_', StringSplitOptions.RemoveEmptyEntries).Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
     }
 
+    /// <summary>
+    /// .NET names for an Alice spelling, most specific first: `write_line` -> WriteLine, `empty?` -> IsEmpty/Empty,
+    /// `contains_key?` -> IsContainsKey/ContainsKey. Empty when the name is not lower snake case.
+    /// </summary>
+    public static IEnumerable<string> ClrSpellings(string name)
+    {
+        if (name.EndsWith('?') && Pascal(name[..^1]) is { } q) { yield return "Is" + q; yield return q; yield break; }
+        if (Pascal(name) is { } p && p != name) yield return p;
+    }
+
     public sealed record Member(string Kind, AType Type, bool IsStatic, MethodInfo? Method = null);
 
     /// <summary>Instance or static member lookup: property, field, or method with a compatible arity.</summary>

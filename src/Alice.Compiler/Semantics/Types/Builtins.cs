@@ -21,6 +21,21 @@ public static class Builtins
         .Select(m => m.Name)
         .ToHashSet();
 
+    static readonly ILookup<string, Type> ExtReceivers = typeof(Alice.Runtime.Prelude)
+        .GetMethods(BindingFlags.Public | BindingFlags.Static)
+        .Where(m => m.IsDefined(typeof(ExtensionAttribute)))
+        .ToLookup(m => m.Name, m => m.GetParameters()[0].ParameterType);
+
+    /// <summary>Whether a Prelude extension named <paramref name="cs"/> can take a <paramref name="recv"/> receiver
+    /// (generic receivers count when their definition matches, or when they are a bare type parameter).</summary>
+    public static bool ExtAccepts(string cs, Type recv) => ExtReceivers[cs].Any(p =>
+        p.IsGenericParameter
+        || p.IsAssignableFrom(recv)
+        || p.ContainsGenericParameters && p.IsGenericType && (recv.IsGenericType && recv.GetGenericTypeDefinition() == p.GetGenericTypeDefinition()
+            || recv.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == p.GetGenericTypeDefinition()))
+        || p.IsArray && recv.IsArray
+        || p == typeof(object));
+
     /// <summary>Iteration methods whose literal blocks the lowerer may inline into loops.</summary>
     public static readonly HashSet<string> Iterators = new() { "each", "each_with_index", "map", "select", "reject", "sum", "count", "any_q", "all_q", "find", "reduce", "times", "upto", "downto", "each_char", "each_char_with_index", "max_by", "min_by" };
 

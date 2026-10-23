@@ -28,6 +28,8 @@ public class CSharpCompatTests
         { "typeof and reflection", "t = typeof(String)\nputs t.Name\nputs typeof(List(Int32)).IsGenericType", "String\ntrue" },
         { "async Task.WhenAll", "async def work(n : Int32) : Int32\n  await Task.Delay(1)\n  n * 2\nend\nasync def both : Int32\n  a = work(1)\n  b = work(2)\n  await Task.WhenAll(a, b)\n  a.Result + b.Result\nend\nputs both.wait", "6" },
         { "ruby instance variables", "class P\n  def initialize\n    @x = 1\n    @name = \"p\"\n  end\nend\np = P.new\nputs p.instance_variable_get(\"@x\")\np.instance_variable_set(\"@x\", 5)\nputs p.instance_variable_get(\"@x\")\nputs p.instance_variables.join(\",\")", "1\n5\n@x,@name" },
+        { "snake_case .NET instance members", "sw = System.Diagnostics.Stopwatch.start_new\nputs sw.elapsed.total_milliseconds >= 0.0\nsw.stop\nputs sw.is_running\nsb = System.Text.StringBuilder.new\nsb.append(\"ab\").append_line(\"c\")\nputs sb.to_string.trim\nputs sb.length\nsb.capacity = 64\nputs sb.capacity\nputs Environment.processor_count > 0\nl = List(Int32).new\nl.add(3)\nputs l.count", "true\nfalse\nabc\n4\n64\ntrue\n1" },
+        { "predicate names map to .NET Is/Contains", "d = Dictionary(String, Int32).new\nd[\"k\"] = 1\nputs d.contains_key?(\"k\")\nputs d.contains_key?(\"z\")\nputs System.IO.DirectoryInfo.new(\"/\").exists?\nputs Uri.new(\"http://a.b/c\").absolute_uri?", "true\nfalse\ntrue\ntrue" },
         { "ruby methods and public_send", "class Q\n  def hi : String\n    \"hi\"\n  end\n  def add(a : Int32, b : Int32) : Int32\n    a + b\n  end\nend\nq = Q.new\nputs q.methods.includes?(\"hi\")\nputs q.public_send(\"add\", 2, 3)\nputs q.is_a?(Object)", "true\n5\ntrue" },
     };
 
