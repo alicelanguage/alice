@@ -71,6 +71,13 @@ public sealed partial class Parser
         }
         else if (IsKw("loop") && (Peek(1).Text == "do" || Peek(1).Text == "{")) s = Loop();
         else if (IsKw("using") && Peek(1).Kind == "id" && Peek(2).Text == "=") s = UsingResource();
+        else if (IsKw("await") && Peek(1).Kind == "id" && Peek(1).Text == "using" && Peek(2).Kind == "id" && Peek(3).Text == "=")
+        {
+            Next();
+            var au = UsingResource();
+            au.Await = true;
+            s = au;
+        }
         else s = Simple();
         s.Line = tok.Line;
         while (IsKw("if") || IsKw("unless"))

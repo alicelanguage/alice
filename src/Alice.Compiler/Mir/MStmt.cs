@@ -94,6 +94,7 @@ public sealed class MBlock : MStmt
 
 public sealed class MUsing : MStmt
 {
+    public bool Await;
     public string Name = "";
     public MExpr Value = null!;
     public List<MStmt> Body = new();

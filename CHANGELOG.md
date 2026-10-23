@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- `await using r = x ... end` in `async def`: `DisposeAsync` is awaited at `end` (EF Core contexts, async streams). `alice fmt` now indents `using` / `await using` blocks, which it never did, as well as interface default methods and `unsafe def`.
 - Declaring .NET events (`event clicked : EventHandler`, raised with `clicked&.Invoke(self, args)`), delegate types (`delegate Op(a : Int32, b : Int32) : Int32`) and default interface methods (an interface `def` with a body). An Alice library can now expose the same API shapes a C# library does.
 - Nullable type arguments of .NET generics: `Dictionary(String, String?)` and `List(String?)` emitted as `string` (CLR generics carry no nullable-reference annotation), so `d[k] = nil` was rejected as AL0310. They now keep `string?`, and reading the value still has to be nil-checked.
 - Iterators: a method returning `IEnumerable(T)`, `IEnumerator(T)` or `IAsyncEnumerable(T)` with no block parameter is a generator. `yield x` is `yield return`, a bare `return` is `yield break`, and evaluation is lazy (`nums(1_000_000_000).Take(3)`). `async def` streams work with `for await`. A class listing `IEnumerable(T)` as a base gets the non-generic `GetEnumerator` bridge. Ruby block `yield` is unchanged.

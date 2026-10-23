@@ -134,7 +134,7 @@ public sealed class Printer
                 Block(b.Body);
                 break;
             case MUsing u:
-                Line($"using (var {u.Name} = {E(u.Value)})");
+                Line($"{(u.Await ? "await " : "")}using (var {u.Name} = {E(u.Value)})");
                 Block(u.Body);
                 break;
         }

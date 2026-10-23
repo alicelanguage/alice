@@ -105,6 +105,7 @@ public sealed class RetryStmt : Stmt { }
 /// <summary>`using r = expr ... end`: deterministic disposal (C# using).</summary>
 public sealed class UsingStmt : Stmt
 {
+    public bool Await;   // `await using r = ...`: IAsyncDisposable, DisposeAsync awaited at `end`
     public string Name = "";
     public Expr Value = null!;
     public List<Stmt> Body = new();

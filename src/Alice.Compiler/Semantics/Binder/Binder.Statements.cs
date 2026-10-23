@@ -82,6 +82,7 @@ public sealed partial class Binder
                 break;
             case UsingStmt us:
                 {
+                    if (us.Await && curMethod is not { IsAsync: true }) throw Err(us, "await using is only allowed inside an async def");
                     var vt = BindExpr(us.Value);
                     PushScope();
                     us.Local = Declare(us, us.Name, vt);

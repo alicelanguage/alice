@@ -82,7 +82,7 @@ public sealed partial class Lowerer
                 Case(o, c, tail, target);
                 break;
             case UsingStmt us:
-                o.Add(new MUsing { Name = us.Local!.CsName, Value = Expr(us.Value), Body = Stmts(us.Body, Tail.None, null) });
+                o.Add(new MUsing { Await = us.Await, Name = us.Local!.CsName, Value = Expr(us.Value), Body = Stmts(us.Body, Tail.None, null) });
                 break;
             case RetryStmt:
                 o.Add(new MContinue());

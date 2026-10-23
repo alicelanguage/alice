@@ -46,6 +46,10 @@ public static class Formatter
             foreach (var kw in OpenerKeywords(words, owner))
                 if (!ClosesOnSameLine(words, kw)) stack.Add(kw);
             if (first == "record" && RecordHasBody(lines, li)) stack.Add("record");
+            if (owner == "interface" && first == "def" && InterfaceDefHasBody(lines, li)) stack.Add("def");   // default method
+            // `using r = x` / `await using r = x` resource blocks
+            int u = first == "await" ? 1 : 0;
+            if (words.Count > u + 2 && words[u] == "using" && words[u + 2] == "=") stack.Add("using");
             if (words.Count > 0 && words[^1] == "do" || EndsWithDoParams(code)) stack.Add("do");
             int braces = code.Count(c => c == '{') - code.Count(c => c == '}');
             if (code.StartsWith("}")) braces++;   // its closing brace was consumed by the dedent above
@@ -64,12 +68,25 @@ public static class Formatter
             string w = words[i];
             if (w is "unchecked" or "scope" or "unsafe" && words.Count == 1) { yield return w; continue; }   // `unchecked` / `scope` block (a call has arguments or a receiver)
             if (!Openers.Contains(w)) continue;
-            bool atStart = i == 0 || (i == 1 && words[0] is "abstract" or "private" or "protected" or "async" or "par" or "pure" or "safe" or "inline");
+            bool atStart = i == 0 || (i == 1 && words[0] is "abstract" or "private" or "protected" or "async" or "par" or "pure" or "safe" or "unsafe" or "inline");
             bool asValue = i > 0 && words[i - 1] is "=" or "(" or "," or "+=" or "||=";   // `return if c` is always postfix
             if (!atStart && !asValue) continue;
             if (w == "def" && (owner == "interface" || (i > 0 && words[0] == "abstract"))) continue;   // signatures without bodies
             yield return w;
         }
+    }
+
+    /// <summary>An interface `def` has a default body when its next non-blank line is not a member or `end`
+    /// (Parser.InterfaceBodyAhead rule).</summary>
+    static bool InterfaceDefHasBody(string[] lines, int at)
+    {
+        for (int k = at + 1; k < lines.Length; k++)
+        {
+            var w = Words(CodeOf(lines[k].Trim()));
+            if (w.Count == 0) continue;
+            return !(w[0] is "def" or "end" or "getter" or "property" or "setter" or "event" or "abstract" or "private" or "protected" or "async" or "pure" or "safe" or "unsafe" or "inline" || w[0].StartsWith("@["));
+        }
+        return false;
     }
 
     /// <summary>A record has a body when the next non-blank line is a member declaration (Parser.RecordHasBody rule).</summary>
