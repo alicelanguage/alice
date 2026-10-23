@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- F# consumes Alice libraries built with `naming = "dotnet"`: `Geometry.Distance`, `IsEmpty`, records, and sum types matched with `:? Shape.Circle as c -> c.R` (`Integration/FSharpInteropTests`, a real `.fsproj`).
 - Roslyn source generators work on Alice code (`[JsonSerializable]` contexts for reflection-free, NativeAOT-safe JSON; `[GeneratedRegex]`; `[LoggerMessage]`; NuGet generators). `alice gen`'s type check now runs the generators MSBuild supplies (`@(Analyzer)`) instead of failing on members they add, and single-file builds find the framework's generators in the targeting pack. Framework generators load only when their attribute appears: hello world compiles in 1.06 s as before, not the 1.55 s it took with every generator loaded.
 - Multi-line blocks inside call parentheses parse: `Task.Run(->() {` followed by statements on separate lines. The lexer dropped every newline inside `(`/`[`, so statements in a nested `{ }` ran together. It now tracks the innermost bracket.
 - FFI stress tests (`FfiStressTests`): strings at the 85/86-char stack-buffer boundary with 2- and 4-byte UTF-8, lone surrogates (encoded as U+FFFD), 8 threads x 20k concurrent string calls, repeated callback exceptions, and empty and 16 MiB pinned arrays.
