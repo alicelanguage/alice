@@ -262,6 +262,38 @@ public sealed class Emitter
 
     static bool BlittableCs(string cs) => cs is "bool" or "byte" or "sbyte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong" or "float" or "double" or "nint" or "nuint" or "char";
 
+    sealed record FfiArg(string Cs, string Raw, string Arg, string? Setup);
+
+    /// <summary>
+    /// How one `fun` parameter crosses: blittable numbers as is, Bool as a byte, String/String? as a UTF-8 C string
+    /// (<see cref="Alice.Runtime.Utf8Arg"/>: stack buffer, NUL rejected), arrays of numbers pinned in place.
+    /// Null when the type needs the runtime marshaller.
+    /// </summary>
+    static FfiArg? FfiParam(string cs, string name)
+    {
+        if (cs == "bool") return new(cs, "byte", $"{name} ? (byte)1 : (byte)0", null);
+        if (BlittableCs(cs)) return new(cs, cs, name, null);
+        if (cs is "string" or "string?")
+            return new(cs, "byte*", $"__u_{name}.Pointer", $"using var __u_{name} = new global::Alice.Runtime.Utf8Arg({name}, stackalloc byte[global::Alice.Runtime.Utf8Arg.StackBytes]);");
+        if (cs.EndsWith("[]") && cs[..^2] is var el && BlittableCs(el) && el != "bool" || cs.EndsWith("[]?") && BlittableCs(cs[..^3]) && cs[..^3] != "bool")
+        {
+            string e = cs.TrimEnd('?')[..^2];
+            return new(cs, e + "*", $"__p_{name}", $"fixed ({e}* __p_{name} = {name})");
+        }
+        return null;
+    }
+
+    /// <summary>Raw return type and a format turning the raw call `{0}` into the Alice value.</summary>
+    static (string Raw, string Wrap)? FfiReturn(string cs, string fun) => cs switch
+    {
+        "void" => ("void", "{0}"),
+        "bool" => ("byte", "{0} != 0"),
+        "string?" => ("byte*", "global::Alice.Runtime.Utf8Arg.Decode({0})"),
+        "string" => ("byte*", $"global::Alice.Runtime.Utf8Arg.DecodeNonNull({{0}}, \"{fun}\")"),
+        _ when BlittableCs(cs) => (cs, "{0}"),
+        _ => null,
+    };
+
     static string Lib(LibDecl l)
     {
         var s = (TypeSym)l.Sym!;
@@ -276,22 +308,41 @@ public sealed class Emitter
             var m = s.Methods[f.Name][0];
             string import = $"[global::System.Runtime.InteropServices.DllImport(\"{l.LibName}\", EntryPoint = \"{f.Entry}\", ExactSpelling = true)]\n"
                 + (f.Attrs.Contains("Fast") ? "[global::System.Runtime.InteropServices.SuppressGCTransition]\n" : "");
-            bool blittable = m.Params.All(p => BlittableCs(p.Type.Cs)) && (m.Ret.IsVoid || BlittableCs(m.Ret.Cs));
-            bool bools = m.Ret.Cs == "bool" || m.Params.Any(p => p.Type.Cs == "bool");
-            if (blittable && bools)
+            var parts = m.Params.Select(p => FfiParam(p.Type.Cs, p.CsName)).ToList();
+            string retCs = m.Ret.IsVoid ? "void" : m.Ret.Cs;
+            var ret = FfiReturn(retCs, f.Name);
+            if (parts.All(x => x != null) && ret != null)
             {
-                string Raw(string cs) => cs == "bool" ? "byte" : cs;
+                string sig = string.Join(", ", m.Params.Select(p => p.Type.Cs + " " + p.CsName));
+                if (parts.All(x => x!.Raw == x.Cs && x.Setup == null) && ret.Value.Raw == retCs)
+                {
+                    sb.Append(import).Append($"public static extern {retCs} {m.CsName}({sig});\n");   // already blittable
+                    continue;
+                }
                 string raw = "__raw_" + m.CsName.TrimStart('@');
-                sb.Append(import).Append($"private static extern {Raw(m.Ret.Cs)} {raw}({string.Join(", ", m.Params.Select(p => Raw(p.Type.Cs) + " " + p.CsName))});\n");
-                string args = string.Join(", ", m.Params.Select(p => p.Type.Cs == "bool" ? $"{p.CsName} ? (byte)1 : (byte)0" : p.CsName));
-                string call = $"{raw}({args})" + (m.Ret.Cs == "bool" ? " != 0" : "");
-                sb.Append(Inline).Append($"public static {m.Ret.Cs} {m.CsName}({string.Join(", ", m.Params.Select(p => p.Type.Cs + " " + p.CsName))}) => {call};\n");
+                sb.Append(import).Append($"private static extern {ret.Value.Raw} {raw}({string.Join(", ", m.Params.Select((p, i) => parts[i]!.Raw + " " + p.CsName))});\n");
+                string call = string.Format(ret.Value.Wrap, $"{raw}({string.Join(", ", parts.Select(x => x!.Arg))})");
+                var setup = parts.Where(x => x!.Setup != null).Select(x => x!.Setup).ToList();
+                sb.Append(Inline);
+                if (setup.Count == 0) sb.Append($"public static {retCs} {m.CsName}({sig}) => {call};\n");
+                else
+                {
+                    // `using var` lines first, then one nested `fixed` block per pinned array around the call
+                    var body = new StringBuilder();
+                    foreach (var x in setup.Where(x => !x!.StartsWith("fixed"))) body.Append("    ").Append(x).Append('\n');
+                    var pins = setup.Where(x => x!.StartsWith("fixed")).ToList();
+                    foreach (var x in pins) body.Append("    ").Append(x).Append("\n    {\n");
+                    body.Append($"    {(retCs == "void" ? "" : "return ")}{call};\n");
+                    foreach (var _ in pins) body.Append("    }\n");
+                    sb.Append($"public static {retCs} {m.CsName}({sig})\n{{\n{body}}}\n");
+                }
                 continue;
             }
+            // other types (blittable structs, delegates): the runtime marshaller
             string ps = string.Join(", ", m.Params.Select(p => (p.Type.Cs == "bool" ? U1 + " " : "") + p.Type.Cs + " " + p.CsName));
             sb.Append(import);
             if (m.Ret.Cs == "bool") sb.Append("[return: global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.U1)]\n");
-            sb.Append($"public static extern {m.Ret.Cs} {m.CsName}({ps});\n");
+            sb.Append($"public static extern {retCs} {m.CsName}({ps});\n");
         }
         return $"public static unsafe partial class {l.Name}\n{{\n{sb}}}\n";
     }

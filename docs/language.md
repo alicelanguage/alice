@@ -438,6 +438,17 @@ lib LibM
 end
 ```
 
+| `fun` type | Crosses as |
+|---|---|
+| numbers, `Char` | themselves (direct `DllImport`) |
+| `Bool` | 1-byte C `bool` |
+| `String`, `String?` (parameter) | NUL-terminated UTF-8 on every OS: stack buffer up to 85 chars, no allocation; `nil` is `NULL`; an embedded NUL raises `ArgumentException` |
+| `String?` (return) | borrowed `char*` (never freed), UTF-8; `NULL` is `nil`. `String` raises on `NULL` |
+| `Array(number)` | pointer to the pinned elements, no copy |
+| `@[Fast]` on `fun` | no GC transition (short, non-blocking C functions only) |
+
+Design and measurements: [ADR 0018](../archicture/adr/0018-ffi-blittable-wrappers.md). Tests: `FfiTests`.
+
 ## 10. Concurrency (ADR 0005, 0008)
 
 ```crystal
