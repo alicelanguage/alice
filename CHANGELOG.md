@@ -2,6 +2,7 @@
 
 ## 0.12.3 - unreleased
 
+- Entity Framework Core works from Alice. `examples/data/efcore` defines a `DbContext` subclass with an `OnConfiguring` override and `DbSet` properties, and runs LINQ queries that EF translates to SQL from the Alice lambdas (`WHERE "b"."rating" > 3`). It is covered by an integration test. To get there: extension methods from any referenced assembly are callable without parentheses (`query.ToQueryString`), not only LINQ's; `obj.tap { |o| ... }` and `obj.then { |o| ... }` were added; and a multi-statement block passed where an `Action` is expected drops its tail value.
 - `x.try &.m(args)` (Crystal): the safe call `x&.m(args)`, no longer "planned".
 - Lambdas as blocks: `xs.sum(&->sq)`, `xs.select(&->(x : Int32) { x.even? })` and `xs.map(&f)`. A lambda literal or method reference passed this way is inlined into the loop like a literal block, with no delegate.
 - Named tuples: `{name: "ada", age: 36}` and the type `{min: Int32, max: Int32}` are C# named tuples (`(string name, int age)`, no allocation), read with `t.name` or `t[:name]`, where an unknown element is a compile error. Hashes keep `=>`.

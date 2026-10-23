@@ -255,7 +255,7 @@ public sealed partial class Binder
         }
 
         // .NET extension methods (LINQ, MemoryExtensions): `xs.Sum`, `xs.Max` without parens are calls
-        if (char.IsUpper(c.Name[0]) && Builtins.IsClrExtension(c.Name))
+        if (char.IsUpper(c.Name[0]) && (Builtins.IsClrExtension(c.Name) || Clr.IsExtensionName(c.Name)))
         {
             if (c.Block != null) BindLambda(c.Block, new List<AType>());
             c.Res = "clr";
@@ -269,6 +269,7 @@ public sealed partial class Binder
             c.Res = "ext";
             CheckMutatingCall(c, recv, null);
             AType? br = null;
+            if (c.Block != null && cs == "tap") c.Block.DiscardValue = true;   // an Action: the block's value is dropped
             if (c.Block != null)
             {
                 pendingConcurrent = conc;

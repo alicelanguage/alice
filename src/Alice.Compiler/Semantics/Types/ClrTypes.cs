@@ -37,6 +37,34 @@ public sealed class ClrTypes
         }
     }
 
+    HashSet<string>? extensionNames;
+
+    /// <summary>
+    /// Whether a referenced assembly (a NuGet package, a project) defines an extension method of this name, so
+    /// `query.ToQueryString` without parentheses is a call, as `xs.Sum` is for LINQ.
+    /// </summary>
+    public bool IsExtensionName(string name)
+    {
+        if (extensionNames == null)
+        {
+            extensionNames = [];
+            foreach (var a in asms)
+            {
+                Type?[] types;
+                try { types = a.GetExportedTypes(); }
+                catch (ReflectionTypeLoadException e) { types = e.Types; }
+                catch (Exception) { continue; }
+                foreach (var t in types)
+                {
+                    if (t is not { IsSealed: true, IsAbstract: true } || !t.IsDefined(typeof(System.Runtime.CompilerServices.ExtensionAttribute), false)) continue;
+                    foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                        if (m.IsDefined(typeof(System.Runtime.CompilerServices.ExtensionAttribute), false)) extensionNames.Add(m.Name);
+                }
+            }
+        }
+        return extensionNames.Contains(name);
+    }
+
     void LoadAll()
     {
         if (allLoaded) return;

@@ -40,4 +40,17 @@ public class SampleTests
         Assert.Contains("C# counter: 45", al);
         Assert.Contains("distance: 10", al);
     }
+
+    [Fact]
+    public void Entity_framework_example_translates_alice_lambdas_to_sql()
+    {
+        // a DbContext subclass written in Alice; EF translates the Where/Select/Count lambdas (expression trees),
+        // and the paren-less `ToQueryString` resolves to EF's extension method
+        var dir = Path.Combine(Root(), "examples", "data", "efcore");
+        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
+        var output = Dotnet("run", "--no-build", "--project", Path.Combine(dir, ".alice", "efcore.alproj"));
+        Assert.Contains("rated above 3: alice, carol", output);
+        Assert.Contains("names starting with b: 1", output);
+        Assert.Contains("WHERE \"b\".\"rating\" > 3", output);
+    }
 }

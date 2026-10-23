@@ -14,6 +14,7 @@ dotnet run --project src/Alice.Cli -- emit examples/data/invoices.al
 | [basics/hello.al](basics/hello.al) | Classes, interpolation, SIMD dot product, parallel map |
 | [data/invoices.al](data/invoices.al) | Filter paid invoices and sum revenue in integer cents |
 | [data/json_report.al](data/json_report.al) | Serialize a record and read JSON with `System.Text.Json` |
+| [data/efcore/](data/efcore) | Entity Framework Core + SQLite: a `DbContext` in Alice, LINQ translated to SQL |
 | [data/trees.al](data/trees.al) | Build and fold a sum-type tree; both recursions fork automatically |
 | [concurrency/channels.al](concurrency/channels.al) | Pass work results through a channel and aggregate safely |
 | [dotnet/library_api.al](dotnet/library_api.al) | Iterators, events, delegates, default interface methods, method references, JSON attributes, `lock` |

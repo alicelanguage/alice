@@ -128,6 +128,9 @@ public static class Builtins
         }
         switch (name)
         {
+            case "tap":
+            case "then":
+                return new() { recv };   // the block gets the receiver itself
             case "each_slice":
             case "each_cons":
                 return e.IsKnown ? new() { AType.Array(e) } : new() { AType.Unknown };
@@ -194,6 +197,8 @@ public static class Builtins
         AType arr2 = e.IsKnown ? AType.Array(AType.Array(e)) : AType.Unknown;
         switch (name)
         {
+            case "tap": return recv;
+            case "then": return br;
             case "each_slice" when blockRet == null:
             case "each_cons" when blockRet == null:
             case "chunk_while":

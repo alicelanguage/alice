@@ -1,0 +1,7 @@
+[package]
+name = "efcore"
+version = "0.1.0"
+kind = "exe"
+
+[dependencies]
+"Microsoft.EntityFrameworkCore.Sqlite" = "10.*"

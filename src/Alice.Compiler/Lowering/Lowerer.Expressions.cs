@@ -291,7 +291,7 @@ public sealed partial class Lowerer
                 ml.Body.Add(lam.ReturnsValue ? new MReturn { Value = body } : new MExprStmt { E = body });
             }
         }
-        else ml.Body = Stmts(lam.Body, lam.ReturnsValue ? Tail.Return : Tail.None, null);
+        else ml.Body = Stmts(lam.Body, lam.ReturnsValue && !lam.DiscardValue ? Tail.Return : Tail.None, null);   // an Action drops the tail value
         ctx.RemoveAt(ctx.Count - 1);
         noHoist = savedNoHoist;
         pre = savedPre;

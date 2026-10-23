@@ -80,6 +80,12 @@ public static partial class Prelude
         return sb.ToString();
     }
 
+    /// <summary>Ruby `obj.tap { |o| ... }`: runs the block on the receiver and returns the receiver (builder style).</summary>
+    public static T tap<T>(this T self, Action<T> f) { f(self); return self; }
+
+    /// <summary>Ruby `obj.then { |o| ... }`: the block's value.</summary>
+    public static R then<T, R>(this T self, Func<T, R> f) => f(self);
+
     public static string str_mul(string s, int n) => n <= 0 ? "" : new StringBuilder(s.Length * n).Insert(0, s, n).ToString();
 
     /// <summary>`xs << v` appends and returns the receiver, so appends chain (`xs << 1 << 2`).</summary>
