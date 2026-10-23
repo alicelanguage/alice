@@ -1,0 +1,9 @@
+[package]
+name = "wand"
+version = "0.1.0"
+kind = "tool"                       # alice pack -> a .NET tool: dotnet tool install -g wand
+description = "wand: scaffolds files for an Alice web app"
+command = "wand"
+naming = "dotnet"
+
+[dependencies]

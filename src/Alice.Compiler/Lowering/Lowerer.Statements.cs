@@ -188,9 +188,21 @@ public sealed partial class Lowerer
         }
     }
 
+    /// <summary>Ruby truthiness for a condition: only nil and false are falsy. `if s` on a String? / Int32? is a nil
+    /// check (C# flow analysis then narrows `s` inside the branch); Bool? is true only when it holds true.</summary>
+    static MExpr Truthy(Syntax.Expr e, MExpr m)
+    {
+        var t = e.Type;
+        if (!t.IsKnown || t.Cs == "bool" || t.Kind == "dynamic") return m;
+        if (t.Cs == "bool?") return new MBinary { Op = "==", L = m, R = new MCode("true") };
+        if (t.Cs.EndsWith('?') || t.Clr is { IsValueType: false } || t.Sym is { Kind: "class" or "record" or "interface" })
+            return new MBinary { Op = "!=", L = m, R = new MCode("null") };
+        return m;
+    }
+
     MStmt IfChain(List<Syntax.Expr> conds, List<List<Stmt>> bodies, List<Stmt>? els, int k, Tail tail, string? target)
     {
-        var node = new MIf { Cond = Expr(conds[k]), Then = Stmts(bodies[k], tail, target) };
+        var node = new MIf { Cond = Truthy(conds[k], Expr(conds[k])), Then = Stmts(bodies[k], tail, target) };
         if (k + 1 < conds.Count)
         {
             var inner = new List<MStmt>();
@@ -209,7 +221,7 @@ public sealed partial class Lowerer
     MStmt While(WhileStmt w)
     {
         var condPre = new List<MStmt>();
-        var cond = Isolated(w.Cond, condPre);
+        var cond = Truthy(w.Cond, Isolated(w.Cond, condPre));
         ctx.Add("loop");
         var body = Stmts(w.Body, Tail.None, null);
         ctx.RemoveAt(ctx.Count - 1);

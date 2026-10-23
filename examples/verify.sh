@@ -23,6 +23,9 @@ expect basics/hello.al $'Hello, Alice!\nsimd dot = 30.0\nsquares = [1, 4, 9, 16,
 expect data/invoices.al $'paid invoices=3\nrevenue cents=4250\nlarge invoice cents=3000'
 expect data/json_report.al $'{"service":"alice","healthy":true,"requests":42}\nALICE: 42 requests'
 expect concurrency/channels.al 'sum of squares=385'
+expect data/trees.al 'depth 16, leaves sum 2147450880'
+expect dotnet/library_api.al $'0,2,4,6,8,10\n{"start":2,"end":9}\n15\n3,6,9\nshape of area 9.0, grown 1\nlocked section'
+[[ "$(uname)" == Linux ]] && expect interop/libc.al $'strlen("héllo") = 6\nhas PATH: true\nclock ok: true\nsorted by C: 3, 7, 19, 25, 42\nembedded NUL rejected'
 
 alice build examples/web/aspnet --release
 (cd examples/web/aspnet/pricing && alice test)

@@ -58,13 +58,15 @@ public sealed partial class Lowerer
                 return new MIndex { Target = Expr(ix.Target), Args = Args(ix.Args) };
             case BinaryExpr b:
                 return Binary(b);
+            case UnaryExpr { Op: "!" } nu when Truthy(nu.E, new MCode("x")) is MBinary tb:
+                return new MBinary { Op = tb.Op == "!=" ? "==" : "!=", L = Expr(nu.E), R = tb.R };   // `!s`: s is nil (Bool?: not true)
             case UnaryExpr u:
                 return new MUnary { Op = u.Op, E = Expr(u.E) };
             case TernaryExpr t when TrySignExtend(t) is MExpr signExtended:
                 return signExtended;
             case TernaryExpr t:
                 {
-                    var c = Expr(t.C);
+                    var c = Truthy(t.C, Expr(t.C));
                     noHoist++;
                     var r = new MCond { C = c, A = Expr(t.A), B = Expr(t.B) };
                     noHoist--;

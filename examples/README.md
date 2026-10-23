@@ -14,7 +14,11 @@ dotnet run --project src/Alice.Cli -- emit examples/data/invoices.al
 | [basics/hello.al](basics/hello.al) | Classes, interpolation, SIMD dot product, parallel map |
 | [data/invoices.al](data/invoices.al) | Filter paid invoices and sum revenue in integer cents |
 | [data/json_report.al](data/json_report.al) | Serialize a record and read JSON with `System.Text.Json` |
+| [data/trees.al](data/trees.al) | Build and fold a sum-type tree; both recursions fork automatically |
 | [concurrency/channels.al](concurrency/channels.al) | Pass work results through a channel and aggregate safely |
+| [dotnet/library_api.al](dotnet/library_api.al) | Iterators, events, delegates, default interface methods, method references, JSON attributes, `lock` |
+| [interop/libc.al](interop/libc.al) | Call C directly: UTF-8 strings, string returns, `out` structs, an Alice comparator for `qsort` (Linux) |
+| [tools/wand/](tools/wand) | A `rails generate`-style CLI packaged as a .NET tool (`alice pack`, `dotnet tool install`) |
 | [web/aspnet/](web/aspnet/README.md) | ASP.NET Core startup, routes, validation, and pricing written in Alice |
 
 The standalone programs have no extra NuGet dependencies. The web example uses the ASP.NET Core shared framework included with the SDK.

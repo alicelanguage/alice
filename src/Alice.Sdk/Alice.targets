@@ -63,6 +63,9 @@
     </ReadLinesFromFile>
     <ItemGroup>
       <RuntimeHostConfigurationOption Include="System.GC.Server" Value="$([MSBuild]::ValueOrDefault('$(AliceGcPicked)', '').Equals('server'))" />
+      <!-- server GC's default gen0 budget is large: committing it cost short runs 6-17 ms (polyglot merkle 93 vs 81 ms).
+           16 MB removes that and keeps the win on big heaps (tree(23) build 116 ms vs 698 on workstation) -->
+      <RuntimeHostConfigurationOption Include="System.GC.Gen0MaxBudget" Value="16777216" Condition="'$(AliceGcPicked)' == 'server'" />
     </ItemGroup>
   </Target>
 
