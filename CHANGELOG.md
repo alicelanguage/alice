@@ -7,6 +7,10 @@
   allocation, and the JIT can inline the body (a HOF-heavy benchmark: about 2.3x faster). `ALICE_NO_SPECIALIZE=1`
   turns it off.
 
+- Borrow and lifetime checks (ADR 0024): passing one mutable value twice to a call that writes through one of the
+  parameters is AL0217 (`copy_into(a, a)`); a `@[Stack]` value captured by a block, stored in a heap type's field
+  or put in a collection is AL0218 (was a C# error at emit time); using a mutable value after sending it through a
+  `Channel`/`Actor` is AL0219; writing a value a running `spawn` reads before the task is joined is AL0202.
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
