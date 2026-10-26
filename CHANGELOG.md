@@ -11,6 +11,13 @@
   parameters is AL0217 (`copy_into(a, a)`); a `@[Stack]` value captured by a block, stored in a heap type's field
   or put in a collection is AL0218 (was a C# error at emit time); using a mutable value after sending it through a
   `Channel`/`Actor` is AL0219; writing a value a running `spawn` reads before the task is joined is AL0202.
+- Loop interchange and cache tiling (ADR 0025), the `loop-tile` MIR pass. It applies to 2-3 deep counted nests over
+  flat arrays. An affine dependence analysis delinearizes `i * n + j` and computes direction vectors. Each nest gets
+  the legal order with stride-1 innermost access (`i-j-k` matmul becomes `i-k-j`). 3-deep nests and transposes are
+  tiled when every dependence is non-negative. Tiles: 64 for matmul (half of L2), 32 for transpose (half of L1).
+  `ALICE_TILE=n` overrides the size. The new nest runs behind a once-per-call guard (in bounds at every corner, no
+  aliasing between written and read arrays); otherwise the original runs. Results are bit-identical. Checked
+  integer arithmetic is not reordered. `benchmarks/tiling.sh` measures before and after.
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.

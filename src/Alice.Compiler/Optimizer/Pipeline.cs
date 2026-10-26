@@ -23,6 +23,7 @@ public static class Pipeline
         () => new ConstantFolding(),
         () => new StrengthReduction(),
         () => new LiteralMinMax(),
+        () => new LoopTiling(),
         () => new InductionVariables(),
         () => new ShiftCounts(),
         () => new OwnedBounds(),
