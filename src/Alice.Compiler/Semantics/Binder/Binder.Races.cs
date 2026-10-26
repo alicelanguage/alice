@@ -87,6 +87,39 @@ public sealed partial class Binder
         if (mutating) throw Race(c, $"`{c.Name}` mutates a shared {recv.Cs}");
     }
 
+    /// <summary>
+    /// A call with implicit receiver (`bump`) of a method that writes fields writes self's fields: the caller mutates
+    /// too (so `c.run` calling `bump` is a mutating call), and from concurrent code it races on self.
+    /// </summary>
+    void SelfCallEffects(Node at, MethodSym m)
+    {
+        if (m.IsStatic || !m.Mutates || m.IsCtor) return;
+        if (curMethod is { IsStatic: false }) curMethod.Mutates = true;
+        if (InConcurrent) throw Race(at, $"`{m.Name}` writes fields of self");
+    }
+
+    /// <summary>Concurrent calls whose block's first parameter is an index no other task gets: `Par.For(n) { |i| }`,
+    /// `Parallel.For(a, b) { |i| }`, `Par.Range(n) { |lo, hi| }` (lo only: one chunk's hi is the next one's lo).</summary>
+    static bool IsIndexCall(CallExpr c) =>
+        c.Recv is ConstExpr { Sym: AType { Clr: Type t } } && (t.Name == "Par" && c.Name is "For" or "Range" || t.Name == "Parallel" && c.Name == "For");
+
+    readonly HashSet<LambdaExpr> indexLambdas = new();
+
+    /// <summary>The block's own disjoint index: the first parameter of an index call, unless the block assigns it.</summary>
+    HashSet<LocalSym> DisjointParams(LambdaExpr lam)
+    {
+        var set = new HashSet<LocalSym>();
+        if (!indexLambdas.Contains(lam) || lam.ParamSyms.Count == 0) return set;
+        var p = lam.ParamSyms[0];
+        bool moved = false;
+        AstWalk.Each(lam.Body, n =>
+        {
+            if (n is Assign { Target: NameExpr nt } && nt.Name == p.Name || n is MultiAssign ma && ma.Names.Contains(p.Name)) moved = true;
+        });
+        if (!moved) set.Add(p);
+        return set;
+    }
+
     void CheckSharedTargetWrite(Expr target)
     {
         if (!InConcurrent) return;

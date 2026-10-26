@@ -179,6 +179,7 @@ public sealed partial class Binder
         if (m != null)
         {
             if (!m.IsStatic) UseThis();
+            SelfCallEffects(n, m);
             n.Res = "call";
             n.Sym = m;
             return Async(m, m.Ret);
@@ -489,7 +490,7 @@ public sealed partial class Binder
             AType t = p.Type != null ? ResolveType(p.Type) : i < expected.Count ? expected[i] : AType.Unknown;
             lam.ParamSyms.Add(Declare(p, p.Name, t));
         }
-        if (conc) disjoint.Add(new HashSet<LocalSym>(lam.ParamSyms));
+        if (conc) disjoint.Add(DisjointParams(lam));
         BindBlock(lam.Body);
         PopScope();
         var tail = TailType(lam.Body);

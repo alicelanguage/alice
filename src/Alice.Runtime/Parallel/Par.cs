@@ -137,15 +137,8 @@ public static class Par
         return total;
     }
 
-    public static T Sum<T>(T[] src) where T : unmanaged, INumber<T>
-    {
-        if (src.Length < 65_536) return Simd.Sum<T>(src);
-        var lockObj = new object(); T total = T.Zero;
-        Range(src.Length, (lo, hi) =>
-        {
-            var s = Simd.Sum<T>(src.AsSpan(lo, hi - lo));
-            lock (lockObj) total += s;
-        });
-        return total;
-    }
+    /// <summary>SIMD sum, forked by index halves for large arrays: no lock, no closure, partials combined in index
+    /// order (the same float result on every run).</summary>
+    public static T Sum<T>(T[] src) where T : unmanaged, INumber<T> =>
+        src.Length < ParReduce.MinLength ? Simd.Sum<T>(src) : ParReduce.Sum(src);
 }

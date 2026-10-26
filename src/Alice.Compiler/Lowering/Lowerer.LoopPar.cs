@@ -28,15 +28,22 @@ public sealed partial class Lowerer
     /// Iteration i then owns the cells [i * w, i * w + w), disjoint from every other iteration (checked arithmetic
     /// raises instead of wrapping into another row).
     /// </summary>
-    bool OwnIndex(Syntax.Expr idx, LoopPlan plan)
+    bool OwnIndex(Syntax.Expr idx, LoopPlan plan) => IndexShape(idx, plan) != null;
+
+    /// <summary>
+    /// The cells iteration i owns through this index: "i" (cell i) or "row:w" (cells [i * w, i * w + w)); null when it
+    /// is neither. Different shapes own different cells: iteration 0 of `a[i * 2 + j]` writes cell 1, iteration 1's `a[i]`.
+    /// </summary>
+    string? IndexShape(Syntax.Expr idx, LoopPlan plan)
     {
-        if (idx is NameExpr { Sym: LocalSym k } && k == plan.LoopVar) return true;
+        if (idx is NameExpr { Sym: LocalSym k } && k == plan.LoopVar) return "i";
         if (idx is NameExpr { Sym: LocalSym d } && plan.Defs.TryGetValue(d, out var def) && def != null) idx = def;
-        if (idx is not BinaryExpr { Op: "+", L: BinaryExpr { Op: "*" } mul, R: NameExpr { Sym: LocalSym j } }) return false;
+        if (idx is not BinaryExpr { Op: "+", L: BinaryExpr { Op: "*" } mul, R: NameExpr { Sym: LocalSym j } }) return null;
         var (a, b) = (mul.L, mul.R);
         var w = a is NameExpr { Sym: LocalSym ai } && ai == plan.LoopVar ? b : b is NameExpr { Sym: LocalSym bi } && bi == plan.LoopVar ? a : null;
         return w is NameExpr { Res: "local", Sym: LocalSym wl } && !plan.Inner.Contains(wl)
-            && plan.InnerRanges.TryGetValue(j, out var r) && r.Excl && r.A is LitExpr { Kind: "int", Text: "0" } && r.B is NameExpr { Sym: LocalSym rb } && rb == wl;
+            && plan.InnerRanges.TryGetValue(j, out var r) && r.Excl && r.A is LitExpr { Kind: "int", Text: "0" } && r.B is NameExpr { Sym: LocalSym rb } && rb == wl
+            ? "row:" + wl.CsName : null;
     }
 
     MStmt? TryParallelFor(ForStmt f)
@@ -47,6 +54,9 @@ public sealed partial class Lowerer
         var plan = new LoopPlan { LoopVar = f.Locals[0] };
         plan.Inner.Add(plan.LoopVar);
         if (!LoopBody(f.Body, plan, 0)) return null;
+        // a local first assigned in a branch is declared once for the whole method (Ruby): an iteration that skips the
+        // branch reads the previous iteration's value, a loop-carried dependency (and not a local of the chunk lambda)
+        if (plan.Inner.Any(hoisted.Contains)) return null;
         // inside a serial loop, a parallel dispatch per outer iteration only pays off for long inner loops
         bool nested = ctx.Contains("loop");
         if (nested && !f.Par) plan.Heavy = false;
@@ -159,21 +169,37 @@ public sealed partial class Lowerer
     /// </summary>
     List<(LocalSym W, LocalSym R)>? AliasGuards(List<Stmt> body, LoopPlan plan)
     {
-        var written = WalkStmts(body).OfType<Assign>()
-            .Select(a => a.Target is IndexExpr { Target: NameExpr { Sym: LocalSym w } } ? w : null).OfType<LocalSym>()
-            .Where(w => !stackArrays.ContainsKey(w))   // a stack array is a fresh, iteration-private buffer: it aliases nothing
-            .Distinct().ToList();
+        var writes = new List<(LocalSym Arr, string Shape)>();
+        foreach (var a in WalkStmts(body).OfType<Assign>())
+            if (a.Target is IndexExpr { Target: NameExpr { Sym: LocalSym w }, Args: [{ Value: { } k }] } && IndexShape(k, plan) is { } shape && !stackArrays.ContainsKey(w) && !writes.Contains((w, shape)))
+                writes.Add((w, shape));
         var guards = new List<(LocalSym, LocalSym)>();
+        void Guard(LocalSym w, LocalSym r)
+        {
+            if (!guards.Contains((w, r)) && !guards.Contains((r, w))) guards.Add((w, r));
+        }
+        // one array written in two shapes: iterations overlap; two arrays in two shapes: only when they are one object
+        foreach (var (w1, s1) in writes)
+            foreach (var (w2, s2) in writes)
+                if (s1 != s2 && MayAlias(w1.Type, w2.Type))
+                {
+                    if (w1 == w2) return null;
+                    Guard(w1, w2);
+                }
         foreach (var ix in WalkReads(body).OfType<IndexExpr>())
         {
             if (ix.Target.Type?.Kind != "array") continue;   // strings and other immutable reads cannot alias an array
-            bool atIndex = ix.Args is [{ Mod: "", Value: { } k }] && OwnIndex(k, plan);
-            if (atIndex) continue;   // same element as this iteration's write: never another iteration's
-            if (ix.Target is NameExpr { Sym: LocalSym sa } && stackArrays.ContainsKey(sa)) continue;
-            if (ix.Target is not NameExpr { Sym: LocalSym r }) { if (written.Any(w => MayAlias(w.Type, ix.Target.Type))) return null; continue; }
-            if (written.Contains(r)) return null;
-            foreach (var w in written)
-                if (MayAlias(w.Type, r.Type) && !guards.Contains((w, r))) guards.Add((w, r));
+            if (ix.Target is NameExpr { Sym: LocalSym sa } && stackArrays.ContainsKey(sa)) continue;   // iteration-private buffer
+            string? shape = ix.Args is [{ Mod: "", Value: { } k }] ? IndexShape(k, plan) : null;
+            var r = ix.Target is NameExpr { Sym: LocalSym rl } ? rl : null;
+            foreach (var (w, ws) in writes)
+            {
+                if (shape == ws) continue;   // the cells this iteration writes itself: never another iteration's
+                if (r == w) return null;     // `a[i] = a[i - 1]` (a prefix scan) or a read in another shape
+                if (!MayAlias(w.Type, ix.Target.Type)) continue;
+                if (r == null) return null;  // an array behind an expression: no local to compare at run time
+                Guard(w, r);
+            }
         }
         return guards;
     }
@@ -293,9 +319,32 @@ public sealed partial class Lowerer
         if (m.Decl == null || !m.Decl.HasBody || m.UsesYield || m.IsAsync || m.Mutates && !m.IsCtor) return purity[m] = false;
         purity[m] = true;
         var plan = new LoopPlan { LoopVar = new LocalSym(), Fresh = FreshArrays(m.Decl.Body) };
-        bool ok = PureMethodBody(m.Decl.Body, plan, m.IsCtor);
+        bool ok = PureMethodBody(m.Decl.Body, plan, m.IsCtor) && OverridesPure(m);
         purity[m] = ok;
         return ok;
+    }
+
+    /// <summary>
+    /// A call of an instance method of a class with subclasses is virtual: the receiver may be a subclass whose
+    /// override writes fields. The call is pure only when every override in the program is.
+    /// </summary>
+    bool OverridesPure(MethodSym m)
+    {
+        if (m.IsStatic || m.IsCtor || m.Owner is not { Kind: "class", HasSubclass: true } owner) return true;
+        foreach (var t in binder.Types.Values.Distinct())
+        {
+            if (t == owner || !Inherits(t, owner) || !t.Methods.TryGetValue(m.Name, out var list)) continue;
+            foreach (var o in list)
+                if (o != m && !o.IsStatic && !MethodPure(o)) return false;
+        }
+        return true;
+    }
+
+    static bool Inherits(TypeSym t, TypeSym b)
+    {
+        for (var s = t.BaseClass; s != null; s = s.BaseClass)
+            if (s == b) return true;
+        return false;
     }
 
     bool CtorPure(TypeSym t, int argc)
