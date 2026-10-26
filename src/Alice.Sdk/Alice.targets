@@ -60,6 +60,8 @@
        checks inside alice gen (Alice-worded errors under a bare `dotnet build`, one more compile per edit) -->
   <PropertyGroup>
     <_AliceGenCheckArg Condition="'$(AliceGenCheck)' != 'true'">--no-check</_AliceGenCheckArg>
+    <!-- single-threaded targets (kind = "wasm", [build] threads = false): parallel code lowers to serial (ADR 0024) -->
+    <_AliceGenCheckArg Condition="'$(AliceSequential)' == 'true'">$(_AliceGenCheckArg) --sequential</_AliceGenCheckArg>
   </PropertyGroup>
 
   <!-- incremental: alice gen runs only when a source, the references, the compiler or the project changed -->

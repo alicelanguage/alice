@@ -16,6 +16,9 @@ public sealed partial class Lowerer
     string? boundLo, boundHi;
     bool inParallelGen;
 
+    /// <summary>Single-threaded target (wasm, ADR 0024): pipelines, loops and forks keep their serial form.</summary>
+    public bool Sequential { get; init; }
+
     static readonly HashSet<string> PureExt = new() { "min", "max", "sum", "size", "length", "abs", "sqrt", "floor", "ceil", "round", "to_i", "to_f", "to_f32", "to_i64", "even_q", "odd_q", "zero_q", "succ", "pred",
         // numeric primitives (ADR 0013): pure functions of their receiver and arguments
         "divmod", "tdiv", "remainder", "modulo", "to_i8", "to_i16", "to_i32", "to_u8", "to_u16", "to_u32", "to_u64", "to_f64", "to_i_b", "to_i8_b", "to_i16_b", "to_i32_b", "to_i64_b",
@@ -25,7 +28,7 @@ public sealed partial class Lowerer
 
     MExpr? ParallelOrSerial(CallExpr c, string name)
     {
-        if (inParallelGen || noHoist > 0 || ParallelPlan(c, name) is not { } plan) return Pipeline(c, name);
+        if (Sequential || inParallelGen || noHoist > 0 || ParallelPlan(c, name) is not { } plan) return Pipeline(c, name);
         var (n, combine, resultType) = plan;
 
         var savedPre = pre;

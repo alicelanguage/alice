@@ -18,10 +18,11 @@ public sealed class Emitter
     public string NativeLib = "alice_native";
     bool nativeProbeEmitted;
 
-    public Emitter(Binder binder)
+    /// <param name="sequential">single-threaded target (wasm): parallel constructs lower to serial code (ADR 0024)</param>
+    public Emitter(Binder binder, bool sequential = false)
     {
         this.binder = binder;
-        lowerer = new Lowerer(binder);
+        lowerer = new Lowerer(binder) { Sequential = sequential };
     }
 
     const string Header =

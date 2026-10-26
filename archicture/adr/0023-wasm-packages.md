@@ -17,6 +17,7 @@ Decision:
   usage error that points at serving `dist/wwwroot`.
 - JS interop needs no new language: Alice modules already emit `static partial` classes. `@[JSExport]` and
   `@[JSImport]` on `partial def` therefore satisfy the .NET source generator as written.
-- No workload is required (the runtime pack comes from NuGet). Native relinking and AOT (wasm-tools) are out of scope.
+- No workload is required (the runtime pack comes from NuGet). Native relinking and AOT (wasm-tools) are out of scope;
+  ADR 0024 uses AOT when the workload happens to be installed.
 
 Tests: `Integration/WasmTests` builds a new wasm package and calls its export from Node (skipped without Node).

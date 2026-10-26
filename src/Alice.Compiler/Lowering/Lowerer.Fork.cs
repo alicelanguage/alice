@@ -90,6 +90,11 @@ public sealed partial class Lowerer
         // walks give each task well under a microsecond of work. Measured on benchmarks/gc trees (8191-node trees):
         // forking `1 + l.check + r.check` took 21.5 -> 32.6 ms. A program that knows its subtrees are big can write `par`
         if (captured.Any(l => !l.Type.IsKnown || l.Type.Nullable)) return false;
+        if (Sequential)   // single-threaded target: a checked fork runs its calls in order
+        {
+            for (int k = 0; k < names.Count; k++) outp.Add(new MAssign { Target = new MCode(names[k]), Value = Isolated(calls[k], []) });
+            return true;
+        }
         string helper = $"__fork_{(Method!.CsName ?? "main").TrimStart('@')}_{++helperN}";
         var hp = new Backend.Printer("", 1);
         var fork = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Fork" };
@@ -121,7 +126,7 @@ public sealed partial class Lowerer
     /// </summary>
     CallExpr[] TryForkOperands(List<MStmt> outp, Stmt s)
     {
-        if (SerialClone) return [];
+        if (SerialClone || Sequential) return [];
         if (inParallelGen || noHoist > 0 || Method == null || Method.IsAsync || Method.TypeParams.Count > 0 || ctx.Contains("lambda")) return [];
         var value = s switch
         {
