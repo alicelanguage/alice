@@ -19,6 +19,11 @@ public sealed partial class Binder
         if (c.Name is "instance_eval" or "instance_exec" && c.Block != null && recv.Sym is TypeSym its) return BindInstanceEval(c, its);
         bool conc = IsConcurrentCall(c, recv);
         if (conc) MarkConcurrentArgs(c.Args);
+        if (conc && IsIndexCall(c))
+        {
+            if (c.Block != null) indexLambdas.Add(c.Block);
+            foreach (var a in c.Args) if (a.Value is LambdaExpr lam) indexLambdas.Add(lam);
+        }
         bool savedRef = refAllowed;
         refAllowed = c.Recv is ConstExpr { Sym: AType { Clr: Type ic } } && (ic == typeof(Interlocked) || ic == typeof(Volatile) && false);
         try { return BindCallCore(c, recv, conc); }
@@ -350,6 +355,7 @@ public sealed partial class Binder
         if (m != null)
         {
             if (!m.IsStatic) UseThis();
+            SelfCallEffects(c, m);
             c.Res = "alice";
             c.Sym = m;
             BindBlockFor(c, m);

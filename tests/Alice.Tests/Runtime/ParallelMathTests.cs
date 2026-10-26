@@ -27,6 +27,16 @@ public class ParallelMathTests
     }
 
     [Fact]
+    public void Par_sum_combines_in_index_order()
+    {
+        // partials added under a lock in finishing order made float sums differ from run to run
+        var rng = new Random(7);
+        var src = Enumerable.Range(0, 3_000_000).Select(_ => Math.Pow(10, rng.Next(-8, 9)) * rng.NextDouble()).ToArray();
+        double first = Par.Sum<double>(src);
+        for (int k = 0; k < 30; k++) Assert.Equal(first, Par.Sum<double>(src));
+    }
+
+    [Fact]
     public void Par_map_sum_matches_serial()
     {
         var src = Enumerable.Range(0, 1_000_003).ToArray();

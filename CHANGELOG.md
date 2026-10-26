@@ -5,6 +5,20 @@
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
+- Parallelization soundness fixes (never parallelize unproven code):
+  - `for` loops writing one array in two index shapes (`a[i]` and `a[i * w + j]`), or reading `a[i]` while writing
+    `a[i * w + j]`, stay serial; distinct arrays in different shapes get a runtime `ReferenceEquals` guard. Before,
+    iteration 0's row overlapped iteration 1's cell.
+  - A call to an instance method of a class with subclasses is pure only when every override is: a subclass's
+    field-writing override could run inside a parallel loop or fork.
+  - A loop whose body assigns a branch-declared local (`t = ... if c`, read later) stays serial: the local carries
+    across iterations. Before, the parallel helper did not compile.
+- AL0202 catches races it missed: a spawned/parallel block calling a field-writing method on self (`spawn { bump }`);
+  index writes keyed by `par_each` values or `Par.Range`'s `hi` (only `Par.For`/`Parallel.For`'s index and
+  `Par.Range`'s `lo` are disjoint, and only when the block does not reassign them); methods that write fields from a
+  block, or by calling a field-writing method on self, now count as mutating.
+- `Par.Sum` forks by index halves (`ParReduce`) instead of adding partials under a lock: no lock or closure, and the
+  same float result on every run.
 
 ## 0.13.1 - 2026-10-23
 

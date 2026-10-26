@@ -189,7 +189,7 @@ public sealed partial class Binder
         }
         BindExpr(a.Target);
         BindExpr(a.Value);
-        if (curMethod != null && lambdas.Count == 0 && a.Target is IvarExpr or NameExpr { Res: "field" } or CallExpr { Res: "field", Recv: SelfExpr }) curMethod.Mutates = true;
+        if (curMethod != null && a.Target is IvarExpr or NameExpr { Res: "field" } or CallExpr { Res: "field", Recv: SelfExpr }) curMethod.Mutates = true;
         CheckSharedTargetWrite(a.Target);
     }
 
