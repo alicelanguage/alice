@@ -1,4 +1,4 @@
-# ADR 0024: Stream fusion of iterator chains
+# ADR 0029: Stream fusion of iterator chains
 
 ## Status
 

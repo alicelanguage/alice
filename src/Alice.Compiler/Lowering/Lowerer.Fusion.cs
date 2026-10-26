@@ -5,7 +5,7 @@ using Alice.Compiler.Syntax;
 namespace Alice.Compiler.Lowering;
 
 /// <summary>
-/// Stream fusion gates (ADR 0024). A chain `src.map{}.select{}.take(n).sink` runs as one loop only when interleaving
+/// Stream fusion gates (ADR 0029). A chain `src.map{}.select{}.take(n).sink` runs as one loop only when interleaving
 /// the stages per element is unobservable: every stage block that is followed by another block (or by an early exit:
 /// take, any?, all?, find, first) must be effect-free. An effectful stage ends the chain: it and everything below it
 /// are evaluated stage by stage, as written.

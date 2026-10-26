@@ -2,7 +2,7 @@ using Alice.Compiler;
 
 namespace Alice.Tests.Compiler;
 
-/// <summary>Producer/consumer fusion (ADR 0024): pure map/select/reject/take chains become one loop; impure stages keep their order.</summary>
+/// <summary>Producer/consumer fusion (ADR 0029): pure map/select/reject/take chains become one loop; impure stages keep their order.</summary>
 [Collection("console")]
 public class StreamFusionTests
 {
