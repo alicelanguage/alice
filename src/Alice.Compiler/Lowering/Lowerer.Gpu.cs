@@ -57,13 +57,25 @@ public sealed partial class Lowerer
         if (binder.Clr.Find("ILGPU.Context", 0, []) == null) throw No("it needs the ILGPU package (alice add ILGPU)");
         var written = WalkStmts(f.Body).OfType<Assign>().Select(a => a.Target).OfType<IndexExpr>()
             .Select(ix => ix.Target).OfType<NameExpr>().Select(n => n.Sym).OfType<LocalSym>().ToHashSet();
+        // read/write sets: an array the body only overwrites at `a[i]` (every write a top-level `a[i] = e`, no read)
+        // needs no upload, and only the launch's range [start, start + count) comes back
+        var read = WalkReads(f.Body).OfType<NameExpr>().Select(n => n.Sym).OfType<LocalSym>()
+            .Concat(WalkStmts(f.Body).OfType<Assign>().Where(a => a.Op != "=").Select(a => a.Target).OfType<IndexExpr>()
+                .Select(ix => ix.Target).OfType<NameExpr>().Select(n => n.Sym).OfType<LocalSym>()).ToHashSet();
+        bool AtI(Stmt st, LocalSym a) => st is Assign { Op: "=", Target: IndexExpr { Target: NameExpr { Sym: LocalSym t }, Args: [{ Value: NameExpr { Sym: LocalSym ix } }] } } && t == a && ix == plan.LoopVar;
+        bool WritesAt(Stmt st, LocalSym a) => st is Assign { Target: IndexExpr { Target: NameExpr { Sym: LocalSym t } } } && t == a;
+        var overwritten = arrays.Where(a => written.Contains(a) && !read.Contains(a)
+            && f.Body.Any(st => AtI(st, a)) && WalkStmts(f.Body).Where(st => WritesAt(st, a)).All(st => f.Body.Contains(st) && AtI(st, a))).ToHashSet();
+        // the whole array, `0...a.size`: in a region its device copy is then complete without an upload
+        bool Whole(LocalSym a) => r is { Excl: true, A: LitExpr { Kind: "int", Text: "0" }, B: CallExpr { Recv: NameExpr { Sym: LocalSym rb }, Args.Count: 0 } sz }
+            && rb == a && Binder.Mangle(sz.Name) is "size" or "length" or "Length";
         // body-local names must not collide with kernel parameters: they are the same C# names
         int k = ++helperN;
-        string kernel = $"__gpu_kernel_{k}", field = $"__gpu_k_{k}", start = Temp("ga"), count = Temp("gn");
+        string kernel = $"__gpu_kernel_{k}", field = $"__gpu_k_{k}", group = $"__gpu_g_{k}", cap = $"__gpu_c_{k}", scalar = $"__gpu_s_{k}", start = Temp("ga"), count = Temp("gn");
         string View(LocalSym a) => $"global::ILGPU.Runtime.ArrayView1D<{a.Type.Elem!.Cs}, global::ILGPU.Stride1D.Dense>";
         var acc = plan.Acc;
         string AccView() => $"global::ILGPU.Runtime.ArrayView1D<{acc!.Type.Cs}, global::ILGPU.Stride1D.Dense>";
-        var ptypes = new List<string> { "global::ILGPU.Index1D", "int" };
+        var ptypes = new List<string> { "int", "int" };
         if (acc != null) ptypes.Add(AccView());
         ptypes.AddRange(arrays.Select(View));
         ptypes.AddRange(scalars.Select(s => s.Type.Cs));
@@ -85,10 +97,40 @@ public sealed partial class Lowerer
         inParallelGen = saved;
         var kp = new Backend.Printer("", 2);
         foreach (var st in body) kp.Root(st);
-        string ps = string.Join(", ", new[] { "global::ILGPU.Index1D __gi", "int __ga" }.Concat(acc != null ? [$"{AccView()} __gacc"] : [])
+        string ps = string.Join(", ", new[] { "int __ga", "int __gn" }.Concat(acc != null ? [$"{AccView()} __gacc"] : [])
             .Concat(arrays.Select(a => $"{View(a)} {a.CsName}")).Concat(scalars.Select(s => $"{s.Type.Cs} {s.CsName}")));
-        Extra.Add($"private static void {kernel}({ps})\n{{\n    int {plan.LoopVar.CsName} = (int)__gi + __ga;\n    unchecked\n    {{\n{kp}    }}\n}}\n"
-            + $"private static global::System.Action<{string.Join(", ", ptypes)}>? {field};\n");
+        // explicitly grouped: a grid-stride loop over the launch's range, so a grid capped at the device's width covers
+        // any count. A reduction adds into a register; the group then reduces (warp shuffles, then shared memory over
+        // the warps' partials) and its first thread does the one atomic add of the group
+        var kb = new System.Text.StringBuilder();
+        kb.Append($"private static void {kernel}({ps})\n{{\n");
+        if (acc != null) kb.Append($"    {acc.Type.Cs} __gr = 0;\n");
+        kb.Append("    int __gs = global::ILGPU.Grid.DimX * global::ILGPU.Group.DimX;\n");
+        kb.Append("    for (int __gt = global::ILGPU.Grid.GlobalIndex.X; __gt < __gn; __gt += __gs)\n    {\n");
+        kb.Append($"        int {plan.LoopVar.CsName} = __gt + __ga;\n        unchecked\n        {{\n{kp}        }}\n    }}\n");
+        if (acc != null)
+            kb.Append($$"""
+                    unchecked
+                    {
+                        for (int __gd = global::ILGPU.Warp.WarpSize / 2; __gd > 0; __gd >>= 1) __gr += global::ILGPU.Warp.ShuffleDown(__gr, __gd);
+                        var __gsh = global::ILGPU.SharedMemory.GetDynamic<{{acc.Type.Cs}}>();
+                        if (global::ILGPU.Warp.IsFirstLane) __gsh[global::ILGPU.Warp.WarpIdx] = __gr;
+                        global::ILGPU.Group.Barrier();
+                        for (int __gw = global::ILGPU.Group.DimX / global::ILGPU.Warp.WarpSize / 2; __gw > 0; __gw >>= 1)
+                        {
+                            if (global::ILGPU.Group.IdxX < __gw) __gsh[global::ILGPU.Group.IdxX] += __gsh[global::ILGPU.Group.IdxX + __gw];
+                            global::ILGPU.Group.Barrier();
+                        }
+                        if (global::ILGPU.Group.IdxX == 0) global::ILGPU.Atomic.Add(ref __gacc[0], __gsh[0]);
+                    }
+
+                """);
+        kb.Append("}\n");
+        kb.Append($"private static global::System.Action<global::ILGPU.KernelConfig, {string.Join(", ", ptypes)}>? {field};\n");
+        kb.Append($"private static int {group}, {cap};\n");
+        // the device accumulator, allocated once per thread (two threads may launch the same loop at once)
+        if (acc != null) kb.Append($"[global::System.ThreadStatic] private static global::ILGPU.Runtime.MemoryBuffer1D<{acc.Type.Cs}, global::ILGPU.Stride1D.Dense>? {scalar};\n");
+        Extra.Add(kb.ToString());
         UsesGpu = true;
 
         // the host: bounds, upload, launch (kernel compiled once per process), copy back what the body wrote
@@ -102,30 +144,44 @@ public sealed partial class Lowerer
         var viewType = binder.Clr.Find("ILGPU.Runtime.ArrayView1D", 2, []);
         string? alloc = accType == null ? null : binder.Clr.ExtensionHost("Allocate1D", accType, p => p.IsArray);
         string? copy = viewType == null ? null : binder.Clr.ExtensionHost("CopyToCPU", viewType, p => p.IsArray);
-        string? load = accType == null ? null : binder.Clr.ExtensionHost("LoadAutoGroupedStreamKernel", accType);
-        if (alloc == null || copy == null || load == null) throw No("this ILGPU version lacks Allocate1D / CopyToCPU / LoadAutoGroupedStreamKernel (ILGPU 1.x is supported)");
+        string? load = accType == null ? null : binder.Clr.ExtensionHost("LoadStreamKernel", accType);
+        string? zero = viewType == null ? null : binder.Clr.ExtensionHost("MemSetToZero", viewType);
+        if (alloc == null || copy == null || load == null || zero == null || binder.Clr.Find("ILGPU.Runtime.KernelUtil", 0, []) == null)
+            throw No("this ILGPU version lacks Allocate1D / CopyToCPU / MemSetToZero / LoadStreamKernel / KernelUtil (ILGPU 1.x is supported)");
         static MStmt Line(string code) => new MExprStmt { E = new MCode(code) };
         var launch = new List<MStmt>
         {
             Line("var __acc = global::__AliceGpu.Accelerator"),
-            Line($"{field} ??= {load}.LoadAutoGroupedStreamKernel<{string.Join(", ", ptypes)}>(__acc, {kernel})"),
+            Line($"{field} ??= {load}.LoadStreamKernel<{string.Join(", ", ptypes)}>(__acc, {kernel})"),
+            Line($"int __gg = global::__AliceGpu.Grid({field}, ref {group}, ref {cap}, {count})"),
         };
         gpuAlloc = alloc;
         gpuCopy = copy;
         foreach (var a in arrays)
             launch.Add(Line(gpuRegion != null
-                ? $"var __gb_{a.CsName.TrimStart('@')} = {gpuRegion}.Get({a.CsName}, {(written.Contains(a) ? "true" : "false")})"   // resident until the region ends
-                : $"using var __gb_{a.CsName.TrimStart('@')} = {alloc}.Allocate1D(__acc, {a.CsName})"));
-        if (acc != null) launch.Add(Line($"using var __gb_acc = {alloc}.Allocate1D(__acc, new {acc.Type.Cs}[1])"));
-        launch.Add(Line($"{field}({count}, {start}{(acc != null ? ", __gb_acc.View" : "")}{string.Concat(arrays.Select(a => $", __gb_{a.CsName.TrimStart('@')}.View"))}{string.Concat(scalars.Select(sc => ", " + sc.CsName))})"));
-        if (gpuRegion == null || acc != null) launch.Add(Line("__acc.Synchronize()"));   // in a region, launches queue on one stream
-        if (gpuRegion == null)
-            foreach (var a in arrays.Where(written.Contains)) launch.Add(Line($"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View, {a.CsName})"));
+                ? $"var __gb_{a.CsName.TrimStart('@')} = {gpuRegion}.Get({a.CsName}, {(overwritten.Contains(a) && Whole(a) ? "false" : "true")}, {(written.Contains(a) ? "true" : "false")})"   // resident until the region ends
+                : overwritten.Contains(a)
+                    ? $"using var __gb_{a.CsName.TrimStart('@')} = __acc.Allocate1D<{a.Type.Elem!.Cs}>({a.CsName}.Length)"   // write-only: no upload
+                    : $"using var __gb_{a.CsName.TrimStart('@')} = {alloc}.Allocate1D(__acc, {a.CsName})"));
         if (acc != null)
         {
-            launch.Add(Line($"var __gsum = new {acc.Type.Cs}[1]"));
-            launch.Add(Line($"{copy}.CopyToCPU(__gb_acc.View, __gsum)"));
-            launch.Add(Line($"{acc.CsName} += __gsum[0]"));
+            launch.Add(Line($"var __gb_acc = {scalar} ??= __acc.Allocate1D<{acc.Type.Cs}>(1)"));
+            launch.Add(Line($"{zero}.MemSetToZero(__gb_acc.View)"));
+        }
+        // the reduction's shared memory holds one partial per warp
+        string shared = acc != null ? $", global::ILGPU.SharedMemoryConfig.RequestDynamic<{acc.Type.Cs}>({group} / __acc.WarpSize)" : "";
+        launch.Add(Line($"{field}(new global::ILGPU.KernelConfig(__gg, {group}{shared}), {start}, {count}{(acc != null ? ", __gb_acc.View" : "")}{string.Concat(arrays.Select(a => $", __gb_{a.CsName.TrimStart('@')}.View"))}{string.Concat(scalars.Select(sc => ", " + sc.CsName))})"));
+        if (gpuRegion == null || acc != null) launch.Add(Line("__acc.Synchronize()"));   // in a region, launches queue on one stream
+        if (gpuRegion == null)
+            foreach (var a in arrays.Where(written.Contains))
+                launch.Add(Line(overwritten.Contains(a)
+                    ? $"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View.SubView({start}, {count}), ref {a.CsName}[{start}], {count})"   // only the range came from the device
+                    : $"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View, {a.CsName})"));
+        if (acc != null)
+        {
+            launch.Add(Line($"{acc.Type.Cs} __gsum = 0"));
+            launch.Add(Line($"{copy}.CopyToCPU(__gb_acc.View, ref __gsum, 1)"));
+            launch.Add(Line($"{acc.CsName} += __gsum"));
         }
         host.Add(new MIf { Cond = new MCode($"{count} > 0"), Then = { new MBlock { Body = launch } } });
         return new MBlock { Body = host };
@@ -211,6 +267,30 @@ public sealed partial class Lowerer
                 }
             }
 
+            /// <summary>The grid of a launch over <paramref name="count"/> iterations. The group size comes from ILGPU's
+            /// occupancy estimate once per kernel (a power of two, a multiple of the warp size, within the device's
+            /// limits); the grid is capped at what the device runs at once (multiprocessors x resident groups x 2), and
+            /// the kernel's grid-stride loop covers the rest.</summary>
+            public static int Grid<TDelegate>(TDelegate kernel, ref int group, ref int cap, int count) where TDelegate : global::System.Delegate
+            {
+                var a = Accelerator;
+                if (group == 0)
+                {
+                    var k = global::ILGPU.Runtime.KernelUtil.GetKernel(kernel);
+                    int warp = global::System.Math.Max(1, a.WarpSize), g;
+                    try { g = a.EstimateGroupSize(k); } catch (global::System.Exception) { g = 256; }   // OpenCL has no estimate
+                    g = global::System.Math.Clamp(g, warp, global::System.Math.Max(warp, a.MaxNumThreadsPerGroup));
+                    while ((g & (g - 1)) != 0) g &= g - 1;
+                    if (g < warp) g = warp;
+                    int resident;
+                    try { resident = a.EstimateMaxActiveGroupsPerMultiprocessor(k, g, g / warp * 8); }
+                    catch (global::System.Exception) { resident = a.MaxNumThreadsPerMultiprocessor / g; }
+                    cap = global::System.Math.Max(1, a.NumMultiprocessors) * global::System.Math.Max(1, resident) * 2;
+                    group = g;
+                }
+                return (int)global::System.Math.Clamp(((long)count + group - 1) / group, 1, cap);
+            }
+
             /// <summary>`gpu ... end`: device copies of the region's arrays, uploaded on first use, written ones copied back at the end.</summary>
             internal sealed class Region : global::System.IDisposable
             {
@@ -218,9 +298,13 @@ public sealed partial class Lowerer
                 readonly global::System.Collections.Generic.List<global::System.Action> copyBack = new();
                 readonly global::System.Collections.Generic.HashSet<object> dirty = new(global::System.Collections.Generic.ReferenceEqualityComparer.Instance);
 
-                public global::ILGPU.Runtime.MemoryBuffer1D<T, global::ILGPU.Stride1D.Dense> Get<T>(T[] array, bool written) where T : unmanaged
+                /// <summary>The device copy of <paramref name="array"/>. On first use it is uploaded, unless the loop
+                /// overwrites the whole array without reading it (<paramref name="upload"/> false). Copies are valid on
+                /// the device from then on; written ones go back to the host once, at the end.</summary>
+                public global::ILGPU.Runtime.MemoryBuffer1D<T, global::ILGPU.Stride1D.Dense> Get<T>(T[] array, bool upload, bool written) where T : unmanaged
                 {
-                    if (!buffers.TryGetValue(array, out var b)) buffers[array] = b = {{gpuAlloc}}.Allocate1D(Accelerator, array);
+                    if (!buffers.TryGetValue(array, out var b))
+                        buffers[array] = b = upload ? {{gpuAlloc}}.Allocate1D(Accelerator, array) : Accelerator.Allocate1D<T>(array.Length);
                     var buffer = (global::ILGPU.Runtime.MemoryBuffer1D<T, global::ILGPU.Stride1D.Dense>)b;
                     if (written && dirty.Add(array)) copyBack.Add(() => {{gpuCopy}}.CopyToCPU(buffer.View, array));
                     return buffer;

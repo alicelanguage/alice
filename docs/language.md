@@ -481,7 +481,8 @@ Needs `alice add ILGPU`. The body may capture arrays of numbers and numbers, and
 and number conversions; each iteration writes its own element. Anything else is a compile error that says why.
 `ALICE_GPU=cpu` runs on ILGPU's CPU accelerator. A `gpu ... end` region keeps the arrays of its `gpu for` loops on the
 device until `end` (uploaded once, written ones copied back once); reading them on the CPU inside the region is an
-error. Design: [ADR 0021](../archicture/adr/0021-gpu-loops.md).
+error. A reduction `t += e` adds in registers and once per thread group, not per iteration. Write-only arrays
+(every write `a[i] = e`, no read) are not uploaded, and read-only ones are not copied back. Design: [ADR 0021](../archicture/adr/0021-gpu-loops.md).
 
 ### lock
 
