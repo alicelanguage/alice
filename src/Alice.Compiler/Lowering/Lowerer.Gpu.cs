@@ -106,7 +106,7 @@ public sealed partial class Lowerer
         kb.Append($"private static void {kernel}({ps})\n{{\n");
         if (acc != null) kb.Append($"    {acc.Type.Cs} __gr = 0;\n");
         kb.Append("    int __gs = global::ILGPU.Grid.DimX * global::ILGPU.Group.DimX;\n");
-        kb.Append("    for (int __gt = global::ILGPU.Grid.GlobalIndex.X; __gt < __gn; __gt += __gs)\n    {\n");
+        kb.Append("    for (int __gt = global::ILGPU.Grid.GlobalIndex.X; __gt < __gn; __gt = __gn - __gt > __gs ? __gt + __gs : __gn)\n    {\n");
         kb.Append($"        int {plan.LoopVar.CsName} = __gt + __ga;\n        unchecked\n        {{\n{kp}        }}\n    }}\n");
         if (acc != null)
             kb.Append($$"""

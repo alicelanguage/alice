@@ -26,6 +26,7 @@ public class GpuLoopTests
         Assert.Contains("new global::ILGPU.KernelConfig(", cs);
         Assert.Contains("global::ILGPU.Grid.DimX * global::ILGPU.Group.DimX", cs);   // the grid-stride step
         Assert.Contains("__AliceGpu.Grid(", cs);                                       // occupancy-sized, capped grid
+        Assert.Contains("__gt = __gn - __gt > __gs ? __gt + __gs : __gn", cs);        // the step never overflows Int32
     }
 
     [Fact]
