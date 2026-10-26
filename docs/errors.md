@@ -21,6 +21,8 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0212 | not safe | `safe def f`<br>`  System.Environment.ProcessorCount` | `\`f\` is not safe: it reaches .NET ...` | pass the value in as an argument, or drop `safe` |
 | AL0213 | borrowed value escapes | `def f(borrow xs : Array(Int32))`<br>`  @@keep = xs` | `borrowed value \`xs\` escapes ...` | only index, size, iterate or lend `xs`; or take it with `own` |
 | AL0216 | pointer outside `unsafe` | `p = LibC.malloc(4_u64)` | `pointer operation outside \`unsafe\`...` | wrap it in `unsafe ... end` or write `unsafe def` |
+| AL0230 | message not sendable | `Actor(List(Int32)).new(->(m : List(Int32)) { })` | `message type ... is not sendable between actors` | send numbers, String, enums, records/structs of sendable fields, tuples, `System.Collections.Immutable` types or actor handles |
+| AL0231 | actor not isolated | `xs = List(Int32).new`<br>`Actor(Int32).new(->(m : Int32) { puts xs.Count })` | `actor is not isolated: it captures ...` | build the state in `init` (`Actor(S, T)`), send it as a message, or share it through `Mutex(T)`, `Atomic` or another actor |
 | AL0215 | capturing native callback | `k = 1`<br>`LibC.qsort(xs, n, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { k })` | `a callback passed to native code cannot capture variables` | pass state through the C function's user-data argument |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 

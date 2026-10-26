@@ -626,6 +626,46 @@ a.stop                               # drains mailbox
 
 `Channel(T)`: `send`, `receive`, `try_receive`, `close`, `each`, `send_async`, `receive_async`, `wait_async`. `Channel(T).new` is unbuffered: `send` returns once a receiver has taken the value. `Channel(T).new(n)` buffers up to `n` values; `send` blocks only when full. After `close`, pending values still drain, `send` raises `ClosedChannelError`, and `receive` raises once the channel is empty; `each` stops. Blocking `send`/`receive` allocate nothing. `Actor(T)` runs on an async mailbox: 2000 actors hold no threads.
 
+### Processes, links and supervisors (ADR 0024)
+
+An actor is a BEAM-style process: isolated state, a lock-free mailbox, no thread while idle. A crash kills only
+that actor; its exit travels to linked actors, `on_exit` monitors and its supervisor, which restarts it in place
+(same object, fresh state, empty mailbox).
+
+```crystal
+sup = Supervisor.one_for_one(3, 5000)          # at most 3 restarts in 5 s, then the supervisor exits
+counter = sup.supervise(Actor(Int32, Int32).new(-> { 0 }, ->(s : Int32, m : Int32) {
+  raise "negative" if m < 0                    # let it crash
+  s + m                                        # next state
+}))
+counter.send(5)
+counter.send(-1)                               # crashes; restarted with init's state 0
+counter.join                                   # waits for that exit
+counter.send(2)
+puts counter.finish                            # 2: drains, stops, returns the final state
+
+a = Actor(Int32).new(->(m : Int32) { raise "boom" })
+b = Actor(Int32).new(->(m : Int32) { })
+a.link(b)                                      # abnormal exits kill linked actors (supervisors trap them)
+a.on_exit { |r| puts r.kind }                  # monitor: crash
+a.send(1)
+puts b.join.kind                               # linked
+```
+
+| Member | Meaning |
+|---|---|
+| `Actor(T).new(handler)` | stateless actor; handler `->(m : T) { }` |
+| `Actor(S, T).new(init, handler)` | state built by `init` inside the actor (and on every restart); handler returns the next state |
+| `send(m)` | enqueue; dropped (counted in `dropped_messages`) when dead or stopping |
+| `stop` / `finish` | drain, exit normally, wait; `finish` returns the final state |
+| `kill`, `join`, `join(ms)`, `alive?`, `exit_reason`, `restarts`, `id` | lifecycle |
+| `link(p)`, `unlink(p)`, `on_exit { \|r\| }` | links and monitors; `r.kind` is normal, crash, killed, shutdown, linked or max_restarts |
+| `Supervisor.one_for_one(max, ms)` / `one_for_all(max, ms)` | restart strategy and intensity; `supervise(p)` returns `p`; supervisors nest |
+
+Isolation is a compile error, not a convention: a message type must be sendable (AL0230: no arrays, lists,
+mutable classes or blocks) and actor blocks may not capture locals of mutable type (AL0231). Writes to captured
+state stay AL0202. Normal exits are not restarted (transient children).
+
 ### Async
 
 ```crystal
