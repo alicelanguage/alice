@@ -12,6 +12,8 @@ Path: `src/Alice.Runtime`. Pure C#. Depends on nothing in-repo.
 | `Native/` | `@[Native]`/`lib` support: library loading, callbacks, UTF-8 arguments (ADR 0018) |
 | `Testing/` | `alice test` runner, `Spec`/`Expect` (RSpec style) |
 | `Digest/` | hashing helpers |
+| `Concurrency/` | `Channel<T>`, `Mutex<T>`, `Atomic` |
+| `Actors/` | `ProcessCore` (mailbox scheduling, links, monitors, restart), `Actor<T>`, `Actor<S, T>`, `Supervisor`, `ExitReason` (ADR 0024) |
 | `Prelude/` | Ruby helpers (`name?` -> `name_q`), formatting, IO, `Dynamic` (`send`, `respond_to?`) |
 
 Invariants: no native code of its own (only user-opted `@[Native]`/`lib` calls), no compiler dependency.

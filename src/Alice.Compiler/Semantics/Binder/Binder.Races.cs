@@ -28,7 +28,7 @@ public sealed partial class Binder
     bool IsConcurrentCall(CallExpr c, AType? recv)
     {
         string n = Mangle(c.Name);
-        if (n is "par_map" or "par_sum" or "par_each") return true;
+        if (n is "par_map" or "par_sum" or "par_each" || IsActorConcurrentCall(c, recv)) return true;
         if (c.Recv is ConstExpr { Sym: AType owner } && owner.Clr != null)
         {
             if (ConcurrentStatics.Contains(owner.Clr.Name)) return true;
@@ -39,7 +39,7 @@ public sealed partial class Binder
     }
 
     static bool IsConcurrentType(AType t) =>
-        t.Clr is Type c && (c == typeof(Thread) || c == typeof(Task) || (c.IsGenericType && c.GetGenericTypeDefinition() == typeof(Alice.Runtime.Actor<>)));
+        IsActorType(t) || t.Clr is Type c && (c == typeof(Thread) || c == typeof(Task));
 
     static bool ThreadSafe(AType t)
     {
@@ -47,7 +47,7 @@ public sealed partial class Binder
         if (c == null) return false;
         string ns = c.Namespace ?? "";
         if (ns.StartsWith("System.Collections.Concurrent") || ns.StartsWith("System.Threading.Channels") || ns.StartsWith("System.Collections.Immutable")) return true;
-        if (c == typeof(Alice.Runtime.Atomic)) return true;
+        if (c == typeof(Alice.Runtime.Atomic) || ActorThreadSafe(t)) return true;
         if (c.IsGenericType)
         {
             var g = c.GetGenericTypeDefinition();

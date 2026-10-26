@@ -26,6 +26,8 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0217 | conflicting borrow | `def copy_into(dst : Array(Int32), src : Array(Int32))` writes `dst`<br>`copy_into(a, a)` | `conflicting borrow: \`a\` is passed as both ...` | pass a copy (`a.dup`) or a different value |
 | AL0218 | stack value escapes | `p = P.new(1)` (`@[Stack] struct P`)<br>`f = ->() { p.x }` | `stack value \`p\` ... cannot be captured` | pass the fields it needs; a `@[Stack]` value may not be captured, stored in a heap type's field, or put in a collection |
 | AL0219 | use after send | `ch.send(xs)`<br>`xs[0] = 9` | `\`xs\` was sent to another thread ...` | send `xs.dup`, or rebind `xs` before using it again |
+| AL0230 | message not sendable | `Actor(List(Int32)).new(->(m : List(Int32)) { })` | `message type ... is not sendable between actors` | send numbers, String, enums, records/structs of sendable fields, tuples, `System.Collections.Immutable` types or actor handles |
+| AL0231 | actor not isolated | `xs = List(Int32).new`<br>`Actor(Int32).new(->(m : Int32) { puts xs.Count })` | `actor is not isolated: it captures ...` | build the state in `init` (`Actor(S, T)`), send it as a message, or share it through `Mutex(T)`, `Atomic` or another actor |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 
 Output format (CLI):

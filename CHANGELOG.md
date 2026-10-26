@@ -18,6 +18,13 @@
   `ALICE_TILE=n` overrides the size. The new nest runs behind a once-per-call guard (in bounds at every corner, no
   aliasing between written and read arrays); otherwise the original runs. Results are bit-identical. Checked
   integer arithmetic is not reordered. `benchmarks/tiling.sh` measures before and after.
+- BEAM-style processes (ADR 0024). `Actor(T)` is now a supervised, linkable process: a crash kills only that actor,
+  `link`/`on_exit` propagate exits, and `Supervisor.one_for_one` / `one_for_all` restart children in place with
+  restart intensity (`max` restarts per window) and nested trees. `Actor(S, T).new(init, handler)` keeps isolated
+  state built inside the actor. The mailbox is a lock-free queue and the actor is its own thread-pool work item:
+  0 bytes per message in steady state, ~6 M msgs/s on one actor and ~11 M msgs/s over 64.
+  Isolation is compiler-enforced: non-sendable message types are AL0230, actor blocks capturing mutable locals AL0231.
+
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.

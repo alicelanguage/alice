@@ -33,6 +33,7 @@
 | 0021 | [`gpu for` loops through ILGPU](adr/0021-gpu-loops.md) |
 | 0022 | [`alice prove --smt` through Z3](adr/0022-smt-proofs.md) |
 | 0023 | [WebAssembly packages (`kind = "wasm"`)](adr/0023-wasm-packages.md) |
+| 0028 | [Supervised, isolated processes](adr/0028-supervised-processes.md) |
 
 ## Projects
 

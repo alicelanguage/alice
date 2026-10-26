@@ -19,6 +19,8 @@ public sealed record Diagnostic(string Severity, string Code, string File, int L
         ("sent to another thread", "AL0219"),
         ("non-exhaustive", "AL0201"),
         ("data race", "AL0202"),
+        ("not sendable", "AL0230"),
+        ("not isolated", "AL0231"),
         ("immutable", "AL0203"),
         ("cannot infer", "AL0204"),
         ("type required", "AL0205"),

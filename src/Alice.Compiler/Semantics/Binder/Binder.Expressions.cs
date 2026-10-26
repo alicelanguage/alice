@@ -55,6 +55,7 @@ public sealed partial class Binder
                     }
                     var t = ResolveType(ne.TypeRef);
                     if (IsConcurrentType(t)) MarkConcurrentArgs(ne.Args);
+                    CheckActorNew(ne, t);
                     BindArgs(ne.Args);
                     if (ne.Block != null) BindLambda(ne.Block, new List<AType>());
                     return t;
@@ -157,6 +158,7 @@ public sealed partial class Binder
         if (l != null)
         {
             UseLocal(l);
+            CheckIsolatedRead(n, l);
             n.Res = "local";
             n.Sym = l;
             if (narrowed.ContainsKey(l))
@@ -461,8 +463,9 @@ public sealed partial class Binder
         bool conc = pendingConcurrent;
         pendingConcurrent = false;
         if (conc) spawnDepth++;
+        EnterIsolation(lam, conc);
         try { BindLambdaCore(lam, expected, conc); }
-        finally { if (conc) spawnDepth--; }
+        finally { LeaveIsolation(); if (conc) spawnDepth--; }
     }
 
     void BindLambdaCore(LambdaExpr lam, List<AType> expected, bool conc)
