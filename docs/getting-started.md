@@ -1,6 +1,6 @@
 # Getting started
 
-Install the **.NET 10 SDK**. Use a [release archive](releases.md#install-a-release) or build from source:
+Install the **.NET 10 SDK**. Use a [release archive](releases.md#install-a-release-manually) or build from source:
 
 ```bash
 git clone https://github.com/alicelanguage/alice.git

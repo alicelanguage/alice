@@ -1,6 +1,6 @@
 # Alice guide
 
-For Alice 0.12.2. Printed by `alice guide`. Written for people and for AI
+For Alice 0.13.2. Printed by `alice guide`. Written for people and for AI
 agents: every example compiles, every rule says what the compiler enforces. Topics: `alice guide performance`, `alice guide proofs`,
 `alice guide interop`.
 
@@ -212,7 +212,10 @@ end
   domains: `x in lo..hi` / `x in lo...hi` with integer literals, or `b : Bool`.
 - `alice prove` compiles the program, runs every rule on every case of its domain (in parallel), and writes
   `PROOF.al`. Because rules are pure, this is a proof by exhaustion, not a sample. A domain over 2^32 cases is
-  rejected (AL0214): narrow it.
+  rejected (AL0214): narrow it, or use `alice prove --smt`.
+- `alice prove --smt` proves rules with Z3 for every input, so a variable may be a whole `x : Int32` or
+  `x : Int64`. It covers integer arithmetic, branches, locals and non-recursive pure calls; rules with loops,
+  recursion, objects or floats are enumerated instead. Needs the system libz3 (or `ALICE_Z3=path`).
 - A failing rule prints a counterexample: `fails at x = -3, lo = 0`. An exception is a failure too.
 - `PROOF.al` records each rule's result and a SHA-256 of every source. `alice prove --check` re-proves and fails
   if any rule fails or if PROOF.al no longer matches the sources. Run it before committing; commit PROOF.al.

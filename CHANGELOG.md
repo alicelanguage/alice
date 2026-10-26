@@ -13,6 +13,10 @@
   (`ReferenceEquals` on a `Span`); the iteration-private buffer is no longer an alias candidate.
 - Fix: stack arrays no longer overflow the thread stack. Recursive methods keep their arrays on the heap (a 4 KB frame
   overflowed at depth ~2000 where the heap version ran), and one method's stack buffers total at most 2 KB.
+- Docs: `docs/README.md` index; error codes AL0214 (rule domain too large) and AL0401 (LSP manifest parse error);
+  every CLI command in `docs/tooling.md`, including `alice prove --smt`, `explain`, `guide`, `agents`; rules in the
+  language reference; module notes cover fork/join, ownership, stack arrays, GPU, Ranges, Optimizer, Proof and Lsp;
+  ADR index lists 0001-0023; guide updated for 0.13.2.
 
 ## 0.13.1 - 2026-10-23
 
