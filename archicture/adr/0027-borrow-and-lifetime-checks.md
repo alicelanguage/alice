@@ -1,4 +1,4 @@
-# ADR 0024: Borrow, lifetime and send checks
+# ADR 0027: Borrow, lifetime and send checks
 
 Status: Accepted (extends ADR 0008, 0016, 0017)
 

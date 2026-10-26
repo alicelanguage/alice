@@ -1,4 +1,4 @@
-# ADR 0024: Specialization of higher-order functions (defunctionalization)
+# ADR 0026: Specialization of higher-order functions (defunctionalization)
 
 Status: Accepted (0.13.2)
 
