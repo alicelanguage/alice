@@ -55,3 +55,10 @@ Value ranges need source types, so they are computed in lowering (`Lowerer.Range
 flow-insensitive interval per integer local (the union of every value assigned to it, iterated to a fixpoint
 with widening), used to emit provably safe `+ - *` unchecked and to turn a proven two's-complement
 reinterpretation into a sign extension.
+
+`induction` also divides a counter proven non-negative (literal start >= 0, or `MFor.MinStart` for parallel
+chunk loops of a literal range) by a positive literal unsigned: `floor_mod_pos(i, 1000)` becomes
+`(int)((uint)i % 1000u)`, which the JIT compiles to a multiply-shift with no sign fix-up (0.13.3: a
+`i % 1000 + i / 7 + i % 13` loop over 50M runs 897 -> 168 ms serial). Counter writes are checked with
+`MirFacts.WritesNumber`: opaque code writes a number only through a write form, so the parallel probe's
+conditions, which mention the counter by value, no longer hide the loop from the pass.

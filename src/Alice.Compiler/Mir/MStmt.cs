@@ -56,6 +56,7 @@ public sealed class MFor : MStmt
     public MExpr End = null!;
     public string Step = "++";
     public List<MStmt> Body = new();
+    public long? MinStart;           // a proven lower bound of Start when it is not a literal (parallel chunk loops)
 }
 
 public sealed class MForeach : MStmt

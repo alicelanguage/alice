@@ -32,23 +32,32 @@ public static class MirFacts
     public static MCode Int(long v, bool isLong) => new(v.ToString(CultureInfo.InvariantCulture) + (isLong ? "L" : ""));
 
     /// <summary>Whether a statement list can write the local `name` (assignment, ++/--, ref/out argument, or opaque code).</summary>
-    public static bool Writes(List<MStmt>? body, string name) => body != null && body.Any(s => Writes(s, name));
+    public static bool Writes(List<MStmt>? body, string name) => Writes(body, name, false);
 
-    static bool Writes(MStmt s, string name) => s switch
+    /// <summary>
+    /// <see cref="Writes(List{MStmt}?, string)"/> for a local of a primitive number type: opaque code writes it only
+    /// through a write form (`name =`, `name +=`, `++name`, `ref name`), since a number has no mutating members. The
+    /// parallel-loop probe mentions its counter in opaque conditions and dispatch calls, by value.
+    /// </summary>
+    public static bool WritesNumber(List<MStmt>? body, string name) => Writes(body, name, true);
+
+    static bool Writes(List<MStmt>? body, string name, bool num) => body != null && body.Any(s => Writes(s, name, num));
+
+    static bool Writes(MStmt s, string name, bool num) => s switch
     {
-        MAssign a => Names(a.Target, name) || Mentions(a.Value, name, writesOnly: true),
-        MDecl d => d.Name == name || (d.Init != null && Mentions(d.Init, name, writesOnly: true)),
-        MDeconstruct dc => dc.Names.Contains(name) || Mentions(dc.Value, name, writesOnly: true),
-        MExprStmt es => Mentions(es.E, name, writesOnly: true),
-        MIf i => Mentions(i.Cond, name, true) || Writes(i.Then, name) || Writes(i.Else, name),
-        MWhile w => Mentions(w.Cond, name, true) || Writes(w.Body, name),
-        MFor f => f.Var == name || Writes(f.Body, name),
-        MForeach fe => fe.Vars.Contains(name) || Writes(fe.Body, name),
-        MReturn r => r.Value != null && Mentions(r.Value, name, true),
-        MThrow t => Mentions(t.Value, name, true),
-        MTry t => Writes(t.Body, name) || t.Catches.Any(c => Writes(c.Body, name)) || Writes(t.Finally, name),
-        MBlock b => Writes(b.Body, name),
-        MUsing u => u.Name == name || Writes(u.Body, name),
+        MAssign a => Names(a.Target, name) || Mentions(a.Value, name, true, num),
+        MDecl d => d.Name == name || (d.Init != null && Mentions(d.Init, name, true, num)),
+        MDeconstruct dc => dc.Names.Contains(name) || Mentions(dc.Value, name, true, num),
+        MExprStmt es => Mentions(es.E, name, true, num),
+        MIf i => Mentions(i.Cond, name, true, num) || Writes(i.Then, name, num) || Writes(i.Else, name, num),
+        MWhile w => Mentions(w.Cond, name, true, num) || Writes(w.Body, name, num),
+        MFor f => f.Var == name || Writes(f.Body, name, num),
+        MForeach fe => fe.Vars.Contains(name) || Writes(fe.Body, name, num),
+        MReturn r => r.Value != null && Mentions(r.Value, name, true, num),
+        MThrow t => Mentions(t.Value, name, true, num),
+        MTry t => Writes(t.Body, name, num) || t.Catches.Any(c => Writes(c.Body, name, num)) || Writes(t.Finally, name, num),
+        MBlock b => Writes(b.Body, name, num),
+        MUsing u => u.Name == name || Writes(u.Body, name, num),
         _ => false,
     };
 
@@ -58,20 +67,28 @@ public static class MirFacts
     /// With writesOnly: true when the expression may write `name` (++, --, ref/out, nested assignment in a lambda,
     /// or opaque code mentioning it). Otherwise any mention.
     /// </summary>
-    static bool Mentions(MExpr e, string name, bool writesOnly)
+    static bool Mentions(MExpr e, string name, bool writesOnly, bool num = false)
     {
         switch (e)
         {
             case MCode c:
-                return !writesOnly ? c.Text == name : c.Text != name && ContainsWord(c.Text, name);   // opaque text using it: assume a write
+                return !writesOnly ? c.Text == name : c.Text != name && (num ? WriteForm(c.Text, name) : ContainsWord(c.Text, name));   // opaque text using it: assume a write
             case MUnary u when u.Op is "++" or "--":
-                return Names(u.E, name) || Mentions(u.E, name, writesOnly);
+                return Names(u.E, name) || Mentions(u.E, name, writesOnly, num);
             case MArg a when a.Prefix.StartsWith("ref") || a.Prefix.StartsWith("out"):
-                return Names(a.E, name) || Mentions(a.E, name, writesOnly);
+                return Names(a.E, name) || Mentions(a.E, name, writesOnly, num);
             case MLambda l:
-                return Writes(l.Body, name) || (l.ExprBody != null && Mentions(l.ExprBody, name, writesOnly));
+                return Writes(l.Body, name, num) || (l.ExprBody != null && Mentions(l.ExprBody, name, writesOnly, num));
         }
-        return Children(e).Any(x => Mentions(x, name, writesOnly));
+        return Children(e).Any(x => Mentions(x, name, writesOnly, num));
+    }
+
+    /// <summary>Opaque text with a write form for `name`: an assignment, ++/--, or a ref/out/in argument.</summary>
+    public static bool WriteForm(string text, string name)
+    {
+        var n = System.Text.RegularExpressions.Regex.Escape(name);
+        return System.Text.RegularExpressions.Regex.IsMatch(text,
+            $@"(?<![\w.])({n}\s*([-+*/%&|^]|<<|>>>?|\?\?)?=(?!=)|{n}\s*(\+\+|--)|(\+\+|--)\s*{n}(?![\w])|\b(ref|out|in)\s+{n}(?![\w]))");
     }
 
     static bool ContainsWord(string text, string name)

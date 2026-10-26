@@ -84,19 +84,12 @@ public sealed class OwnedBounds : MirRewriter, IMirPass
 
     static bool Writes(MExpr e, string name) => e switch
     {
-        MCode c => WriteForm(c.Text, name),
+        MCode c => MirFacts.WriteForm(c.Text, name),
         MUnary { Op: "++" or "--", E: MCode { Text: var t } } when t == name => true,
         MArg a when (a.Prefix.StartsWith("ref") || a.Prefix.StartsWith("out")) && a.E is MCode { Text: var t } && t == name => true,
         MLambda l => MirFacts.Writes(l.Body, name) || (l.ExprBody != null && Writes(l.ExprBody, name)),
         _ => MirFacts.Children(e).Any(x => Writes(x, name)),
     };
-
-    static bool WriteForm(string text, string name)
-    {
-        var n = System.Text.RegularExpressions.Regex.Escape(name);
-        return System.Text.RegularExpressions.Regex.IsMatch(text,
-            $@"(?<![\w.])({n}\s*([-+*/%&|^]|<<|>>>?|\?\?)?=(?!=)|{n}\s*(\+\+|--)|(\+\+|--)\s*{n}(?![\w])|\b(ref|out|in)\s+{n}(?![\w]))");
-    }
 
     static IEnumerable<List<MStmt>> Bodies(MStmt s) => s switch
     {

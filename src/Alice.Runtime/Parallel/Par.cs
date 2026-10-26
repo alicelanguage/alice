@@ -77,6 +77,13 @@ public static class Par
     /// </summary>
     public static bool Offload(long t0, int remaining) => ParJob<byte>.WorthDispatch((System.Diagnostics.Stopwatch.GetTimestamp() - t0) * (long)remaining);
 
+    /// <summary>
+    /// <see cref="Offload(long, int)"/> after <paramref name="done"/> timed iterations: their average cost projects the
+    /// <paramref name="remaining"/> ones. Generated loops call it at iterations 2, 4, 8, ... until it says yes.
+    /// </summary>
+    public static bool Offload(long t0, int done, int remaining) =>
+        ParJob<byte>.WorthDispatch((System.Diagnostics.Stopwatch.GetTimestamp() - t0) * (long)remaining / System.Math.Max(1, done));
+
     /// <summary>Calls body(lo, hi) over disjoint contiguous ranges covering [0, n).</summary>
     public static void Range(int n, Action<int, int> body, int grain = 1)
     {
