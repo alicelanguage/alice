@@ -736,6 +736,7 @@ Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`
 | `Par` | parallel For, Map, Sum |
 | `AMath` | MatMul, Mean, Variance, Norm, Axpy |
 | `CsrMatrix<T>`, `SparseVector<T>` | sparse linear algebra |
+| `Nn`, `Tensor<T>`, `QuantizedMatrix`, `MappedFile` | tensor kernels: dot, GEMV/GEMM, softmax, norms, activations; aligned strided tensors; int8/int4 blocks; mapped files (ADR 0030) |
 | `Prelude` | Ruby helpers: `puts`, `each`, `map`, `sum`, `size`, `even?`, `to_s`, `to_i`, `send`, ... |
 
 ## 13. Performance model
