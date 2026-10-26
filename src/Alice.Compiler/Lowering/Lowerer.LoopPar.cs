@@ -90,7 +90,9 @@ public sealed partial class Lowerer
         string? accT = plan.Acc != null ? TypeCs(plan.Acc.Type) : null;
         if (plan.Acc != null) chunk.Add(new MDecl { Name = plan.Acc.CsName, TypeCs = accT, Init = new MCode("default") });
         chunk.AddRange(bodyPre);
-        chunk.Add(new MFor { VarType = "int", Var = i, Start = new MCode($"{start} + {lo}"), Cmp = "<", End = new MCode($"{start} + {hi}"), Body = body });
+        // chunk bounds lie in [0, count]: a literal range start bounds the counter from below
+        long? minStart = r.A is LitExpr { Kind: "int" } ls && long.TryParse(ls.Text.Replace("_", ""), out long sv) ? sv : null;
+        chunk.Add(new MFor { VarType = "int", Var = i, Start = new MCode($"{start} + {lo}"), Cmp = "<", End = new MCode($"{start} + {hi}"), Body = body, MinStart = minStart });
         string grain = plan.Heavy ? "1" : "8192";
         string helper = $"__parfor_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
         var ps = captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}").Append($"int {start}").Append($"int {count}");
@@ -126,7 +128,7 @@ public sealed partial class Lowerer
         string distinct = string.Concat(aliasGuards.Select(g => $" && !global::System.Object.ReferenceEquals({g.W.CsName}, {g.R.CsName})"));
         var cond = new MCode($"{count} >= {min} && global::Alice.Runtime.Par.Workers > 1{distinct}");
         // probe: run the first two iterations here and time the second (the first runs cold: cache misses, first-touch
-        // page faults); at the top of the third, offload the rest only when the projected work pays for a dispatch
+        // page faults); at the top of iteration 2, 4, 8, ..., offload the rest only when the projected work pays for a dispatch
         // (Par.Offload). Short loops never JIT or wake the parallel machinery.
         if (!f.Par && SerialFor(f) is MFor probe && probe.Var == i)
         {
@@ -137,8 +139,10 @@ public sealed partial class Lowerer
                 Then = { new MAssign { Target = new MCode(t0), Value = new MCode("global::System.Diagnostics.Stopwatch.GetTimestamp()") } },
                 Else = [new MIf
                 {
-                    Cond = new MCode($"{i} == {start} + 2 && global::Alice.Runtime.Par.Offload({t0}, {count} - 2)"),
-                    Then = { Dispatch($"{start} + 2", $"{count} - 2"), new MBreak() },
+                    // retried at k = 2, 4, 8, ... iterations: leading iterations can be far cheaper than the rest
+                    // (mandelbrot's edge rows escape at once), and one sample would pin the whole loop serial
+                    Cond = new MCode($"{i} - {start} >= 2 && (({i} - {start}) & ({i} - {start} - 1)) == 0 && global::Alice.Runtime.Par.Offload({t0}, {i} - {start} - 1, {count} - ({i} - {start}))"),
+                    Then = { Dispatch(i, $"{count} - ({i} - {start})"), new MBreak() },
                 }],
             });
             return new MIf { Cond = cond, Then = { new MDecl { Name = t0, TypeCs = "long", Init = new MCode("0") }, probe }, Else = serial };

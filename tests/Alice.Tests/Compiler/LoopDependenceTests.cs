@@ -69,6 +69,18 @@ public class LoopDependenceTests
     }
 
     [Fact]
+    public void The_probe_is_retried_at_powers_of_two_so_cheap_leading_iterations_do_not_pin_a_loop_serial()
+    {
+        // mandelbrot: the first rows escape at once; one sample of row 1 projected the whole loop as cheap
+        string cs = AliceCompiler.Transpile(Rows2D);
+        Assert.Contains("Par.Offload(__t0", cs);
+        Assert.Matches(@"\(\(\w+ - \w+\) & \(\w+ - \w+ - 1\)\) == 0 && global::Alice.Runtime.Par.Offload\(__t0\w*, \w+ - \w+ - 1, ", cs);
+        int h = 300, w = 7, s = 0;
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) s += (x + y) % 7;
+        Assert.Equal(s, Compile(Rows2D).Invoke(null, [h, w]));
+    }
+
+    [Fact]
     public void A_body_that_moves_its_counter_stays_serial()
         => Assert.DoesNotContain("__parfor", AliceCompiler.Transpile("def f(n : Int32) : Int32\n  a = Array(Int32).new(n)\n  for i in 0...n\n    a[i] = 1\n    i = i + 1\n  end\n  a[0]\nend\n"));
 }

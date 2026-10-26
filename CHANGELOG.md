@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.13.3 - unreleased
+
+- Parallel loops retry their offload probe at iterations 2, 4, 8, ...: the projection uses the average cost so far
+  (`Par.Offload(t0, done, remaining)`) instead of one sample of iteration 1. Mandelbrot's first rows escape at once,
+  so the single sample kept the whole row loop serial: `benchmarks/run.sh mandelbrot` 53.3 -> 10.1 ms (C# hand-opt 9.7).
+- `induction`: a counter proven non-negative divided by a positive literal is divided unsigned
+  (`(int)((uint)i % 1000u)`), a bare multiply-shift. A 50M-iteration `i % 1000 + i / 7 + i % 13` loop: 897 -> 168 ms
+  serial, 227-245 -> 34-62 ms parallel. Parallel chunk loops of a literal range carry their lower bound
+  (`MFor.MinStart`), and counter writes are checked by `MirFacts.WritesNumber`, which the probe's opaque conditions
+  no longer defeat.
+
 ## 0.13.2 - unreleased
 
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an

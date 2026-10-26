@@ -119,6 +119,31 @@ public class OptimizerTests
         Assert.Equal(proven, text.Contains($"unchecked(j {op} {k})"));
     }
 
+    [Theory]
+    [InlineData("0", "int", "floor_mod_pos", "1000", "(int)((uint)j % 1000u)")]
+    [InlineData("3", "int", "floor_div_pos", "7", "(int)((uint)j / 7u)")]
+    [InlineData("0", "long", "floor_mod_pos", "10L", "(long)((ulong)j % 10UL)")]
+    [InlineData("n", "int", "floor_mod_pos", "1000", "Prelude.floor_mod_pos(j, 1000)")]   // j may be negative
+    public void Non_negative_counters_divide_unsigned(string start, string type, string fn, string d, string expected)
+    {
+        var f = Loop(start, "<", new MCode("n"), new MExprStmt { E = Prelude(fn, new MCode("j"), new MCode(d)) });
+        f.VarType = type;
+        new InductionVariables().Run([f]);
+        Assert.Equal(expected, Printer.E(((MExprStmt)f.Body[0]).E));
+    }
+
+    [Fact]
+    public void Parallel_chunk_counters_of_a_literal_range_divide_unsigned_too()
+    {
+        string cs = AliceCompiler.Transpile("def k(n : Int32) : Int64\n  s : Int64 = 0\n  for i in 0...n\n    s += i % 1000\n  end\n  s\nend\n");
+        Assert.Contains("__parfor", cs);
+        Assert.DoesNotContain("floor_mod", cs);
+    }
+
+    [Fact]
+    public void Unsigned_counter_division_keeps_results()
+        => Assert.Equal("2997\n142", Run("s = 0\nq = 0\nfor i in 0...1000\n  s += i % 7\n  q = i / 7\nend\nputs s % 10000\nputs q"));
+
     [Fact]
     public void Offsets_of_a_written_counter_stay_checked()
     {
