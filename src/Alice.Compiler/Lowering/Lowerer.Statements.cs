@@ -50,8 +50,8 @@ public sealed partial class Lowerer
                 o.Add(new MDecl { Name = d.Local!.CsName, TypeCs = d.Type != null || d.Value == null ? TypeCs(d.Local.Type) : null, Init = d.Value != null ? Expr(d.Value) : new MCode("default!") });
                 break;
             case Assign { Op: "+=", Target: NameExpr { Sym: LocalSym ga } } gr when gpuAcc != null && ga == gpuAcc:
-                // a `gpu for` reduction: every thread adds into the one-element device accumulator
-                o.Add(new MExprStmt { E = new MCall { Target = new MCode("global::ILGPU.Atomic"), Name = "Add", Args = { new MCode("ref __gacc[0]"), Expr(gr.Value) } } });
+                // a `gpu for` reduction: each thread adds into its register; the group reduces it after the loop
+                o.Add(new MExprStmt { E = new MCode($"__gr += {Backend.Printer.E(Expr(gr.Value))}") });
                 break;
             case Assign a:
                 AssignStmt(o, a);

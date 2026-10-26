@@ -2,6 +2,12 @@
 
 ## 0.13.2 - unreleased
 
+- `gpu for` launches (ADR 0021): explicitly grouped kernels with an occupancy-sized group (a power of two, a multiple
+  of the warp size) and a capped grid, and a grid-stride loop. Reductions add in registers, reduce per group (warp
+  shuffles, then shared memory) and do one atomic add per group instead of one per iteration: a 10M Int64 sum on an
+  Iris Xe (OpenCL) 18 ms -> 4-6 ms. The device accumulator is cached, so a launch allocates no `new T[1]` or buffer.
+  Write-only arrays are not uploaded (only the launch's range comes back), read-only arrays are not copied back, and
+  a region skips the upload of an array its first loop overwrites whole.
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
