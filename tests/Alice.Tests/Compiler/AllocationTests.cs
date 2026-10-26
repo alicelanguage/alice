@@ -67,7 +67,7 @@ public class AllocationTests
         { "array min_by", "def f(xs : Array(Int32))\n  xs.min_by { |x| -x }\nend", new[] { 3, 1, 2 }, 3 },
         { "list max_by", "def f(xs : List(Int32))\n  xs.max_by { |x| x % 3 }\nend", new List<int> { 3, 5, 2 }, 5 },
         { "list min max first last", "def f(xs : List(Int32))\n  xs.max + xs.min + xs.first + xs.last\nend", new List<int> { 3, 5, 2 }, 5 + 2 + 3 + 2 },
-        // stream fusion (ADR 0024): take(n) and short-circuit sinks in one loop, stack literal arrays in inlined blocks
+        // stream fusion (ADR 0029): take(n) and short-circuit sinks in one loop, stack literal arrays in inlined blocks
         { "fused map/select/take/sum", "def f(xs : Array(Int32))\n  xs.map { |x| x * 3 }.select { |x| x.odd? }.take(2).sum\nend\n", new[] { 1, 2, 3, 4, 5 }, 12 },
         { "fused reject/take/count", "def f(xs : Array(Int32))\n  xs.reject { |x| x == 2 }.map { |x| x * x }.take(10).count\nend\n", new[] { 1, 2, 3 }, 2 },
         { "fused map/take/max", "def f(xs : List(Int32))\n  xs.map { |x| x + 1 }.take(2).max\nend\n", new List<int> { 5, 1, 9 }, 6 },

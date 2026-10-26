@@ -627,7 +627,7 @@ a.stop                               # drains mailbox
 
 `Channel(T)`: `send`, `receive`, `try_receive`, `close`, `each`, `send_async`, `receive_async`, `wait_async`. `Channel(T).new` is unbuffered: `send` returns once a receiver has taken the value. `Channel(T).new(n)` buffers up to `n` values; `send` blocks only when full. After `close`, pending values still drain, `send` raises `ClosedChannelError`, and `receive` raises once the channel is empty; `each` stops. Blocking `send`/`receive` allocate nothing. `Actor(T)` runs on an async mailbox: 2000 actors hold no threads.
 
-### Processes, links and supervisors (ADR 0024)
+### Processes, links and supervisors (ADR 0028)
 
 An actor is a BEAM-style process: isolated state, a lock-free mailbox, no thread while idle. A crash kills only
 that actor; its exit travels to linked actors, `on_exit` monitors and its supervisor, which restarts it in place

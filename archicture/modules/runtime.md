@@ -13,7 +13,7 @@ Path: `src/Alice.Runtime`. Pure C#. Depends on nothing in-repo.
 | `Testing/` | `alice test` runner, `Spec`/`Expect` (RSpec style) |
 | `Digest/` | hashing helpers |
 | `Concurrency/` | `Channel<T>`, `Mutex<T>`, `Atomic` |
-| `Actors/` | `ProcessCore` (mailbox scheduling, links, monitors, restart), `Actor<T>`, `Actor<S, T>`, `Supervisor`, `ExitReason` (ADR 0024) |
+| `Actors/` | `ProcessCore` (mailbox scheduling, links, monitors, restart), `Actor<T>`, `Actor<S, T>`, `Supervisor`, `ExitReason` (ADR 0028) |
 | `Prelude/` | Ruby helpers (`name?` -> `name_q`), formatting, IO, `Dynamic` (`send`, `respond_to?`) |
 
 Invariants: no native code of its own (only user-opted `@[Native]`/`lib` calls), no compiler dependency.

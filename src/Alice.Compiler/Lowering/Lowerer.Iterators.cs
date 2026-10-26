@@ -103,7 +103,7 @@ public sealed partial class Lowerer
         // collect map/select/reject stages under the sink
         var stages = new List<Stage>();
         Syntax.Expr src = sink.Recv!;
-        // An effectful stage may only be the last block to run with no early exit after it (ADR 0024); otherwise
+        // An effectful stage may only be the last block to run with no early exit after it (ADR 0029); otherwise
         // the chain stops there and that stage, with everything below it, runs stage by stage as written.
         bool laterWork = sink.Block != null || EarlyExitSinks.Contains(sinkName);
         while (true)

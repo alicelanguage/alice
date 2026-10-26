@@ -3,7 +3,7 @@ using Alice.Compiler;
 namespace Alice.Tests.Compiler;
 
 /// <summary>
-/// Rust-inspired aliasing and lifetime checks (ADR 0024): a value lent mutably may not be lent again in the same
+/// Rust-inspired aliasing and lifetime checks (ADR 0027): a value lent mutably may not be lent again in the same
 /// call (AL0217), a `@[Stack]` value may not outlive its frame (AL0218), a mutable value sent to another thread
 /// is gone for the sender (AL0219), and a value a running task reads may not be written until the task is joined
 /// (AL0202).

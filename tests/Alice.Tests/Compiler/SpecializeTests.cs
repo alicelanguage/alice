@@ -4,7 +4,7 @@ using Alice.Compiler;
 namespace Alice.Tests.Compiler;
 
 /// <summary>
-/// MLton-style specialization (ADR 0024): a user higher-order function called with a lambda literal is cloned per
+/// MLton-style specialization (ADR 0026): a user higher-order function called with a lambda literal is cloned per
 /// lambda, and the clone calls the lambda as a static method: no delegate, no closure, nothing for the JIT to guess.
 /// </summary>
 [Collection("console")]

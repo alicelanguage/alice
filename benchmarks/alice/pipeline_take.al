@@ -1,4 +1,4 @@
-# Stream fusion (ADR 0024): take(n), to_a and an impure-free chain over a range, each one loop.
+# Stream fusion (ADR 0029): take(n), to_a and an impure-free chain over a range, each one loop.
 def head(xs : Array(Int32), n : Int32) : Int64
   xs.map { |x| x.to_i64 * 3 }.select { |x| x.odd? }.take(n).sum
 end

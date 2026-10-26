@@ -3,7 +3,7 @@ using Alice.Compiler;
 namespace Alice.Tests.Compiler;
 
 /// <summary>
-/// Process isolation (ADR 0024): actor messages must be sendable (AL0230) and actor code may not capture
+/// Process isolation (ADR 0028): actor messages must be sendable (AL0230) and actor code may not capture
 /// shared mutable state (AL0231), so no two processes ever share a mutable object.
 /// </summary>
 [Collection("console")]

@@ -18,7 +18,7 @@
   `ALICE_TILE=n` overrides the size. The new nest runs behind a once-per-call guard (in bounds at every corner, no
   aliasing between written and read arrays); otherwise the original runs. Results are bit-identical. Checked
   integer arithmetic is not reordered. `benchmarks/tiling.sh` measures before and after.
-- BEAM-style processes (ADR 0024). `Actor(T)` is now a supervised, linkable process: a crash kills only that actor,
+- BEAM-style processes (ADR 0028). `Actor(T)` is now a supervised, linkable process: a crash kills only that actor,
   `link`/`on_exit` propagate exits, and `Supervisor.one_for_one` / `one_for_all` restart children in place with
   restart intensity (`max` restarts per window) and nested trees. `Actor(S, T).new(init, handler)` keeps isolated
   state built inside the actor. The mailbox is a lock-free queue and the actor is its own thread-pool work item:
@@ -38,7 +38,7 @@
   default endpoint is disabled until a server is deployed. `tools/telemetry-server` is a self-hostable collector
   (ASP.NET Core + SQLite, strict validation, rate limit, 180-day retention, admin-only aggregates, Dockerfile).
 
-- Stream fusion (ADR 0024): `take(n)` fuses into map/select/reject chains (`xs.map{}.select{}.take(n).sum` is one loop, no intermediate arrays); `to_a`/`map` after maps and takes write an exact-size array for arrays, `s.chars` and Int32 ranges; effectful stage blocks are no longer interleaved (an effectful stage before another block, a take or an early-exit sink runs stage by stage, as written); small literal arrays inside an inlined block go to one stack buffer before the loop.
+- Stream fusion (ADR 0029): `take(n)` fuses into map/select/reject chains (`xs.map{}.select{}.take(n).sum` is one loop, no intermediate arrays); `to_a`/`map` after maps and takes write an exact-size array for arrays, `s.chars` and Int32 ranges; effectful stage blocks are no longer interleaved (an effectful stage before another block, a take or an early-exit sink runs stage by stage, as written); small literal arrays inside an inlined block go to one stack buffer before the loop.
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
