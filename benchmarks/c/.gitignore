@@ -1,1 +1,3 @@
 bench
+bench_*
+!bench_*.c
