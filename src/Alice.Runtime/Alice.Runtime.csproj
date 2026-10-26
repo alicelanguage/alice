@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PackageId>Alice.Runtime</PackageId>
     <Description>Runtime library of the Alice language (Prelude, parallel primitives, channels, SIMD, interop helpers).</Description>
     <PackageTags>alice;runtime</PackageTags>

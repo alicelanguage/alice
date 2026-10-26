@@ -778,6 +778,7 @@ Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`
 | `Channel(T)`, `Actor`, `Mutex(T)`, `Atomic` | message passing and guarded shared state (AL0202) |
 | `AMath` | MatMul, Mean, Variance, Norm, Axpy |
 | `CsrMatrix<T>`, `SparseVector<T>` | sparse linear algebra |
+| `Nn`, `Tensor<T>`, `QuantizedMatrix`, `MappedFile` | tensor kernels: dot, GEMV/GEMM, softmax, norms, activations; aligned strided tensors; int8/int4 blocks; mapped files (ADR 0030) |
 | `Prelude` | Ruby helpers: `puts`, `each`, `map`, `sum`, `size`, `even?`, `to_s`, `to_i`, `send`, ... |
 
 ### Rules and proofs

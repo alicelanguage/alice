@@ -39,6 +39,14 @@
   (ASP.NET Core + SQLite, strict validation, rate limit, 180-day retention, admin-only aggregates, Dockerfile).
 
 - Stream fusion (ADR 0029): `take(n)` fuses into map/select/reject chains (`xs.map{}.select{}.take(n).sum` is one loop, no intermediate arrays); `to_a`/`map` after maps and takes write an exact-size array for arrays, `s.chars` and Int32 ranges; effectful stage blocks are no longer interleaved (an effectful stage before another block, a take or an early-exit sink runs stage by stage, as written); small literal arrays inside an inlined block go to one stack buffer before the loop.
+- Tensor primitives in the runtime (ADR 0030): `Tensor<T>` (strided, zero-copy views over 64-byte aligned native
+  memory), `TensorArena`, `BFloat16` and `Half` conversions, `QuantizedMatrix` (int8/int4 blocks of 32 with a Half
+  scale, GGML Q8_0/Q4_0 layout) with fused dequantize-dot, `MappedFile` (memory-mapped spans and tensors, no copy), and
+  `Nn` kernels: dot, GEMV (f32, bf16, Half, int8, int4), tiled parallel GEMM, elementwise, sum/max, fast exp, softmax,
+  RMS/layer norm, silu/gelu/tanh/relu. AVX-512/AVX2/Vector128/scalar tiers, a persistent allocation-free worker pool,
+  0 bytes allocated per call. Callable from Alice with `using Alice.Runtime`. `benchmarks/tensors`: GEMV 4096x4096 f32
+  2.0 ms (naive loop 17.7 ms), int8 0.67 ms, int4 0.59 ms on the 12-thread laptop.
+
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.

@@ -208,3 +208,21 @@ dominates startup:
 
 The other ten workloads cap their input internally and finish in 55-90 ms, inside process-startup noise
 (±7 ms) for both languages.
+
+## Tensor kernels (`benchmarks/tensors`, ADR 0030)
+
+```bash
+dotnet run -c Release --project benchmarks/tensors/Bench.Tensors.csproj   # optional arg: n (default 4096)
+```
+
+GEMV y = W x, 4096x4096, median of 15, same laptop (AVX2, 12 threads, machine shared with other jobs):
+
+| kernel | ms/GEMV | GB/s weights | GEMV/s |
+|---|---:|---:|---:|
+| naive f32 (scalar loop, 1 thread) | 17.684 | 3.8 | 57 |
+| Nn.Gemv f32 | 2.042 | 32.9 | 490 |
+| Nn.Gemv bf16 | 0.922 | 36.4 | 1084 |
+| Nn.Gemv int8 block | 0.665 | 26.8 | 1504 |
+| Nn.Gemv int4 block | 0.593 | 15.9 | 1687 |
+
+GEMV is memory-bound: smaller weights mean more GEMVs per second.
