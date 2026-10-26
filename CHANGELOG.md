@@ -38,6 +38,7 @@
   default endpoint is disabled until a server is deployed. `tools/telemetry-server` is a self-hostable collector
   (ASP.NET Core + SQLite, strict validation, rate limit, 180-day retention, admin-only aggregates, Dockerfile).
 
+- Stream fusion (ADR 0024): `take(n)` fuses into map/select/reject chains (`xs.map{}.select{}.take(n).sum` is one loop, no intermediate arrays); `to_a`/`map` after maps and takes write an exact-size array for arrays, `s.chars` and Int32 ranges; effectful stage blocks are no longer interleaved (an effectful stage before another block, a take or an early-exit sink runs stage by stage, as written); small literal arrays inside an inlined block go to one stack buffer before the loop.
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.

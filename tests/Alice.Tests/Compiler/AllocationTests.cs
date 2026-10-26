@@ -67,6 +67,13 @@ public class AllocationTests
         { "array min_by", "def f(xs : Array(Int32))\n  xs.min_by { |x| -x }\nend", new[] { 3, 1, 2 }, 3 },
         { "list max_by", "def f(xs : List(Int32))\n  xs.max_by { |x| x % 3 }\nend", new List<int> { 3, 5, 2 }, 5 },
         { "list min max first last", "def f(xs : List(Int32))\n  xs.max + xs.min + xs.first + xs.last\nend", new List<int> { 3, 5, 2 }, 5 + 2 + 3 + 2 },
+        // stream fusion (ADR 0024): take(n) and short-circuit sinks in one loop, stack literal arrays in inlined blocks
+        { "fused map/select/take/sum", "def f(xs : Array(Int32))\n  xs.map { |x| x * 3 }.select { |x| x.odd? }.take(2).sum\nend\n", new[] { 1, 2, 3, 4, 5 }, 12 },
+        { "fused reject/take/count", "def f(xs : Array(Int32))\n  xs.reject { |x| x == 2 }.map { |x| x * x }.take(10).count\nend\n", new[] { 1, 2, 3 }, 2 },
+        { "fused map/take/max", "def f(xs : List(Int32))\n  xs.map { |x| x + 1 }.take(2).max\nend\n", new List<int> { 5, 1, 9 }, 6 },
+        { "fused range select/any?", "def f(n : Int32)\n  (1..n).map { |x| x * x }.select { |x| x > 10 }.any? ? 1 : 0\nend\n", 5, 1 },
+        { "fused string chars select/count", "def f(s : String)\n  s.chars.select { |c| c == 'a' }.take(5).count\nend\n", "abcab", 2 },
+        { "stack literal array in map block", "def f(xs : Array(Int32))\n  xs.map { |x|\n    p = [x, 2]\n    p[0] * p[1]\n  }.sum\nend\n", new[] { 1, 2, 3 }, 12 },
         { "list each_with_index", "def f(xs : List(Int32))\n  s = 0\n  xs.each_with_index { |x, i| s += x * i }\n  s\nend", new List<int> { 5, 6, 7 }, 20 },
     };
 
