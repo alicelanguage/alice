@@ -2,6 +2,11 @@
 
 ## 0.13.2 - unreleased
 
+- SIMD uses explicit width tiers: vectorized pipelines and the `Simd` kernels pick `Vector512` (AVX-512) when it is
+  accelerated and a full vector fits, else `Vector256`, else `Vector128` (SSE/NEON/WASM SIMD), instead of
+  `Vector<T>` (capped at 256 bits on x64). `max/min/map` finish with one overlapping final vector instead of a
+  scalar tail; `Simd.Sum`/`Dot` (behind `xs.sum`, `xs.max`, `xs.min` on numeric arrays) use four/two accumulators.
+  New `Simd.IndexOfMax`. Elementwise `Simd` ops stay correct when `dst` is exactly the input (in place).
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
