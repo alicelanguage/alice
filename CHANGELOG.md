@@ -5,6 +5,14 @@
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
+- Targets (ADR 0024): wasm packages (and `[build] threads = false`) compile parallel loops, pipelines and forks to
+  serial code (`alice gen --sequential`), so no thread-pool code reaches the browser. Wasm `--release` builds trim
+  fully, use wasm SIMD and invariant globalization, and run AOT when the wasm-tools workload is installed.
+  `[build] native = true` adds `IsAotCompatible` and `IlcFoldIdenticalMethodBodies`; `[build] ready_to_run = true`
+  or `alice build --r2r` publishes ReadyToRun code to `bin/r2r`. An integration test publishes generated code plus
+  Alice.Runtime with NativeAOT and wasm full trimming and requires zero IL2xxx/IL3xxx warnings.
+- CLI: `alice run` on a wasm package checks for Node before building; `alice build --native` on one is a usage error
+  instead of a failed AOT publish; wasm build/run moved to `Commands/WasmCommands.cs`.
 
 ## 0.13.1 - 2026-10-23
 

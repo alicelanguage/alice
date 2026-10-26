@@ -65,6 +65,7 @@ public sealed partial class Lowerer
         foreach (var s in WalkStmts(f.Body))
             if (s is Assign { Target: IndexExpr { Target: NameExpr { Sym: LocalSym arr } } } && !captured.Contains(arr)) captured.Add(arr);
         if (captured.Any(l => !l.Type.IsKnown) || WalkReads(f.Body).Any(e => e is NameExpr { Res: "field" or "call" or "selfcall" })) return null;
+        if (Sequential) return SerialFor(f);   // proven independent (a `par for` is still checked), run serially
 
         string start = Temp("a"), count = Temp("n");
         pre.Add(new MDecl { Name = start, TypeCs = "int", Init = Expr(r.A) });

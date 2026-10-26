@@ -48,7 +48,9 @@ legacy = { path = "../legacy/Legacy.csproj" }   # C# project
 shared = { workspace = true }   # workspace member by name
 
 [build]
-native = true                # PublishAot
+native = true                # PublishAot (identical method bodies folded, AOT analyzers on)
+ready_to_run = true          # `alice build --release` also publishes precompiled code to bin/r2r (or: alice build --r2r)
+threads = false              # single-threaded target: parallel loops, pipelines and forks compile to serial code (wasm default)
 
 [runtime]
 gc = "auto"                  # default: server GC if the program runs in parallel, else workstation; or workstation | server | low-memory
@@ -193,6 +195,12 @@ cd web
 alice run                # builds, then runs the bundle under Node (same .NET WebAssembly runtime)
 alice build --release    # dist/wwwroot: the whole static site, for any static host
 ```
+
+The browser runs .NET on one thread, so a wasm package compiles parallel loops, pipelines and forks to their serial
+form (a `par for` that is not provably independent is still an error). `--release` trims fully, enables wasm SIMD and
+uses invariant globalization (no ICU download; set `[runtime] globalization = "culture"` to keep culture rules), and
+compiles ahead of time to WebAssembly when the `wasm-tools` workload is installed (`dotnet workload install wasm-tools`).
+`--native` does not apply to wasm packages.
 
 Mark methods `@[JSExport]` to call them from JavaScript, and declare `@[JSImport("globalThis.console.log")]`
 `partial def`s to call JavaScript from Alice (`using System.Runtime.InteropServices.JavaScript`):

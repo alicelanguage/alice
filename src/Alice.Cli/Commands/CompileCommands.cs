@@ -16,6 +16,7 @@ public static class CompileCommands
         public string? Output;
         public bool Release;
         public bool Native;
+        public bool ReadyToRun;
         public string? RefsFile;
         public string? AnalyzersFile;   // MSBuild @(Analyzer): source generators run in the type check too
         public string? Project;
@@ -36,6 +37,7 @@ public static class CompileCommands
                 case "--analyzers-file": o.AnalyzersFile = Value(a, ref i); break;
                 case "--release": o.Release = true; break;
                 case "--native": o.Native = true; break;
+                case "--r2r": o.ReadyToRun = o.Release = true; break;
                 default:
                     if (a[i].EndsWith(".al")) { UsageException.RequireFile(a[i]); o.Files.Add(a[i]); }
                     else if (a[i].EndsWith(".alproj") || Directory.Exists(a[i])) o.Project = a[i];
@@ -138,10 +140,12 @@ public static class CompileCommands
             where = target.Dir;
         }
         var proj = ProjectFiles.Find(where) ?? throw UsageException.NoProject();
+        bool wasm = ProjectFiles.Kind(proj) == "wasm";
+        if (wasm) WasmCommands.RequireNode();
         int rc = BuildProject(proj, o.Release);
         if (rc != 0) return rc;
         UiH.Status(T("running"), Path.GetFileNameWithoutExtension(proj));
-        if (ProjectFiles.Kind(proj) == "wasm") return RunWasm(proj, o.Rest);
+        if (wasm) return WasmCommands.Run(proj, o.Rest);
         var args = new List<string> { "run", "--no-build", "--project", proj, "-c", o.Release ? "Release" : "Debug", "--" };
         args.AddRange(o.Rest);
         return DotNet.Run(args, inherit: true).ExitCode;
@@ -154,7 +158,9 @@ public static class CompileCommands
         {
             if (Workspace.IsWorkspaceRoot(o.Project ?? ".")) return BuildWorkspace(o.Project ?? ".", o.Release);
             var proj = ProjectFiles.Find(o.Project ?? ".") ?? throw UsageException.NoProject();
-            return BuildProject(proj, o.Release || o.Native, o.Native);
+            if (o.Native && ProjectFiles.Kind(proj) == "wasm")
+                throw new UsageException("--native does not apply to a WebAssembly package", "alice build --release trims it (and compiles it ahead of time with the wasm-tools workload)");
+            return BuildProject(proj, o.Release || o.Native, o.Native, o.ReadyToRun);
         }
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Output ?? o.Files[0]);
@@ -177,7 +183,6 @@ public static class CompileCommands
         return 0;
     }
 
-    /// <summary>NativeAOT for loose files: wrap them in a throwaway .alproj and publish.</summary>
     /// <summary>
     /// Copies the entry file and everything it `require`s under their common root, keeping relative paths: a flat copy
     /// broke `require "../lib/x"` (multi-file programs could not be built with --native). The staging directory is
@@ -199,13 +204,14 @@ public static class CompileCommands
         }
     }
 
+    /// <summary>NativeAOT for loose files: wrap them in a throwaway .alproj and publish.</summary>
     static int NativeSingle(List<SourceFile> files, string name, string dir, List<string> refs)
     {
         var work = Path.Combine(dir, "obj", "alice-native", name);
         StageNativeSources(files, work);
         var proj = Path.Combine(work, name + ".alproj");
         File.WriteAllText(proj, ProjectFiles.ProjectXml("exe").Replace("</PropertyGroup>",
-            "  <PublishAot>true</PublishAot>\n    <OptimizationPreference>Speed</OptimizationPreference>\n    <IlcInstructionSet>native</IlcInstructionSet>\n  </PropertyGroup>"));
+            "  <PublishAot>true</PublishAot>\n    <OptimizationPreference>Speed</OptimizationPreference>\n    <IlcInstructionSet>native</IlcInstructionSet>\n    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>\n  </PropertyGroup>"));
         return Publish(proj, dir);
     }
 
@@ -223,14 +229,41 @@ public static class CompileCommands
         return 0;
     }
 
-    public static int BuildProject(string proj, bool release, bool native = false)
+    /// <summary>`dotnet publish` arguments for ReadyToRun (precompiled code beside the IL) for this machine's runtime.</summary>
+    public static List<string> ReadyToRunArgs(string proj, string outDir) =>
+        ["publish", proj, "-c", "Release", "-r", PortableRid(), "--self-contained", "false",
+         "-o", outDir, "-p:PublishReadyToRun=true", "-v", "q", "-nologo", "-clp:NoSummary"];
+
+    /// <summary>linux-x64, win-arm64, ...: distro-built runtimes report their own RID (arch-x64 on CachyOS), which has
+    /// no runtime pack on NuGet.</summary>
+    public static string PortableRid()
+    {
+        string os = OperatingSystem.IsWindows() ? "win" : OperatingSystem.IsMacOS() ? "osx" : "linux";
+        return $"{os}-{System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}";
+    }
+
+    /// <summary>`alice build --r2r`, or `[build] ready_to_run = true` with --release: bin/r2r starts without JIT.</summary>
+    static int ReadyToRun(string proj, Stopwatch sw)
+    {
+        string outDir = Path.Combine(ProjectFiles.PackageDir(proj), "bin", "r2r");
+        var r = UiH.Spin($"{T("building")} ReadyToRun {Path.GetFileNameWithoutExtension(proj)}…", () => DotNet.Run(ReadyToRunArgs(proj, outDir)));
+        if (r.ExitCode != 0)
+        {
+            Report(r);
+            return r.ExitCode;
+        }
+        UiH.Status(T("finished"), $"ReadyToRun {Path.GetRelativePath(".", outDir)} ({UiH.Elapsed(sw)})");
+        return 0;
+    }
+
+    public static int BuildProject(string proj, bool release, bool native = false, bool readyToRun = false)
     {
         if (native) return Publish(proj, Path.Combine(Path.GetDirectoryName(proj)!, "bin", "native"));
         var sw = Stopwatch.StartNew();
         string name = Path.GetFileNameWithoutExtension(proj);
         int built = 0;
         UiH.Status(T("compiling"), $"{name} ({(release ? "release" : "debug")})");
-        if (ProjectFiles.Kind(proj) == "wasm") return BuildWasm(proj, release, sw);
+        if (ProjectFiles.Kind(proj) == "wasm") return WasmCommands.Build(proj, release, sw);
         var r = UiH.Spin($"{T("building")} {name}…", () => DotNet.Run(["build", proj, "-c", release ? "Release" : "Debug", "-v", "q", "-nologo", "-clp:NoSummary"],
             line => { if (line.Contains(" -> ")) Interlocked.Increment(ref built); }));
         if (r.ExitCode != 0 || r.Diagnostics.Any(d => d.Severity == "error"))
@@ -240,50 +273,12 @@ public static class CompileCommands
         }
         UiH.Status(T("finished"), T("finished.detail", Math.Max(1, built), UiH.Elapsed(sw)));
         RecordLock(proj);
+        if (readyToRun || (release && File.ReadAllText(proj).Contains("<PublishReadyToRun>true</PublishReadyToRun>"))) return ReadyToRun(proj, sw);
         return 0;
-    }
-
-    /// <summary>A wasm package publishes: dist/wwwroot is the whole site (index.html, main.js, _framework/), ready
-    /// for any static host.</summary>
-    static int BuildWasm(string proj, bool release, Stopwatch sw)
-    {
-        string name = Path.GetFileNameWithoutExtension(proj);
-        string dist = Path.Combine(ProjectFiles.PackageDir(proj), "dist");
-        var r = UiH.Spin($"{T("building")} {name}…", () => DotNet.Run(["publish", proj, "-c", release ? "Release" : "Debug", "-o", dist,
-            "-v", "q", "-nologo", "-clp:NoSummary"]));
-        if (r.ExitCode != 0 || r.Diagnostics.Any(d => d.Severity == "error"))
-        {
-            Report(r);
-            return r.ExitCode == 0 ? 1 : r.ExitCode;
-        }
-        UiH.Status(T("finished"), $"{Path.GetRelativePath(".", Path.Combine(dist, "wwwroot"))} ({UiH.Elapsed(sw)})");
-        RecordLock(proj);
-        return 0;
-    }
-
-    /// <summary>`alice run` on a wasm package: the bundle under Node, which runs the same .NET WebAssembly runtime.</summary>
-    static int RunWasm(string proj, List<string> rest)
-    {
-        string pkg = ProjectFiles.PackageDir(proj);
-        string runner = Path.Combine(pkg, ".alice", "run.mjs");
-        File.WriteAllText(runner, WasmTemplates.NodeRunner(Path.Combine(pkg, "dist", "wwwroot", "_framework", "dotnet.js")));
-        var psi = new ProcessStartInfo("node") { UseShellExecute = false };
-        psi.ArgumentList.Add(runner);
-        foreach (var a in rest) psi.ArgumentList.Add(a);
-        try
-        {
-            using var p = Process.Start(psi)!;
-            p.WaitForExit();
-            return p.ExitCode;
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            throw new UsageException("alice run on a wasm package needs Node.js", "install node, or serve dist/wwwroot with any static web server and open it in a browser");
-        }
     }
 
     /// <summary>After a successful restore, pin the exact NuGet versions in alice.lock.</summary>
-    static void RecordLock(string proj)
+    internal static void RecordLock(string proj)
     {
         string dir = Path.GetDirectoryName(Path.GetDirectoryName(proj)!)!;
         if (!File.Exists(Path.Combine(dir, Manifest.FileName))) return;
@@ -372,6 +367,7 @@ public static class CompileCommands
         // package builds pass --no-check: csc type-checks the output anyway, and its errors come back as Alice
         // diagnostics (DotNet.ParseLine). The in-process check is a second, cold compile: 2.4 of 3.7 s per edit.
         bool check = !a.Remove("--no-check");
+        bool sequential = a.Remove("--sequential");
         var o = Parse(a);
         if (o.Output == null || o.Files.Count == 0) throw new CompileException(T("no.files"));
         Directory.CreateDirectory(o.Output);
@@ -380,7 +376,7 @@ public static class CompileCommands
             var files = Read(o.Files);
             string lib = o.Rest.FirstOrDefault(r => r.StartsWith("--native-lib="))?["--native-lib=".Length..] ?? "alice_native";
             string naming = o.Rest.FirstOrDefault(r => r.StartsWith("--naming="))?["--naming=".Length..] ?? "alice";
-            var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib, naming == "dotnet");
+            var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib, naming == "dotnet", sequential);
             // read by Alice.targets when alice.toml leaves [runtime] gc at "auto"
             File.WriteAllText(Path.Combine(o.Output, "alice.gc"), AliceCompiler.UsesParallel(cs) ? "server" : "workstation");
             if (csrc != null) File.WriteAllText(Path.Combine(o.Output, lib + ".c"), csrc);

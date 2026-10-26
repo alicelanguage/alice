@@ -31,10 +31,9 @@ public static class Manifest
         if (pkg.TryGetValue("version", out var v)) props.Append($"    <Version>{v}</Version>\n");
         if (pkg.TryGetValue("target", out var tf)) props.Append($"    <TargetFramework>{tf}</TargetFramework>\n");
         var build = toml.GetValueOrDefault("build") ?? new Dictionary<string, object>();
-        if (build.TryGetValue("native", out var nat) && nat is true)
-            props.Append("    <PublishAot>true</PublishAot>\n    <OptimizationPreference>Speed</OptimizationPreference>\n");
-
         var runtime = toml.GetValueOrDefault("runtime") ?? new Dictionary<string, object>();
+        var (targetProps, releaseProps) = TargetProperties.Render(kind, build, runtime);
+        props.Append(targetProps);
         string gc = runtime.TryGetValue("gc", out var g) ? (string)g : "auto";
         var (server, concurrent, conserve) = gc switch
         {
@@ -113,6 +112,8 @@ public static class Manifest
               <Import Project="{sdk}/Alice.props" Condition="'$(AliceCliProject)' == ''" />
               <PropertyGroup>
             {props}  </PropertyGroup>
+              <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+            {releaseProps}  </PropertyGroup>
               <ItemGroup>
                 <Compile Include="$(AliceSourceRoot)src/**/*.cs" />
                 <!-- UI markup: default item globs are off in .alproj, so XAML for Avalonia is listed here (inert elsewhere) -->
