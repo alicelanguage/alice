@@ -24,6 +24,8 @@ public static class SelfCommands
         int rc = ToolchainCommands.Install(home, [channel], selfUpdate: true);
         UpdateNotifier.Save(home, home.Default ?? App.Version, DateTimeOffset.UtcNow);
         var keep = home.Installed().Where(v => v.Channel == channel).Skip(3).ToList();
+        // 0.13 -> 0.14+: a stored telemetry answer is kept silently; unset asks once (TTY only, never in CI)
+        if (rc == 0) Telemetry.TelemetrySession.MaybeAsk();
         if (keep.Count > 0) AnsiConsole.MarkupLine($"  [grey]older {channel} toolchains: {string.Join(", ", keep)} (alice toolchain uninstall VERSION)[/]");
         return rc;
     }

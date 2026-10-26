@@ -63,7 +63,9 @@ public static class CompileCommands
             var sw = Stopwatch.StartNew();
             var image = UiH.Spin($"{T("compiling")} {name}…", () =>
             {
+                var ph = Stopwatch.StartNew();
                 var (cs, c) = AliceCompiler.TranspileFull(files, refs, name + "_native");
+                Alice.Cli.Telemetry.TelemetrySession.Phase("transpile", ph.ElapsedMilliseconds);
                 // @[Native] functions: clang -O3 -march=native; without a C compiler the managed bodies run instead
                 if (c != null)
                 {
@@ -72,7 +74,10 @@ public static class CompileCommands
                     if (AliceCompiler.BuildNativeLibrary(c, dir, name + "_native")) Alice.Runtime.NativeLibs.AddSearchPath(dir);
                     else Console.Error.WriteLine("warning: no C compiler found; @[Native] functions use their managed fallback");
                 }
-                return AliceCompiler.Emit(cs, name, exe, refs);
+                ph.Restart();
+                var img = AliceCompiler.Emit(cs, name, exe, refs);
+                Alice.Cli.Telemetry.TelemetrySession.Phase("emit", ph.ElapsedMilliseconds);
+                return img;
             });
             UiH.Status(T("compiling"), $"{name} ({UiH.Elapsed(sw)})");
             return image;

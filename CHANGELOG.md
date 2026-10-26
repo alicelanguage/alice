@@ -2,6 +2,13 @@
 
 ## 0.13.2 - unreleased
 
+- Opt-in CLI telemetry (ADR 0031, docs/telemetry.md): off by default, asked once on an interactive terminal (never in
+  CI), and after `alice self update` only when no answer is stored. `alice telemetry on|off|status|show|reset|perf`;
+  `ALICE_TELEMETRY_OPTOUT=1` / `DO_NOT_TRACK=1` always win. Command name, versions, OS/arch, exit code, duration,
+  sanitized crash stacks and error-code counts; never source, paths or names, and never inside compiled programs. The
+  default endpoint is disabled until a server is deployed. `tools/telemetry-server` is a self-hostable collector
+  (ASP.NET Core + SQLite, strict validation, rate limit, 180-day retention, admin-only aggregates, Dockerfile).
+
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.

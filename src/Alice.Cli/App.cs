@@ -17,7 +17,7 @@ public static class App
     [
         ("new", "cmd.new"), ("build", "cmd.build"), ("run", "cmd.run"), ("check", "cmd.check"), ("test", "cmd.test"),
         ("add", "cmd.add"), ("remove", "cmd.remove"), ("search", "cmd.search"), ("list", "cmd.list"), ("install", "cmd.install"), ("pack", "cmd.pack"), ("publish", "cmd.publish"), ("repl", "cmd.repl"), ("cache", "cmd.cache"), ("clean", "cmd.clean"), ("emit", "cmd.emit"), ("explain", "cmd.explain"), ("prove", "cmd.prove"), ("guide", "cmd.guide"), ("agents", "cmd.agents"), ("fmt", "cmd.fmt"), ("update", "cmd.update"), ("version", "cmd.version"),
-        ("lsp", "cmd.lsp"), ("toolchain", "cmd.toolchain"), ("self", "cmd.self"), ("doctor", "cmd.doctor"), ("completions", "cmd.completions"),
+        ("lsp", "cmd.lsp"), ("toolchain", "cmd.toolchain"), ("self", "cmd.self"), ("doctor", "cmd.doctor"), ("completions", "cmd.completions"), ("telemetry", "cmd.telemetry"),
     ];
 
     public static IEnumerable<string> CommandNames => Commands.Select(c => c.Name);
@@ -42,8 +42,12 @@ public static class App
         }
         catch (UsageException e) { Ui.Ui.Error(e.Message, e.Hint); return e.ExitCode; }
         var refresh = args.FirstOrDefault() is "self" or "completions" or "lsp" ? null : Toolchains.UpdateNotifier.RefreshInBackground(Toolchains.ToolchainHome.Current());
+        Telemetry.TelemetrySession.Start();
         int code = Dispatch(args);
         Notify(args, refresh);
+        if (args.FirstOrDefault() is not ("telemetry" or "lsp" or "completions" or "repl" or "self" or "upgrade") && args.Count > 0 && !Ui.Ui.Quiet)
+            Telemetry.TelemetrySession.MaybeAsk();
+        Telemetry.TelemetrySession.Finish(args, code);
         return code;
     }
 
@@ -97,6 +101,7 @@ public static class App
                 "upgrade" => SelfCommands.Run(["update", .. rest]),
                 "doctor" => DoctorCommand.Run(),
                 "completions" => CompletionsCommand.Run(rest),
+                "telemetry" => TelemetryCommand.Run(rest),
                 _ when args[0].EndsWith(".al") => CompileCommands.RunCmd(args),
                 _ => Unknown(args[0]),
             };
@@ -113,11 +118,13 @@ public static class App
         }
         catch (Alice.Compiler.CompileException e)
         {
+            Telemetry.TelemetrySession.Codes(e.Diagnostics.Select(d => d.Code));
             Ui.DiagnosticRenderer.Render(e.Diagnostics);
             return 1;
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
+            Telemetry.TelemetrySession.Crash(e);
             // last resort: a bug or environment failure is still one readable line, the trace only on request
             Ui.Ui.Error(T("internal", e.Message), Verbose ? e.ToString() : T("hint.verbose"));
             return 70;
