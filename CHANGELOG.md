@@ -5,6 +5,14 @@
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
+- Fewer allocations: `s.each_char { }` / `each_char_with_index` inline to an indexed loop over the string (88 B per
+  call, closure and delegate, now 0); `s.chars.<pipeline>` indexes the string instead of copying it to a `char[]`
+  (48 B -> 0 on "hello world"); `xs.sum` on a List walks its span (40 B boxed enumerator -> 0); `max_by` / `min_by`
+  on arrays and Lists are span loops instead of LINQ (32-40 B -> 0).
+- Fix: a parallelizable `for` loop that declared a small literal array (a stack array) failed to compile
+  (`ReferenceEquals` on a `Span`); the iteration-private buffer is no longer an alias candidate.
+- Fix: stack arrays no longer overflow the thread stack. Recursive methods keep their arrays on the heap (a 4 KB frame
+  overflowed at depth ~2000 where the heap version ran), and one method's stack buffers total at most 2 KB.
 
 ## 0.13.1 - 2026-10-23
 

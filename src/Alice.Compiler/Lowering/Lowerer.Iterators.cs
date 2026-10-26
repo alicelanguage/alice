@@ -33,6 +33,8 @@ public sealed partial class Lowerer
     MExpr? TryInline(CallExpr c)
     {
         string name = Binder.Mangle(c.Name);
+        // a string indexes like a char array: each_char is each, each_char_with_index is each_with_index
+        if (c.Recv is { Type.IsString: true } && c.Block != null) name = name switch { "each_char" => "each", "each_char_with_index" => "each_with_index", _ => name };
         if (noHoist > 0 || !BlockSinks.Contains(name) || c.Block == null || c.Recv == null) return null;
         if (name is "times" or "upto" or "downto" or "step") return CountedLoop(c, name);
         if (name is "each" or "each_pair" && DictEach(c) is { } de) return de;
@@ -105,6 +107,8 @@ public sealed partial class Lowerer
             stages.Insert(0, new Stage(st.Name, st.Block));
             src = st.Recv;
         }
+        // `s.chars.<pipeline>`: index the string itself instead of copying it into a char[] first
+        if (src is CallExpr { Name: "chars", Args.Count: 0, Block: null, Recv: { Type.IsString: true } str } && sinkName != "to_a") src = str;
         if (src.Type.Sym?.SoaOf != null) return SoaPipeline(sink, sinkName, src, stages);
         AType elem = src is RangeExpr r0 ? (r0.A.Type.IsInteger ? r0.A.Type : AType.Int) : Builtins.ElemOf(src.Type);
         if (!elem.IsKnown) return null;

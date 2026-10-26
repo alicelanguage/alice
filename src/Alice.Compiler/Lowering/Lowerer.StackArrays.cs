@@ -15,6 +15,9 @@ namespace Alice.Compiler.Lowering;
 public sealed partial class Lowerer
 {
     const int MaxStackElements = 256;
+    const int MaxStackBytes = 2048;
+
+    static int ElemSize(string cs) => cs switch { "long" or "double" or "ulong" => 8, "int" or "float" or "uint" => 4, "short" or "ushort" or "char" => 2, _ => 1 };
 
     /// <summary>Stack-array locals of the method being lowered: element type and length.</summary>
     Dictionary<LocalSym, (string Elem, int Length)> stackArrays = new();
@@ -39,8 +42,16 @@ public sealed partial class Lowerer
             assigns[l] = assigns.GetValueOrDefault(l) + 1;
             if (s is Assign { Declares: { } dl, Op: "=" } a && SmallArray(a.Value) is { } shape) decls[dl] = shape;
         }
+        // a frame that recurses would take one buffer per level: the heap version survives depths that would overflow the stack
+        if (Method != null && Walk(body).OfType<CallExpr>().Any(c => ReferenceEquals(c.Sym, Method))) return;
+        int budget = MaxStackBytes;   // per method, in declaration order: many arrays must not add up to a huge frame
         foreach (var (l, shape) in decls)
-            if (assigns[l] == 1 && OnlyElementUses(body, l)) stackArrays[l] = shape;
+        {
+            int bytes = shape.Item2 * ElemSize(shape.Item1);
+            if (bytes > budget || assigns[l] != 1 || !OnlyElementUses(body, l)) continue;
+            stackArrays[l] = shape;
+            budget -= bytes;
+        }
     }
 
     /// <summary>`Array(T).new(...)` binds as a call wrapping the NewExpr.</summary>

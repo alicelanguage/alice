@@ -57,6 +57,16 @@ public class AllocationTests
         { "times", "def f(n : Int32)\n  s = 0\n  n.times { |i| s += i }\n  s\nend", 5, 10 },
         { "range reduce", "def f(n : Int32)\n  (1..n).reduce(0) { |a, b| a + b }\nend", 10, 55 },
         { "any? / find", "def f(xs : Array(Int32))\n  xs.any? { |x| x > 2 } ? xs.find { |x| x > 1 }.not_nil! : 0\nend", new[] { 1, 2, 3 }, 2 },
+        { "string each_char", "def f(s : String)\n  c = 0\n  s.each_char { |ch| c += 1 if ch == 'o' }\n  c\nend", "hello world", 2 },
+        { "string each_char_with_index", "def f(s : String)\n  c = 0\n  s.each_char_with_index { |ch, i| c += i if ch == 'o' }\n  c\nend", "hello world", 4 + 7 },
+        { "string chars count", "def f(s : String)\n  s.chars.count { |c| c == 'l' }\nend", "hello world", 3 },
+        { "string chars select size", "def f(s : String)\n  s.chars.any? { |c| c == 'w' } ? 1 : 0\nend", "hello world", 1 },
+        { "list sum", "def f(xs : List(Int32))\n  xs.sum\nend", new List<int> { 1, 2, 3 }, 6 },
+        { "list sum block", "def f(xs : List(Int32))\n  t = 1\n  xs.sum { |x| x * t }\nend", new List<int> { 1, 2, 3 }, 6 },
+        { "array max_by", "def f(xs : Array(Int32))\n  xs.max_by { |x| -x }\nend", new[] { 3, 1, 2 }, 1 },
+        { "array min_by", "def f(xs : Array(Int32))\n  xs.min_by { |x| -x }\nend", new[] { 3, 1, 2 }, 3 },
+        { "list max_by", "def f(xs : List(Int32))\n  xs.max_by { |x| x % 3 }\nend", new List<int> { 3, 5, 2 }, 5 },
+        { "list min max first last", "def f(xs : List(Int32))\n  xs.max + xs.min + xs.first + xs.last\nend", new List<int> { 3, 5, 2 }, 5 + 2 + 3 + 2 },
         { "list each_with_index", "def f(xs : List(Int32))\n  s = 0\n  xs.each_with_index { |x, i| s += x * i }\n  s\nend", new List<int> { 5, 6, 7 }, 20 },
     };
 

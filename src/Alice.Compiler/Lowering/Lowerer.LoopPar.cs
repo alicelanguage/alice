@@ -155,13 +155,16 @@ public sealed partial class Lowerer
     List<(LocalSym W, LocalSym R)>? AliasGuards(List<Stmt> body, LoopPlan plan)
     {
         var written = WalkStmts(body).OfType<Assign>()
-            .Select(a => a.Target is IndexExpr { Target: NameExpr { Sym: LocalSym w } } ? w : null).OfType<LocalSym>().Distinct().ToList();
+            .Select(a => a.Target is IndexExpr { Target: NameExpr { Sym: LocalSym w } } ? w : null).OfType<LocalSym>()
+            .Where(w => !stackArrays.ContainsKey(w))   // a stack array is a fresh, iteration-private buffer: it aliases nothing
+            .Distinct().ToList();
         var guards = new List<(LocalSym, LocalSym)>();
         foreach (var ix in WalkReads(body).OfType<IndexExpr>())
         {
             if (ix.Target.Type?.Kind != "array") continue;   // strings and other immutable reads cannot alias an array
             bool atIndex = ix.Args is [{ Mod: "", Value: { } k }] && OwnIndex(k, plan);
             if (atIndex) continue;   // same element as this iteration's write: never another iteration's
+            if (ix.Target is NameExpr { Sym: LocalSym sa } && stackArrays.ContainsKey(sa)) continue;
             if (ix.Target is not NameExpr { Sym: LocalSym r }) { if (written.Any(w => MayAlias(w.Type, ix.Target.Type))) return null; continue; }
             if (written.Contains(r)) return null;
             foreach (var w in written)
