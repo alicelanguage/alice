@@ -97,6 +97,8 @@ public sealed partial class Lowerer
                 return Lambda(lam);
             case TypeTestExpr tt:
                 return TypeTest(tt);
+            case InvokeExpr inv when SpecializedInvoke(ParamOf(inv.Target), inv.Args) is MExpr si:   // ADR 0024
+                return si;
             case InvokeExpr inv:
                 return new MInvoke { Target = Expr(inv.Target), Args = Args(inv.Args) };
             case RegexExpr rx:
@@ -107,6 +109,8 @@ public sealed partial class Lowerer
                 return new MCall { Target = new MCode("Prelude"), Name = "spawn", Args = { Lambda(sp.Body) } };
             case YieldExpr { Sym: null } yi:   // iterator method
                 return new MArg { Prefix = "yield return ", E = yi.Args.Count == 1 ? Expr(yi.Args[0].Value!) : new MCode("default") };
+            case YieldExpr y when SpecializedInvoke(y.Sym as ParamSym, y.Args) is MExpr sy:   // ADR 0024
+                return sy;
             case YieldExpr y:
                 return new MInvoke { Target = new MCode(((ParamSym)y.Sym!).CsName), Args = Args(y.Args) };
             case StmtExpr se:

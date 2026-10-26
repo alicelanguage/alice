@@ -2,6 +2,11 @@
 
 ## 0.13.2 - unreleased
 
+- Higher-order functions are specialized per lambda literal (ADR 0024): `apply(xs) { |x| x * k }` calls a clone of
+  `apply` whose `yield` is a direct call of the block body, with `k` passed as a parameter. No delegate, no closure
+  allocation, and the JIT can inline the body (a HOF-heavy benchmark: about 2.3x faster). `ALICE_NO_SPECIALIZE=1`
+  turns it off.
+
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
