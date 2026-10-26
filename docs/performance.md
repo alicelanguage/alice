@@ -28,7 +28,7 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | `d[k] = d.GetValueOrDefault(k) + 1`, `d[k] += x` | `CollectionsMarshal.GetValueRefOrAddDefault` (one probe); missing key with `+=` still throws | `Lowerer.Idioms` | `PatternOptTests.Dictionary_increment_single_probe`, `Missing_key_compound_assignment_still_throws` |
 | untyped params | one typed specialization per call-site type | Semantics | `LanguageTests.Duck_typing_emits_typed_specializations_not_dynamic` |
 | class without Alice subclass | `sealed`; module `[SkipLocalsInit]` | Backend | `LanguageTests.Leaf_classes_are_sealed_and_locals_skip_init` |
-| user higher-order function called with a lambda literal / block (`yield`, `f.call` only) | clone `m__specN`, lambda body a static `[AggressiveInlining]` method, captures as parameters (`ref` if assigned): no delegate, 0 bytes | `Lowerer.Specialize` (ADR 0024) | `SpecializeTests` |
+| user higher-order function called with a lambda literal / block (`yield`, `f.call` only) | clone `m__specN`, lambda body a static `[AggressiveInlining]` method, captures as parameters (`ref` if assigned): no delegate, 0 bytes | `Lowerer.Specialize` (ADR 0026) | `SpecializeTests` |
 | capture-free lambda | `static` lambda | Backend | `AllocationTests.Capture_free_lambdas_are_static` |
 | `.alproj` builds | workstation + concurrent GC by default; `[runtime] gc = "server"` / `"low-memory"` | `src/Alice.Sdk/Alice.props`, `Projects/Manifest` | `ManifestTests.Runtime_gc_mode_maps_to_msbuild` |
 | loop nested in a serial loop | auto-parallel only for long trip counts (never the threshold-2 "heavy" rule); constant short trip counts: no parallel path | `Lowerer.LoopPar` | `LoopParallelizeTests.Tiny_inner_stencil_loops_stay_serial` |

@@ -5,7 +5,7 @@ using Alice.Compiler.Syntax;
 namespace Alice.Compiler.Semantics;
 
 /// <summary>
-/// Rust-inspired aliasing and lifetime checks over the bound AST (ADR 0024), run once after binding:
+/// Rust-inspired aliasing and lifetime checks over the bound AST (ADR 0027), run once after binding:
 /// <list type="bullet">
 /// <item>AL0217 conflicting borrow: one mutable value passed twice to the same Alice call while the callee writes
 /// through one of those parameters (`copy_into(a, a)`), the `&amp;mut` + `&amp;` rule.</item>

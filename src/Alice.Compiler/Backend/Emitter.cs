@@ -93,7 +93,7 @@ public sealed class Emitter
             sb.Append("public static void Main(string[] ARGV)\n{\nPrelude.init();\nPrelude.ARGV = ARGV;\n").Append(Print(body, 1)).Append("}\n");
             sb.Append(string.Concat(lowerer.Extra));
             lowerer.Extra.Clear();
-            sb.Append(lowerer.FlushSpecializations());   // ADR 0024
+            sb.Append(lowerer.FlushSpecializations());   // ADR 0026
         }
         sb.Append("}\n");
         return sb.ToString();
@@ -662,7 +662,7 @@ public sealed class Emitter
         string extra = string.Concat(lowerer.Extra);
         lowerer.Extra.Clear();
         if (lowerer.Forked) extra += SerialClone(d, m, owner, ret, ps, returns);
-        extra += lowerer.FlushSpecializations();   // ADR 0024
+        extra += lowerer.FlushSpecializations();   // ADR 0026
         lowerer.CloneOk = false;
         string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) || LoopLeaves().Contains(m) || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && LoopNest(body, 0) ? Hot : "");
         if (m.IsCtor)

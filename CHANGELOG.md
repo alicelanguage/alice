@@ -2,12 +2,12 @@
 
 ## 0.13.2 - unreleased
 
-- Higher-order functions are specialized per lambda literal (ADR 0024): `apply(xs) { |x| x * k }` calls a clone of
+- Higher-order functions are specialized per lambda literal (ADR 0026): `apply(xs) { |x| x * k }` calls a clone of
   `apply` whose `yield` is a direct call of the block body, with `k` passed as a parameter. No delegate, no closure
   allocation, and the JIT can inline the body (a HOF-heavy benchmark: about 2.3x faster). `ALICE_NO_SPECIALIZE=1`
   turns it off.
 
-- Borrow and lifetime checks (ADR 0024): passing one mutable value twice to a call that writes through one of the
+- Borrow and lifetime checks (ADR 0027): passing one mutable value twice to a call that writes through one of the
   parameters is AL0217 (`copy_into(a, a)`); a `@[Stack]` value captured by a block, stored in a heap type's field
   or put in a collection is AL0218 (was a C# error at emit time); using a mutable value after sending it through a
   `Channel`/`Actor` is AL0219; writing a value a running `spawn` reads before the task is joined is AL0202.

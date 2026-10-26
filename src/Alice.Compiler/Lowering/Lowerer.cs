@@ -85,7 +85,7 @@ public sealed partial class Lowerer
     public List<MStmt> LowerBody(List<Stmt> body, Tail tail, List<LocalSym> hoistedLocals, int line)
     {
         tmpN = 0;
-        if (Method == null && specializing == null) currentMain = body;   // ADR 0024: capture analysis root
+        if (Method == null && specializing == null) currentMain = body;   // ADR 0026: capture analysis root
         CheckDeclaredEffects(line);
         FindLengthAliases(body);
         FindStackArrays(body);

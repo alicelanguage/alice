@@ -53,7 +53,7 @@ public sealed partial class Lowerer
                 {
                     var m = (MethodSym)c.Sym!;
                     if (m.IsStatic && recv == null && m.Owner != Type && m.Owner.Kind != "program") recv = new MCode(m.Owner.Type.Cs);
-                    if (TrySpecialize(c, m, args, recv) is MExpr spec) return spec;   // ADR 0024
+                    if (TrySpecialize(c, m, args, recv) is MExpr spec) return spec;   // ADR 0026
                     LiftCallbacks(c, m, args);
                     return new MCall { Target = recv, Name = CallName(m), Args = args, Safe = c.Safe };
                 }

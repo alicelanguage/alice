@@ -5,7 +5,7 @@ using Alice.Compiler.Syntax;
 namespace Alice.Compiler.Lowering;
 
 /// <summary>
-/// MLton-style specialization of higher-order functions (ADR 0024). A call to a user function with a lambda literal
+/// MLton-style specialization of higher-order functions (ADR 0026). A call to a user function with a lambda literal
 /// for a function parameter (a block or a `Func`) that the callee only ever calls is lowered to a clone:
 /// <code>
 /// apply_n(10) { |v| v * k }   =>   apply_n__spec1(10, k)
