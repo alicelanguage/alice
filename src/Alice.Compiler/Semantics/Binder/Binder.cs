@@ -52,6 +52,7 @@ public sealed partial class Binder
             if (!changed && pass >= 1) break;
         }
         BindAll();
+        CheckBorrowsAndLifetimes();
     }
 
     CompileException Err(Node n, string msg) => new($"{file}:{n.Line}:{Math.Max(1, n.Col)}: {msg}");

@@ -8,7 +8,7 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0102 | parse | stray `end` | `unexpected 'end'` | remove it or fix nesting |
 | AL0103 | parse | `"abc` | `unterminated string` | close the string, interpolation, char or attribute |
 | AL0201 | non-exhaustive | `case e` on `enum E` covering only `E::A(x)` | `non-exhaustive ... B` | add the missing `when` branches or an `else` |
-| AL0202 | data race | `total = 0`<br>`Par.For(100) { \|i\| total += i }` | `data race` | send through `Channel(T)`, use an `Actor`, `Mutex(T)`, `Atomic`, or return it from the task |
+| AL0202 | data race | `total = 0`<br>`Par.For(100) { \|i\| total += i }`; or `t = spawn { puts xs.sum }`<br>`xs[0] = 5` before `t.wait` | `data race` | send through `Channel(T)`, use an `Actor`, `Mutex(T)`, `Atomic`, or return it from the task |
 | AL0203 | immutable | `val x = 1`<br>`x = 2` | `immutable` | declare with plain assignment `x = ...` |
 | AL0204 | cannot infer | `s = nil` | `cannot infer type of 's' from nil` | `s : String? = nil` |
 | AL0205 | type required | `getter x` without type or init | `type required for getter x` | `getter x : Int32` |
@@ -22,6 +22,9 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0213 | borrowed value escapes | `def f(borrow xs : Array(Int32))`<br>`  @@keep = xs` | `borrowed value \`xs\` escapes ...` | only index, size, iterate or lend `xs`; or take it with `own` |
 | AL0216 | pointer outside `unsafe` | `p = LibC.malloc(4_u64)` | `pointer operation outside \`unsafe\`...` | wrap it in `unsafe ... end` or write `unsafe def` |
 | AL0215 | capturing native callback | `k = 1`<br>`LibC.qsort(xs, n, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { k })` | `a callback passed to native code cannot capture variables` | pass state through the C function's user-data argument |
+| AL0217 | conflicting borrow | `def copy_into(dst : Array(Int32), src : Array(Int32))` writes `dst`<br>`copy_into(a, a)` | `conflicting borrow: \`a\` is passed as both ...` | pass a copy (`a.dup`) or a different value |
+| AL0218 | stack value escapes | `p = P.new(1)` (`@[Stack] struct P`)<br>`f = ->() { p.x }` | `stack value \`p\` ... cannot be captured` | pass the fields it needs; a `@[Stack]` value may not be captured, stored in a heap type's field, or put in a collection |
+| AL0219 | use after send | `ch.send(xs)`<br>`xs[0] = 9` | `\`xs\` was sent to another thread ...` | send `xs.dup`, or rebind `xs` before using it again |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 
 Output format (CLI):

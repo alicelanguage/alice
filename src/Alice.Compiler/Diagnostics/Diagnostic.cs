@@ -14,6 +14,9 @@ public sealed record Diagnostic(string Severity, string Code, string File, int L
     /// <summary>Stable codes for Alice's own checks (documented in docs/errors.md).</summary>
     static readonly (string Needle, string Code)[] Codes =
     [
+        ("conflicting borrow", "AL0217"),
+        ("stack value", "AL0218"),
+        ("sent to another thread", "AL0219"),
         ("non-exhaustive", "AL0201"),
         ("data race", "AL0202"),
         ("immutable", "AL0203"),
