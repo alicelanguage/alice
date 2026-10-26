@@ -6,7 +6,7 @@ Run from source: `dotnet run --project src/Alice.Cli -- <command>`.
 
 | Command | Action |
 |---|---|
-| `alice new <name> [--lib\|--tool\|--game]` | create package (exe, library with `naming = "dotnet"`, .NET tool, or MonoGame game): `alice.toml`, `src/`, `test/`, `.gitignore`; inside a workspace it is added to `members` |
+| `alice new <name> [--lib\|--tool\|--game\|--wasm]` | create package (exe, library with `naming = "dotnet"`, .NET tool, MonoGame game, or [WebAssembly](#webassembly-kind--wasm) package): `alice.toml`, `src/`, `test/`, `.gitignore`; inside a workspace it is added to `members` |
 | `alice new <name> --workspace` | create workspace root (`[workspace] members = []`) |
 | `alice build [dir\|files] [--release] [--native] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT |
 | `alice run [dir\|file.al] [member] [-- args]` | build and run; workspace with several exe members: `alice run <member>` |
@@ -17,6 +17,13 @@ Run from source: `dotnet run --project src/Alice.Cli -- <command>`.
 | `alice update` | delete `alice.lock`, rebuild, lock newly resolved versions |
 | `alice clean [dir]` | remove `bin/` and `obj/` |
 | `alice emit file.al` | print lowered C# |
+| `alice explain [files]` | show which optimizations each method received (parallel loops, stack arrays, presized collections, shared immutable objects, ...) |
+| `alice prove [files] [--check] [--smt]` | prove every `rule` (usually in `RULES.al`) and write `PROOF.al`; `--check` verifies only (CI); `--smt` proves rules over whole Int32/Int64 ranges with Z3 ([rules and proofs](#rules-and-proofs-alice-prove)) |
+| `alice guide [topic]` | print the Alice guide (`guide/GUIDE.md`); topics: `performance`, `proofs`, `interop` |
+| `alice agents [--write]` | print the Alice block for a project's `AGENTS.md`; `--write` adds it to `./AGENTS.md` |
+| `alice repl` (or plain `alice`) | interactive REPL ([below](#repl)) |
+| `alice lsp [--stdio]` | language server ([editor support](#editor-support)) |
+| `alice toolchain ...`, `alice self update` (`alice upgrade`), `alice doctor`, `alice completions <shell>` | [toolchains](#toolchains) |
 | `alice version` (`-V`) | version, runtime, SIMD capabilities |
 
 `alice gen` is internal (used by `Alice.targets`). There is no `sln` command: solutions are not needed.
@@ -216,6 +223,21 @@ await runMain();          // the program's top-level code
 `wwwroot/` is copied to the site root. Release sites are trimmed (a hello world is about 2 MB over the wire with
 Brotli); `[runtime] globalization = "invariant"` drops the ICU data (about 2.5 MB uncompressed). No workload is
 needed: the browser runtime comes from NuGet. Threads, files and native libraries are not available in the browser.
+
+## Rules and proofs (`alice prove`)
+
+A `rule name(x in lo..hi, ...) ... end` is a pure method returning `Bool`; `alice prove` runs it on every case of its
+finite domain (at most 2^32 cases, AL0214) in parallel, and writes `PROOF.al`, a certificate holding a SHA-256 of
+every source. `alice prove --check` fails when a rule fails or the sources changed since `PROOF.al` was written:
+run it in CI and commit `PROOF.al`.
+
+`alice prove --smt` (ADR [0022](../archicture/adr/0022-smt-proofs.md)) translates each rule to bit-vector formulas and
+asks Z3 for a counterexample, so a rule may take whole ranges (`x : Int32`, `x : Int64`). It covers integer
+arithmetic with Alice's semantics (checked overflow, floored `/` and `%`, wrapping `&+ &- &*`), `if`/ternaries, early
+`return`, locals, `divmod`, `Math.Min/Max` and inlined non-recursive pure methods. Rules with loops, recursion,
+objects or floats fall back to enumeration. Z3 is opt-in: install the system `libz3` (`pacman -S z3`,
+`apt install libz3-4`, `brew install z3`) or set `ALICE_Z3=path`; without it `--smt` is a usage error.
+Guide: [guide/PROOFS.md](../guide/PROOFS.md).
 
 ## REPL
 

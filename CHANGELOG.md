@@ -5,6 +5,10 @@
 - WebAssembly packages (ADR 0023): `kind = "wasm"` in alice.toml, `alice new <name> --wasm` (page, boot script and an
   `@[JSExport]` example), `alice build` publishes the static site to `dist/wwwroot`, and `alice run` runs it under
   Node. `@[JSExport]` / `@[JSImport] partial def` call between Alice and JavaScript. No workload needed.
+- Docs: `docs/README.md` index; error codes AL0214 (rule domain too large) and AL0401 (LSP manifest parse error);
+  every CLI command in `docs/tooling.md`, including `alice prove --smt`, `explain`, `guide`, `agents`; rules in the
+  language reference; module notes cover fork/join, ownership, stack arrays, GPU, Ranges, Optimizer, Proof and Lsp;
+  ADR index lists 0001-0023; guide updated for 0.13.2.
 
 ## 0.13.1 - 2026-10-23
 

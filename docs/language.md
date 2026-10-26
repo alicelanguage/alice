@@ -733,10 +733,25 @@ Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`
 | Type | Use |
 |---|---|
 | `Simd` | Sum, Dot, Add, Multiply, Scale, Min, Max (`Vector<T>`) |
-| `Par` | parallel For, Map, Sum |
+| `Par` | parallel For, Map, Sum, Reduce, Sort; fork/join jobs ([fork-join.md](fork-join.md)) |
+| `Channel(T)`, `Actor`, `Mutex(T)`, `Atomic` | message passing and guarded shared state (AL0202) |
 | `AMath` | MatMul, Mean, Variance, Norm, Axpy |
 | `CsrMatrix<T>`, `SparseVector<T>` | sparse linear algebra |
 | `Prelude` | Ruby helpers: `puts`, `each`, `map`, `sum`, `size`, `even?`, `to_s`, `to_i`, `send`, ... |
+
+### Rules and proofs
+
+```crystal
+rule clamp_stays_in_range(x in -1000..1000, lo in -50..50)
+  c = clamp(x, lo, lo + 10)
+  c >= lo && c <= lo + 10
+end
+```
+
+A `rule` is a pure method returning `Bool` over finite domains (`x in lo..hi`, `x in lo...hi`, `b : Bool`; at most
+2^32 cases, AL0214). `alice prove` checks every case and writes `PROOF.al`; `alice prove --smt` proves rules over
+whole `Int32`/`Int64` ranges with Z3. See [guide/PROOFS.md](../guide/PROOFS.md) and
+[tooling.md](tooling.md#rules-and-proofs-alice-prove).
 
 ## 13. Performance model
 
@@ -746,7 +761,7 @@ See [performance.md](performance.md). Inspect lowering with `alice emit file.al`
 
 See [tooling.md](tooling.md). Error codes: [errors.md](errors.md).
 
-See also: [Memory safety and ownership (proposed)](design/memory-safety.md).
+See also: [Memory safety and ownership](design/memory-safety.md) (design notes; implemented parts are marked).
 
 ## Standard library
 

@@ -23,7 +23,7 @@ end
   `Int64`.
 - A rule is `pure` (enforced, AL0210): no I/O, no writes to state it did not allocate, only pure calls. So it
   gives the same answer for the same inputs, and checking every input is a proof.
-- At most 2^32 cases per rule (AL0214). Narrow the ranges, or split the rule.
+- At most 2^32 cases per rule (AL0214). Narrow the ranges, split the rule, or use `alice prove --smt`.
 
 Put rules in `RULES.al` next to the code they constrain. Rules may call any pure function of the program.
 
@@ -61,6 +61,17 @@ while checking (overflow, division by zero, a missing key) is a failure with its
 
 Run it in CI and before every commit; commit `PROOF.al` with the code. An agent that edits the code must run
 `alice prove` and keep every rule proven. A rule may only change when the requirement it states changes.
+
+## Whole ranges: `alice prove --smt`
+
+`alice prove --smt` asks Z3 to prove each rule for every input instead of enumerating, so a variable may take a
+whole type: `x : Int32` or `x : Int64`. Supported: integer arithmetic with Alice's semantics (checked overflow,
+floored `/` and `%`, wrapping `&+ &- &*`, checked conversions), `if`/`elsif`/`else`, ternaries, early `return`,
+locals, `divmod`, `Math.Min/Max`, `MIN`/`MAX` and non-recursive pure methods. A rule with loops, recursion,
+objects or floats is enumerated as usual, never half-proven. `PROOF.al` marks SMT proofs `(smt)`.
+
+Z3 is opt-in: install the system `libz3` (`pacman -S z3`, `apt install libz3-4`, `brew install z3`) or set
+`ALICE_Z3=path`. Without it, `--smt` is a usage error.
 
 ## What is proven, and what is not
 
