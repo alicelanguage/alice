@@ -10,7 +10,8 @@ namespace Alice.Compiler.Lowering;
 /// </summary>
 public sealed partial class Lowerer
 {
-    sealed record Stage(string Kind, LambdaExpr Block);
+    /// <summary>A map/select/reject block, or a `take` (Block null, Count its limit).</summary>
+    sealed record Stage(string Kind, LambdaExpr Block, Syntax.Expr? Count = null);
 
     static readonly HashSet<string> StageNames = new() { "map", "select", "reject" };
     static readonly HashSet<string> BlockSinks = new() { "each", "each_with_index", "map", "select", "reject", "sum", "count", "any_q", "all_q", "find", "reduce", "times", "upto", "downto", "step" };
@@ -44,7 +45,8 @@ public sealed partial class Lowerer
     MExpr? TryFuseSink(CallExpr c)
     {
         string name = Binder.Mangle(c.Name);
-        if (noHoist > 0 || !PlainSinks.Contains(name) || c.Recv is not CallExpr inner || inner.Res != "ext" || inner.Block == null || !StageNames.Contains(inner.Name)) return null;
+        if (noHoist > 0 || !PlainSinks.Contains(name) || c.Recv is not CallExpr inner || inner.Res != "ext") return null;
+        if (!(inner.Block != null && StageNames.Contains(inner.Name)) && !IsTakeStage(inner, out _)) return null;
         if (c.Args.Count > 0) return null;
         return ParallelOrSerial(c, name);
     }
@@ -101,15 +103,31 @@ public sealed partial class Lowerer
         // collect map/select/reject stages under the sink
         var stages = new List<Stage>();
         Syntax.Expr src = sink.Recv!;
-        while (src is CallExpr st && st.Res == "ext" && st.Block != null && StageNames.Contains(st.Name)
-               && st.Block.ParamSyms.Count == 1 && Pure(st.Block) && HasValueTail(st.Block) && st.Recv != null)
+        // An effectful stage may only be the last block to run with no early exit after it (ADR 0024); otherwise
+        // the chain stops there and that stage, with everything below it, runs stage by stage as written.
+        bool laterWork = sink.Block != null || EarlyExitSinks.Contains(sinkName);
+        while (true)
         {
-            stages.Insert(0, new Stage(st.Name, st.Block));
-            src = st.Recv;
+            if (src is CallExpr st && st.Res == "ext" && st.Block != null && StageNames.Contains(st.Name)
+                && st.Block.ParamSyms.Count == 1 && Pure(st.Block) && HasValueTail(st.Block) && st.Recv != null
+                && (!laterWork || EffectFree(st.Block)))
+            {
+                stages.Insert(0, new Stage(st.Name, st.Block));
+                src = st.Recv;
+            }
+            else if (IsTakeStage(src, out var tk))
+            {
+                stages.Insert(0, new Stage("take", null!, tk.Args[0].Value));
+                src = tk.Recv!;
+            }
+            else break;
+            laterWork = true;
         }
+        bool takes = stages.Any(s => s.Kind == "take");
         // `s.chars.<pipeline>`: index the string itself instead of copying it into a char[] first
-        if (src is CallExpr { Name: "chars", Args.Count: 0, Block: null, Recv: { Type.IsString: true } str } && sinkName != "to_a") src = str;
-        if (src.Type.Sym?.SoaOf != null) return SoaPipeline(sink, sinkName, src, stages);
+        bool fromChars = false;
+        if (src is CallExpr { Name: "chars", Args.Count: 0, Block: null, Recv: { Type.IsString: true } str } && sinkName != "to_a") { src = str; fromChars = true; }
+        if (src.Type.Sym?.SoaOf != null) return takes ? null : SoaPipeline(sink, sinkName, src, stages);
         AType elem = src is RangeExpr r0 ? (r0.A.Type.IsInteger ? r0.A.Type : AType.Int) : Builtins.ElemOf(src.Type);
         if (!elem.IsKnown) return null;
         var sb = sink.Block;
@@ -126,7 +144,7 @@ public sealed partial class Lowerer
         // element type flowing into the sink
         AType cur = elem;
         foreach (var s in stages)
-            if (s.Kind == "map") cur = s.Block.Result;
+            if (s.Kind == "map") cur = s.Block!.Result;
         if (!cur.IsKnown) return null;
         AType sinkVal = sb != null && valueSink ? sb.Result : cur;
         if ((sinkName is "map" or "sum") && !sinkVal.IsKnown) return null;
@@ -136,7 +154,10 @@ public sealed partial class Lowerer
         var after = new List<MStmt>();
         string res = Temp("r");
         string? count = null;
-        bool preallocMap = sinkName == "map" && stages.All(s => s.Kind == "map") && src is not RangeExpr && src.Type.Kind == "array";
+        InlineStackArrays(stages.Select(s => s.Block).Append(sb), before);
+        // map (and to_a after maps/takes) into an exact-size array when the source length is known up front
+        bool preallocMap = sinkName is "map" or "to_a" && stages.All(s => s.Kind is "map" or "take") && KnownLength(src, fromChars) != null;
+        if (preallocMap && sinkName == "to_a") sinkName = "map";
         string? srcTemp = null;
         MExpr srcExpr;
         if (src is RangeExpr) srcExpr = MCode.Empty;
@@ -151,12 +172,23 @@ public sealed partial class Lowerer
             }
         }
         string curCs = TypeCs(cur);
+        // take(n): a limit and a counter per take stage, read once before the loop
+        var takeVars = new Dictionary<Stage, (string Limit, string Taken)>();
+        string? size = preallocMap ? KnownLength(src, fromChars)!(srcExpr) : null;
+        foreach (var s in stages.Where(s => s.Kind == "take"))
+        {
+            string lim = Temp("lim"), taken = Temp("tk");
+            before.Add(new MDecl { Name = lim, TypeCs = "int", Init = Expr(s.Count!) });
+            before.Add(new MDecl { Name = taken, TypeCs = "int", Init = new MCode("0") });
+            takeVars[s] = (lim, taken);
+            if (size != null) size = $"global::System.Math.Min({size}, global::System.Math.Max({lim}, 0))";
+        }
         switch (sinkName)
         {
             case "map":
                 if (preallocMap)
                 {
-                    before.Add(new MDecl { Name = res, Init = new MNewArray { ElemCs = TypeCs(sinkVal), Size = new MMember { Target = srcExpr, Name = "Length" } } });
+                    before.Add(new MDecl { Name = res, Init = new MNewArray { ElemCs = TypeCs(sinkVal), Size = new MCode(size!) } });
                     count = Temp("n");
                     before.Add(new MDecl { Name = count, TypeCs = "int", Init = new MCode("0") });
                 }
@@ -211,6 +243,13 @@ public sealed partial class Lowerer
         var target = body;
         foreach (var s in stages)
         {
+            if (s.Kind == "take")
+            {
+                var (lim, taken) = takeVars[s];
+                target.Add(new MIf { Cond = new MCode($"{taken} >= {lim}"), Then = { new MBreak() } });
+                target.Add(new MExprStmt { E = new MUnary { Op = "++", E = new MCode(taken), Postfix = true } });
+                continue;
+            }
             target.Add(new MDecl { Name = s.Block.ParamSyms[0].CsName, Init = element });
             var (stmts, v) = BlockValue(s.Block);
             target.AddRange(stmts);
@@ -231,7 +270,7 @@ public sealed partial class Lowerer
         ctx.RemoveAt(ctx.Count - 1);
 
         // SIMD prologue for numeric arrays; the scalar loop below finishes the remaining tail
-        var vec = src is RangeExpr ? null : TryVectorize(src, srcExpr, elem, stages, sinkName, sb, res, count, preallocMap);
+        var vec = src is RangeExpr || takes ? null : TryVectorize(src, srcExpr, elem, stages, sinkName, sb, res, count, preallocMap);
         if (vec != null) before.AddRange(vec.Value.Stmts);
 
         // the loop itself
@@ -304,6 +343,19 @@ public sealed partial class Lowerer
             });
         }
         return ok;
+    }
+
+    /// <summary>The source's element count as C#, when it is known before the loop: arrays, a string behind
+    /// `chars`, and Int32 ranges with simple bounds.</summary>
+    Func<MExpr, string>? KnownLength(Syntax.Expr src, bool fromChars)
+    {
+        if (src is RangeExpr r)
+        {
+            if (r.A.Type.Cs != "int" || r.B.Type.Cs != "int" || !SimpleRead(r.A) || !SimpleRead(r.B)) return null;
+            return _ => $"global::System.Math.Max(0, ({Backend.Printer.E(Expr(r.B))}) - ({Backend.Printer.E(Expr(r.A))}){(r.Excl ? "" : " + 1")})";
+        }
+        if (src.Type.Kind == "array" || fromChars && src.Type.IsString) return e => Backend.Printer.E(e) + ".Length";
+        return null;
     }
 
     static bool IsList(AType t) => t.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(List<>);
