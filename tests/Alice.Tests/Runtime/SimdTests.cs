@@ -50,4 +50,19 @@ public class SimdTests
     {
         Assert.Throws<ArgumentException>(() => Simd.Dot<double>(new double[3], new double[4]));
     }
+
+    [Theory, MemberData(nameof(Lengths))]
+    public void Int_kernels_and_index_of_max(int n)
+    {
+        var a = Enumerable.Range(0, n).Select(i => (i * 7919) % 101 - 50).ToArray();
+        var b = a.Select(x => x + 3).ToArray();
+        Assert.Equal(a.Sum(), Simd.Sum<int>(a));
+        Assert.Equal(a.Zip(b, (x, y) => x * y).Sum(), Simd.Dot<int>(a, b));
+        if (n == 0) { Assert.Equal(-1, Simd.IndexOfMax<int>(a)); return; }
+        Assert.Equal(a.Max(), Simd.Max<int>(a));
+        Assert.Equal(a.Min(), Simd.Min<int>(a));
+        Assert.Equal(Array.IndexOf(a, a.Max()), Simd.IndexOfMax<int>(a));
+        var bytes = a.Select(x => (byte)(x + 50)).ToArray();
+        Assert.Equal(bytes.Max(), Simd.Max<byte>(bytes));
+    }
 }

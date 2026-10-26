@@ -54,7 +54,7 @@ public class VectorizeTests
     public void Numeric_pipelines_emit_vector_code()
     {
         var cs = AliceCompiler.Transpile("def f(xs : Array(Float64))\n  xs.map { |x| x * 1.5 }.select { |x| x > 10.0 }.sum\nend\n");
-        Assert.Contains("global::System.Numerics.Vector<double>", cs);
+        Assert.Contains("global::System.Runtime.Intrinsics.Vector256<double>", cs);
         Assert.Contains("ConditionalSelect", cs);
     }
 
@@ -63,5 +63,44 @@ public class VectorizeTests
     {
         var cs = AliceCompiler.Transpile("def f(xs : Array(Float64))\n  xs.sum { |x| Math.Sin(x) }\nend\n");
         Assert.DoesNotContain("Vector<", cs);
+    }
+
+    [Fact]
+    public void Pipelines_emit_explicit_width_tiers()
+    {
+        var cs = AliceCompiler.Transpile("def f(xs : Array(Float64))\n  xs.map { |x| x * 1.5 }.select { |x| x > 10.0 }.sum\nend\n");
+        Assert.Contains("Vector512.IsHardwareAccelerated", cs);
+        Assert.Contains("Vector256.IsHardwareAccelerated", cs);
+        Assert.Contains("Vector128.IsHardwareAccelerated", cs);
+        Assert.DoesNotContain("global::System.Numerics.Vector<", cs);
+    }
+
+    [Theory, MemberData(nameof(Lengths))]
+    public void Int_map_into_array_and_max_overlap_tail(string _, int n)
+    {
+        var map = Compile("def f(xs : Array(Int32))\n  xs.map { |x| x * 3 - 7 }\nend");
+        Assert.Equal(Ints(n).Select(x => x * 3 - 7).ToArray(), (int[])map.Invoke(null, [Ints(n)])!);
+        if (n == 0) return;
+        var max = Compile("def f(xs : Array(Int32))\n  xs.map { |x| x * 2 }.max\nend");
+        var xs = Ints(n); xs[^1] = 9999;
+        Assert.Equal(xs.Max(x => x * 2), max.Invoke(null, [xs]));
+    }
+
+    [Theory, MemberData(nameof(Lengths))]
+    public void Whole_array_reductions_call_simd_kernels(string _, int n)
+    {
+        var sum = Compile("def f(xs : Array(Int32))\n  xs.sum\nend");
+        Assert.Equal(Ints(n).Sum(), sum.Invoke(null, [Ints(n)]));
+        var dsum = Compile("def f(xs : Array(Float64))\n  xs.sum\nend");
+        Assert.Equal(Doubles(n).Sum(), (double)dsum.Invoke(null, [Doubles(n)])!, 6);
+        var max = Compile("def f(xs : Array(Int32))\n  xs.max\nend");
+        var min = Compile("def f(xs : Array(Float64))\n  xs.min\nend");
+        if (n == 0)
+        {
+            Assert.NotNull(Assert.Throws<TargetInvocationException>(() => max.Invoke(null, [Ints(0)])).InnerException);
+            return;
+        }
+        Assert.Equal(Ints(n).Max(), max.Invoke(null, [Ints(n)]));
+        Assert.Equal(Doubles(n).Min(), min.Invoke(null, [Doubles(n)]));
     }
 }

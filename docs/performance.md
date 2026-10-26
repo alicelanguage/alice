@@ -9,7 +9,7 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | literal block on `each/map/select/reject/sum/count/any?/all?/find/reduce/times/upto/downto/each_with_index` | inlined `for` loop, no delegate | `Lowerer.Iterators` | `AllocationTests.Inlined_chains_emit_no_lambdas` |
 | `map/select/reject` chain + sink | one fused loop, 0 bytes allocated | `Lowerer.Iterators` | `AllocationTests.Iterator_kernels_allocate_nothing` |
 | `map` over array | exact-size result array | `Lowerer.Iterators` | `AllocationTests.Map_over_array_preallocates_exact_size` |
-| numeric array pipeline (`+ - *`, compare, captured scalars) into `sum/count/max/min/map` | `Vector<T>` loop, `ConditionalSelect` for filters, scalar tail | `Lowerer.Vectorize` | `VectorizeTests.Numeric_pipelines_emit_vector_code` |
+| numeric array pipeline (`+ - *`, compare, captured scalars) into `sum/count/max/min/map` | explicit `Vector512`/`Vector256`/`Vector128` tiers (widest accelerated one that fits; folds at JIT/AOT, WASM keeps 128), `ConditionalSelect` for filters; `max/min/map` end with an overlapping final vector, `sum/count` with a scalar tail | `Lowerer.Vectorize` | `VectorizeTests.Numeric_pipelines_emit_vector_code` |
 | block with a non-vectorizable call (`Math.Sin`) | scalar loop | `Lowerer.Vectorize` | `VectorizeTests.Non_vectorizable_blocks_stay_scalar` |
 | pure pipeline over array, `n >= 65536` and >1 worker | chunked `Par.Reduce` / `Par.Range`; serial below threshold | `Lowerer.Parallel` | `ParallelizeTests.Large_pure_pipelines_emit_a_parallel_path` |
 | impure block (mutates captured local, I/O) | serial | `Lowerer.Parallel` | `ParallelizeTests.Impure_blocks_stay_serial` |
