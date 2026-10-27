@@ -1,0 +1,9 @@
+bend/*
+!bend/*.bend
+c/bench_*
+rust/target/
+csharp/out/
+csharp/bin/
+csharp/obj/
+alice/out/
+results.log
