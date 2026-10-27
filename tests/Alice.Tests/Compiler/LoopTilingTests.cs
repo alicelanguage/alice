@@ -190,8 +190,10 @@ public class LoopTilingTests
                 a2[i] = a1[i]
                 i += 1
               end
-              matmul(a1, a1, a1, n)
-              naive(a2, a2, a2, n)
+              same = a1   # AL0217 rejects matmul(a1, a1, a1); the runtime guard still sees one array
+              matmul(a1, a1, same, n)
+              same2 = a2
+              naive(a2, a2, same2, n)
               i = 0
               while i < n * n
                 ok = false if System.BitConverter.DoubleToInt64Bits(a1[i]) != System.BitConverter.DoubleToInt64Bits(a2[i])

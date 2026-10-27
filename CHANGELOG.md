@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.13.2 - unreleased
+## 0.14.0 - 2026-10-27
+
+- Telemetry ships disabled in this release: `alice` never asks, records or sends, and `alice telemetry` only reports
+  that it is disabled. The opt-in machinery below stays in the code behind `TelemetryPolicy.Available`.
 
 - Higher-order functions are specialized per lambda literal (ADR 0026): `apply(xs) { |x| x * k }` calls a clone of
   `apply` whose `yield` is a direct call of the block body, with `k` passed as a parameter. No delegate, no closure
@@ -31,7 +34,7 @@
   Iris Xe (OpenCL) 18 ms -> 4-6 ms. The device accumulator is cached, so a launch allocates no `new T[1]` or buffer.
   Write-only arrays are not uploaded (only the launch's range comes back), read-only arrays are not copied back, and
   a region skips the upload of an array its first loop overwrites whole.
-- Opt-in CLI telemetry (ADR 0031, docs/telemetry.md): off by default, asked once on an interactive terminal (never in
+- Opt-in CLI telemetry, disabled for now (ADR 0031, docs/telemetry.md): off by default, asked once on an interactive terminal (never in
   CI), and after `alice self update` only when no answer is stored. `alice telemetry on|off|status|show|reset|perf`;
   `ALICE_TELEMETRY_OPTOUT=1` / `DO_NOT_TRACK=1` always win. Command name, versions, OS/arch, exit code, duration,
   sanitized crash stacks and error-code counts; never source, paths or names, and never inside compiled programs. The

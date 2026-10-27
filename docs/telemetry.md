@@ -1,5 +1,7 @@
 # Telemetry
 
+> Disabled in 0.14.0: the CLI never asks, records or sends. `alice telemetry` reports that it is disabled.
+
 The `alice` CLI can send anonymous usage data, **only if you say yes**. It is off by default. Programs you compile with
 Alice never contain telemetry and never send anything; this concerns the CLI and compiler tooling only (ADR 0031).
 

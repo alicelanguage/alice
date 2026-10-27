@@ -11,6 +11,11 @@ public static class TelemetryCommand
         var dir = TelemetrySession.Dir;
         var c = ConsentStore.Load(dir);
         Func<string, string?> env = Environment.GetEnvironmentVariable;
+        if (!TelemetryPolicy.Available)
+        {
+            Ui.Ui.Status("Telemetry", "disabled in this release (nothing is asked, recorded or sent)");
+            return 0;
+        }
         switch (a.FirstOrDefault())
         {
             case "on": ConsentStore.Save(dir, c.With(ConsentState.Granted)); Ui.Ui.Status("Telemetry", "on (thank you)"); break;

@@ -16,6 +16,13 @@ public class TelemetryTests : IDisposable
         k => vars.FirstOrDefault(v => v.Item1 == k).Item2;
 
     [Fact]
+    public void ShippedDisabledNeverAsks()
+    {
+        Assert.False(TelemetryPolicy.Available);
+        Assert.Equal(ConsentState.Unset, TelemetrySession.MaybeAsk());
+    }
+
+    [Fact]
     public void MissingFileIsUnsetAndNothingIsSent()
     {
         var c = ConsentStore.Load(dir);

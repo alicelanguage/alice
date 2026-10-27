@@ -42,7 +42,7 @@ public static class TelemetrySession
     }
 
     /// <summary>Asks the one-paragraph question (TTY only, never in CI); the answer is stored and not asked again.</summary>
-    public static ConsentState MaybeAsk() =>
+    public static ConsentState MaybeAsk() => !TelemetryPolicy.Available ? ConsentState.Unset :
         TelemetryPolicy.AfterUpdate(Dir, Env, Interactive, () =>
         {
             AnsiConsole.WriteLine();
@@ -53,6 +53,7 @@ public static class TelemetrySession
     /// <summary>End of a command: enqueue and start a short, bounded flush. Never throws, never changes the exit code.</summary>
     public static void Finish(IReadOnlyList<string> args, int exitCode)
     {
+        if (!TelemetryPolicy.Available) return;
         try
         {
             var c = ConsentStore.Load(Dir);

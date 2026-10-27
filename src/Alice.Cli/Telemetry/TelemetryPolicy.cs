@@ -6,6 +6,9 @@ public static class TelemetryPolicy
     /// <summary>Bump when the set of collected fields changes; older grants then stop sending until re-asked.</summary>
     public const int PolicyVersion = 1;
 
+    /// <summary>Telemetry is shipped disabled until a collector is deployed: never asks, records or sends.</summary>
+    public static readonly bool Available = false;
+
     public const string Prompt =
         "Help improve Alice? With your permission the alice CLI sends anonymous usage data: the command name (never its " +
         "arguments), Alice/.NET version, OS and architecture, exit code, duration, the type and sanitized stack of compiler " +
