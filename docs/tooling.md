@@ -173,7 +173,7 @@ Restores use `dotnet restore`, so packages live in the standard .NET global cach
 | `alice install --tool <name>` | install/update a .NET global tool |
 | `alice cache [--clear]` | show or clear the shared package cache |
 | `alice pack [dir] [-o out]` | build a `.nupkg` (lib or tool) into `bin/package/` |
-| `alice publish [dir] [--source url\|dir] [--api-key k] [--dry-run]` | pack and push; default source nuget.org, key from `--api-key` or `NUGET_API_KEY` |
+| `alice publish [dir] [--source url\|dir] [--api-key k] [--dry-run] [--dotnet-push]` | pack and push; default source nuget.org, key from `NUGET_API_KEY` (preferred: an argument is visible in the process list) or `--api-key`. Feeds are pushed to by alice over https with the key in a header; an existing version is skipped. `--dotnet-push` uses `dotnet nuget push`, which takes the key as an argument |
 
 ### Publishing
 

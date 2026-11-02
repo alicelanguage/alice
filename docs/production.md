@@ -53,7 +53,7 @@ Known limits of the toolchain and supply chain; see [SECURITY.md](../SECURITY.md
 | Limit | Impact | Workaround |
 |---|---|---|
 | Release archives are checked by SHA-256 from the same release, not signed | integrity against corruption, no authenticity if the release itself is replaced | install a pinned version over https; compare the archive with a checksum obtained separately |
-| `alice publish` passes the API key to `dotnet nuget push` as an argument | other local users can read it from the process list while the push runs | publish from CI or a single-user machine; use a short-lived key scoped to the package |
+| `alice publish --api-key KEY` and `--dotnet-push` put the key in a process's arguments | other local users can read it from the process list while the command runs | set `NUGET_API_KEY` and use the default push; use a short-lived key scoped to the package |
 | `@[Native]` builds look up `clang`/`cc`/`gcc` by bare name | in an untrusted checkout a compiler planted in the working directory can run | do not build `@[Native]` code from untrusted checkouts |
 | Building runs repo content (MSBuild files, NuGet build targets, analyzers, source generators) | `alice build`/`run`/`test` in an untrusted checkout execute its code, as `dotnet build` does | build untrusted projects in a container or VM |
 | `obj/refs.txt` is read by the LSP to load reference metadata | repo-controlled paths are opened by the editor server (metadata only) | open untrusted checkouts without the Alice extension |
