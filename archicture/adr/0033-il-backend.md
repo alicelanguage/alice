@@ -31,6 +31,18 @@ Decision:
 - **The binder owns type checking before IL becomes the default**: definite assignment, nullable flow, overloads and
   conversions, LINQ generic inference, and `alice check` without Roslyn. The differential harness counts a Roslyn error
   on the C# path that the IL path accepts as a missing binder diagnostic.
+- **IL emission quality targets.** The backend aims at IL as good as or better than hand-written C# through Roslyn
+  (stream F of `docs/ROADMAP-1.0.md`: within 3% on the suite, ILVerify clean, PDB, NativeAOT, deterministic):
+  - peephole pass: `dup`/`stloc`/`ldloc` elimination, redundant load/store and branch-to-branch chaining;
+  - `tail.` calls where legal (no byref escapes, matching signatures), for self and mutual tail recursion;
+  - `readonly`/`in` ref locals and by-ref passing for large structs instead of copies;
+  - proven-in-bounds indexing (proofs, loop bounds) as `ldelema` + `Unsafe.Add` patterns without bounds checks;
+  - `[SkipLocalsInit]` on emitted modules, `MethodImplOptions.AggressiveInlining` on small leaf and accessor methods;
+  - `constrained.` calls for interface/virtual calls on generic type parameters (no boxing);
+  - deterministic MVID and output (ordered metadata tables, content-hashed MVID).
+- **Why an own backend.** The backend may emit IL that the C# compiler cannot express: `tail.` and `no.` prefixes,
+  `ldelema` without bounds checks under proofs, custom modifiers (modreq/modopt), and other valid IL with no C#
+  spelling. Going through C# would cap Alice at what C# can say; that is the reason this backend exists.
 - Staged path (a gate must pass before the next stage starts):
 
 | Stage | Deliverable | Gate |
