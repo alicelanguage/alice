@@ -6,6 +6,7 @@ Path: `src/Alice.Runtime`. Pure C#. Depends on nothing in-repo.
 | `Simd/` | `Vector<T>` kernels: Sum, Dot, Add, Multiply, Scale, Min, Max |
 | `Sparse/` | `CsrMatrix<T>`, `SparseVector<T>` |
 | `Parallel/` | `Par`: chunked For, Map, Sum, Reduce, Sort; `ForkJob`/`ParJob` for fork/join (ADR 0015) |
+| `Cm/` | Connection-Machine primitives (ADR 0039): chunked SIMD scan, segmented scan/reduce, combine (histogram, scatter-add), compaction, permutation, LSD radix `SortByKey`; `KernelPool` dispatch, 0 allocations, chunking fixed by `n` |
 | `Math/` | `AMath`: MatMul (blocked, parallel, SIMD), Mean, Variance, Norm, Axpy |
 | `Concurrency/` | `Channel<T>`, `Actor<T>`, `Mutex<T>`, `Atomic` |
 | `Memory/` | ownership pools: `Own`, `OwnList`, `OwnDict`, `ArrayGrowth` (ADR 0016) |

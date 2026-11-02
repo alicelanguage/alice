@@ -779,6 +779,7 @@ Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`
 | `AMath` | MatMul, Mean, Variance, Norm, Axpy |
 | `CsrMatrix<T>`, `SparseVector<T>` | sparse linear algebra |
 | `Nn`, `Tensor<T>`, `QuantizedMatrix`, `MappedFile` | tensor kernels: dot, GEMV/GEMM, softmax, norms, activations; aligned strided tensors; int8/int4 blocks; mapped files (ADR 0030) |
+| `Cm` | Connection-Machine primitives (ADR 0039): `InclusiveScan`/`ExclusiveScan`/`Reduce` (`CmOp` `+ * & \| ^ min max`), `SegmentedScan`/`SegmentedReduce`, `Histogram`, `ScatterAdd`, `Compact`, `Permute`, `SortByKey`; chunked by length only, so floats are bit-identical for any worker count |
 | `Prelude` | Ruby helpers: `puts`, `each`, `map`, `sum`, `size`, `even?`, `to_s`, `to_i`, `send`, ... |
 
 ### Rules and proofs
@@ -816,6 +817,7 @@ Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
 | Hash | `each each_pair map select reject fetch dig merge key? has_key? value? keys values invert to_a min_by max_by sort_by transform_values transform_keys group_by sum count any? all?` (blocks get `\|k, v\|`) |
 | Int / Float | `gcd lcm digits divmod clamp between? round(n) floor(n) ceil(n) abs even? odd? zero? positive? negative? times upto downto step(limit, by) to_s(base) sqrt cbrt log log2 log10 truncate nan? infinite? finite? fdiv sign tdiv remainder popcount leading_zeros_count trailing_zeros_count bit_length to_i8..to_u64 to_i32 to_f64 to_f32 (checked) to_X! (wrapping)` |
 | Range | Enumerable methods plus `step size include? cover? to_a sum` |
+| Array (CM, parallel) | `prefix_sum` `scan{\|a,b\|}` (associative block; one call per element, slower than `prefix_sum`) `segmented_sum(flags)` (one sum per segment) `segmented_prefix_sum(flags)` `histogram(k)` (Int32/UInt32 keys in `0...k`) `compact{\|x\| pred}` `scatter_add(idx, vals)` / `scatter_add(target, idx, vals)` (updates the target) `permute(perm)` (`out[perm[i]] = xs[i]`, checked) `sort_by_key(vals)` (stable radix, returns `{keys, values}`). Integers exact; floats bit-identical for any thread count, may differ from a serial loop in the last bits; blocks must be pure |
 | Free functions | `puts print p gets rand exit format(fmt, ...) read_file write_file file_exists? read_lines sleep(sec) now env(name) to_json(obj) parse_json(text)` |
 
 `format`: `%d %i %s %f %.Nf %e %x %X %o %b %c %%`, flags `-0+ `, width. Tests: `Runtime/StdlibTests` (covers a subset of each row).
