@@ -73,7 +73,8 @@ out = ["# Bend 2 runtime suite: results", "",
 
 if (R / "startup.json").exists():
     st = load(R / "startup.json")
-    out += [f"Alice startup floor (`bfs 0`, one maze): serial {ms(st['alice/1'][0])} ms, parallel {ms(st['alice/N'][0])} ms.", ""]
+    first = (R / "startup.txt").read_text().strip() if (R / "startup.txt").exists() else "bfs"
+    out += [f"Alice startup floor (`{first} 0`, smallest input): serial {ms(st['alice/1'][0])} ms, parallel {ms(st['alice/N'][0])} ms.", ""]
 
 for mode, title, bk in (("1", "Serial, 1 core", "SEQ"), ("N", f"Parallel, {cores} cores", "PAR")):
     out += [f"## {title}", "",
