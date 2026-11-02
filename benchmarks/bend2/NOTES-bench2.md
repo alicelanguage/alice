@@ -2,8 +2,10 @@
 
 Worker bench2. Eight workloads from `bend/bench/runtime` (Bend 2 repo, pinned results in
 `_pin_/apple_m4_max.txt`) ported to Alice: nbody, queens, raytrace, symreg, terrain, tree-bitonic, tree-matmul,
-tree-radix. `c/<name>.c` is an unmodified copy of Bend's `main.c`. `alice/<name>.al` is the fastest Alice shape I
-found. `alice/<name>-adt.al` is the literal sum-type (ADT) shape, kept wherever a flat shape won.
+tree-radix. `c/<name>.c` is an unmodified copy of Bend's `main.c`. `alice/<name>.al` is the 1:1 port (the Workstream A
+gate, ADR 0039). `idiomatic/<name>.al` is the fastest Alice shape found, for symreg and the three tree workloads.
+Below, "<name>-adt" means the 1:1 port `alice/<name>.al` and plain "<name>" means the shape in `idiomatic/`; the
+shape comparison is the reason for the split.
 
 ## Setup
 
@@ -131,8 +133,8 @@ Every repro below was compiled with the worktree compiler (`dotnet src/Alice.Cli
    t = T::N(T::L(2), a)    # error[AL0101]: expected type (found '2')
    ```
    `M::Node(M::Free, r)` fails the same way (`found 'r'`). It looks like `X::Y(A::B, ...)` gets parsed as a generic
-   type application. Workaround: bind the inner constructor to a local first (tree-bitonic-adt.al `warp_leaf`,
-   `warp_zip`; tree-radix-adt.al `radix`).
+   type application. Workaround: bind the inner constructor to a local first (alice/tree-bitonic.al `warp_leaf`,
+   `warp_zip`; alice/tree-radix.al `radix`).
 
 2. **A local initialised with a nullary variant gets the variant type, not the enum type.**
    ```alice
@@ -144,7 +146,7 @@ Every repro below was compiled with the worktree compiler (`dotnet src/Alice.Cli
    f : M = M::Free
    r = M::Node(r, f)       # error[AL0304]: type mismatch: expected Free, got Node
    ```
-   Workaround: annotate (`r : Map = Map::Busy`, tree-radix-adt.al).
+   Workaround: annotate (`r : Map = Map::Busy`, alice/tree-radix.al).
 
 3. **Reading a top-level constant silently turns off fork/join.**
    ```alice

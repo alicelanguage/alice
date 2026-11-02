@@ -1,9 +1,18 @@
 # symreg: Bend 2 runtime suite (bench/runtime/symreg), 1:1 with main.c / main.bend.
+# Sum-type (ADT) 1:1 port (Workstream A gate, ADR 0039); the fastest shape is idiomatic/symreg.al.
 # Each of 2^18 candidates materializes a depth-5 expression AST (63 nodes) from the
 # xorshift32 stream, the recursive interpreter evaluates it on PTS points, a size
 # penalty is added, the tournament folds up the fork tree and the winner hill-climbs.
-# Flat shape: the full depth-5 AST lives in a 63-slot array. Big (18, 110): 2383953211.
-# Sum-type (ADT) shape of this workload: symreg-adt.al.
+# Expr is a sum type (boxed nodes, as Bend's Expr). Big (18, 110): 2383953211.
+enum Expr
+  Var
+  Lit(v : UInt32)
+  Add(a : Expr, b : Expr)
+  Sub(a : Expr, b : Expr)
+  Mul(a : Expr, b : Expr)
+  Xor(a : Expr, b : Expr)
+end
+
 record struct Sel(fit : UInt32, seed : UInt32, sum : UInt32)
 
 def word_prng(x : UInt32) : UInt32
@@ -12,52 +21,62 @@ def word_prng(x : UInt32) : UInt32
   d ^ (d << 5)
 end
 
-# The candidate AST is always a full depth-5 tree, so it lives in a fresh 63-slot array in
-# heap order (children of k at 2k+1, 2k+2): slots 0..30 hold the operator (h % 4), slots
-# 31..62 a leaf (256 = Var, else the literal). Generation fills it in that order from the
-# same hash stream; eval and size are the same recursive interpreters over slot indices.
-def expr_eval(e : Array(UInt32), k : Int32, x : UInt32) : UInt32
-  v = e[k]
-  return v == 256_u32 ? x : v if k >= 31
-  a = expr_eval(e, 2 * k + 1, x)
-  b = expr_eval(e, 2 * k + 2, x)
-  case v
-  when 0_u32 then a &+ b
-  when 1_u32 then a &- b
-  when 2_u32 then a &* b
-  else a ^ b
+def expr_node(o : UInt32, a : Expr, b : Expr) : Expr
+  case o
+  when 0_u32 then Expr::Add(a, b)
+  when 1_u32 then Expr::Sub(a, b)
+  when 2_u32 then Expr::Mul(a, b)
+  else Expr::Xor(a, b)
   end
 end
 
-def expr_size(e : Array(UInt32), k : Int32) : UInt32
-  return 1_u32 if k >= 31
-  1_u32 &+ (expr_size(e, 2 * k + 1) &+ expr_size(e, 2 * k + 2))
+def expr_gen(d : UInt32, h : UInt32) : Expr
+  if d == 0_u32
+    return ((h >> 8) & 1_u32) == 0_u32 ? Expr::Var : Expr::Lit(h & 255_u32)
+  end
+  a = expr_gen(d &- 1_u32, word_prng(h ^ 2654435761_u32))
+  b = expr_gen(d &- 1_u32, word_prng(h &+ 340573321_u32))
+  expr_node(h % 4_u32, a, b)
 end
 
-def candidate_evaluate(s : UInt32, pts : UInt32) : Sel
-  e = Array(UInt32).new(63)
-  hs = Array(UInt32).new(63)
-  hs[0] = word_prng(s)
-  for k in 0...63
-    h = hs[k]
-    if k < 31
-      e[k] = h % 4_u32
-      hs[2 * k + 1] = word_prng(h ^ 2654435761_u32)
-      hs[2 * k + 2] = word_prng(h &+ 340573321_u32)
-    else
-      e[k] = ((h >> 8) & 1_u32) == 0_u32 ? 256_u32 : h & 255_u32
-    end
+def expr_eval(e : Expr, x : UInt32) : UInt32
+  case e
+  when Expr::Var then x
+  when Expr::Lit(v) then v
+  when Expr::Add(a, b) then expr_eval(a, x) &+ expr_eval(b, x)
+  when Expr::Sub(a, b) then expr_eval(a, x) &- expr_eval(b, x)
+  when Expr::Mul(a, b) then expr_eval(a, x) &* expr_eval(b, x)
+  when Expr::Xor(a, b) then expr_eval(a, x) ^ expr_eval(b, x)
   end
-  acc = 0_u32
-  j = pts
+end
+
+def expr_size(e : Expr) : UInt32
+  case e
+  when Expr::Var then 1_u32
+  when Expr::Lit(v) then 1_u32
+  when Expr::Add(a, b) then 1_u32 &+ (expr_size(a) &+ expr_size(b))
+  when Expr::Sub(a, b) then 1_u32 &+ (expr_size(a) &+ expr_size(b))
+  when Expr::Mul(a, b) then 1_u32 &+ (expr_size(a) &+ expr_size(b))
+  when Expr::Xor(a, b) then 1_u32 &+ (expr_size(a) &+ expr_size(b))
+  end
+end
+
+def fitness_loop(j0 : UInt32, e : Expr, acc0 : UInt32) : UInt32
+  j = j0
+  acc = acc0
   while j != 0_u32
     x = j &- 1_u32
-    p = expr_eval(e, 0, x)
+    p = expr_eval(e, x)
     t = x &* x &+ (3_u32 &* x &+ 7_u32)
     acc = acc &+ (p < t ? t &- p : p &- t)
     j = x
   end
-  f = acc &+ expr_size(e, 0) &* 8_u32
+  acc &+ expr_size(e) &* 8_u32
+end
+
+def candidate_evaluate(s : UInt32, pts : UInt32) : Sel
+  t = expr_gen(5_u32, word_prng(s))
+  f = fitness_loop(pts, t, 0_u32)
   Sel.new(f, s, f ^ (s &* 2654435761_u32))
 end
 

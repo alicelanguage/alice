@@ -115,6 +115,16 @@ for n in names:
     out.append(f"| {n} | {a1:.2f} | {b1:.2f} | {aN:.3f} | {bN:.3f} | {'Alice ahead' if a1 < b1 else 'Bend ahead'} | "
                f"{'Alice ahead' if aN < bN else 'Bend ahead'} |")
 
+idio = [n for n in names if "idiom/1" in data[n]]
+if idio:
+    out += ["", "## Idiomatic shape (idiomatic/<name>.al, ADR 0039)", "",
+            "| workload | serial ms | serial / 1:1 port | parallel ms | parallel / 1:1 port | RSS serial |",
+            "|---|---:|---:|---:|---:|---:|"]
+    for n in idio:
+        m = data[n]
+        i1, iN = m["idiom/1"], m["idiom/N"]
+        out.append(f"| {n} | {ms(i1[0])} | {i1[0] / m['alice/1'][0]:.2f} | {ms(iN[0])} | {iN[0] / m['alice/N'][0]:.2f} | {mb(i1[2])} |")
+
 out += ["", "## Checksums", "", "| workload | Alice serial | Alice parallel | C serial | C parallel | match |", "|---|---|---|---|---|---|"]
 for n in names:
     s = sums.get(n, {})
