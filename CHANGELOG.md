@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Docs: ADR 0040 (paradigms in IL, accepted as direction): how AirToIl lowers fork/join, affine arenas, CM primitives and dataflow, with the AirVerifier rules they add; IL-lowering paragraphs in ADRs 0015, 0037, 0038, 0039.
 - Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
 - AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
   build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,

@@ -120,3 +120,7 @@ propagation, 0 allocations per item, >= 50 M items/s on a 3-stage integer pipeli
 `tests/Alice.Tests/Compiler/DataflowTests.cs` (AL0224-AL0226, fusion of pure chains, inferred `Channel`/`spawn`
 networks, output bit-identical across `DOTNET_PROCESSOR_COUNT=1` and 32, `stream def`); `benchmarks/dataflow` beats
 the `Task.Run` form 3x and matches the hand-written C# pipeline.
+
+IL lowering (ADR 0040, section 4): stage bodies are static methods `(ref TState, ReadOnlySpan<TIn>, ref
+RingWriter<TOut>)` registered through `ldftn` on the runtime function-pointer overloads; items are read by `ref
+readonly`, no per-item delegate; the writer fast path and the publish (`volatile.` release store) are emitted inline.

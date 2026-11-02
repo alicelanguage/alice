@@ -117,3 +117,8 @@ Tests: `tests/Alice.Tests/Runtime/CmTests.cs` (each kernel against a serial refe
 serial fold; 0 allocations; prefix_sum of 2^26 Int32 >= 8 GB/s on the forge); `tests/Alice.Tests/Compiler/CmTests.cs`
 (the four inferred shapes, AL0227-AL0229, declined look-alike loops); `GpuLoopTests` exact Int32 scan and histogram on
 the CPU accelerator; histogram port above Bend PAR-CPU, kmeans within 1.3x of C serial.
+
+IL lowering (ADR 0040, section 3): library shapes are direct calls into `Alice.Runtime.Cm`; fused shapes get a static
+kernel `void(void*, int, int)` passed by `ldftn` to `KernelPool.Run` (managed function pointer, no delegate), with
+explicit `Vector512`/`Vector256` tiers guarded by JIT-constant checks and a `localloc` tile under `SkipLocalsInit`;
+these kernels are the only allowlisted ILVerify findings.
