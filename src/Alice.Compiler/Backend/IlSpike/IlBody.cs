@@ -285,6 +285,7 @@ public sealed class IlBody
 
     MExpr? First(MExpr e)
     {
+        e = Lower(e);
         switch (e)
         {
             case MCode c: return TryLiteral(c.Text, out _, out _) ? null : c;
@@ -396,6 +397,7 @@ public sealed class IlBody
 
     void Decl(MDecl d)
     {
+        if (d.Init != null) d.Init = Lower(d.Init);
         if (opt.StackArrays && d.Init is MCall { Name: "Rent", Target: MCode tc, Args: [MCode len] } && r.TryType(tc.Text) is { IsGenericType: true } ot
             && ot.GetGenericTypeDefinition() == typeof(Alice.Runtime.Own<>) && TryLiteral(len.Text, out var lt, out var lv) && lt == typeof(int))
         {
@@ -521,6 +523,7 @@ public sealed class IlBody
             Assign(u.E, u.Op == AirUnOp.Inc ? "+=" : "-=", new MCode("1"));
             return;
         }
+        e = Lower(e);
         if (e is MCall { Name: "Release", Args: [MCode rel] } && FindLocal(rel.Text) is { } rl && stackArrays.ContainsKey(rl)) return;   // (c) stack buffer: nothing to return
         var t = Expr(e, null);
         if (t != typeof(void)) il.Emit(OpCodes.Pop);
@@ -660,8 +663,10 @@ public sealed class IlBody
 
     Type Raw(MExpr e)
     {
+        e = Lower(e);
         switch (e)
         {
+            case MCode c when Leaf(c) is { } lt: return lt;
             case MCode c: return Code(c.Text);
             case MBinary b: return Binary(b);
             case MUnary u: return Unary(u);
@@ -683,6 +688,67 @@ public sealed class IlBody
         }
         throw new SpikeUnsupported(e.GetType().Name);
     }
+
+    /// <summary>
+    /// Typed AIR nodes (D0.4-D0.7) as the spike's core forms: ownership and loop-shape nodes become the call /
+    /// member / arithmetic they print as. Read from their fields, not from their C# spelling.
+    /// </summary>
+    MExpr Lower(MExpr e) => e switch
+    {
+        AirRent rn => new MCall { Target = new AirTypeRef(new AirType.ClrRef(rn.PoolCs, null, [])), Name = "Rent", Args = rn.Args },
+        AirRelease rl => new MCall { Target = new AirTypeRef(new AirType.ClrRef(rl.PoolCs, null, [])), Name = "Release", Args = [rl.Target] },
+        AirLength ln => new MMember { Target = ln.Target, Name = ln.Member },
+        AirArrayLength al => new MMember { Target = new AirLocalRef(al.Array), Name = "Length" },
+        AirTripCount tc => tc.Inclusive ? new MBinary { Op = AirBinOp.Add, L = new MBinary { Op = AirBinOp.Sub, L = tc.End, R = tc.Start }, R = AirConst.Int(1) }
+                                        : new MBinary { Op = AirBinOp.Sub, L = tc.End, R = tc.Start },
+        AirOffset of => new MBinary { Op = AirBinOp.Add, L = of.Base, R = of.Offset },
+        _ => e,
+    };
+
+    /// <summary>Typed leaves the spike reads by their fields; null for leaves handled by name/literal (AirLocalRef,
+    /// AirParamRef and AirConst carry the same name/literal in their fields as in Text).</summary>
+    Type? Leaf(MCode c)
+    {
+        switch (c)
+        {
+            case AirLocalRef { Narrowed: true }: throw new SpikeUnsupported("AirLocalRef:narrowed");
+            // unresolved by the binder (ADR 0032 says reject); Main's ARGV arrives this way, so names of parameters/locals and
+            // CLR static paths are still accepted, anything else is reported as AirName
+            case AirName n: return FindLocalOrArg(n.Path) || StaticPath(n.Path) != null ? Code(n.Path) : throw new SpikeUnsupported("AirName", n.Path);
+            case AirRawCs: throw new SpikeUnsupported("AirRawCs", c.Text);
+            case AirThis or AirBase: throw new SpikeUnsupported("AirThis");
+            case AirFieldRef f: throw new SpikeUnsupported("AirFieldRef", f.Name);
+            case AirNull: il.Emit(OpCodes.Ldnull); return typeof(object);
+            case AirDefault { Type: { } dt }:
+                {
+                    var t = AirClr(dt);
+                    var tmp = il.DeclareLocal(t);
+                    il.Emit(OpCodes.Ldloca, tmp);
+                    il.Emit(OpCodes.Initobj, t);
+                    il.Emit(OpCodes.Ldloc, tmp);
+                    return t;
+                }
+            case AirSizeOf so: il.Emit(OpCodes.Sizeof, AirClr(so.Of)); return typeof(int);
+            case AirLocalRef lr: return Code(lr.Name);
+            case AirParamRef pr: return Code(pr.Name);
+            case AirConst k: return Code(k.Kind == AirConstKind.String ? "\"" + k.Literal + "\"" : k.Literal);
+        }
+        return null;
+    }
+
+    Type? LeafType(MCode c) => c switch
+    {
+        AirLocalRef { Narrowed: false } lr => TypeOfName(lr.Name),
+        AirParamRef pr => TypeOfName(pr.Name),
+        AirDefault { Type: { } dt } => AirClr(dt),
+        AirSizeOf => typeof(int),
+        AirNull => typeof(object),
+        _ => null,
+    };
+
+    /// <summary>AirType -> CLR type: the reflection type when the AirType carries one, else its C# spelling.</summary>
+    Type AirClr(AirType t) => t is AirType.ClrRef { Clr: { IsGenericTypeDefinition: false } clr, Nullable: false } ? clr
+        : t is AirType.Prim { Kind: var k, Nullable: false } && k != PrimKind.Null ? r.Type(t.ToCs()) : r.Type(t.ToCs());
 
     Type Code(string text)
     {
@@ -1196,6 +1262,8 @@ public sealed class IlBody
 
     public Type Infer(MExpr e)
     {
+        e = Lower(e);
+        if (e is MCode tl && LeafType(tl) is { } ltt) return ltt;
         switch (e)
         {
             case MCode c:
