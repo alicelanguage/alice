@@ -14,6 +14,7 @@ Path: `src/Alice.Runtime`. Pure C#. Depends on nothing in-repo.
 | `Digest/` | hashing helpers |
 | `Concurrency/` | `Channel<T>`, `Mutex<T>`, `Atomic` |
 | `Actors/` | `ProcessCore` (mailbox scheduling, links, monitors, restart), `Actor<T>`, `Actor<S, T>`, `Supervisor`, `ExitReason` (ADR 0028) |
+| `Dataflow/` | static dataflow networks (ADR 0038, P3.1): `Ring<T>` (bounded SPSC ring, padded cached head/tail), `RingWriter<T>` (batch publish of 64), `Graph`/`Pipe<T>` (Source -> Stage* -> Sink, `Run` rethrows the first exception), `Replicate` (k workers, sequence-numbered batches, ordered reorder window or `ordered: false`); stages are `IThreadPoolWorkItem`s woken with one CAS, 0 bytes per item |
 | `Prelude/` | Ruby helpers (`name?` -> `name_q`), formatting, IO, `Dynamic` (`send`, `respond_to?`) |
 
 Invariants: no native code of its own (only user-opted `@[Native]`/`lib` calls), no compiler dependency.

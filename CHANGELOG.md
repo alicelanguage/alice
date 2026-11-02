@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Runtime: `Alice.Runtime` dataflow networks (`Dataflow/`, ADR 0038 P3.1): bounded SPSC `Ring<T>`, `Graph` with
+  `Source`/`Stage`/`Replicate`/`Sink` on the thread pool (backpressure, completion, first exception rethrown at `Run`),
+  ordered or unordered replicated stages, 0 bytes per item; `benchmarks/dataflow` compares it with Task.Run + Channels.
 - Security: `alice publish` pushes to NuGet feeds itself over https with the API key in a request header instead of
   a `dotnet nuget push` argument; `--dotnet-push` keeps the old path.
 - Telemetry docs: https-only endpoints and `ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`.
