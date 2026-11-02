@@ -6,6 +6,7 @@ using Alice.Cli.Projects;
 namespace Alice.Tests.Tooling;
 
 /// <summary>`alice publish` pushes over HTTPS itself: the API key goes in a header, never on a command line.</summary>
+[Collection("console")]   // switches the CLI language
 public class PublishPushTests : IDisposable
 {
     readonly string dir = Path.Combine(Path.GetTempPath(), "alice-push-" + Guid.NewGuid().ToString("N"));
@@ -100,5 +101,28 @@ public class PublishPushTests : IDisposable
     {
         var e = await Assert.ThrowsAsync<NuGetPush.PushException>(() => NuGetPush.PushAsync(source, "k", Package(), CancellationToken.None));
         Assert.Contains("https", e.Message);
+    }
+
+    [Theory]
+    [InlineData("pt")]
+    [InlineData("es")]
+    public async Task Push_messages_are_translated(string lang)
+    {
+        string[] keys = ["skipped", "publish.exists", "hint.publish.dotnet", "push.https", "push.status", "hint.push.auth",
+                         "push.redirect", "push.unreachable", "push.timeout", "push.no.index", "push.no.publish"];
+        Alice.Cli.Localization.Strings.Use("en");
+        var en = keys.Select(k => Alice.Cli.Localization.Strings.T(k)).ToList();
+        try
+        {
+            Alice.Cli.Localization.Strings.Use(lang);
+            for (int i = 0; i < keys.Length; i++)
+            {
+                Assert.NotEqual(keys[i], en[i]);
+                Assert.NotEqual(en[i], Alice.Cli.Localization.Strings.T(keys[i]));
+            }
+            var e = await Assert.ThrowsAsync<NuGetPush.PushException>(() => NuGetPush.PushAsync("http://feed.example/v3/index.json", "k", Package(), CancellationToken.None));
+            Assert.Equal(Alice.Cli.Localization.Strings.T("push.https", "http://feed.example/v3/index.json"), e.Message);
+        }
+        finally { Alice.Cli.Localization.Strings.Use("en"); }
     }
 }
