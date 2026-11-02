@@ -50,6 +50,8 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 | `{"a" => 1}` | `Hash(String, Int32)` |
 | `0...n` / `1..n` | range (exclusive / inclusive) |
 | `xs[1..]`, `xs[..2]`, `xs[...2]` | open index range: `xs[1..-1]`, `xs[0..2]`, `xs[0...2]` |
+| `xs[1..3]`, `s[1...3]`, `s[1, 3]` | slice of an Array, List or String (a new Array/List/String); negative bounds count from the end; a start past the end gives an empty slice (Ruby: `nil`) |
+| `xs[-1]` | literal negative index on an Array, List or String counts from the end (`xs[xs.size - 1]`); a computed negative index (`xs[i]`, `i < 0`) raises `IndexOutOfRangeException`, as in Crystal: counting from the end at run time would add a sign check to every index |
 | `(1..)` | endless range, counts up lazily (to `Int32::MAX`) |
 | `when 4..`, `in ..3` | open range in a pattern (bounded by `Int32::MIN`/`MAX`); `..b` elsewhere is an error |
 | `%w[a b]` / `%i[a b]` | `Array(String)` of words / symbols; also `%w{}`, `%w()`, `%w<>`, `%w\|\|` |
@@ -104,7 +106,8 @@ puts s.Length      # error CS8602
 Conditions use Ruby truthiness: only `nil` and `false` are falsy, so `if s`, `unless s`, `while s`, `s ? a : b`
 and `!s` are nil checks on a nullable. Inside `if n`, and after a guard clause (`return unless n`, `break unless n`,
 `next unless n`, `raise ... unless n`), a nullable number such as `n : Int32?` reads as `Int32` (narrowing stops
-where the branch reassigns `n`). An assignment can be the condition, as in Ruby:
+where the branch reassigns `n`). A .NET generic method whose result is `T?` (`JsonSerializer.Deserialize<Array(Tea)>(text)`)
+returns a nullable, checked the same way (`if loaded`, `loaded || fallback`). An assignment can be the condition, as in Ruby:
 
 ```crystal
 if user = find(id)        # user : User? here, non-nil inside the branch
@@ -465,7 +468,7 @@ end
 | `getter a, b : Int32` | several at once (without a type: inferred from `@a = ...`) |
 | `getter? ok : Bool` / `property? ok : Bool` | reader `ok?` (property also writes `a.ok = v`) |
 | `getter! v : T` / `property! v : T` | field `@v : T?`; `v` raises when nil, `v?` may be nil |
-| `class_getter n : Int32 = 0` / `class_property` / `class_setter` | class variable `@@n` (needs a value) with class methods `A.n`, `A.n = v` |
+| `class_getter n : Int32 = 0` / `class_property` / `class_setter` | class variable `@@n` (needs a value) with class methods `A.n`, `A.n = v`, `A.n += 1` |
 | `attr_reader :x` / `attr_accessor :x, :y` / `attr_writer :x` | Ruby forms of `getter` / `property` / `setter`; type inferred from `@x = ...` |
 | `@x = v` in a method | declares field `@x`, type inferred (Ruby style) |
 | `alias hi hello` | `hi` calls `hello` |
@@ -968,7 +971,7 @@ Tests: `tests/Alice.Tests/Compiler/RubyMixinTests.cs`.
 | Form | Meaning |
 |---|---|
 | `in x` / `in _` | bind the subject / match anything (catch-all makes the case exhaustive) |
-| `in ^x` | pin: compare with the existing value of `x` |
+| `in ^x` | pin: compare with the existing value of `x`; inside an array or hash pattern too, also a name bound earlier in the same pattern (`in [a, ^a]`: two equal elements) |
 | `in 1 \| 2 \| 3` | alternatives |
 | `in Shape::Circle(r) if r > 10.0` | guard (bound names are visible in the guard) |
 | `in {"lang" => "pt", "name" => n}` | hash pattern: keys must exist, names bind, other values must be equal |

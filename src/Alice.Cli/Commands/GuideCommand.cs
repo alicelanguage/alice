@@ -21,7 +21,7 @@ public static class GuideCommand
         using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(Prefix + topic.ToUpperInvariant() + ".md")
             ?? throw new UsageException($"no guide topic '{topic}'", "topics: " + string.Join(", ", Topics()));
         using var r = new StreamReader(s);
-        return Normalize(r.ReadToEnd());
+        return Normalize(r.ReadToEnd()).Replace("{{version}}", App.Version);   // the header names the installed Alice
     }
 
     /// <summary>Git checks guide/*.md out with CRLF on Windows: print the same `\n` text on every OS.</summary>

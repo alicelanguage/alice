@@ -62,6 +62,7 @@ public sealed partial class Binder
             return new BinaryExpr { Op = "==", L = c.Recv!, R = rhs, Line = c.Line, Col = c.Col };
         }
         if (recv.TupleNames is not { } names) return null;
+        if (c.Args.Count == 0 && c.Block == null && names.Contains(c.Name)) return null;   // an element named `keys` / `values` wins over the helper
         switch (c.Name)
         {
             case "keys" when c.Args.Count == 0:
@@ -137,6 +138,21 @@ public sealed partial class Binder
 
     static TypeRef TypeRefOf(AType t) => new() { Name = t.Clr?.FullName ?? t.Cs };
 
+    /// <summary>A generic method `M<..T..>` of `t` whose result is one of its type parameters: that position, and
+    /// whether the result is annotated nil-able (`T?`).</summary>
+    static (int Pos, bool Nil)? GenericReturnArg(Type t, string name, int arity, int argc)
+    {
+        foreach (var m in t.GetMethods())
+        {
+            if (m.Name != name || !m.IsGenericMethodDefinition || m.GetGenericArguments().Length != arity) continue;
+            var ps = m.GetParameters();
+            if (ps.Count(p => !p.IsOptional) > argc || ps.Length < argc || !m.ReturnType.IsGenericParameter || m.ReturnType.DeclaringMethod == null) continue;
+            var state = new System.Reflection.NullabilityInfoContext().Create(m.ReturnParameter).ReadState;
+            return (m.ReturnType.GenericParameterPosition, state == System.Reflection.NullabilityState.Nullable);
+        }
+        return null;
+    }
+
     AType BindCallCore(CallExpr c, AType recv, bool conc)
     {
         if (c.TypeArgs.Count > 0)
@@ -154,6 +170,15 @@ public sealed partial class Binder
                 // a generic extension method of a referenced library (ILGPU's LoadAutoGroupedStreamKernel<...>, FindControl<T>)
                 if (Clr.IsExtensionName(c.Name) || Builtins.IsClrExtension(c.Name)) return Clr.ExtensionReturn(c.Name, recv, c.Args.Select(a => a.Value?.Type ?? AType.Unknown).ToList(), targs!);
                 throw Err(c, $"{rc.Name} has no generic method {c.Name}<{targs.Count}> taking {c.Args.Count} argument(s)");
+            }
+            // an Alice type argument (no CLR type yet): `JsonSerializer.Deserialize<Array(Tea)>(s)` returns the argument
+            // itself, nil-able when the method says so (`TValue?`)
+            if (recv.Clr is { } rc2 && GenericReturnArg(rc2, c.Name, targs.Count, c.Args.Count) is ({ } pos, bool nil))
+            {
+                BindArgs(c.Args);
+                c.Res = "clr";
+                var at = c.TypeArgTypes[pos];
+                return nil && at.IsKnown && at.Clr is not { IsValueType: true } && at.Kind is not ("prim" or "struct" or "enum") ? at.AsNullable() : at;
             }
         }
         int argc = c.Args.Count;
@@ -488,7 +513,10 @@ public sealed partial class Binder
             BindBlockFor(c, m);
             return CallRet(m, argTypes);
         }
-        if (curType.Kind == "extension")
+        // a Kernel function (`format`, `puts`...) the patched .NET type does not have stays the Prelude function
+        bool kernel = Builtins.FreeFunctions.Contains(c.Name) && c.Name != "to_json"
+            && (curType.ExtTarget?.Clr is not { } et || ClrTypes.Lookup(et, c.Name, c.Args.Count, true, false) == null);
+        if (curType.Kind == "extension" && !kernel)
         {
             // implicit receiver inside a monkey patch is `self`
             c.Recv = new SelfExpr { Line = c.Line };

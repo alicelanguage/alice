@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Book compiler issues (/work/reports/book-compiler-issues.md), tests in `tests/Alice.Tests/Compiler/BookIssuesTests.cs`:
+  - Syntax: `puts await f(x)` (`await` starts a command argument); `^name` pins inside array patterns, also of a name
+    bound earlier in the pattern (`in [a, ^a]`); `rescue A, B => e` no longer emits `--1` in the second catch (a
+    negative literal merged into its token is not merged again when the clause body is re-parsed per type).
+  - Semantics: `Counter.total += 1` on a `class_property`; `raise ... unless n` narrows `n` like `return unless n`;
+    a generic .NET method with an Alice type argument returns that type, nil-able when declared `T?`
+    (`JsonSerializer.Deserialize<Array(Tea)>(s)`: `if loaded`, `loaded || d`); `xs << v` on `List(T)` of a type
+    parameter; `format`/`puts` and the other Kernel functions inside a reopened .NET type call the Prelude function;
+    `sort_by_key` returns a named tuple, and `s.keys`/`s.values` read its elements (element names win over the
+    named-tuple helpers).
+  - Slices and negative indexes: `xs[a..b]`, `xs[a...b]`, `xs[a..]`, `xs[..b]`, `s[start, n]` on Array, List and
+    String (Prelude `slice_range`/`slice_len`, negative bounds from the end, a start past the end gives an empty
+    slice); a literal negative index `xs[-1]` reads `xs[xs.Length - 1]` (computed negative indexes still raise).
+  - Purity: `Int32::MAX`/`MIN` and other literal .NET constants are pure (in `pure def` and rules); a Prelude
+    extension call is pure when every overload for its receiver is `[Pure]`; `upcase`, `downcase`, `capitalize`,
+    `strip`, `reverse`, `includes?`, `starts_with?`, `ends_with?`, `ljust`, `rjust`, `center`, `chomp`, `chop`,
+    `squeeze`, `swapcase` on String are marked `[Pure]`.
+  - Diagnostics: `@[Strict]` is compiler-only (no `StrictAttribute` in the C#); a lowering error that names its code
+    keeps it (AL0215 was reported as AL0001).
+  - Tooling/docs: `alice explain` counts the `__par_` helper of a parallel pipeline for its method (and top-level
+    helpers for `Main`); `alice guide` prints the installed version in its header; guide/AGENTS.md: the rescue
+    modifier exists, `Hash(K, V).new(0)` for counters; docs/errors.md: one row per code (duplicate AL0230 removed,
+    live AL0220/AL0221 before the planned AL0240-AL0249); docs/language.md: slices, negative indexes, pins in
+    patterns, `class_property` writes, nil-able generic .NET results; README: the range pipeline is "one fused
+    loop" (it is serial; the parallel reduce applies to array sources of 65,536+ elements).
 - IL backend D1.4 (ADR 0033): `Backend/Il/AirToIl` emits IL + portable PDB from the post-optimizer MIR through `IlBuilder` (declarations as the C# backend makes them, typed expressions, checked arithmetic per node, EH, foreach, interpolation, vectors, sequence points and local names); `alice run --backend il`, `alice emit --il <file>` (writes `<name>.dll`/`.pdb`, prints the IL listing). Unsupported nodes are reported with their kind; differential, ILVerify, decode, allocation and corpus tests in `AirToIlTests`.
 - IL backend dynamic sites (backend plan D1.9, ADR 0033): `Alice.Runtime.Dyn` (`src/Alice.Runtime/Dynamic/`) dispatches
   `Any` values without the C# runtime binder: one `DynSite` per call site with a monomorphic entry and a 4-entry
