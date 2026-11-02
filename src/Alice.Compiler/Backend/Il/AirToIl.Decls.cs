@@ -80,16 +80,9 @@ public sealed partial class AirToIl
         try
         {
             var (pe, pdb) = Module.Emit();
-            // the serialized short-branch fixup can drop a byte (Backend/IlSpike/README.md "Framework bug"): decode every
-            // body and re-encode the corrupt ones with long branches only
-            var bad = CorruptBodies(pe);
-            if (bad.Count > 0)
-            {
-                var defs = Module.TypeDefOrder().SelectMany(t => t.Methods).ToList();
-                foreach (int row in bad) { defs[row - 1].Il.LongBranches = true; Stats.Seen("Encode:long-branch-fallback"); }
-                (pe, pdb) = Module.Emit();
-                if (CorruptBodies(pe).Count > 0) throw new InvalidOperationException("corrupt IL even with long branches");
-            }
+            // every body must decode cleanly (the old short-branch corruption is fixed in IlBuilder.Encode; a hit here is a bug)
+            if (CorruptBodies(pe) is { Count: > 0 } bad)
+                throw new InvalidOperationException("corrupt IL in MethodDef rows " + string.Join(", ", bad));
             return new IlCompileResult(pe, pdb, Stats, errors) { Module = Module };
         }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException or NotSupportedException or BadImageFormatException)
