@@ -304,4 +304,56 @@ public class OwnershipTests
         Assert.Equal(20 + 5, (int)f.Invoke(null, [20])!);
         Assert.Equal(20 + 5, (int)f.Invoke(null, [20])!);   // a reused, cleared pair gives the same answer
     }
+
+    // ---- soundness: every mention is seen, and only proven-local uses keep a buffer pooled ----
+
+    [Theory]
+    [InlineData("def f(n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  t = spawn { a[0] + 1 }\n  s = a[1]\n  t.wait\n  s\nend\n")]   // read by a spawned task
+    [InlineData("def f(n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  spawn { puts a[0] }\n  a[1]\nend\n")]                               // the task may outlive the method
+    [InlineData("def f(n : Int32) : Int32\n  a = Array(Int32).new(n)\n  using m = System.IO.MemoryStream.new\n    @@keep = a\n  end\n  a[0]\nend\n")]   // stored inside using
+    [InlineData("def f(n : Int32, b : Array(Int32)) : Int32\n  a = Array(Int32).new(n)\n  x = if n > 0\n    a = b\n    1\n  else\n    2\n  end\n  a[0] + x\nend\n")]   // aliased inside an if used as a value
+    [InlineData("def f(n : Int32) : Int32\n  a = Array(Int32).new(n)\n  x = if n > 0\n    @@keep = a\n    1\n  else\n    2\n  end\n  a[0] + x\nend\n")]   // stored inside an if used as a value
+    public void Arrays_seen_by_spawn_using_or_if_values_stay_with_the_gc(string src)
+        => Assert.DoesNotContain("Own<", AliceCompiler.Transpile(src));
+
+    [Fact]
+    public void A_small_array_read_by_a_spawn_is_not_stack_allocated()
+        => Assert.DoesNotContain("stackalloc", AliceCompiler.Transpile("def f(n : Int32) : Int32\n  a = Array(Int32).new(4)\n  t = spawn { puts a[0] }\n  t.wait\n  a[1]\nend\n"));
+
+    [Fact]
+    public void Reads_inside_an_if_value_keep_ownership()
+    {
+        var src = "def f(n : Int32) : Int32\n  a = Array(Int32).new(n, 3)\n  x = if n > 1\n    a[1]\n  else\n    0\n  end\n  a[0] + x\nend\n";
+        Assert.Contains("Own<int>.Rent", AliceCompiler.Transpile(src));
+        Assert.Equal(6, Compile(src).Invoke(null, [4]));
+    }
+
+    const string MethodMissingSink = "class Sink\n  def initialize\n    @saved = Array(Int32).new(0)\n  end\n  def method_missing(name : String, args : Array(Object)) : Int32\n    @saved = args[0].as(Array(Int32))\n    0\n  end\n  def saved : Array(Int32)\n    @saved\n  end\nend\n";
+
+    [Fact]
+    public void Arguments_to_method_missing_escape()
+        => Assert.DoesNotContain("Own<", AliceCompiler.Transpile(MethodMissingSink + "def f(s : Sink) : Int32\n  a = Array(Int32).new(4, 9)\n  s.store(a)\nend\n"));
+
+    [Fact]
+    public void Append_used_as_a_value_aliases_the_list()
+    {
+        var src = "def f(n : Int32) : Int32\n  xs = List(Int32).new\n  @@kept = xs << 7\n  xs.size\nend\n";
+        Assert.DoesNotContain("OwnList<", AliceCompiler.Transpile(src));
+        // a whole-statement append (also chained) keeps the list owned
+        Assert.Contains("OwnList<int>.Rent", AliceCompiler.Transpile("def f(n : Int32) : Int32\n  xs = List(Int32).new\n  xs << n << 1\n  xs.size\nend\n"));
+    }
+
+    [Fact]
+    public void A_list_appended_as_the_tail_value_is_not_released()
+        => Assert.DoesNotContain("OwnList<int>.Release", AliceCompiler.Transpile("def f(n : Int32) : List(Int32)\n  xs = List(Int32).new\n  xs << n\nend\n"));
+
+    [Fact]
+    public void A_borrow_through_a_virtual_call_considers_every_override()
+    {
+        var types = "class Reader\n  def look(xs : Array(Int32)) : Int32\n    xs[0]\n  end\nend\ndef keep(xs : Array(Int32))\n  @@last = xs\nend\nclass Keeper < Reader\n  def look(xs : Array(Int32)) : Int32\n    keep(xs)\n    0\n  end\nend\n";
+        Assert.DoesNotContain("Own<", AliceCompiler.Transpile(types + "def f(r : Reader, n : Int32) : Int32\n  a = Array(Int32).new(n)\n  r.look(a)\nend\n"));
+        // without an overriding subclass the borrow is proven
+        var plain = "class Reader\n  def look(xs : Array(Int32)) : Int32\n    xs[0]\n  end\nend\n";
+        Assert.Contains("Own<int>.Rent", AliceCompiler.Transpile(plain + "def f(r : Reader, n : Int32) : Int32\n  a = Array(Int32).new(n)\n  r.look(a)\nend\n"));
+    }
 }

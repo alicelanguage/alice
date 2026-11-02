@@ -9,7 +9,7 @@ Alice does not allocate or free memory itself. The CLR already gives:
 | Guarantee | Source |
 |---|---|
 | No use-after-free, no double free, no dangling heap refs | GC (tracing, compacting) |
-| No out-of-bounds read/write | array/span bounds checks |
+| No out-of-bounds read/write | array/span bounds checks; `@[Native]` C checks every index (8a) |
 | No type confusion | verifiable IL, type-safe casts |
 | No dangling `ref`/`Span` to stack | Roslyn ref-safety rules + `ref struct` |
 | No null deref (compile time) | nullable reference types; Alice makes warnings errors (*implemented*, ADR 0004) |
@@ -146,6 +146,23 @@ end
 
 Lowers to `ArrayPool<T>.Shared.Rent` / `Return` in `finally`. `MemoryPool<T>` for `IMemoryOwner<T>`. Wrapper lives in `Alice.Runtime`. Rented buffer is `own`: move or return-to-pool enforced by the P1 pass.
 
+### 7a. Inferred ownership: what a pooled buffer must prove (*implemented*, ADR 0016)
+
+A local array, list or hash goes back to the `Own`/`OwnList`/`OwnDict` pool only when every mention of it is a proven
+local use. When in doubt it stays a GC value: a missed release costs an allocation, never safety.
+
+- Every mention counts, wherever it is: inside `spawn { }`, `using ... end`, `await`, `lock`, `when` guards, blocks and
+  lambdas, and if/case/begin used as a value. A mention inside a `spawn` or block is a capture: the value stays GC.
+- An assignment or move inside an if/case/begin used as a value keeps both locals GC (the move flow does not see it).
+- Arguments bind to parameters only for direct Alice calls; `method_missing` and dynamic calls (`send`) take the value.
+- A virtual call borrows or returns an owned array only when every override in the program does.
+- `xs << v` returns `xs`: it keeps a list owned only as a whole statement whose value is dropped.
+
+The same rules guard `par for`: a written array handed to a callee, or read whole (`xs.sum`), may be read at any index,
+so the loop stays serial (AL0209 for `par for`) unless the array is a distinct local the runtime alias check covers and
+the callee reaches arrays only through its array parameters (no fields, no globals). A local passed by `ref`/`out`
+loses its value range, so arithmetic on it stays overflow-checked.
+
 ### 8. `unsafe` fence
 
 ```crystal
@@ -160,6 +177,13 @@ unsafe { fixed (byte* p = buf) { p[0] = 1; } }
 ```
 
 Pointers, `fixed`, raw `stackalloc` to pointer, and `NativeMemory.Alloc/Free` only inside `unsafe`. `lib` P/Invoke stays the native boundary (today `lib` emits an `unsafe partial class`; proposed: only `unsafe` inside the class when pointer types appear). Build flag `--deny-unsafe` rejects any `unsafe` outside allow-listed files.
+
+### 8a. `@[Native]` C (*implemented*)
+
+`@[Native]` functions compile to C but keep the table above: every array access is bounds-checked against the length
+passed with the pointer, integer `+ - *` use `__builtin_*_overflow`, `/ %` check for zero and MIN / -1, shift counts are
+masked like C#, and range-loop counters increment checked. A violation prints `alice @[Native]: <what>` and aborts the
+process (C has no exception to raise); it never reads or writes out of bounds.
 
 ### 9. Checked arithmetic
 

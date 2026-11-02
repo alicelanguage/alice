@@ -67,4 +67,12 @@ public class RangeTests
     [InlineData("b = 65535 & 0xFFFF\nputs(b < 32768 ? b : b - 65536)", "-1")]
     public void Sign_reinterpretation_values(string src, string expected)
         => Assert.Equal(expected, Run(src));
+
+    [Fact]
+    public void A_local_passed_by_ref_loses_its_literal_range()
+    {
+        var src = "x = 0\nSystem.Threading.Interlocked.Add(ref x, 2147483647)\ny = x + x\nputs y\n";
+        Assert.DoesNotContain("unchecked(x + x)", AliceCompiler.Transpile(src));
+        Assert.ThrowsAny<Exception>(() => Run(src));
+    }
 }

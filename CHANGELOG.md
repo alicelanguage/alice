@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Ownership: mentions inside `spawn`, `using`, `await` and if/case values are now checked; such buffers stay with the GC (audit F2).
+- Ownership: arguments to `method_missing` and dynamic calls escape instead of staying pooled (audit F3).
+- Ownership: `xs << v` keeps a list pooled only as a whole statement whose value is dropped (audit F7).
+- Loop parallelization: a written array passed to a callee or read whole keeps the loop serial (AL0209 for `par for`) unless proven distinct (audit F8).
+- Range analysis: locals passed by `ref`/`out` lose their value range; their arithmetic stays checked (audit F15).
+- `@[Native]` C: bounds-checked indexing, trapping integer overflow and division, masked shifts, collision-free generated names (audit F16).
+- Ownership: borrows and owned results through virtual calls must hold for every override (audit F18, partial).
 - ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
 
 ## 0.14.0 - 2026-10-27

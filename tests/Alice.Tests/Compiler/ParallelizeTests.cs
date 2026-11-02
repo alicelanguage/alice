@@ -372,4 +372,40 @@ public class LoopParallelizeTests
         const string src = "def f(xs : Array(Float64)) : Array(Int32)\n  out = Array(Int32).new(xs.size)\n  for i in 0...xs.size\n    out[i] = xs[i].log2.floor.to_i32.clamp(0, 99) + xs[i].sign\n  end\n  out\nend\n";
         Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
     }
+
+    // a pure callee that reads a written array at another index is a hidden cross-iteration dependency
+    const string HiddenScan = "def left(a : Array(Int32), i : Int32) : Int32\n  i > 0 ? a[i - 1] : 0\nend\n";
+
+    [Fact]
+    public void Par_for_rejects_a_written_array_read_through_a_pure_callee()
+    {
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(HiddenScan + "def f(n : Int32) : Array(Int32)\n  a = Array(Int32).new(n, 1)\n  par for i in 0...n\n    a[i] = left(a, i) + 1\n  end\n  a\nend\n"));
+        Assert.Equal("AL0209", ex.Diagnostics[0].Code);
+    }
+
+    [Fact]
+    public void A_written_array_read_through_a_callee_stays_serial()
+    {
+        var src = HiddenScan + "def f(n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  for i in 0...n\n    a[i] = left(a, i) + 1\n  end\n  a[n - 1]\nend\n";
+        Assert.DoesNotContain("__parfor", AliceCompiler.Transpile(src));
+        Assert.Equal(100_000, Compile(src).Invoke(null, [100_000]));
+    }
+
+    [Fact]
+    public void A_callee_reading_a_field_array_keeps_the_loop_serial()
+    {
+        var src = "class Grid\n  def initialize(@cells : Array(Int32))\n  end\n  def left(i : Int32) : Int32\n    i > 0 ? @cells[i - 1] : 0\n  end\nend\ndef f(n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  g = Grid.new(a)\n  for i in 0...n\n    a[i] = g.left(i) + 1\n  end\n  a[n - 1]\nend\n";
+        Assert.DoesNotContain("__parfor", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void A_callee_reading_a_different_array_still_parallelizes()
+    {
+        // b is only read and is a distinct local: the runtime alias guard decides
+        var src = HiddenScan + "def f(n : Int32) : Int32\n  a = Array(Int32).new(n)\n  b = Array(Int32).new(n, 1)\n  par for i in 0...n\n    a[i] = left(b, i) + 1\n  end\n  a[n - 1]\nend\n";
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("__parfor", cs);
+        Assert.Contains("ReferenceEquals(a, b)", cs);
+        Assert.Equal(2, Compile(src).Invoke(null, [10]));
+    }
 }

@@ -141,3 +141,47 @@ public class NativeCallOverheadTests
         Assert.Matches(@"SuppressGCTransition\]\s*private static extern byte __raw_flag\(byte b\);", cs);
     }
 }
+
+/// <summary>`@[Native]` C keeps Alice's safety: bounds checks, overflow traps, collision-free generated names.</summary>
+public class NativeSafetyTests
+{
+    static string C(string src) => AliceCompiler.TranspileFull([new SourceFile("main.al", src)], null, "t").C!;
+
+    [Fact]
+    public void Array_accesses_are_bounds_checked()
+    {
+        var c = C("@[Native]\ndef get(a : Array(Int32), xs : Array(Int32), i : Int32) : Int32\n  a[i] + xs[i]\nend\n");
+        Assert.Contains("xs[alice_ix(i, xs__len)]", c);
+        Assert.Contains("a[alice_ix(i, alice__N)]", c);   // the specialized worker checks against its constant length
+    }
+
+    [Fact]
+    public void Integer_arithmetic_traps_on_overflow()
+    {
+        var c = C("@[Native]\ndef f(a : Int32, b : Int64) : Int64\n  x = a * a\n  x += 1\n  b + x - (-b)\nend\n");
+        Assert.Contains("alice_mul_i32(a, a)", c);
+        Assert.Contains("alice_add_i32(l_x, 1)", c);
+        Assert.Contains("__builtin_add_overflow", c);
+        Assert.DoesNotContain("(a * a)", c);
+    }
+
+    [Fact]
+    public void Length_substitution_only_touches_the_driver_array()
+    {
+        // `a__len` is a suffix of `ba__len`: only the whole identifier may become the specialized constant
+        var c = C("@[Native]\ndef f(a : Array(Int32), ba : Array(Int32)) : Int32\n  a.size * 100 + ba.size\nend\n");
+        Assert.Contains("alice_add_i32(alice_mul_i32(alice__N, 100), ba__len)", c);
+    }
+
+    [Fact]
+    public void Parameter_names_never_collide_with_the_generated_driver()
+    {
+        var src = "@[Native]\ndef f(a : Array(Int32), r : Int32, k : Int32) : Int32\n  a[0] + r * 10 + k\nend\n";
+        var nat = AliceCompiler.Load(AliceCompiler.CompileNative(src, "nc" + Guid.NewGuid().ToString("N")[..8], true).Image).GetType("Program")!.GetMethod("f")!;
+        Assert.True((bool)nat.DeclaringType!.GetMethod("__alice_native_loaded")!.Invoke(null, null)!);   // the C ran, not the managed fallback
+        Assert.Equal(1 + 70 + 3, nat.Invoke(null, [new[] { 1, 2 }, 7, 3]));
+        var ba = "@[Native]\ndef g(a : Array(Int32), ba : Array(Int32)) : Int32\n  a.size * 100 + ba.size\nend\n";
+        var g = AliceCompiler.Load(AliceCompiler.CompileNative(ba, "nb" + Guid.NewGuid().ToString("N")[..8], true).Image).GetType("Program")!.GetMethod("g")!;
+        Assert.Equal(205, g.Invoke(null, [new int[2], new int[5]]));
+    }
+}
