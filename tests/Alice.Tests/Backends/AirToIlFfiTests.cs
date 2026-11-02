@@ -35,7 +35,7 @@ public class AirToIlFfiTests
     // ------------------------------------------------------------------ harness
 
     /// <summary>The module under construction: the FFI emitter, the bound `lib` funs by Alice name, and a driver.</summary>
-    sealed class Prog
+    internal sealed class Prog
     {
         public IlModule Module = null!;
         public AirToIlFfi Ffi = null!;
@@ -685,7 +685,7 @@ public class AirToIlFfiTests
     // ------------------------------------------------------------------ a real process, and NativeAOT
 
     /// <summary>One program over every FFI shape: strings both ways, a pinned array, a callback, out/ref, pointers.</summary>
-    static Prog Everything(string name)
+    internal static Prog Everything(string name)
     {
         string lib = Lib("  fun strlen(s : String) : UInt64\n  fun getenv(name : String) : String?\n  fun memset(dst : Array(UInt8), c : Int32, n : UInt64) : Void\n"
             + Qsort + Malloc + "  fun clock_gettime(clock : Int32, out ts : Timespec) : Int32\n");
@@ -717,7 +717,7 @@ public class AirToIlFfiTests
         }, Timespec);
     }
 
-    const string EverythingOut = "6\n300\ntrue\n56\n1\n3\n5\n9\n0\ntrue\n42";
+    internal const string EverythingOut = "6\n300\ntrue\n56\n1\n3\n5\n9\n0\ntrue\n42";
 
     [Fact]
     public void Ffi_program_runs_as_a_process()
@@ -740,7 +740,7 @@ public class AirToIlFfiTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
-    static (int Code, string Out, string Err) Exec(string file, string[] args, string cwd, int timeoutMs = 60_000)
+    internal static (int Code, string Out, string Err) Exec(string file, string[] args, string cwd, int timeoutMs = 60_000)
     {
         var psi = new ProcessStartInfo(file, args) { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = cwd };
         psi.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
@@ -750,21 +750,27 @@ public class AirToIlFfiTests
         Assert.True(p.WaitForExit(timeoutMs), file + " timed out");
         return (p.ExitCode, so.Result, se.Result);
     }
+}
 
+/// <summary>D1.10: NativeAOT publish of an IL-emitted FFI program. In the `msbuild` collection with the other publish
+/// tests (TrimAotTests), so no two publishes run at once.</summary>
+[Trait("Category", "Integration")]
+[Collection("msbuild")]
+public class AirToIlFfiAotTests
+{
     /// <summary>
     /// NativeAOT compiles the emitted IL (ImplMap P/Invokes become direct calls, the UnmanagedCallersOnly trampoline a
     /// native entry, calli a native indirect call). ILC needs a project, so a two-line C# host references the
     /// emitted dll and calls its Main.
     /// </summary>
     [Fact]
-    [Trait("Category", "Integration")]
     public void Ffi_program_publishes_with_native_aot()
     {
         if (!OperatingSystem.IsLinux()) return;
         var root = Directory.CreateTempSubdirectory("alice-ilffi-aot-").FullName;
         try
         {
-            var (pe, _) = Everything("FfiAot").Module.Emit();
+            var (pe, _) = AirToIlFfiTests.Everything("FfiAot").Module.Emit();
             string dll = Path.Combine(root, "FfiAot.dll");
             File.WriteAllBytes(dll, pe);
             string runtime = typeof(Alice.Runtime.Utf8Arg).Assembly.Location;
@@ -784,14 +790,14 @@ public class AirToIlFfiTests
                 </Project>
                 """);
             File.WriteAllText(Path.Combine(root, "Host.cs"), "static class Host { static void Main(string[] a) => Program.Main(a); }\n");
-            var (code, stdout, stderr) = Exec("dotnet", ["publish", "host.csproj", "-c", "Release", "-r", "linux-x64", "-o", "out", "-nologo", "-v", "m"], root, 600_000);
+            var (code, stdout, stderr) = AirToIlFfiTests.Exec("dotnet", ["publish", "host.csproj", "-c", "Release", "-r", "linux-x64", "-o", "out", "-nologo", "-v", "m"], root, 600_000);
             Assert.True(code == 0, stdout + stderr);
             Assert.DoesNotContain("warning IL3", stdout);   // no AOT warnings about the emitted code
             Assert.False(File.Exists(Path.Combine(root, "out", "FfiAot.dll")));   // compiled into the native executable
             Assert.True(File.Exists(Path.Combine(root, "out", "host.dbg")));
-            var (rc, output, err) = Exec(Path.Combine(root, "out", "host"), [], root);
+            var (rc, output, err) = AirToIlFfiTests.Exec(Path.Combine(root, "out", "host"), [], root);
             Assert.True(rc == 0, err);
-            Assert.Equal(EverythingOut, output.Trim().ReplaceLineEndings("\n"));
+            Assert.Equal(AirToIlFfiTests.EverythingOut, output.Trim().ReplaceLineEndings("\n"));
         }
         finally { try { Directory.Delete(root, true); } catch (IOException) { } }
     }

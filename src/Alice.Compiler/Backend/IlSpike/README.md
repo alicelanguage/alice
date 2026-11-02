@@ -38,6 +38,11 @@ alice emit --il-spike --il-dump <dll> <method>                      minimal IL l
   C# shape (`ClrResolve.TryLiteral`), declared types from C# text (`MDecl.TypeCs`, `MCast.TypeCs`, `MNew.TypeCs`,
   `MNewArray.ElemCs`, `MFor.VarType`) through a C# type-name parser (`ClrResolve.Parse`), members by reflection, C#
   binary numeric promotion with literal adoption (`ClrResolve.Promote`), overloads by a small scorer (`ClrResolve.Pick`).
+- **Typed AIR nodes (after main c0ea2ae)**: `IlBody.Lower` maps AirRent/AirRelease/AirLength/AirArrayLength/
+  AirTripCount/AirOffset to the core forms from their fields; `IlBody.Leaf` reads AirLocalRef/AirParamRef/AirConst/
+  AirDefault/AirSizeOf/AirNull by field and rejects AirRawCs, AirThis/AirBase, AirFieldRef, narrowed AirLocalRef.
+  AirName is accepted only when it names a parameter/local or a CLR static (Main's `ARGV` arrives as AirName).
+  The census numbers below are from 3b6c7df (before those nodes).
 - **C# semantics replicated by hand** (each one was a bug before it was right): shift counts masked to 31/63 (IL leaves
   larger counts undefined), float `>=`/`<=` as `!(clt.un)`, negated float branches use `.un` (NaN), explicit numeric
   casts are `conv.ovf.*` in a checked context, compound assignment converts back with overflow check, `c ? 1 : 0` is
