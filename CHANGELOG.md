@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- IL-only lowering passes (backend plan D1.7, ADR 0032/0033) in `Air/Passes/`, entry `IlLowering.Run`, called only by
+  the IL backend (C# output unchanged): ForeachLower (arrays, spans, strings as counted loops; struct enumerators kept
+  in a typed local, never boxed; other enumerables in try/finally with a null-checked Dispose), InterpLower
+  (`string.Concat` for up to 4 string parts, else an invariant-culture `DefaultInterpolatedStringHandler`),
+  PatternTemps (declaration and `var` patterns as explicit isinst into typed locals, with C# scopes), UsingLockLower
+  (try/finally Dispose, `Monitor.Enter(o, ref taken)`, `Lock.EnterScope()`), SwitchLower (dense int/char jump tables,
+  string cases as a length switch plus an ordinal `string.Equals` chain, no hashing), TupleLower (ValueTuple
+  construction, ItemN/Rest access, deconstruction, element names recorded for TupleElementNames) and NullableLift
+  (C# lifted-operator semantics with HasValue/GetValueOrDefault). Helper nodes `AirSeq`, `AirAs`, `AirSwitch` live in
+  `Mir/MExpr.Lower.cs`; what a pass cannot lower (`await foreach`/`await using`, untyped operands, `bool?` logic) is
+  left as is and listed in `IlLowerContext.Unsupported`.
 - Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
 - AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
   build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,
