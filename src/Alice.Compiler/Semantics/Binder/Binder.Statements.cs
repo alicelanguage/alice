@@ -67,6 +67,7 @@ public sealed partial class Binder
                     AType vt = d.Value != null ? BindExpr(d.Value) : AType.Unknown;
                     AType t = d.Type != null ? ResolveType(d.Type) : vt;
                     d.Local = Declare(d, d.Name, t, d.IsVal);
+                    NoteAlias(d.Local, d.Value);
                     break;
                 }
             case Assign a:
@@ -150,6 +151,7 @@ public sealed partial class Binder
             {
                 AType vt = BindExpr(a.Value);
                 a.Declares = Declare(a, n.Name, vt);
+                NoteAlias(a.Declares, a.Value);
                 n.Sym = a.Declares;
                 n.Res = "local";
                 n.Type = vt;
@@ -169,6 +171,7 @@ public sealed partial class Binder
             UseLocal(l);
             AType v = BindExpr(a.Value);
             if (!l.Type.IsKnown && v.IsKnown && a.Op == "=") l.Type = v;
+            if (a.Op == "=") NoteAlias(l, a.Value);
             return;
         }
         if (a.Target is IvarExpr iv && curType.Kind is "class" or "struct" or "record" && a.Op == "=")
@@ -189,7 +192,7 @@ public sealed partial class Binder
         }
         BindExpr(a.Target);
         BindExpr(a.Value);
-        if (curMethod != null && a.Target is IvarExpr or NameExpr { Res: "field" } or CallExpr { Res: "field", Recv: SelfExpr }) curMethod.Mutates = true;
+        NoteSelfWrite(a.Target);   // `@x = v`, `@items[i] = v`, `@pos.x = v` (F9)
         CheckSharedTargetWrite(a.Target);
     }
 
@@ -278,12 +281,14 @@ public sealed partial class Binder
             foreach (var l in existing) { CheckWrite(ma, l!); UseLocal(l!); }
             for (int i = 0; i < existing.Count && i < vts.Count; i++) if (!existing[i]!.Type.IsKnown && vts[i].IsKnown) existing[i]!.Type = vts[i];
             ma.Locals = existing.Select(e => e!).ToList();
+            foreach (var v in ma.Values) foreach (var l in ma.Locals) NoteAlias(l, v);
             return;
         }
         if (existing.Any(e => e != null)) throw Err(ma, "mixing new and existing variables in multiple assignment");
         ma.Declares = true;
         for (int i = 0; i < ma.Names.Count; i++)
             ma.Locals.Add(Declare(ma, ma.Names[i], i < vts.Count ? vts[i] : AType.Unknown));
+        foreach (var v in ma.Values) foreach (var l in ma.Locals) NoteAlias(l, v);   // conservative: any part may alias
     }
 
     void BindFor(ForStmt f)
@@ -314,6 +319,9 @@ public sealed partial class Binder
             var parts = elem.Args.Count == f.Names.Count ? elem.Args : null;
             for (int i = 0; i < f.Names.Count; i++) f.Locals.Add(Declare(f, f.Names[i], parts?[i] ?? AType.Unknown));
         }
+        // `for row in grid` over a shared collection: a reference element is shared too
+        if (f.Iter is not RangeExpr && AliasesShared(f.Iter))
+            foreach (var l in f.Locals) if (!ValueLike(l.Type)) l.SharedAlias = true;
         BindBlock(f.Body);
         PopScope();
     }

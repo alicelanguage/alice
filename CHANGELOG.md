@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Security: `instance_variable_get/set` reach every ivar of an Alice class but only public fields of other types; readonly fields are never written, and foreign or readonly arrays come back as copies (`[AliceType]`, audit F4).
+- Security: `safe def` (AL0212) is now an allow-list. Prelude I/O, environment and process functions, `lib` funs, reflection, `send`/`instance_variable_*`/`method_missing`, inherited .NET members and unknown receivers are rejected anywhere in the body (`using`, `spawn`, if-as-value included), and constructors are checked (audit F5).
+- Security: reflection and dynamic-dispatch Prelude entry points carry `[Ambient]`, which `safe def` rejects (audit F6).
+- `@items << x`, `@items[i] = v` and mutating calls on an ivar make a method mutating, so `pure def` (AL0210) and concurrent callers (AL0202) see them; `xs << v` on a shared list is AL0202 (audit F9).
+- AL0202 follows copies: a local assigned a shared reference inside a concurrent block (`ys = xs`, a conditional, a reference element, a `for` variable) is shared too (audit F10).
+- AL0230 checks generic messages with their type arguments (`Box(Array(Int32))` is not sendable); type parameters, pointers and types unknown after inference are not sendable (audit F11).
+- `alice prove --smt` evaluates every statement of a rule, so a discarded call that raises fails the rule as it does under enumeration (audit F14).
+- AL0221: a declared field or getter of a non-nilable reference type that no `initialize` assigns (and has no initializer) is a compile error instead of nil at runtime (audit F17).
+
 - ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
 
 ## 0.14.0 - 2026-10-27

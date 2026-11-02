@@ -710,7 +710,7 @@ without heuristics and a failed proof is a compile error instead of a silent fal
 | `pure def f ...` | `f` has no effects: no I/O, no writes to state it did not allocate, calls only pure code. Pure methods fork and parallelize | AL0210 |
 | `par a, b = f(x), g(y)` | Bend's parallel let: fork the two calls even when neither is recursive | AL0211 when they are impure or dependent |
 | `inline def f ...` | same as `def f @[Inline]`: `AggressiveInlining` | - |
-| `safe def f ...` | secure execution: `f` and every Alice method it calls hold no ambient authority (no .NET statics except `Math`/`Alice.Runtime`, no I/O, network, process, reflection, threading or interop types), no `dynamic`, no `@[Native]`, no `unchecked` | AL0212 |
+| `safe def f ...` | secure execution: `f` and every Alice method it calls (constructors and field initializers included) hold no ambient authority. An allow-list, see below | AL0212 |
 
 ```crystal
 pure def work(n : Int64) : Int64
@@ -734,6 +734,26 @@ end
 Modifiers combine: `safe pure def`, `private inline def`. `safe` is capability-style: instance members of
 values the method receives are allowed, since the caller chose to hand them over; reaching the machine by name
 is not. It is a compile-time check, not a sandbox: it does not limit memory or time.
+
+`safe` is an allow-list. Every node of the body is checked, including `using`, `spawn`, blocks, lambdas and
+`if`/`case` used as values. A safe body may use:
+
+- Alice code: methods, constructors and field initializers, checked the same way, transitively;
+- members of values it was given, and of values it creates;
+- statics of math, number, string and collection helpers (`Math`, `MathF`, `Int32::MAX`, `String`, `Array`,
+  `Enumerable`, `Convert`, `BitConverter`, `System.Numerics`...);
+- the Alice runtime, except its ambient types (native libraries, mapped files, `ObjectSpace`, the test host) and
+  members marked `[Ambient]`;
+- Prelude functions that only compute: `format`, `sprintf`, `str`, `inspect`, `hash`, `raise`, `rand`, `pow`,
+  `to_json`, `parse_json`, `assert`...;
+- `new` of collections, text, numbers, exceptions and non-ambient runtime types.
+
+Everything else is AL0212. That includes `puts`/`print`/`gets`, `read_file`/`write_file`/`file_exists?`, `env`,
+`exit`, `sleep` and `now`; `lib` funs; `send`, `public_send`, `respond_to?`, `define_method`,
+`instance_variable_get/set`, `instance_variables`, `methods` and `method_missing` bodies that do any of these;
+`dynamic`; any value of a reflection type (`x.class`, `GetType`, `MethodInfo`); members inherited from a .NET
+base class; calls on values of unknown type; `@[Native]`; `unchecked`. To give a safe method I/O, pass it an
+object that does the I/O.
 
 Expressions fork too, HVM-style: when a statement is arithmetic over pure reads and exactly two forkable calls
 (`fib(n - 1) + fib(n - 2)`), the two calls run as a fork. See [fork/join](fork-join.md).
