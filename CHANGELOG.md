@@ -24,6 +24,9 @@
 - Ownership: mentions inside `spawn`, `using`, `await` and if/case values are now checked; such buffers stay with the GC (audit F2).
 - Ownership: arguments to `method_missing` and dynamic calls escape instead of staying pooled (audit F3).
 - Ownership: `xs << v` keeps a list pooled only as a whole statement whose value is dropped (audit F7).
+- Purity checks: `xs << v` is a write, user-defined operators must be pure methods, and only System.Math/MathF (not a user `module Math`) counts as pure math.
+- Loop parallelization: `a[i] = f(a, i)` parallelizes when every override of f reads `a` only at index `i`.
+- `@[Native]` C: counters of exclusive ranges step unchecked (they cannot overflow), recovering the cost of the checks in loops.
 - Loop parallelization: a written array passed to a callee or read whole keeps the loop serial (AL0209 for `par for`) unless proven distinct (audit F8).
 - Range analysis: locals passed by `ref`/`out` lose their value range; their arithmetic stays checked (audit F15).
 - `@[Native]` C: bounds-checked indexing, trapping integer overflow and division, masked shifts, collision-free generated names (audit F16).

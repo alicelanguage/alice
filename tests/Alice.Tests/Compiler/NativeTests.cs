@@ -156,6 +156,15 @@ public class NativeSafetyTests
     }
 
     [Fact]
+    public void Counters_of_exclusive_ranges_step_plainly_inclusive_ones_checked()
+    {
+        var c = C("@[Native]\ndef f(n : Int32) : Int32\n  s = 0\n  for i in 0...n\n    s += 1\n  end\n  for j in 0..n\n    s += 1\n  end\n  for k in 0...n\n    k = n\n  end\n  s\nend\n");
+        Assert.Contains("l_i_1 < n; l_i_1++)", c);
+        Assert.Contains("l_j_2 = alice_add_i32(l_j_2, 1)", c);   // `0..MAX` would wrap
+        Assert.Contains("l_k_3 = alice_add_i32(l_k_3, 1)", c);   // the body moves the counter
+    }
+
+    [Fact]
     public void Integer_arithmetic_traps_on_overflow()
     {
         var c = C("@[Native]\ndef f(a : Int32, b : Int64) : Int64\n  x = a * a\n  x += 1\n  b + x - (-b)\nend\n");
