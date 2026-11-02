@@ -254,8 +254,13 @@ public class DynTests
         Assert.Equal(5, Bin(DynOp.Add, 2, 3));
         Assert.Equal(5L, Bin(DynOp.Add, 2, 3L));
         Assert.Equal(2.5, Bin(DynOp.Add, 2, 0.5));
-        Assert.Equal(3, Bin(DynOp.Div, 7, 2));           // truncating, as the C# backend's dynamic
-        Assert.Equal(-1, Bin(DynOp.Mod, -7, 3));
+        Assert.Equal(3, Bin(DynOp.Div, 7, 2));
+        Assert.Equal(-4, Bin(DynOp.Div, -7, 2));         // floored, as statically typed Alice (Prelude.floor_div)
+        Assert.Equal(2, Bin(DynOp.Mod, -7, 3));          // the divisor's sign (floor_mod)
+        Assert.Equal(-4L, Bin(DynOp.Div, -7L, 2));
+        Assert.Equal(-0.5, Bin(DynOp.Mod, 7.5, -2.0));   // floor_fmod
+        Assert.Equal(-3.5, Bin(DynOp.Div, -7, 2.0));
+        Assert.Throws<OverflowException>(() => Bin(DynOp.Div, int.MinValue, -1));
         Assert.Equal(true, Bin(DynOp.Lt, 1, 1.5));
         Assert.Equal(true, Bin(DynOp.Eq, 1, 1L));
         Assert.Equal(8, Bin(DynOp.Shl, 1, 3));

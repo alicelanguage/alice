@@ -14,7 +14,7 @@ namespace Alice.Runtime;
 /// except boxing value-type arguments and results).
 /// </summary>
 /// <remarks>
-/// Rules (the same results as the C# backend's `dynamic` wherever that one succeeds):
+/// Rules:
 /// <list type="bullet">
 /// <item>Only public members are ever touched, on any type, Alice-compiled or not (security audit: no back door to
 /// private state; `instance_variable_get` is the explicit, `[Ambient]` reflection API).</item>
@@ -23,8 +23,9 @@ namespace Alice.Runtime;
 /// <item>Overloads are chosen by the arguments' runtime types: an exact type, then a reference conversion, then implicit
 /// numeric widening (Int32 -> Int64 -> Float64), then Object; nil fits any reference or nullable parameter. Ties go to
 /// the more specific signature; a real tie is an <see cref="AmbiguousMatchException"/>.</item>
-/// <item>Operators on numbers follow C# (and the C# backend): checked integer arithmetic, binary numeric promotion,
-/// truncating `/` and `%`; other operands use their public `op_*` operators.</item>
+/// <item>Operators on numbers follow Alice, as statically typed code does: binary numeric promotion, checked integer
+/// arithmetic, floored `/` and `%` on Int32/Int64 (-7 / 2 == -4) and floored `%` on floats; other operands use their
+/// public `op_*` operators. (The C# backend's `dynamic` truncates instead: docs/production.md.)</item>
 /// <item>Unknown members fall back to `define_method` bodies and then to `method_missing(name, args)`, like `send`.</item>
 /// </list>
 /// Dynamic sites are a compile error under `native = true` and on wasm (AL0232); the trimming annotations below keep

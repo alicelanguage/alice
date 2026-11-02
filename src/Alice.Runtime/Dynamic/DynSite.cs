@@ -27,8 +27,8 @@ public enum DynKind : byte
     Invoke,
 }
 
-/// <summary>Operators of <see cref="DynKind.BinaryOp"/> / <see cref="DynKind.UnaryOp"/> sites (C# semantics: checked
-/// integer arithmetic, truncating `/` and `%`, the same as the C# backend's `dynamic`).</summary>
+/// <summary>Operators of <see cref="DynKind.BinaryOp"/> / <see cref="DynKind.UnaryOp"/> sites (Alice semantics, as
+/// statically typed code: checked integer arithmetic, floored `/` and `%`).</summary>
 public enum DynOp : byte
 {
     None,

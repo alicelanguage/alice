@@ -13,7 +13,7 @@ namespace Alice.Tests.Compiler;
 /// The IL backend's dynamic-site pass (Air/Passes/DynSites.cs, backend plan D1.9, ADR 0033): every operation on an
 /// `Any` value becomes an <see cref="AirDynCall"/> on its own <see cref="DynSite"/> field, and AL0232 rejects dynamic
 /// sites under `native = true` and on wasm. Bodies come from the real binder + lowerer (as the IL backend gets them)
-/// and are compared as AIR dumps; AirDynCall prints as `(call dyn.Kind#site name target args)` here.
+/// and are compared as AIR dumps; AirDynCall prints as `(dyn.Kind#site name target args)` here.
 /// </summary>
 public class DynSitesTests
 {
@@ -57,28 +57,7 @@ public class DynSitesTests
         return body;
     }
 
-    /// <summary>Prints AirDynCall nodes through MirDump (until MirDump has a hook for them).</summary>
-    sealed class Show : MirRewriter
-    {
-        protected override MExpr Rewrite(MExpr e)
-        {
-            if (e is not AirDynCall d) return e;
-            var args = d.Args.Select(Expr).ToList();
-            string what = d.Kind switch
-            {
-                DynKind.BinaryOp or DynKind.UnaryOp => d.Op.ToString(),
-                DynKind.Convert or DynKind.Cast => d.To!.ToCs(),
-                _ => d.Name,
-            };
-            return new MCall { Name = $"dyn.{d.Kind}#{d.SiteId}{(d.Safe ? "?" : "")} {what}".TrimEnd(), Target = d.Target != null ? Expr(d.Target) : null, Args = args, Type = d.Type };
-        }
-    }
-
-    static string Dump(List<MStmt> body)
-    {
-        new Show().Run(body);
-        return MirDump.Of(body);
-    }
+    static string Dump(List<MStmt> body) => MirDump.Of(body);
 
     [Fact]
     public void Dynamic_operations_become_sites()
@@ -92,20 +71,20 @@ public class DynSitesTests
 
     const string Expected =
         "decl v dynamic = (new P (const 2):int) @9\n" +
-        "expr (call puts _ (call dyn.Call#0 scaled (local v):dynamic (const 3):int):dynamic) @10\n" +
-        "expr (call dyn.SetMember#1 x (local v):dynamic (const 5):int):void @11\n" +
-        "expr (call dyn.SetMember#14 x (local v):dynamic (call dyn.BinaryOp#13 Add (call dyn.GetMember#2 x (local v):dynamic):dynamic (const 1):int):dynamic):void @12\n" +
-        "decl w int = (call dyn.Convert#4 int (call dyn.GetMember#3 x (local v):dynamic):dynamic):int @13\n" +
+        "expr (call puts _ (dyn.Call#0 scaled (local v):dynamic (const 3):int):dynamic) @10\n" +
+        "expr (dyn.SetMember#1 x (local v):dynamic (const 5):int):void @11\n" +
+        "expr (dyn.SetMember#14 x (local v):dynamic (dyn.BinaryOp#13 Add (dyn.GetMember#2 x (local v):dynamic):dynamic (const 1):int):dynamic):void @12\n" +
+        "decl w int = (dyn.Convert#4 int (dyn.GetMember#3 x (local v):dynamic):dynamic):int @13\n" +
         "decl n dynamic = (const 4):int @14\n" +
-        "expr (call puts _ (call dyn.BinaryOp#5 Add (local n):dynamic (const 1):int):dynamic) @15\n" +
-        "expr (call puts _ (call dyn.UnaryOp#6 Neg (local n):dynamic):dynamic) @16\n" +
-        "if (call dyn.Convert#9 bool (call dyn.BinaryOp#8 Gt (call dyn.GetMember#7 x (local v):dynamic):dynamic (const 3):int):dynamic):bool @17\n" +
+        "expr (call puts _ (dyn.BinaryOp#5 Add (local n):dynamic (const 1):int):dynamic) @15\n" +
+        "expr (call puts _ (dyn.UnaryOp#6 Neg (local n):dynamic):dynamic) @16\n" +
+        "if (dyn.Convert#9 bool (dyn.BinaryOp#8 Gt (dyn.GetMember#7 x (local v):dynamic):dynamic (const 3):int):dynamic):bool @17\n" +
         "  expr (call puts _ (const \"big\"):string) @18\n" +
         "decl xs dynamic = (newarray int (items (const 1):int (const 2):int (const 3):int)) @20\n" +
-        "expr (call dyn.SetIndex#10 (local xs):dynamic (const 0):int (const 9):int):void @21\n" +
-        "expr (call puts _ (call dyn.GetIndex#11 (local xs):dynamic (const 0):int):dynamic) @22\n" +
+        "expr (dyn.SetIndex#10 (local xs):dynamic (const 0):int (const 9):int):void @21\n" +
+        "expr (call puts _ (dyn.GetIndex#11 (local xs):dynamic (const 0):int):dynamic) @22\n" +
         "decl f dynamic = (lambda static (int a_1) (Mul (local a_1):int (const 2):int):int) @23\n" +
-        "expr (call puts _ (call dyn.Invoke#12 (local f):dynamic (const 4):int):dynamic) @24\n" +
+        "expr (call puts _ (dyn.Invoke#12 (local f):dynamic (const 4):int):dynamic) @24\n" +
         "expr (call puts _ (local w):int) @25\n";
 
     [Fact]
@@ -158,6 +137,26 @@ public class DynSitesTests
     };
 
     [Fact]
+    public void Sites_are_declared_as_a_static_holder_type()
+    {
+        var pass = new DynSites("main.al");
+        pass.Run(LowerMain("n : Any = 4\nputs n.abs\nputs n + 1\n"));
+        var t = pass.Declaration()!;
+        Assert.Equal(DeclExpected, AirDeclDump.Of(t));
+        Assert.Same(t, t.Sym.Synth);
+        Assert.Null(new DynSites().Declaration());
+    }
+
+    const string DeclExpected =
+        "type module abstract sealed beforefieldinit <>DynSites\n" +
+        "  field internal static global::Alice.Runtime.DynSite site0\n" +
+        "  field internal static global::Alice.Runtime.DynSite site1\n" +
+        "  method private static specialname void .cctor() [TypeInitializer]\n" +
+        "    assign (member site0 (type <>DynSites)):global::Alice.Runtime.DynSite = (new global::Alice.Runtime.DynSite (cast global::Alice.Runtime.DynKind (const 1):int):global::Alice.Runtime.DynKind (const \"abs\"):string (const 0):int (const false):bool):global::Alice.Runtime.DynSite @main.al:2:6+0\n" +
+        "    assign (member site1 (type <>DynSites)):global::Alice.Runtime.DynSite = (new global::Alice.Runtime.DynSite (cast global::Alice.Runtime.DynKind (const 5):int):global::Alice.Runtime.DynKind (cast global::Alice.Runtime.DynOp (const 1):int):global::Alice.Runtime.DynOp):global::Alice.Runtime.DynSite @main.al:3:6+0\n" +
+        "    return\n";
+
+    [Fact]
     public void Statically_typed_code_has_no_sites()
     {
         var body = LowerMain("class P\n  getter x : Int32\n  def initialize(@x : Int32)\n  end\nend\np = P.new(2)\nputs p.x + 1\n");
@@ -175,7 +174,7 @@ public class DynSitesTests
         var pass = new DynSites("main.al");
         pass.Run(body);
         string dump = Dump(body);
-        Assert.Contains("decl __dyn1 dynamic = (call dyn.GetIndex#", dump);
+        Assert.Contains("decl __dyn1 dynamic = (dyn.GetIndex#", dump);
         Assert.Equal(1, dump.Split("decl __dyn").Length - 1);
     }
 
@@ -204,8 +203,31 @@ public class DynSitesTests
         Assert.Contains("dynamic v = new P(2);", before);
     }
 
-    [Fact(Skip = "Pending: AirToIl (D1.4, il-emit) does not emit AirDynCall yet; un-skip to run the program under --backend il and compare with the C# backend")]
-    public void Dynamic_program_runs_the_same_under_both_backends()
+    /// <summary>Dynamic operators follow Alice semantics (floored `/` and `%`, checked arithmetic), the same as statically
+    /// typed code; the C# backend's `dynamic` truncates (a known divergence, docs/production.md).</summary>
+    const string SemanticsProgram = "a : Any = -7\nb : Any = 2\nputs a / b\nputs a % 3\nputs -7.5 % b\nputs a * b\n";
+    const string SemanticsExpected = "-4\n2\n0.5\n-14\n";
+
+    [Fact]
+    public void Dynamic_operators_have_Alice_semantics_on_the_IL_path()
+    {
+        // the IL path evaluates each BinaryOp site with Dyn.BinaryOp; this checks what those sites compute
+        var pass = new DynSites("main.al");
+        pass.Run(LowerMain(SemanticsProgram));
+        var ops = pass.Sites.Where(s => s.Kind == DynKind.BinaryOp).Select(s => s.Op).ToList();
+        Assert.Equal(new[] { DynOp.Div, DynOp.Mod, DynOp.Mod, DynOp.Mul }, ops);
+        object?[] lefts = [-7, -7, -7.5, -7];
+        object?[] rights = [2, 3, 2, 2];
+        var got = ops.Select((op, i) =>
+        {
+            var site = new DynSite(DynKind.BinaryOp, op);
+            return Prelude.str(Dyn.BinaryOp(ref site, lefts[i], rights[i])) + "\n";
+        });
+        Assert.Equal(SemanticsExpected, string.Concat(got));
+    }
+
+    [Fact(Skip = "Pending: AirToIl (D1.4, il-emit) does not emit AirDynCall yet; then run SemanticsProgram under --backend il and assert SemanticsExpected (Alice semantics; the C# backend prints -3, -1, -1.5 for the first three)")]
+    public void Dynamic_program_runs_with_Alice_semantics_under_the_IL_backend()
     {
     }
 }

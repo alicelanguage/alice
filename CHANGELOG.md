@@ -5,10 +5,11 @@
 - IL backend dynamic sites (backend plan D1.9, ADR 0033): `Alice.Runtime.Dyn` (`src/Alice.Runtime/Dynamic/`) dispatches
   `Any` values without the C# runtime binder: one `DynSite` per call site with a monomorphic entry and a 4-entry
   polymorphic inline cache keyed by receiver and argument runtime types, `MethodInvoker` thunks (allocation-free hit
-  path), overloads by runtime types with numeric widening, nil, C# operator semantics (checked), `define_method` /
+  path), overloads by runtime types with numeric widening, nil, Alice operator semantics (checked, floored `/` `%`), `define_method` /
   `method_missing`, public members only. The IL-only pass `Air/Passes/DynSites.cs` rewrites dynamic operations into
   `AirDynCall` (`Mir/MExpr.Dyn.cs`) and lists the site fields; AL0232 reports dynamic sites under `native = true` and
-  on wasm. The C# backend is unchanged.
+  on wasm; `DynSites.Declaration()` declares the `<>DynSites` holder type (AirDecls). The C# backend is unchanged
+  (its C# `dynamic` still truncates `/` and `%`: docs/production.md).
 - IL backend Synthesize pass (backend plan D1.6, ADR 0032/0033): `Air/Passes/Synthesize.cs` builds, for the IL backend only, explicit declarations with MIR bodies (`Mir/AirDecls.cs`: `AirModuleDecl`/`AirTypeDecl`/`AirMethodDecl`/`AirFieldDecl`/`AirPropertyDecl`, on `TypeSym.Synth`) for what Roslyn synthesizes today: record and record struct members (backing fields, init accessors, primary/copy constructors, EqualityContract, Equals, GetHashCode, ToString/PrintMembers, Deconstruct, ==/!=, `<Clone>$`, `__With`), sum types (abstract base, sealed nested variants, `Tag`, `Is<Variant>`, unit `Value`), derived `!=`/`>`/`>=`, the IEnumerable bridge, auto-properties, field/constant initializers, default and struct constructors, `to_s` as ToString and the module initializer. Emitted C# is byte-identical on the corpus.
 - AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,

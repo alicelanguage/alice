@@ -1,12 +1,14 @@
 using Alice.Compiler.Mir;
 using Alice.Compiler.Optimizer;
+using Alice.Compiler.Semantics;
 using Alice.Runtime;
 
 namespace Alice.Compiler.Air.Passes;
 
 /// <summary>
 /// One dynamic call site of a module: a static field <see cref="Field"/> of type <c>Alice.Runtime.DynSite</c> in the
-/// holder class <see cref="DynSites.HolderName"/>, initialized once (<see cref="Init"/>) in the holder's cctor.
+/// holder class <see cref="DynSites.HolderName"/>, initialized once (<see cref="Init"/>) in the holder's cctor
+/// (<see cref="DynSites.Declaration"/>).
 /// </summary>
 public sealed record DynSiteDecl(int Id, DynKind Kind, string Name, int Arity, DynOp Op, bool Safe, AirType? To, Span? Span)
 {
@@ -90,6 +92,33 @@ public sealed class DynSites : MirRewriter, IMirPass
 
     /// <param name="file">Source file for sites whose nodes and statements carry only a line.</param>
     public DynSites(string file = "") => this.file = file;
+
+    /// <summary>
+    /// The holder of the site fields in the declaration model (Mir/AirDecls.cs): a static class
+    /// <see cref="HolderName"/> with one static `DynSite` field per site and a `.cctor` that builds each one with
+    /// <see cref="DynSiteDecl.Init"/>. Null when the module has no dynamic site. Call it after every body ran.
+    /// </summary>
+    public AirTypeDecl? Declaration()
+    {
+        if (Sites.Count == 0) return null;
+        var sym = new TypeSym { Name = HolderName, Kind = "module", Type = new AType("module", HolderName) };
+        var self = new AirType.AliceType(sym, []);
+        var t = new AirTypeDecl { Sym = sym, Name = HolderName, Kind = AirTypeKind.Module, Abstract = true, Sealed = true, Self = self };
+        var body = new List<MStmt>();
+        foreach (var s in Sites)
+        {
+            t.Fields.Add(new AirFieldDecl { Name = s.Field, Type = DynSiteDecl.SiteType, Vis = AirVis.Internal, Static = true });
+            body.Add(new MAssign { Target = new MMember { Target = new AirTypeRef(self), Name = s.Field, Type = DynSiteDecl.SiteType }, Value = s.Init(), Span = s.Span });
+        }
+        body.Add(new MReturn());
+        t.Methods.Add(new AirMethodDecl
+        {
+            Name = ".cctor", Vis = AirVis.Private, Flags = AirMethodFlags.Static | AirMethodFlags.Ctor | AirMethodFlags.SpecialName,
+            Synth = AirSynth.TypeInitializer, Body = body,
+        });
+        sym.Synth = t;
+        return t;
+    }
 
     public new void Run(List<MStmt> body)
     {

@@ -134,7 +134,8 @@ internal static class Numbers
     };
 }
 
-/// <summary>Operators on numbers, Bool and String without reflection (C# semantics, checked arithmetic), and the
+/// <summary>Operators on numbers, Bool and String without reflection (Alice semantics: checked arithmetic, floored
+/// `/` and `%` on Int32/Int64 and floored `%` on floats, as statically typed code), and the
 /// `op_*` method names of user-defined operators.</summary>
 internal static class Operators
 {
@@ -278,8 +279,8 @@ internal static class Operators
             DynOp.Add => checked(x + y),
             DynOp.Sub => checked(x - y),
             DynOp.Mul => checked(x * y),
-            DynOp.Div => checked(x / y),
-            DynOp.Mod => x % y,
+            DynOp.Div => FlooredDiv<T>() ? FloorDiv(x, y) : checked(x / y),
+            DynOp.Mod => FlooredMod<T>() ? FloorMod(x, y) : x % y,
             DynOp.Eq => x == y,
             DynOp.Ne => x != y,
             DynOp.Lt => x < y,
@@ -289,6 +290,27 @@ internal static class Operators
             _ => null,
         };
         return r != null;
+    }
+
+    // the types the lowering gives floored helpers (Lowerer.FlooredHelper): floor_div/floor_mod, floor_fmod
+    static bool FlooredDiv<T>() => typeof(T) == typeof(int) || typeof(T) == typeof(long);
+
+    static bool FlooredMod<T>() => FlooredDiv<T>() || typeof(T) == typeof(double) || typeof(T) == typeof(float);
+
+    /// <summary>-7 / 2 == -4 (Prelude.floor_div).</summary>
+    static T FloorDiv<T>(T x, T y) where T : INumber<T>
+    {
+        T q = checked(x / y);
+        if (x % y != T.Zero && T.IsNegative(x) != T.IsNegative(y)) q -= T.One;
+        return q;
+    }
+
+    /// <summary>-7 % 3 == 2, the sign of the divisor (Prelude.floor_mod / floor_fmod).</summary>
+    static T FloorMod<T>(T x, T y) where T : INumber<T>
+    {
+        T r = x % y;
+        if (r != T.Zero && T.IsNegative(r) != T.IsNegative(y)) r += y;
+        return r;
     }
 
     static bool Int<T>(DynOp op, T x, T y, out object? r) where T : IBinaryInteger<T>
