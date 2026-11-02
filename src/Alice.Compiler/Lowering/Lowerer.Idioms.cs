@@ -49,6 +49,8 @@ public sealed partial class Lowerer
     static (IndexExpr Ix, string Op, Syntax.Expr Delta)? CounterUpdate(Assign a)
     {
         if (a.Target is not IndexExpr ix || ix.Args.Count != 1 || !IsDictionary(ix.Target.Type, out _, out var v) || !v.IsNumeric) return null;
+        // a DefaultHash (`Hash.new(0)`) counts from its default: its own indexer, not a raw slot
+        if (ix.Target.Type.Cs.StartsWith("global::Alice.Runtime.DefaultHash<")) return null;
         if (!Pure(ix.Target) || !Pure(ix.Args[0].Value!)) return null;
         if (a.Op is "+=" or "-=") return (ix, a.Op, a.Value);
         if (a.Op != "=" || a.Value is not BinaryExpr { Op: "+" or "-" } b) return null;

@@ -158,7 +158,8 @@ public sealed partial class Lowerer
         {
             var v = Expr(a.Value);
             if (hoisted.Contains(a.Declares)) o.Add(new MAssign { Target = new MCode(a.Declares.CsName), Value = v });
-            else o.Add(new MDecl { Name = a.Declares.CsName, Init = v });
+            // a local widened to its enum (`r = M::Free`, Binder.WidenVariant) is declared with that type, not `var`
+            else o.Add(new MDecl { Name = a.Declares.CsName, Init = v, TypeCs = a.Declares.Type.Sym is { Kind: "adt" } && a.Value.Type.Sym is { Kind: "variant" } ? a.Declares.Type.Cs : null });
             return;
         }
         var target = Expr(a.Target);

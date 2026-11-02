@@ -410,10 +410,23 @@ public sealed partial class Binder
         return Func(ps, AType.Void);
     }
 
+    /// <summary>The type of an integer literal as the lexer spells it: `7U`, `7UL`, `7L`, `((byte)7)`...</summary>
+    static AType IntLiteralType(string text) => text switch
+    {
+        _ when text.StartsWith("((byte)") => AType.Byte,
+        _ when text.StartsWith("((sbyte)") => AType.SByte,
+        _ when text.StartsWith("((short)") => AType.Short,
+        _ when text.StartsWith("((ushort)") => AType.UShort,
+        _ when text.EndsWith("UL") => AType.ULong,
+        _ when text.EndsWith('U') => AType.UInt,
+        _ when text.EndsWith('L') => AType.Long,
+        _ => AType.Int,
+    };
+
     static AType LiteralType(Expr? e) => e switch
     {
-        LitExpr { Kind: "int" } l => l.Text.EndsWith("L") ? AType.Long : AType.Int,
-        LitExpr { Kind: "float" } l => l.Text.EndsWith("f") ? AType.Float : AType.Double,
+        LitExpr { Kind: "int" } l => IntLiteralType(l.Text),
+        LitExpr { Kind: "float" } l => l.Text.EndsWith('f') || l.Text.StartsWith("((float)") ? AType.Float : l.Text.EndsWith('m') ? AType.Decimal : AType.Double,
         LitExpr { Kind: "str" } => AType.String,
         InterpExpr => AType.String,
         LitExpr { Kind: "char" } => AType.Char,

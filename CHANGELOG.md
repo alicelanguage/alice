@@ -9,6 +9,25 @@
   `AirUnOp`, `await` is `AirUnOp.Await`) with a `Checked` flag, cleared inside compiler-made `unchecked(...)`.
   Emitted C# is byte-identical on the corpus (`tools/emit-corpus.sh`, reused by later AIR work). Hidden
   `alice emit --air <file>` prints the MIR text dump (`MirDump`) for tests.
+- Ruby core behaviour that needed the compiler: `Hash(K, V).new(default)` and `Hash(K, V).new { |h, k| ... }` build an
+  `Alice.Runtime.DefaultHash` (missing keys read as the default, `h[k] += 1` counts from it; a block ending in `h[k] = v`
+  returns v), `Hash(K, V).new(capacity: n)` is the capacity; `to_i?`/`to_f?` are `Int32?`/`Float64?`, `match` is
+  `MatchData?`, `Hash#delete` is `V?`, `dup`/`clone` keep the receiver's type, multi-key `dig` is the leaf `V?`,
+  `max(n)`/`min(n)` are arrays, `each_char`/`reverse_each`/`step` without a block are sequences; `slice_when` blocks
+  get two elements; `filter_map` with a nilable value-type result compiles; `t[0]` on tuples and `kv[0]`/`kv[1]` on
+  pairs; `===` is Ruby case equality (range `include?`, regex match, type test, else `==`); `[1, 2] * 2` and
+  `[1, 2] * ","`; `String.build { |io| ... }`; named tuples print with their names (`{name: "ada", age: 36}`) and
+  have `keys`, `to_h`, `merge`, `to_s`, `inspect`.
+- Compiler fixes from the bend2 ports: `x &+= y` / `&-=` / `&*=`; integer literals keep their suffix type when they
+  first assign a hoisted local or fill a constant table (`w = 7_u32` in an `if`, `RK = [256_u32, 5394_u32]`); an enum
+  constructor call as another's argument parses (`T::N(T::L(a), T::L(a))`, `M::Node(M::Free, r)`); a local first given
+  a field-less variant is typed as its enum (`r = M::Free` then `r = M::Node(r, f)`); `UInt32 >> UInt32` (the count is
+  converted to Int32); `val CUT = 3` is a constant; `"7".to_u32` reports `undefined method 'to_u32' for String`
+  (AL0302) instead of a .NET constraint error; `nil = 3` is a reserved-word error.
+- `require_relative "x"` loads the sibling file in single-file builds (`alice run/build/check`), like `require`.
+- Integration tests read child-process output asynchronously and turn off MSBuild node reuse and the compiler server
+  for the child, so the suite no longer hangs on inherited pipes (SdkPackageTests, SampleTests).
+
 - Runtime: `Arena/` (ADR 0037, P1.1): `Term`, `Arena<TSlot>` lane-local slabs with Take/Borrow/free list, `ArenaRegion` resets; tree(23) build+sum 145 ms serial (records 522 ms), 15 ms with forks on 32 cores (`benchmarks/arena`).
 - Runtime: `Alice.Runtime` dataflow networks (`Dataflow/`, ADR 0038 P3.1): bounded SPSC `Ring<T>`, `Graph` with
   `Source`/`Stage`/`Replicate`/`Sink` on the thread pool (backpressure, completion, first exception rethrown at `Run`),

@@ -13,10 +13,8 @@ public class FSharpInteropTests
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en-US";
         psi.Environment["DOTNET_NOLOGO"] = "1";
-        using var p = Process.Start(psi)!;
-        string o = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        Assert.True(p.ExitCode == 0, o);
+        var (code, o) = ChildProcess.Run(psi);   // async reads, no build servers: the suite never hangs on a pipe
+        Assert.True(code == 0, o);
         return o;
     }
 

@@ -19,10 +19,8 @@ public class SampleTests
         var psi = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = Path.Combine(Root(), "samples") };
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en-US";
-        using var p = Process.Start(psi)!;
-        string o = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        Assert.True(p.ExitCode == 0, o);
+        var (code, o) = ChildProcess.Run(psi);   // async reads, no build servers: the suite never hangs on a pipe
+        Assert.True(code == 0, o);
         return o;
     }
 

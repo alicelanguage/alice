@@ -16,6 +16,12 @@ public sealed partial class Binder
             return BindExpr(ne);
         }
         AType recv = BindExpr(c.Recv);
+        if (RewriteCall(c, recv) is { } rw)
+        {
+            c.Res = "asexpr";
+            c.Sym = rw;
+            return BindExpr(rw);
+        }
         if (c.Name is "instance_eval" or "instance_exec" && c.Block != null && recv.Sym is TypeSym its) return BindInstanceEval(c, its);
         bool conc = IsConcurrentCall(c, recv);
         if (conc) MarkConcurrentArgs(c.Args);
@@ -28,6 +34,62 @@ public sealed partial class Binder
         refAllowed = c.Recv is ConstExpr { Sym: AType { Clr: Type ic } } && (ic == typeof(Interlocked) || ic == typeof(Volatile) && false);
         try { return BindCallCore(c, recv, conc); }
         finally { refAllowed = savedRef; }
+    }
+
+    static bool IsDictType(AType t) => t.Clr is { IsGenericType: true } g && g.GetGenericTypeDefinition() == typeof(Dictionary<,>);
+
+    static Expr Lit(string s, Node at) => new LitExpr { Kind = "str", Text = s, Line = at.Line, Col = at.Col };
+    /// <summary>`t[:name]`; of a named tuple literal, its element itself (a one-element literal is no C# tuple).</summary>
+    static Expr Element(Expr t, string name, Node at) => t is TupleLit { Names: { } ln } tl && ln.IndexOf(name) is int i and >= 0
+        ? tl.Items[i]
+        : new IndexExpr { Target = t, Args = [new Arg { Value = Lit(name, at) }], Line = at.Line, Col = at.Col };
+
+    /// <summary>
+    /// Calls that are other expressions once the receiver is typed (lowered through Res "asexpr"):
+    /// `a === b` (Ruby case equality: a range's include?, a regex match, a type test, else ==), and the names of a
+    /// named tuple, which exist only at compile time (`t.keys`, `t.to_h`, `t.merge(u)`, `t.to_s`, `t.inspect`).
+    /// </summary>
+    Expr? RewriteCall(CallExpr c, AType recv)
+    {
+        if (c.Name == "===" && c.Args.Count == 1 && c.Args[0].Value is { } rhs)
+        {
+            if (c.Recv is ConstExpr { Res: "type" } ce)
+                return new TypeTestExpr { Kind = "is", E = new TypeTestExpr { Kind = "as", E = rhs, Ref = new TypeRef { Name = "Object", Nullable = true }, Line = c.Line }, Ref = ce.Ref, Line = c.Line, Col = c.Col };
+            if (recv.Clr == typeof(System.Text.RegularExpressions.Regex))
+                return new CallExpr { Recv = c.Recv, Name = "IsMatch", Args = c.Args, Parens = true, Line = c.Line, Col = c.Col };
+            if (c.Recv is RangeExpr || recv.Clr is { IsGenericType: true } g && g.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+                return new CallExpr { Recv = c.Recv, Name = "include?", Args = c.Args, Parens = true, Line = c.Line, Col = c.Col };
+            return new BinaryExpr { Op = "==", L = c.Recv!, R = rhs, Line = c.Line, Col = c.Col };
+        }
+        if (recv.TupleNames is not { } names) return null;
+        switch (c.Name)
+        {
+            case "keys" when c.Args.Count == 0:
+                return new ArrayLit { Items = names.Select(n => Lit(n, c)).ToList(), Line = c.Line, Col = c.Col };
+            case "to_h" when c.Args.Count == 0 && c.Block == null:
+                return new HashLit { Keys = names.Select(n => Lit(n, c)).ToList(), Values = names.Select(n => Element(c.Recv!, n, c)).ToList(), Line = c.Line, Col = c.Col };
+            case "to_s" or "inspect" when c.Args.Count == 0:
+                return NamedTupleText(c.Recv!, names, c);
+            case "merge" when c.Args.Count == 1 && c.Args[0].Value is { } other && (other is TupleLit { Names: { } lon } ? lon : BindExpr(other).TupleNames) is { } on:
+                {
+                    var all = names.Concat(on.Where(n => !names.Contains(n))).ToList();
+                    return new TupleLit { Names = all, Items = all.Select(n => Element(on.Contains(n) ? other : c.Recv!, n, c)).ToList(), Line = c.Line, Col = c.Col };
+                }
+        }
+        return null;
+    }
+
+    /// <summary>`{name: "ada", age: 36}` as Ruby prints it: the names are compile-time only, so the text is built here.</summary>
+    static Expr NamedTupleText(Expr t, List<string> names, Node at)
+    {
+        var ie = new InterpExpr { Line = at.Line, Col = at.Col };
+        for (int i = 0; i < names.Count; i++)
+        {
+            ie.Chunks.Add((i == 0 ? "{" : ", ") + names[i] + ": ");
+            ie.Holes.Add(new CallExpr { Recv = Element(t, names[i], at), Name = "inspect", Line = at.Line, Col = at.Col });
+        }
+        ie.Chunks.Add("}");
+        return ie;
     }
 
     int ievalN;
@@ -167,8 +229,15 @@ public sealed partial class Binder
                     return WithBlockResult(mem, c, staticArgs, t => ClrTypes.Lookup(owner.Clr, c.Name, argc + 1, true, true, t));
                 }
             }
+            // static extension members (`String.build { |io| ... }`): typed from Alice.Runtime.StaticExtensions
+            if (owner.Clr == typeof(string) && ClrTypes.Lookup(typeof(Alice.Runtime.StaticExtensions), c.Name, argc + (c.Block != null ? 1 : 0), true, true, staticArgs) is { Kind: "method" } se)
+            {
+                c.Res = "clr";
+                if (c.Block != null) BindLambda(c.Block, ClrTypes.BlockParamTypes(se.Method, staticArgs));
+                return se.Type;
+            }
             if (c.Block != null) BindLambda(c.Block, new List<AType>());
-            c.Res = hasArgs ? "clr" : "field";
+            c.Res = hasArgs || c.Block != null ? "clr" : "field";
             return AType.Unknown;
         }
 
@@ -298,6 +367,10 @@ public sealed partial class Binder
 
         // Prelude extension methods (Ruby names)
         string cs = Mangle(c.Name);
+        // only the numeric conversions on text: the binder's receiver types are not exact enough to reject others
+        if (Builtins.ExtNames.Contains(cs) && recv.IsString && cs.StartsWith("to_") && recv.Clr is { } rclr && !Builtins.ExtFits(cs, rclr))
+            throw new CompileException([new Diagnostic("error", "AL0302", file, c.Line, Math.Max(1, c.Col) + (c.Recv != null ? 1 : 0),
+                $"undefined method '{c.Name}' for {Alice.Compiler.Diagnostics.AliceNames.Type(recv.Cs)}" + (cs.StartsWith("to_") && recv.IsString ? $" (parse the text first: `s.to_i.{c.Name}`)" : ""), c.Name.Length)]);
         if (Builtins.ExtNames.Contains(cs))
         {
             c.Res = "ext";
@@ -309,6 +382,12 @@ public sealed partial class Binder
                 pendingConcurrent = conc;
                 BindLambda(c.Block, Builtins.BlockParams(cs, recv, argTypes));
                 br = c.Block.ReturnsValue ? c.Block.Result : AType.Void;
+                if (cs == "filter_map" && br is { Nullable: true, Kind: "prim" } && Builtins.ElemOf(recv) is { IsKnown: true } fe && !IsDictType(recv))
+                {
+                    var rv = new AType(br.Kind, br.Cs.TrimEnd('?'), br.Clr) { Sym = br.Sym };
+                    c.TypeArgTypes = [fe, rv];
+                    return AType.Array(rv);
+                }
             }
             return Builtins.ExtReturn(cs, recv, argTypes, br) ?? AType.Unknown;
         }
@@ -387,6 +466,9 @@ public sealed partial class Binder
 
     AType BindSelfCall(CallExpr c)
     {
+        if (c.Name is "puts" or "print")
+            foreach (var a in c.Args)
+                if (a.Value is { } v and not InterpExpr && BindExpr(v).TupleNames is { } tn) a.Value = NamedTupleText(v, tn, v);
         if (c.Name == "define_method" && c.Block != null && c.Args.Count == 1 && curType != Program)
         {
             // runtime define_method (e.g. in a class-body loop): registered per class, reached via send/respond_to?

@@ -10,6 +10,7 @@ public sealed partial class Lowerer
     {
         if (c.Res == "fused") return new MCode((string)c.Sym!);
         if (c.Res == "asnew") return Expr((NewExpr)c.Sym!);
+        if (c.Res == "asexpr") return Expr((Expr)c.Sym!);   // Binder.RewriteCall: `===`, named-tuple names
         if (c.Res == "inline") return Expr((StmtExpr)c.Sym!);
         if (c.Res == "defmethod")
             return new MCall { Target = new MCode("global::Alice.Runtime.Prelude"), Name = "define_method", Args = { new MCode($"typeof({Type.Type.Cs})"), Expr(c.Args[0].Value!), new MCast { TypeCs = "global::System.Delegate", E = Expr(c.Block!) } } };
@@ -66,7 +67,7 @@ public sealed partial class Lowerer
                 return new MCall { Target = recv, Name = Binder.Mangle(c.Name) + TypeArgList(c), Args = args, Safe = c.Safe };
             case "ext":
             case "free":
-                return new MCall { Target = recv, Name = cs, Args = args, Safe = c.Safe };
+                return new MCall { Target = recv, Name = cs + TypeArgList(c), Args = args, Safe = c.Safe };
             case "unknown-member":
                 if (zeroArg.Contains(cs) && !props.Contains(cs)) return new MCall { Target = recv, Name = cs, Safe = c.Safe };
                 return new MMember { Target = recv!, Name = cs, Safe = c.Safe };

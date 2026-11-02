@@ -96,7 +96,7 @@ public sealed partial class Binder
             case LocalDecl d:
                 {
                     AType vt = d.Value != null ? BindExpr(d.Value) : AType.Unknown;
-                    AType t = d.Type != null ? ResolveType(d.Type) : vt;
+                    AType t = d.Type != null ? ResolveType(d.Type) : WidenVariant(vt);
                     d.Local = Declare(d, d.Name, t, d.IsVal);
                     NoteAlias(d.Local, d.Value);
                     break;
@@ -173,6 +173,11 @@ public sealed partial class Binder
         }
     }
 
+    /// <summary>`r = M::Free`: a local declared from a field-less variant takes the enum's type, so it can later hold
+    /// any variant (`r = M::Node(r, f)`). Variants with fields keep their type (their fields stay readable).</summary>
+    static AType WidenVariant(AType t) =>
+        t.Sym is { Parent: { Kind: "adt" } adt, FieldOrder.Count: 0 } && !t.Nullable ? adt.Type : t;
+
     void BindAssign(Assign a)
     {
         if (a.Target is NameExpr n)
@@ -180,7 +185,7 @@ public sealed partial class Binder
             var l = FindLocal(n.Name);
             if (l == null && a.Op == "=")
             {
-                AType vt = BindExpr(a.Value);
+                AType vt = WidenVariant(BindExpr(a.Value));
                 a.Declares = Declare(a, n.Name, vt);
                 NoteAlias(a.Declares, a.Value);
                 n.Sym = a.Declares;

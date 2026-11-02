@@ -31,10 +31,7 @@ public class PackageTests : IDisposable
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en-US";
         psi.Environment["DOTNET_NOLOGO"] = "1";
-        using var p = Process.Start(psi)!;
-        string o = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
-        p.WaitForExit();
-        return (p.ExitCode, o);
+        return ChildProcess.Run(psi);   // async reads, no build servers: the suite never hangs on a pipe
     }
 
     static List<string> Entries(string nupkg)

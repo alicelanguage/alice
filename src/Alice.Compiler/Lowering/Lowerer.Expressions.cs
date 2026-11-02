@@ -181,6 +181,7 @@ public sealed partial class Lowerer
             "repeat" => "str_mul",
             "append" => "append_op",
             "set+" => "arr_plus",
+            "arrmul" => "arr_mul",
             "set-" => "arr_minus",
             "set&" => "arr_and",
             "set|" => "arr_or",
@@ -189,6 +190,7 @@ public sealed partial class Lowerer
         if (helper != null) return new MCall { Target = new MCode("Prelude"), Name = helper, Args = { l, r } };
         if (b.Res == "coalesce") return new MBinary { Op = AirBinOp.Coalesce, L = l, R = r };
         if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
+        if (b.Res == "shiftcount") return new MBinary { Op = AirOps.ParseBin(b.Op), L = l, R = new MCast { TypeCs = "int", E = r } };
         if (Contract(b, l, r) is MExpr fused) return fused;
         if (b.Op is "&+" or "&-" or "&*") return new MCall { Name = "unchecked", Args = { Optimizer.MirFacts.Unchecked(new MBinary { Op = AirOps.ParseBin(b.Op[1..]), L = l, R = r }) } };
         if (UncheckedIfProven(b, l, r) is MExpr proven) return proven;
