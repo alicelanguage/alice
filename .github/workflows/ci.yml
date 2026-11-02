@@ -36,11 +36,32 @@ jobs:
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: 10.0.x
+      # Z3 for `alice prove --smt` (ADR 0022): the SMT tests run on every OS, and ALICE_REQUIRE_Z3=1 below makes a
+      # missing Z3 a test failure instead of a silent early return
+      - name: Install Z3 (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libz3-4
+      - name: Install Z3 (macOS)
+        if: runner.os == 'macOS'
+        run: brew install z3
+      - name: Install Z3 (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          Z3_URL: https://github.com/Z3Prover/z3/releases/download/z3-5.3.3/z3-5.3.3-x64-win.zip
+          Z3_SHA256: 4e48624a6895b49606b3cf91ca4fbcc069fb2973b9706532170a144baa3fd798
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/z3.zip" "$Z3_URL"
+          echo "$Z3_SHA256  $RUNNER_TEMP/z3.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/z3.zip" -d "$RUNNER_TEMP/z3"
+          echo "ALICE_Z3=$(cygpath -w "$RUNNER_TEMP/z3/z3-5.3.3-x64-win/bin/libz3.dll")" >> "$GITHUB_ENV"
       - name: Restore
         run: dotnet restore Alice.sln
       - name: Build
         run: dotnet build Alice.sln --configuration Release --no-restore
       - name: Test full suite (including allocation and integration tests)
+        env:
+          ALICE_REQUIRE_Z3: '1'
         run: dotnet test Alice.sln --configuration Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
       - name: Verify examples and ASP.NET HTTP routes
         shell: bash

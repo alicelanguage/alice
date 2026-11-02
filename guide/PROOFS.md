@@ -47,9 +47,10 @@ every case of its domain, in parallel over the first variable, and writes `PROOF
 # rule clamp_stays_in_range: proven over 202101 cases
 ```
 
-A failing rule prints its first counterexample in domain order (the same on every run and machine), the exact inputs: `fails at x = 1001, lo = 0`. An exception thrown
-while checking (overflow, division by zero, a missing key) is a failure with its type:
-`x = 0: raised DivideByZeroException`.
+A failing rule prints its first counterexample in domain order (the same on every run and machine): the exact
+inputs and what the rule did on them, `rule NAME FAILS: x = 1001, lo = 0 -> false`. An exception thrown while
+checking (overflow, division by zero, a missing key) is a failure with its type:
+`rule NAME FAILS: x = 0 -> raised DivideByZeroException`.
 
 ## Before committing
 
@@ -62,6 +63,72 @@ while checking (overflow, division by zero, a missing key) is a failure with its
 Run it in CI and before every commit; commit `PROOF.al` with the code. An agent that edits the code must run
 `alice prove` and keep every rule proven. A rule may only change when the requirement it states changes.
 
+- `alice build --prove` (or `prove = true` under `[build]` in `alice.toml`) runs `alice prove --check` after
+  the build whenever the package has a `RULES.al`, so CI needs no extra step.
+- `--format json` prints only a JSON summary (verdict, counterexample values, `ok`, `PROOF.al` state), rules in
+  name order. The exit code is 0 only when every rule is proven and `PROOF.al` is current.
+- `--timeout 30` limits each rule to 30 seconds. A rule that runs out is `not proven`: the check fails, it
+  never passes by timing out.
+
+## A worked example: the counterexample loop
+
+`app.al` has a bug, and `RULES.al` states what `percent` must do:
+
+```alice
+def percent(part : Int32, total : Int32) : Int32
+  part * 100 / total
+end
+
+# RULES.al
+rule percent_in_range(part in 0..1000, total in 0..1000)
+  return true if part > total
+  p = percent(part, total)
+  p >= 0 && p <= 100
+end
+```
+
+```text
+$ alice prove
+╭──────────────────┬───────────┬────────┬────╮
+│ rule             │     cases │ result │ ms │
+├──────────────────┼───────────┼────────┼────┤
+│ percent_in_range │ 1,002,001 │ FAILS  │  7 │
+╰──────────────────┴───────────┴────────┴────╯
+rule percent_in_range FAILS: part = 0, total = 0 -> raised DivideByZeroException
+error: some rules fail: fix the code (or the rule, if the rule is wrong) and run `alice prove` again
+$ echo $?
+1
+```
+
+The rule is right (0 of 0 is a percentage too), so the code changes, `return 0 if total == 0`, and the loop runs
+again:
+
+```text
+$ alice prove
+╭──────────────────┬───────────┬────────┬────╮
+│ rule             │     cases │ result │ ms │
+├──────────────────┼───────────┼────────┼────┤
+│ percent_in_range │ 1,002,001 │ proven │  6 │
+╰──────────────────┴───────────┴────────┴────╯
+```
+
+Every input up to 1000 is fine now, but not every `Int32`. With `rule percent_in_range(part : Int32, total : Int32)`
+(and `return true if part < 0 || part > total`), `alice prove --smt` finds what enumeration never reaches:
+
+```text
+$ alice prove --smt
+╭──────────────────┬───────┬────────┬────╮
+│ rule             │ cases │ result │ ms │
+├──────────────────┼───────┼────────┼────┤
+│ percent_in_range │   all │ FAILS  │ 54 │
+╰──────────────────┴───────┴────────┴────╯
+rule percent_in_range FAILS: part = 148725653, total = 603979777 -> raised OverflowException
+```
+
+`part * 100` overflows Int32. Computing in Int64, `(part.to_i64 * 100 / total).to_i32`, makes it `proven` for every
+input (`all`, 1.2 s). Z3's counterexample was replayed through the compiled rule before it was printed: it really
+raises.
+
 ## Whole ranges: `alice prove --smt`
 
 `alice prove --smt` asks Z3 to prove each rule for every input instead of enumerating, so a variable may take a
@@ -70,8 +137,10 @@ floored `/` and `%`, wrapping `&+ &- &*`, checked conversions), `if`/`elsif`/`el
 locals, `divmod`, `Math.Min/Max`, `MIN`/`MAX` and non-recursive pure methods. A rule with loops, recursion,
 objects or floats is enumerated as usual, never half-proven. `PROOF.al` marks SMT proofs `(smt)`.
 
-Z3 is opt-in: install the system `libz3` (`pacman -S z3`, `apt install libz3-4`, `brew install z3`) or set
-`ALICE_Z3=path`. Without it, `--smt` is a usage error.
+Z3 is opt-in: install the system `libz3` (`pacman -S z3`, `apt install libz3-4`, `brew install z3`; on Windows a
+release zip from github.com/Z3Prover/z3) or set `ALICE_Z3=path`. Without it, `--smt` is a usage error. A Z3
+counterexample is always run again through the compiled rule; if the rule holds there, `alice prove` reports the
+disagreement as `not proven` instead of trusting either side.
 
 ## What is proven, and what is not
 
