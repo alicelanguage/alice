@@ -132,8 +132,9 @@ public sealed class IlBuilder
     /// <summary>Zero-initialize locals (`.locals init`), required by verifiable code. On by default.</summary>
     public bool InitLocals { get; set; } = true;
 
-    /// <summary>Peephole passes to run before encoding; none by default (the AIR emitter turns them on).</summary>
-    public IlPeephole Peephole { get; set; }
+    /// <summary>Peephole passes to run before encoding: all by default; debug builds set <see cref="IlPeephole.None"/>
+    /// so every emitted instruction (and its sequence point) stays.</summary>
+    public IlPeephole Peephole { get; set; } = IlPeephole.All;
 
     public IReadOnlyList<IlLocal> Locals => locals;
 
