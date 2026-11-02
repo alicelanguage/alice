@@ -44,6 +44,7 @@ public static partial class Prelude
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Dynamic dispatch is opt-in Ruby semantics.")]
+    [Ambient]
     public static bool respond_to_q(object? target, string name) =>
         target != null && (target.GetType().GetMember(name).Length > 0 || target.GetType().GetMember(Names.Dotnet(name)).Length > 0
             || DefinedMethod(target.GetType(), name) != null);
@@ -53,6 +54,7 @@ public static partial class Prelude
     static class DefinedHolder { public static readonly System.Collections.Concurrent.ConcurrentDictionary<(Type, string), Delegate> Value = new(); }
 
     /// <summary>Runtime `define_method name { ... }`: callable through send / public_send, visible to respond_to?.</summary>
+    [Ambient]
     public static void define_method(Type owner, string name, Delegate body) => DefinedHolder.Value[(owner, name)] = body;
 
     static Delegate? DefinedMethod(Type t, string name)
@@ -63,6 +65,7 @@ public static partial class Prelude
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "Dynamic dispatch is opt-in Ruby semantics.")]
+    [Ambient]
     public static dynamic? send(object target, string name, params object?[] args)
     {
         var m = Resolve(target.GetType(), name, args);

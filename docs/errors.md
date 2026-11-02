@@ -18,7 +18,7 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0209 | cannot parallelize | `par for i in 1...n`<br>`  a[i] = a[i - 1] + 1` | `cannot parallelize \`par for\`: ...` | make iterations independent, or use a plain `for` |
 | AL0210 | not pure | `pure def f(n : Int32)`<br>`  puts n` | `\`f\` is not pure: ...` | remove the effect, or drop `pure` |
 | AL0211 | cannot fork | `par a, b = g(n), g(a)` | `cannot fork \`par\`: ...` | make both calls pure and independent, or drop `par` |
-| AL0212 | not safe | `safe def f`<br>`  System.Environment.ProcessorCount` | `\`f\` is not safe: it reaches .NET ...` | pass the value in as an argument, or drop `safe` |
+| AL0212 | not safe | `safe def f`<br>`  System.Environment.ProcessorCount`; `write_file(p, s)`; `x.send("m")`; a `lib` fun | `\`f\` is not safe: it reaches .NET ...` / `it calls \`write_file\` ...` | pass the value (or an object that does the I/O) in as an argument, or drop `safe` |
 | AL0213 | borrowed value escapes | `def f(borrow xs : Array(Int32))`<br>`  @@keep = xs` | `borrowed value \`xs\` escapes ...` | only index, size, iterate or lend `xs`; or take it with `own` |
 | AL0214 | rule domain too large | `rule r(a in 0..100000, b in 0..100000)` | `rule domain of \`r\` has ... cases, more than the ... \`alice prove\` checks exhaustively` | narrow the ranges, split the rule, or prove it for every input with `alice prove --smt` |
 | AL0215 | capturing native callback | `k = 1`<br>`LibC.qsort(xs, n, 4_u64, ->(a : Pointer(Int32), b : Pointer(Int32)) { k })` | `a callback passed to native code cannot capture variables` | pass state through the C function's user-data argument |
@@ -37,6 +37,8 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0228 | non-associative combine (planned, ADR 0039) | `cm for ... h[k[i]] += x[i]` with Float64 `h` | `combine on floats needs \`ordered\`` | use integers, mark it `ordered`, or use a plain `for` |
 | AL0229 | unproven permutation (planned, ADR 0039) | `cm for i ... out[p[i]] = a[i]` | `permutation \`p\` not provably in range and distinct` | produce `p` with `sort_by_key`/`compact`, or mark it `@[Permutation]` |
 | AL0230 | message not sendable | `Actor(List(Int32)).new(->(m : List(Int32)) { })` | `message type ... is not sendable between actors` | send numbers, String, enums, records/structs of sendable fields, tuples, `System.Collections.Immutable` types or actor handles |
+| AL0221 | unassigned field | `class P`<br>`  @name : String`<br>`  def initialize`<br>`  end` | `field \`@name\` (String) is never assigned by every \`initialize\` ...` | assign it in every `initialize`, give it a default (`@name : String = ""`) or make it `String?` |
+| AL0230 | message not sendable | `Actor(List(Int32)).new(->(m : List(Int32)) { })`; `Actor(Box(Array(Int32)))`; `Actor(T)` in a generic class | `message type ... is not sendable between actors` | send numbers, String, enums, records/structs of sendable fields, tuples, `System.Collections.Immutable` types or actor handles |
 | AL0231 | actor not isolated | `xs = List(Int32).new`<br>`Actor(Int32).new(->(m : Int32) { puts xs.Count })` | `actor is not isolated: it captures ...` | build the state in `init` (`Actor(S, T)`), send it as a message, or share it through `Mutex(T)`, `Atomic` or another actor |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 

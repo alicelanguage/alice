@@ -33,43 +33,150 @@ public sealed partial class Lowerer
     string? UnsafeReason(MethodSym m)
     {
         if (unsafeWhy.TryGetValue(m, out var known)) return known;
-        if (m.Decl == null) return unsafeWhy[m] = null;   // compiler-provided methods
+        if (m.Decl == null)
+            // compiler-provided: a delegate's Invoke and @[SoA] store methods run Alice code; a `lib` fun is C
+            return unsafeWhy[m] = m.Owner?.Kind is "delegate" or "soa" ? null : $"it is a foreign function (`{m.Owner?.Name}.{m.Name}`)";
         if (Backend.CEmitter.IsNative(m.Decl)) return unsafeWhy[m] = $"`{m.Name}` is @[Native]";
         unsafeWhy[m] = null;
         return unsafeWhy[m] = BodyUnsafe(m.Decl.Body);
     }
 
-    /// <summary>Namespaces whose types grant authority over the machine: creating one is never safe.</summary>
-    static readonly string[] Authority = ["System.IO", "System.Net", "System.Diagnostics", "System.Reflection", "System.Runtime.InteropServices", "System.Threading"];
+    // ---- the allow-list (security audit F5, F6) ----
+    // Allowed: Alice code (checked transitively), members of values the method was handed (capability style),
+    // the .NET statics below, the Alice runtime except its ambient entry points, the Prelude functions below.
+    // Everything else is rejected, whatever the shape of the expression that reaches it.
 
-    /// <summary>A .NET static reached by name is ambient authority, except pure math and Alice's own runtime.</summary>
-    static bool AmbientClr(Type? t) => t != null && t != typeof(Math) && t != typeof(MathF) && t.Namespace?.StartsWith("Alice.Runtime") != true;
+    /// <summary>Prelude functions callable by name from safe code: computation only, no I/O, environment or process.</summary>
+    static readonly HashSet<string> SafeFree =
+    [
+        "format", "sprintf", "str", "inspect", "hash", "raise", "rand", "pow", "IPow", "fma", "floor_div", "floor_mod",
+        "floor_fmod", "floor_div_pos", "floor_mod_pos", "arr_and", "arr_or", "arr_plus", "append_op", "filled", "range",
+        "regex", "match_index", "no_match", "checked", "assert", "assert_equal", "to_json", "parse_json", "FormatFloat",
+    ];
+
+    /// <summary>.NET types whose statics only compute: math, numbers, strings, collections helpers.</summary>
+    static readonly HashSet<Type> SafeClrStatics =
+    [
+        typeof(Math), typeof(MathF), typeof(string), typeof(char), typeof(decimal), typeof(Half), typeof(Int128), typeof(UInt128),
+        typeof(System.Numerics.BigInteger), typeof(System.Numerics.BitOperations), typeof(System.Numerics.Vector), typeof(Array),
+        typeof(Enumerable), typeof(Convert), typeof(BitConverter), typeof(TimeSpan), typeof(StringComparer), typeof(Tuple),
+        typeof(ValueTuple), typeof(MemoryExtensions), typeof(System.Buffers.Binary.BinaryPrimitives),
+    ];
+
+    /// <summary>Alice runtime types that reach the machine (native libraries, files, the loaded program, the test host).</summary>
+    static readonly HashSet<string> AmbientRuntimeTypes =
+        ["NativeLibs", "NativeCallback", "MappedFile", "ObjectSpace", "TestRunner", "ReplHost", "Utf8Arg", "EventAdapters", "KernelPool", "Specs", "Prelude"];
+
+    /// <summary>Prelude members marked [Ambient] (reflection, dynamic dispatch): the runtime is the source of truth.</summary>
+    static readonly HashSet<string> AmbientPrelude = typeof(Alice.Runtime.Prelude)
+        .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+        .Where(m => m.IsDefined(typeof(Alice.Runtime.AmbientAttribute), false)).Select(m => m.Name).ToHashSet();
+
+    static bool IsRuntime(Type t) => t.Namespace?.StartsWith("Alice.Runtime") == true;
+
+    /// <summary>A static member of `t` reached by name: allowed for pure .NET helpers and the non-ambient runtime.</summary>
+    static bool SafeStatic(Type t, string member)
+    {
+        if (t.IsGenericType) t = t.GetGenericTypeDefinition();
+        if (t.IsPrimitive || SafeClrStatics.Contains(t)) return true;
+        if (t == typeof(Alice.Runtime.Prelude)) return SafeFree.Contains(Binder.Mangle(member)) && !AmbientPrelude.Contains(Binder.Mangle(member));
+        if (IsRuntime(t)) return !AmbientRuntimeTypes.Contains(t.Name) && !t.IsDefined(typeof(Alice.Runtime.AmbientAttribute), false)
+            && !t.GetMember(member).Any(m => m.IsDefined(typeof(Alice.Runtime.AmbientAttribute), false));
+        return false;
+    }
+
+    /// <summary>Creating a .NET object: collections, text, numbers and the non-ambient runtime are plain data.</summary>
+    static bool SafeNew(Type t)
+    {
+        if (t.IsGenericType) t = t.GetGenericTypeDefinition();
+        if (Reflective(t)) return false;
+        if (IsRuntime(t)) return !AmbientRuntimeTypes.Contains(t.Name) && !t.IsDefined(typeof(Alice.Runtime.AmbientAttribute), false);
+        string ns = t.Namespace ?? "";
+        if (ns is "System.Collections.Generic" or "System.Collections.Immutable" or "System.Collections.Concurrent" or "System.Numerics"
+            || ns == "System.Text" || ns == "System.Text.RegularExpressions") return true;
+        return ns == "System" && (t.IsValueType || t == typeof(object) || t == typeof(string) || t == typeof(Random) || typeof(Exception).IsAssignableFrom(t));
+    }
+
+    /// <summary>Reflection, interop and code-loading types: holding one is reaching the machine.</summary>
+    static bool Reflective(Type? t)
+    {
+        if (t == null) return false;
+        if (t.IsArray) return Reflective(t.GetElementType());
+        if (t.IsGenericType && t.GetGenericArguments().Any(Reflective)) return true;
+        string ns = t.Namespace ?? "";
+        return typeof(System.Reflection.MemberInfo).IsAssignableFrom(t) || typeof(System.Reflection.Assembly).IsAssignableFrom(t)
+            || t == typeof(AppDomain) || t == typeof(Activator) || t == typeof(Delegate) || t == typeof(MulticastDelegate)
+            || ns.StartsWith("System.Reflection") || ns.StartsWith("System.Runtime.InteropServices") || ns.StartsWith("System.Runtime.Loader");
+    }
 
     static string Through(MethodSym callee, string why) => $"it calls `{callee.Name}`, which {why.Replace("it ", "")}";
 
-    string? BodyUnsafe(List<Stmt> body)
+    /// <summary>Every node of the body is checked (using, spawn, if-as-value, blocks, lambdas and inlined rewrites).</summary>
+    string? BodyUnsafe(IEnumerable<Node> body)
     {
-        foreach (var s in WalkStmts(body))
-            if (s is BeginStmt { Unchecked: true }) return "it uses `unchecked`";
-        foreach (var e in Walk(body))
+        string? why = null;
+        void Visit(Node n)
         {
-            switch (e)
-            {
-                case { Res: "dynamic" }:
-                    return "it calls through `dynamic`";
-                case ConstExpr { Res: "path", Sym: ConstPath { Owner.Clr: var pc } path } when AmbientClr(pc):
-                    return $"it reaches .NET `{pc!.Name}.{path.Members[0].Item1}` (ambient authority)";
-                case CallExpr { Recv: ConstExpr owner, Res: "clr" or "field" or "dyncall" } sc when AmbientClr(owner.Type.Clr):
-                    return $"it reaches .NET `{owner.Type.Clr!.Name}.{sc.Name}` (ambient authority)";
-                case NewExpr { Type: { Sym: null, Clr: { } nt } } when Authority.Any(ns => nt.Namespace?.StartsWith(ns) == true):
-                    return $"it creates .NET `{nt.Name}` (I/O, network, process, reflection or interop)";
-                case CallExpr { Sym: MethodSym callee } when callee != Method && UnsafeReason(callee) is string why:
-                    return Through(callee, why);
-                case NameExpr { Res: "call", Sym: MethodSym callee } when callee != Method && UnsafeReason(callee) is string why:   // `g` without parens
-                    return Through(callee, why);
-            }
-            if (e is CallExpr { Block: { } blk } && BodyUnsafe(blk.Body) is string inner) return inner;
-            if (e is LambdaExpr lam && BodyUnsafe(lam.Body) is string inl) return inl;
+            if (why != null) return;
+            why = NodeUnsafe(n);
+            if (why == null && n is Syntax.Expr { Sym: Node rewritten }) AstWalk.Each(rewritten, Visit);   // instance_eval, generic `.new`
+        }
+        AstWalk.Each(body, Visit);
+        return why;
+    }
+
+    string? NodeUnsafe(Node n)
+    {
+        switch (n)
+        {
+            case BeginStmt { Unchecked: true }:
+                return "it uses `unchecked`";
+            case Syntax.Expr { Res: "dynamic" or "dyncall" }:
+                return "it calls through `dynamic`";
+            case CallExpr { Res: "special" } sp when sp.Name != "to_s":
+                return $"it calls `{sp.Name}` (dynamic dispatch or reflection)";
+            case CallExpr { Res: "defmethod" or "classq" } r:
+                return $"it uses `{r.Name}` (runtime reflection)";
+            case Syntax.Expr e when Reflective(e.Type.Clr):
+                return $"it handles a reflection object (`{e.Type.Clr!.Name}`)";
+            case ConstExpr { Res: "path", Sym: ConstPath { Owner.Clr: { } pc } path } when !SafeStatic(pc, path.Members[0].Item1):
+                return $"it reaches .NET `{pc.Name}.{path.Members[0].Item1}` (ambient authority)";
+            case CallExpr { Res: "clr" or "field", Sym: System.Reflection.MethodBase { IsStatic: true } sm } sc when sm.DeclaringType is { } dt && !SafeStatic(dt, sm.Name):
+                return $"it reaches .NET `{dt.Name}.{sc.Name}` (ambient authority)";
+            case CallExpr { Recv: ConstExpr { Res: "type" } owner, Res: "clr" or "field" } sc when owner.Type.Clr is { } oc && !SafeStatic(oc, sc.Name):
+                return $"it reaches .NET `{oc.Name}.{sc.Name}` (ambient authority)";
+            case CallExpr { Recv: null, Res: "clr" } inh:
+                return $"it calls the inherited .NET member `{inh.Name}`";
+            case CallExpr { Res: "ext" } x when AmbientPrelude.Contains(Binder.Mangle(x.Name)):
+                return $"it calls `{x.Name}` (runtime reflection or dynamic dispatch)";
+            case CallExpr { Recv: null, Res: "free" or "call", Sym: not MethodSym } f when !SafeFree.Contains(Binder.Mangle(f.Name)):
+                return $"it calls `{f.Name}` (I/O, environment, process or reflection: not on the safe allow-list)";
+            case CallExpr { Recv: not null, Res: "call" or "unknown-member", Sym: not MethodSym } u:
+                return $"it calls `{u.Name}` on a value of unknown type";
+            case NameExpr { Res: "call" or "unknown", Sym: not MethodSym and not LocalSym } ne when !SafeFree.Contains(Binder.Mangle(ne.Name)):
+                return $"it calls `{ne.Name}` (I/O, environment, process or reflection: not on the safe allow-list)";
+            case NewExpr { Type: { Sym: null, Clr: { } nt } } when !SafeNew(nt):
+                return $"it creates .NET `{nt.Name}` (I/O, network, process, reflection or interop)";
+            case NewExpr { Type.Sym: TypeSym ts, Args: var nargs } when CtorUnsafe(ts, nargs.Count) is string cwhy:
+                return $"it creates `{ts.Name}`, whose initializer {cwhy.Replace("it ", "")}";
+            case CallExpr { Sym: MethodSym callee } when callee != Method && UnsafeReason(callee) is string why:
+                return Through(callee, why);
+            case NameExpr { Res: "call", Sym: MethodSym callee } when callee != Method && UnsafeReason(callee) is string why:   // `g` without parens
+                return Through(callee, why);
+        }
+        return null;
+    }
+
+    /// <summary>`T.new`: its `initialize` and its field initializers run too.</summary>
+    string? CtorUnsafe(TypeSym ts, int argc)
+    {
+        for (var s = ts; s != null; s = s.BaseClass)
+        {
+            if (s.FindMethod("initialize", argc) is { } ctor && ctor != Method && UnsafeReason(ctor) is string why) return why;
+            if (s.Decl != null)
+                foreach (var m in s.Decl.Members)
+                    if (m is FieldDecl { Init: { } fi } && BodyUnsafe([fi]) is string fwhy) return fwhy;
+                    else if (m is AccessorDecl { Init: { } ai } && BodyUnsafe([ai]) is string awhy) return awhy;
         }
         return null;
     }

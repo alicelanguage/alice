@@ -360,6 +360,9 @@ public sealed partial class Binder
                 return AType.String;
             case "<<" when listy(l) || l.Clr == typeof(System.Text.StringBuilder):
                 b.Res = "append";
+                // `xs << v` mutates xs: self's state (F9) or, from concurrent code, a shared list
+                NoteSelfWrite(b.L);
+                if (IsShared(b.L) && !ThreadSafe(l)) throw Race(b, $"`<<` appends to a shared {l.Cs}");
                 return l;
             case "+" or "-" or "&" or "|" when listy(l) && listy(r):
                 b.Res = "set" + b.Op;
