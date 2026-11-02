@@ -102,8 +102,11 @@ public static class CompileCommands
 
     public static int RunCmd(List<string> a)
     {
+        string? backend = TakeOption(a, "--backend");
+        if (backend is not (null or "csharp" or "il")) throw new UsageException($"unknown backend `{backend}`", "--backend il | csharp");
         var o = Parse(a);
         if (o.Files.Count == 0) return RunProject(o);
+        if (backend == "il") return RunIl(o);
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Files[0]);
         string? key = RunCache.Enabled && !o.Strict ? RunCache.Key(files, name, o.Refs) : null;   // a cached image skipped the strict check
@@ -118,6 +121,52 @@ public static class CompileCommands
         UiH.Status(T("running"), name);
         var asm = AliceCompiler.Load(image);
         var entry = asm.EntryPoint;
+        if (entry == null) return 0;
+        try { entry.Invoke(null, [o.Rest.ToArray()]); }
+        catch (System.Reflection.TargetInvocationException e) when (e.InnerException != null)
+        {
+            Ui.Ui.Error($"{e.InnerException.GetType().Name}: {e.InnerException.Message}");
+            return 101;
+        }
+        return 0;
+    }
+
+    /// <summary>`--name value` removed from the arguments (before the program arguments are collected).</summary>
+    static string? TakeOption(List<string> a, string name)
+    {
+        int i = a.IndexOf(name);
+        int dd = a.IndexOf("--");
+        if (i < 0 || dd >= 0 && i > dd || i + 1 >= a.Count) return null;
+        string v = a[i + 1];
+        a.RemoveRange(i, 2);
+        return v;
+    }
+
+    /// <summary>The direct IL backend (ADR 0033, D1.4): unsupported nodes are reported, nothing falls back silently.</summary>
+    static Alice.Compiler.Backend.Il.IlCompileResult? CompileIl(List<SourceFile> files, string name, List<string> refs)
+    {
+        try
+        {
+            var res = Alice.Compiler.Backend.Il.AirToIl.Compile(files, name, exe: true, refs);
+            if (res.Ok) return res;
+            foreach (var e in res.Errors.Take(20)) Console.Error.WriteLine("il: unsupported " + e.Message);
+            Console.Error.WriteLine("il: " + res.Stats);
+            return null;
+        }
+        catch (CompileException e)
+        {
+            Ui.DiagnosticRenderer.Render(e.Diagnostics, Sources(files));
+            return null;
+        }
+    }
+
+    static int RunIl(Options o)
+    {
+        var files = Read(o.Files);
+        string name = Path.GetFileNameWithoutExtension(o.Files[0]);
+        var res = CompileIl(files, name, o.Refs);
+        if (res == null) return 1;
+        var entry = AliceCompiler.Load(res.Pe!).EntryPoint;
         if (entry == null) return 0;
         try { entry.Invoke(null, [o.Rest.ToArray()]); }
         catch (System.Reflection.TargetInvocationException e) when (e.InnerException != null)
@@ -374,9 +423,27 @@ public static class CompileCommands
         // hidden: D1.1 PersistedAssemblyBuilder spike (throwaway, src/Alice.Compiler/Backend/IlSpike/README.md)
         if (a.Remove("--il-spike")) return Alice.Compiler.Backend.IlSpike.SpikeCli.Run(a);
         bool air = a.Remove("--air");   // hidden: the MIR/AIR text dump (ADR 0032) instead of C#
+        bool ilOut = a.Remove("--il");  // <name>.dll + .pdb from the direct IL backend (ADR 0033)
         var o = Parse(a);
         if (o.Files.Count == 0) throw UsageException.Usage("alice emit <file.al>");
         var files = Read(o.Files);
+        if (ilOut)
+        {
+            string name = Path.GetFileNameWithoutExtension(o.Output ?? o.Files[0]);
+            string dir = Path.GetDirectoryName(Path.GetFullPath(o.Output ?? o.Files[0] + ".dll"))!;
+            var res = CompileIl(files, name, o.Refs);
+            if (res == null) return 1;
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, name + ".dll"), res.Pe!);
+            File.WriteAllBytes(Path.Combine(dir, name + ".pdb"), res.Pdb!);
+            var rt = typeof(Alice.Runtime.Prelude).Assembly.Location;
+            File.Copy(rt, Path.Combine(dir, Path.GetFileName(rt)), true);
+            File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"),
+                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":false,\"System.GC.Concurrent\":true}}}");
+            Console.Write(Alice.Compiler.Backend.Il.IlDisassembler.Disassemble(res.Module!));
+            Console.Error.WriteLine("il: " + res.Stats + " -> " + Path.Combine(dir, name + ".dll"));
+            return 0;
+        }
         try
         {
             var units = () => AliceCompiler.TranspileFull(files, o.Refs, "alice_native", strict: o.Strict).CSharp;

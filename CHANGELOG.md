@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- IL backend D1.4 (ADR 0033): `Backend/Il/AirToIl` emits IL + portable PDB from the post-optimizer MIR through `IlBuilder` (declarations as the C# backend makes them, typed expressions, checked arithmetic per node, EH, foreach, interpolation, vectors, sequence points and local names); `alice run --backend il`, `alice emit --il <file>` (writes `<name>.dll`/`.pdb`, prints the IL listing). Unsupported nodes are reported with their kind; differential, ILVerify, decode, allocation and corpus tests in `AirToIlTests`.
 - IL backend dynamic sites (backend plan D1.9, ADR 0033): `Alice.Runtime.Dyn` (`src/Alice.Runtime/Dynamic/`) dispatches
   `Any` values without the C# runtime binder: one `DynSite` per call site with a monomorphic entry and a 4-entry
   polymorphic inline cache keyed by receiver and argument runtime types, `MethodInvoker` thunks (allocation-free hit
