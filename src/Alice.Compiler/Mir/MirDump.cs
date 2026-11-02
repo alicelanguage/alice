@@ -182,6 +182,7 @@ public sealed partial class MirDump
         }
         if (CoreVector(e) is { } vec) return vec;
         if (CoreLower(e) is { } lo) return lo;
+        if (CoreDyn(e) is { } dyn) return dyn;
         if (CoreIterators(e) is { } iter) return iter;
         if (CoreParallel(e) is { } par) return par;
         return "(" + e.GetType().Name + ")";
