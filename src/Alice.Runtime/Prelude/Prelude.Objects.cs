@@ -35,10 +35,10 @@ public static class ObjectProtocol
 public static partial class Prelude
 {
     /// <summary>`p nil` (and any value whose type C# cannot infer): prints `nil`.</summary>
-    public static object? p(object? v) { Console.Out.WriteLine(inspect(v)); return v; }
+    [Ambient] public static object? p(object? v) { Console.Out.WriteLine(inspect(v)); return v; }
 
     /// <summary>`p a, b, ...`: each value inspected on its own line; returns them as an array (Ruby).</summary>
-    public static object?[] p(object? a, object? b, params object?[] rest)
+    [Ambient] public static object?[] p(object? a, object? b, params object?[] rest)
     {
         var all = new object?[rest.Length + 2];
         all[0] = a;

@@ -51,15 +51,15 @@ end
 
 | Error | Meaning |
 |---|---|
-| AL0220 | `affine enum T`: a payload field is a reference type that is not an affine enum |
-| AL0221 | affine value `x` escapes: stored in a field or collection, captured by a block or lambda, passed to .NET, compared (`==`, `hash`, `to_s`), or reaches `rescue` |
-| AL0222 | affine value `x` read after it was consumed by `case` or moved into a call (the AL0208 analogue) |
-| AL0223 | `borrow p` on a parameter of affine type that the body consumes |
+| AL0240 | `affine enum T`: a payload field is a reference type that is not an affine enum |
+| AL0241 | affine value `x` escapes: stored in a field or collection, captured by a block or lambda, passed to .NET, compared (`==`, `hash`, `to_s`), or reaches `rescue` |
+| AL0242 | affine value `x` read after it was consumed by `case` or moved into a call (the AL0208 analogue) |
+| AL0243 | `borrow p` on a parameter of affine type that the body consumes |
 
-**Whole-program demotion.** Any escaping use of an inferred-eligible type (the AL0221 list) demotes that *type*
+**Whole-program demotion.** Any escaping use of an inferred-eligible type (the AL0241 list) demotes that *type*
 to today's sealed records everywhere in the program: one CLR type per Alice enum, no conversion code at any boundary.
 `alice explain` reports per enum `arena` or `record (demoted: escapes at file:line)`, naming the site. Under
-`affine enum` the same site is AL0221 instead of a demotion.
+`affine enum` the same site is AL0241 instead of a demotion.
 
 ## Pipeline
 
@@ -69,7 +69,7 @@ to today's sealed records everywhere in the program: one CLR type per Alice enum
    - per method, a move-state flow analysis over locals of eligible type with the `OwnState` lattice of
      `Lowerer.Ownership.cs` (live / moved, joined over branches and loops). A `case` on a definitely-live local that
      is never read again is a **Take**, otherwise a **Borrow**. A call argument moves unless the parameter is
-     borrow-inferred (ADR 0016 interprocedural borrow). A read after a move is AL0222 under `affine`, a demotion
+     borrow-inferred (ADR 0016 interprocedural borrow). A read after a move is AL0242 under `affine`, a demotion
      otherwise;
    - whole-program fixpoint: a type demoted anywhere is a record everywhere. Facts land on `TypeSym` (`Arena`,
      `Packed` per variant) and on local uses (`Take` / `Borrow`).
@@ -127,7 +127,7 @@ over independent leaves and are not affected.
 ## Consequences
 
 - Silent cliff: one escaping use (`puts t`, `==`) demotes a type and the program runs at record speed with no error.
-  Guards: `alice explain` names the demotion site, `affine enum` turns it into AL0221, and the Bend ports use
+  Guards: `alice explain` names the demotion site, `affine enum` turns it into AL0241, and the Bend ports use
   `affine enum`.
 - Parallel peak memory: a tree built on lane 3 and consumed on lane 7 is not freed until the region resets, so the
   peak can reach the full tree. Bounded, and the same as Bend's lane-local frees.
@@ -140,8 +140,8 @@ over independent leaves and are not affected.
   dual representation with materialization at boundaries (doubles the type surface, a copy per crossing).
 
 Tests: `tests/Alice.Tests/Runtime/ArenaTests.cs` (0 allocations steady state; tree(23) gen + sum <= 220 ms serial on
-the forge); `tests/Alice.Tests/Compiler/AffineTests.cs` (every escape kind demotes or raises AL0221; AL0220, AL0222,
-AL0223; `alice explain` names the site; Take vs Borrow selection); `tests/parity` unchanged; `benchmarks/bend-vs`
+the forge); `tests/Alice.Tests/Compiler/AffineTests.cs` (every escape kind demotes or raises AL0241; AL0240, AL0242,
+AL0243; `alice explain` names the site; Take vs Borrow selection); `tests/parity` unchanged; `benchmarks/bend-vs`
 `tree` serial within 1.3x of Bend with checksum 4290772992; the seven `benchmarks/bend2` ports above within 1.5x of
 the C twin serial and above Bend PAR-CPU on 32 cores.
 
