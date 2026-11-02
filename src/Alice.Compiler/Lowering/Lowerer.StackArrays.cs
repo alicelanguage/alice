@@ -106,7 +106,7 @@ public sealed partial class Lowerer
         Line = line,
         Name = kv.Key.CsName,
         TypeCs = $"global::System.Span<{kv.Value.Elem}>",
-        Init = new MCode($"stackalloc {kv.Value.Elem}[{kv.Value.Length}]"),
+        Init = new AirStackAlloc { Elem = AirVector.Prim(kv.Value.Elem), Count = AirConst.Int(kv.Value.Length), Type = new AirType.ClrRef("global::System.Span", typeof(Span<>), [AirVector.Prim(kv.Value.Elem)]) },
     });
 
     /// <summary>Where the source declared the array: re-initialize the buffer (left-to-right for literals).</summary>
@@ -114,17 +114,18 @@ public sealed partial class Lowerer
     {
         if (inParallelGen || a.Declares is not { } l || !stackArrays.ContainsKey(l)) return false;
         string name = l.CsName;
+        var span = new AirType.ClrRef("global::System.Span", typeof(Span<>), [AirVector.Prim(stackArrays[l].Elem)]);
         switch (Unwrap(a.Value))
         {
             case ArrayLit lit:
                 for (int k = 0; k < lit.Items.Count; k++)
-                    o.Add(new MAssign { Target = new MIndex { Target = new MCode(name), Args = { new MCode(k.ToString()) } }, Value = Expr(lit.Items[k]) });
+                    o.Add(new MAssign { Target = new MIndex { Target = LRef(name, span), Args = { AirConst.Int(k) } }, Value = Expr(lit.Items[k]) });
                 return true;
             case NewExpr ne when ne.Args.Count == 2:
-                o.Add(new MExprStmt { E = new MCall { Target = new MCode(name), Name = "Fill", Args = { Expr(ne.Args[1].Value!) } } });
+                o.Add(new MExprStmt { E = new MCall { Target = LRef(name, span), Name = "Fill", Args = { Expr(ne.Args[1].Value!) } } });
                 return true;
             default:
-                o.Add(new MExprStmt { E = new MCall { Target = new MCode(name), Name = "Clear" } });
+                o.Add(new MExprStmt { E = new MCall { Target = LRef(name, span), Name = "Clear" } });
                 return true;
         }
     }

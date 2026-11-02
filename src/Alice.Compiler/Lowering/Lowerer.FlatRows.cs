@@ -87,7 +87,7 @@ public sealed partial class Lowerer
     {
         if (a.Declares is not { } l || !flatRows.TryGetValue(l, out var f) || Unwrap(a.Value) is not NewExpr ne) return false;
         var n = Expr(ne.Args[0].Value!);
-        o.Add(new MDecl { Name = l.CsName, TypeCs = f.Elem + "[]", Init = new MNewArray { ElemCs = f.Elem, Size = new MBinary { Op = AirBinOp.Mul, L = n, R = new MCode(f.Width.ToString()) } } });
+        o.Add(new MDecl { Name = l.CsName, TypeCs = f.Elem + "[]", Init = new MNewArray { ElemCs = f.Elem, Size = new MBinary { Op = AirBinOp.Mul, L = n, R = AirConst.Int(f.Width) } } });
         return true;
     }
 
@@ -96,9 +96,9 @@ public sealed partial class Lowerer
     {
         if (a.Target is not IndexExpr { Target: NameExpr { Sym: LocalSym l }, Args: [var idx] } || !flatRows.TryGetValue(l, out var f) || a.Value is not ArrayLit lit) return false;
         string baseIx = Temp("row");
-        o.Add(new MDecl { Name = baseIx, TypeCs = "int", Init = new MBinary { Op = AirBinOp.Mul, L = Expr(idx.Value!), R = new MCode(f.Width.ToString()) } });
+        o.Add(new MDecl { Name = baseIx, TypeCs = "int", Init = new MBinary { Op = AirBinOp.Mul, L = Expr(idx.Value!), R = AirConst.Int(f.Width) } });
         for (int c = 0; c < lit.Items.Count; c++)
-            o.Add(new MAssign { Target = new MIndex { Target = new MCode(l.CsName), Args = { new MBinary { Op = AirBinOp.Add, L = new MCode(baseIx), R = new MCode(c.ToString()) } } }, Value = Expr(lit.Items[c]) });
+            o.Add(new MAssign { Target = new MIndex { Target = LRef(l.CsName, FlatType(f)), Args = { new MBinary { Op = AirBinOp.Add, L = LRef(baseIx, IntT), R = AirConst.Int(c) } } }, Value = Expr(lit.Items[c]) });
         return true;
     }
 
@@ -107,15 +107,18 @@ public sealed partial class Lowerer
     {
         if (ix is not { Args: [var col], Target: IndexExpr { Target: NameExpr { Sym: LocalSym l }, Args: [var rowIx] } } || !flatRows.TryGetValue(l, out var f)) return null;
         MExpr column = col.Value is LitExpr { Kind: "int" } cl && int.TryParse(cl.Text, out int c) && c >= 0 && c < f.Width
-            ? new MCode(c.ToString())
-            : new MCall { Target = new MCode("Prelude"), Name = "column", Args = { Expr(col.Value!), new MCode(f.Width.ToString()) } };
-        var cell = new MBinary { Op = AirBinOp.Add, L = new MBinary { Op = AirBinOp.Mul, L = Expr(rowIx.Value!), R = new MCode(f.Width.ToString()) }, R = column };
-        return new MIndex { Target = new MCode(l.CsName), Args = { cell } };
+            ? AirConst.Int(c)
+            : new MCall { Target = AirTypeRef.Prelude(), Name = "column", Args = { Expr(col.Value!), AirConst.Int(f.Width) }, Type = IntT };
+        var cell = new MBinary { Op = AirBinOp.Add, L = new MBinary { Op = AirBinOp.Mul, L = Expr(rowIx.Value!), R = AirConst.Int(f.Width) }, R = column };
+        return new MIndex { Target = LRef(l.CsName, FlatType(f)), Args = { cell } };
     }
+
+    /// <summary>The flat `T[]` a row-flattened local is stored as.</summary>
+    static AirType FlatType(FlatRow f) => new AirType.Array((AirType?)AirVector.TryPrim(f.Elem) ?? new AirType.ClrRef(f.Elem, null, []));
 
     /// <summary>`points.size` is the row count.</summary>
     MExpr? TryFlatSize(CallExpr c) =>
         c.Recv is NameExpr { Sym: LocalSym l } && flatRows.TryGetValue(l, out var f)
-            ? new MBinary { Op = AirBinOp.Div, L = new MMember { Target = new MCode(l.CsName), Name = "Length" }, R = new MCode(f.Width.ToString()) }
+            ? new MBinary { Op = AirBinOp.Div, L = new MMember { Target = LRef(l.CsName, FlatType(f)), Name = "Length" }, R = AirConst.Int(f.Width) }
             : null;
 }

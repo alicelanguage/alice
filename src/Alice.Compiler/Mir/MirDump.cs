@@ -180,6 +180,7 @@ public sealed partial class MirDump
                     return head + "\n" + inner.sb + new string(' ', ind * 2) + ")";
                 }
         }
+        if (CoreVector(e) is { } vec) return vec;
         if (CoreIterators(e) is { } iter) return iter;
         if (CoreParallel(e) is { } par) return par;
         return "(" + e.GetType().Name + ")";

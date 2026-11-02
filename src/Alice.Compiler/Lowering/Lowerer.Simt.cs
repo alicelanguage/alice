@@ -20,13 +20,13 @@ public sealed partial class Lowerer
         if (f.Iter is not RangeExpr r || f.Locals.Count != 1 || f.Locals[0].Type.Cs != "int") return null;
         if (!f.Body.Any(s => s is WhileStmt) || noHoist > 0) return null;
         const string T = "double";
-        string vt = $"{V}<double>";
+        var vt = AirVector.Of(AirVector.Prim(T), 0);
         var env = new Dictionary<LocalSym, string>();
         var accs = new Dictionary<LocalSym, string>();
         string px = Temp("px");
         string vpx = Temp("vpx");
         env[f.Locals[0]] = vpx;
-        var vbody = new List<MStmt> { new MDecl { Name = vpx, Init = new MCode($"new {vt}((double){px}) + {vt}.Indices") } };
+        var vbody = new List<MStmt> { new MDecl { Name = vpx, Init = new MBinary { Op = AirBinOp.Add, Checked = false, L = VOp(AirVecOp.Splat, vt, LRef(px, IntT)), R = VOp(AirVecOp.Indices, vt), Type = vt } } };
         simtStrict = true;
         bool ok = SimtStmts(f.Body, env, vbody, null, accs, T);
         simtStrict = false;
@@ -34,24 +34,26 @@ public sealed partial class Lowerer
 
         var start = Expr(r.A);
         var end = Expr(r.B);
-        string endExcl = r.Excl ? Backend.Printer.E(end) : $"({Backend.Printer.E(end)}) + 1";
-        vbody.Add(new MAssign { Target = new MCode(px), Op = "+=", Value = new MCode($"{vt}.Count") });
+        vbody.Add(new MAssign { Target = LRef(px, IntT), Op = "+=", Value = VOp(AirVecOp.Count, vt) });
         var vec = new List<MStmt>();
-        foreach (var (_, va) in accs) vec.Add(new MDecl { Name = va, Init = new MCode($"{vt}.Zero") });
-        vec.Add(new MWhile { Cond = new MCode($"{px} <= {endExcl} - {vt}.Count"), Body = vbody });
+        foreach (var (_, va) in accs) vec.Add(new MDecl { Name = va, Init = VOp(AirVecOp.Zero, vt) });
+        vec.Add(new MWhile { Cond = Fits(AirFitsForm.Fits, vt, LRef(px, IntT), end, inclusive: !r.Excl), Body = vbody });
         foreach (var (acc, va) in accs)
-            vec.Add(new MAssign { Target = new MCode(acc.CsName), Op = "+=", Value = new MCode($"({TypeCs(acc.Type)}){V}.Sum({va})") });
+        {
+            var at = acc.Type.ToAir();
+            vec.Add(new MAssign { Target = LRef(acc.CsName, at), Op = "+=", Value = new AirVectorReduce { Op = AirVecReduce.Sum, Vec = vt, Arg = LRef(va, vt), CastTo = at, Type = at } });
+        }
 
         // scalar tail: the ordinary body for the remaining iterations
         ctx.Add("loop");
-        var tail = new MFor { Var = f.Locals[0].CsName, Start = new MCode(px), Cmp = r.Excl ? "<" : "<=", End = end, Body = Stmts(f.Body, Tail.None, null) };
+        var tail = new MFor { Var = f.Locals[0].CsName, Start = LRef(px, IntT), Cmp = r.Excl ? "<" : "<=", End = end, Body = Stmts(f.Body, Tail.None, null) };
         ctx.RemoveAt(ctx.Count - 1);
         return new MBlock
         {
             Body =
             {
                 new MDecl { Name = px, TypeCs = "int", Init = start },
-                new MIf { Cond = new MCode($"{V}.IsHardwareAccelerated"), Then = vec },
+                new MIf { Cond = VOp(AirVecOp.IsAccelerated, vt), Then = vec },
                 tail,
             },
         };
@@ -61,55 +63,61 @@ public sealed partial class Lowerer
 
     bool SimtStmts(List<Stmt> body, Dictionary<LocalSym, string> env, List<MStmt> o, string? active, Dictionary<LocalSym, string> accs, string T)
     {
-        string vt = $"{V}<{T}>";
+        var vt = AirVector.Of(AirVector.Prim(T), 0);
+        var longs = AirVector.Of(new AirType.Prim(PrimKind.Long), 0);
         foreach (var s in body)
         {
             switch (s)
             {
                 case Assign { Declares: { } d } a:
                     {
-                        if (!LaneType(d.Type) || Vec(a.Value, env, T, false) is not string v) return false;
+                        if (!LaneType(d.Type) || VecE(a.Value, env, T, false) is not { } v) return false;
                         string name = Temp("l");
-                        o.Add(new MDecl { Name = name, Init = new MCode(v) });
+                        o.Add(new MDecl { Name = name, Init = v });
                         env[d] = name;
                         break;
                     }
                 case Assign { Target: NameExpr { Sym: LocalSym l } } a when env.TryGetValue(l, out var cur):
                     {
-                        if (Vec(a.Value, env, T, false) is not string v) return false;
+                        if (VecE(a.Value, env, T, false) is not { } v) return false;
                         if (a.Op != "=")
                         {
                             if (a.Op is not ("+=" or "-=" or "*=") && !(a.Op == "/=" && l.Type.Cs == "double")) return false;
-                            v = $"({cur} {a.Op[0]} {v})";
+                            v = VOp(ArithOp(a.Op[0]), vt, LRef(cur, vt), v);
                         }
-                        if (active != null) v = $"{V}.ConditionalSelect({active}, {v}, {cur})";
-                        o.Add(new MAssign { Target = new MCode(cur), Value = new MCode(v) });
+                        if (active != null) v = VOp(AirVecOp.ConditionalSelect, vt, LRef(active, vt), v, LRef(cur, vt));
+                        o.Add(new MAssign { Target = LRef(cur, vt), Value = v });
                         break;
                     }
                 case Assign { Target: NameExpr { Sym: LocalSym acc }, Op: "+=" or "-=" } a when active == null && acc.Type.IsNumeric && LaneType(acc.Type):
                     {
-                        if (Vec(a.Value, env, T, false) is not string v) return false;
+                        if (VecE(a.Value, env, T, false) is not { } v) return false;
                         string va = accs.TryGetValue(acc, out var x) ? x : accs[acc] = Temp("vacc");
-                        o.Add(new MAssign { Target = new MCode(va), Op = a.Op, Value = new MCode(v) });
+                        o.Add(new MAssign { Target = LRef(va, vt), Op = a.Op, Value = v });
                         break;
                     }
                 case IfStmt { Conds.Count: 1, Else: null } i when active == null && i.Bodies[0] is [Assign { Target: NameExpr { Sym: LocalSym acc }, Op: "+=" or "-=" } a] && !env.ContainsKey(acc) && LaneType(acc.Type):
                     {
-                        if (Vec(i.Conds[0], env, T, true) is not string m || Vec(a.Value, env, T, false) is not string v) return false;
+                        if (VecE(i.Conds[0], env, T, true) is not { } m || VecE(a.Value, env, T, false) is not { } v) return false;
                         string va = accs.TryGetValue(acc, out var x) ? x : accs[acc] = Temp("vacc");
-                        o.Add(new MAssign { Target = new MCode(va), Op = a.Op, Value = new MCode($"{V}.ConditionalSelect({m}, {v}, {vt}.Zero)") });
+                        o.Add(new MAssign { Target = LRef(va, vt), Op = a.Op, Value = VOp(AirVecOp.ConditionalSelect, vt, m, v, VOp(AirVecOp.Zero, vt)) });
                         break;
                     }
                 case WhileStmt w when active == null:
                     {
-                        if (Vec(w.Cond, env, T, true) is not string m) return false;
+                        if (VecE(w.Cond, env, T, true) is not { } m) return false;
                         string act = Temp("act");
-                        o.Add(new MDecl { Name = act, Init = new MCode(m) });
+                        o.Add(new MDecl { Name = act, Init = m });
                         var inner = new List<MStmt>();
                         if (!SimtStmts(w.Body, env, inner, act, accs, T)) return false;
-                        if (Vec(w.Cond, env, T, true) is not string m2) return false;
-                        inner.Add(new MAssign { Target = new MCode(act), Value = new MCode($"{V}.BitwiseAnd({act}, {m2})") });
-                        o.Add(new MWhile { Cond = new MCode($"!{V}.EqualsAll({V}.AsVectorInt64({act}), {V}<long>.Zero)"), Body = inner });
+                        if (VecE(w.Cond, env, T, true) is not { } m2) return false;
+                        inner.Add(new MAssign { Target = LRef(act, vt), Value = VOp(AirVecOp.BitwiseAnd, vt, LRef(act, vt), m2) });
+                        o.Add(new MWhile
+                        {
+                            // until every lane's mask is clear
+                            Cond = new MUnary { Op = AirUnOp.Not, E = VOp(AirVecOp.EqualsAll, longs, VOp(AirVecOp.AsVectorInt64, longs, LRef(act, vt)), VOp(AirVecOp.Zero, longs)), Type = BoolT },
+                            Body = inner,
+                        });
                         break;
                     }
                 default:
