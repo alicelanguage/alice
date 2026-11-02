@@ -142,7 +142,7 @@ public sealed partial class Printer
     }
 
     // a negative literal (`-5`) is not atomic: `-5.abs()` in C# is `-(5.abs())`
-    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr;
+    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr || AtomicIterators(e);
 
     static string P(MExpr e) => Atomic(e) ? E(e) : "(" + E(e) + ")";
 
@@ -209,6 +209,7 @@ public sealed partial class Printer
             case MArg a:
                 return a.Prefix + E(a.E);
         }
+        if (EIterators(e) is { } iter) return iter;
         if (EParallel(e) is { } par) return par;
         throw new InvalidOperationException(e.GetType().Name);
     }
