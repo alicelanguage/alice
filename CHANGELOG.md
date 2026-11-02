@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
+  earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
+  helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays
+  keep it (bfs 3-8% faster). New `ALICE_NO_AO=1|kernel,leaves,nest,loop` switch for A/B runs. bend2 serial
+  table re-measured (benchmarks/bend2/results/summary.md).
 - Book compiler issues (/work/reports/book-compiler-issues.md), tests in `tests/Alice.Tests/Compiler/BookIssuesTests.cs`:
   - Syntax: `puts await f(x)` (`await` starts a command argument); `^name` pins inside array patterns, also of a name
     bound earlier in the pattern (`in [a, ^a]`); `rescue A, B => e` no longer emits `--1` in the second catch (a

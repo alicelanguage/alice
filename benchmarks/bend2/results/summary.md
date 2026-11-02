@@ -4,26 +4,28 @@ Median of cold-process wall time in ms (max in parentheses), peak RSS in MB (med
 
 Alice startup floor (`bfs 0`, smallest input): serial 26 ms, parallel 39 ms.
 
-## Serial, 1 core
+## Serial, 1 core (re-measured 2026-11-02, perf2)
 
-| workload | Alice ms | C ms | Alice / C | Alice RSS | C RSS | Bend M4 ms (different machine) | Bend / C on M4 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| bfs | 9722 (9973) | 5549 (5580) | 1.75 | 39 | 3 | 3918 | 1.09 |
-| editdist | 11156 (11211) | 8684 (8712) | 1.28 | 38 | 3 | 2559 | 1.28 |
-| gameoflife | 13680 (13694) | 13797 (14158) | 0.99 | 40 | 3 | 7803 | 1.15 |
-| hashmap | 1393 (1420) | 1206 (1206) | 1.15 | 39 | 3 | 2741 | 4.41 |
-| kmeans | 29707 (30451) | 2688 (2713) | 11.05 | 41 | 6 | 2069 | 1.00 |
-| lexer | 1924 (1955) | 1395 (1420) | 1.38 | 39 | 3 | 2144 | 2.07 |
-| mandelbrot | 3419 (3430) | 2228 (2228) | 1.53 | 37 | 3 | 4473 | 1.19 |
-| merkle | 8731 (8891) | 6551 (7869) | 1.33 | 303 | 130 | 4222 | 1.23 |
-| nbody | 8119 (8357) | 8508 (8833) | 0.95 | 38 | 3 | 5758 | 1.12 |
-| queens | 6345 (6481) | 5486 (5582) | 1.16 | 37 | 3 | 5406 | 1.50 |
-| raytrace | 9794 (10227) | 8044 (9269) | 1.22 | 37 | 3 | 4616 | 1.27 |
-| symreg | 6115 (6217) | 4631 (5216) | 1.32 | 40 | 3 | 3014 | 1.37 |
-| terrain | 5821 (5847) | 2653 (2660) | 2.19 | 38 | 3 | 2225 | 1.01 |
-| tree-bitonic | 135175 (170773) | 11378 (12129) | 11.88 | 2699 | 130 | 6043 | 1.06 |
-| tree-matmul | 33256 (34142) | 5481 (5504) | 6.07 | 79 | 6 | 2064 | 0.70 |
-| tree-radix | 25229 (26022) | 7809 (8572) | 3.23 | 1502 | 214 | 4083 | 1.46 |
+Compiler: main 432d682 plus perf2 (helper-calling primitive loops no longer get AggressiveOptimization). Pair `taskset -c 11,27` (one physical core, both hyperthreads; 15,31 was taken by another pinned job), `ALICE_PAR=0`, cold process, **interleaved**: 5 rounds after one warm-up round, each round runs every configuration once in alternating order ([ab.py](../ab.py), raw runs in [perf2-serial.json](perf2-serial.json)). Median ms (max in parentheses). Alice RSS is from run 2 (unchanged code shape; not re-measured). The parallel and speedup tables below are from run 2 (`taskset -c 14,30`).
+
+| workload | Alice ms | C ms | Alice / C | Alice RSS (run 2) | Bend M4 ms (different machine) | Bend / C on M4 |
+|---|---:|---:|---:|---:|---:|---:|
+| bfs | 9403 (10291) | 5754 (6019) | 1.63 | 39 | 3918 | 1.09 |
+| editdist | 11367 (11534) | 9034 (9182) | 1.26 | 38 | 2559 | 1.28 |
+| gameoflife | 13666 (13708) | 13808 (13888) | 0.99 | 40 | 7803 | 1.15 |
+| hashmap | 1394 (1398) | 1210 (1220) | 1.15 | 39 | 2741 | 4.41 |
+| kmeans | 21756 (21824) | 2719 (3236) | 8.00 | 41 | 2069 | 1.00 |
+| lexer | 1929 (1935) | 1393 (1399) | 1.38 | 39 | 2144 | 2.07 |
+| mandelbrot | 3583 (3609) | 2294 (2299) | 1.56 | 37 | 4473 | 1.19 |
+| merkle | 8340 (8378) | 6229 (6233) | 1.34 | 303 | 4222 | 1.23 |
+| nbody | 8153 (9145) | 8816 (9882) | 0.92 | 38 | 5758 | 1.12 |
+| queens | 6318 (6372) | 5455 (5457) | 1.16 | 37 | 5406 | 1.50 |
+| raytrace | 9817 (10087) | 7480 (7486) | 1.31 | 37 | 4616 | 1.27 |
+| symreg | 6122 (6143) | 4559 (4564) | 1.34 | 40 | 3014 | 1.37 |
+| terrain | 5817 (5845) | 2630 (2901) | 2.21 | 38 | 2225 | 1.01 |
+| tree-bitonic | 124552 (130614) | 11010 (11522) | 11.31 | 2699 | 6043 | 1.06 |
+| tree-matmul | 16682 (18871) | 5438 (5482) | 3.07 | 79 | 2064 | 0.70 |
+| tree-radix | 14382 (14910) | 6820 (6974) | 2.11 | 1502 | 4083 | 1.46 |
 
 ## Parallel, 32 cores
 

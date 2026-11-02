@@ -65,27 +65,29 @@ lower is better. Full tables with max, peak RSS and every ratio: [results/summar
 
 ### Serial, 1 core
 
-Re-measured with `ALICE_PAR=0` on `taskset -c 14,30` (Alice and C) and `-ffp-contract=off` for C; the earlier
-rows used `DOTNET_PROCESSOR_COUNT=1` on core 0. The parallel table below is from the earlier run.
+Re-measured 2026-11-02 (perf2) with the current compiler: `ALICE_PAR=0` on the core pair `taskset -c 11,27` (Alice
+and C), interleaved cold runs, median of 5 ([results/summary.md](results/summary.md)). Earlier rows used `taskset -c
+14,30` (run 2) and before that `DOTNET_PROCESSOR_COUNT=1` on one cpu, where .NET never reaches tier 1
+(benchmarks/README.md, R0). The parallel table below is from the earlier run.
 
 | workload | Alice | C | Alice / C | Bend / C on M4 (reference) |
 |---|---:|---:|---:|---:|
-| bfs | 9722 | 5549 | 1.75 | 1.09 |
-| editdist | 11156 | 8684 | 1.28 | 1.28 |
-| gameoflife | 13680 | 13797 | **0.99** | 1.15 |
-| hashmap | 1393 | 1206 | **1.15** | 4.41 |
-| kmeans | 29707 | 2688 | 11.05 | 1.00 |
-| lexer | 1924 | 1395 | **1.38** | 2.07 |
-| mandelbrot | 3419 | 2228 | 1.53 | 1.19 |
-| merkle | 8731 | 6551 | 1.33 | 1.23 |
-| nbody | 8119 | 8508 | **0.95** | 1.12 |
-| queens | 6345 | 5486 | **1.16** | 1.50 |
-| raytrace | 9794 | 8044 | **1.22** | 1.27 |
-| symreg | 6115 | 4631 | **1.32** | 1.37 |
-| terrain | 5821 | 2653 | 2.19 | 1.01 |
-| tree-bitonic | 135175 | 11378 | 11.88 | 1.06 |
-| tree-matmul | 33256 | 5481 | 6.07 | 0.70 |
-| tree-radix | 25229 | 7809 | 3.23 | 1.46 |
+| bfs | 9403 | 5754 | 1.63 | 1.09 |
+| editdist | 11367 | 9034 | **1.26** | 1.28 |
+| gameoflife | 13666 | 13808 | **0.99** | 1.15 |
+| hashmap | 1394 | 1210 | **1.15** | 4.41 |
+| kmeans | 21756 | 2719 | 8.00 | 1.00 |
+| lexer | 1929 | 1393 | **1.38** | 2.07 |
+| mandelbrot | 3583 | 2294 | 1.56 | 1.19 |
+| merkle | 8340 | 6229 | 1.34 | 1.23 |
+| nbody | 8153 | 8816 | **0.92** | 1.12 |
+| queens | 6318 | 5455 | **1.16** | 1.50 |
+| raytrace | 9817 | 7480 | 1.31 | 1.27 |
+| symreg | 6122 | 4559 | **1.34** | 1.37 |
+| terrain | 5817 | 2630 | 2.21 | 1.01 |
+| tree-bitonic | 124552 | 11010 | 11.31 | 1.06 |
+| tree-matmul | 16682 | 5438 | 3.07 | 0.70 |
+| tree-radix | 14382 | 6820 | 2.11 | 1.46 |
 
 ### Parallel, 32 cores
 
@@ -172,15 +174,19 @@ Language and compiler issues (repros in the next section):
 
 Codegen causes (Findings 1-5):
 
-- [x] kmeans: `dst`/`min2` not inlined into `chunk`, tier-0 time, data-dependent branches in `min2`/`dst`. Fixed:
-  `chunk` is fully optimized at its first call (helpers inlined), integer selects are branch-free (`Branchless.U32`;
-  branch misses 1.85G -> 0.06G). 2^17 serial 7151 -> 5702 ms, full size 42.9 -> 33.1 s ([NOTES](NOTES-bench2.md))
+- [x] kmeans: data-dependent branches in `min2`/`dst`. Fixed: integer selects are branch-free (`Branchless.U32`;
+  branch misses 1.85G -> 0.06G). Re-measured on a core pair (perf2): 29.7 -> 21.8 s serial with the
+  `branchless-select` and `unroll` passes on. Making `chunk` fully optimized at its first call (AggressiveOptimization)
+  gave nothing there (21.8 vs 21.6 s) and was removed: its 20% gain was measured on one cpu, where tier 1 never
+  arrives (R0) ([NOTES](NOTES-bench2.md))
 - [ ] kmeans: no SIMD for the 8-distance kernel (clang packs the 8 `dst` calls into one vector, SLP), GC stats trees;
   queued for a vectorize worker
 - [x] merkle: the 22-round Speck loop is not unrolled; a bounds-checked `rk[i]` load per round. Fixed: small literal
-  loops are fully unrolled (`rk[0]` ... `rk[21]`): 12.3 -> 11.0 s serial
+  loops are fully unrolled (`rk[0]` ... `rk[21]`): 12.3 -> 11.0 s serial; re-measured on a core pair (perf2):
+  8.71 -> 8.34 s (-4%)
 - [x] bfs: tier-0 and OSR time in `maze` (31% of samples at 2^17). Fixed: a loop over an owned array is fully
-  optimized at its first call: 10.5 -> 9.3 s serial. Bounds checks measured as no cost (constant-length spans by
+  optimized at its first call: 10.5 -> 9.3 s serial; re-measured on a core pair (perf2): 9.72 -> 9.40 s (-3%, kept;
+  -8% in a hyperfine run). Bounds checks measured as no cost (constant-length spans by
   hand: 2753 vs 2760 ms); the remaining gap is branch misses (0.8G) and `Own<T>` thread-static slots
 - [ ] mandelbrot: not a `cmov` problem after all (11M branch misses in the whole run; as a branch-free select the
   escape freeze was 2x slower, so conditional updates stay branches). clang knows the 51 iterations: it unrolls
@@ -188,7 +194,7 @@ Codegen causes (Findings 1-5):
 - [ ] lexer: bounds checks on `buf[p]` measured as no cost (a constant-length span by hand: 1895 -> 1982 ms); cause
   not found
 - [ ] terrain: clang vectorizes the noise fill (C with `-fno-vectorize` is 1.5x slower); the Gauss-Seidel sweep has bounds-checked neighbour loads and checked `to_u32` (Alice serial 6.1 s, C 2.7 s)
-- [ ] queens: the two-UInt32 `Stats` record struct returned through every recursion level probably goes through memory (serial 1.4x C; not profiled)
+- [ ] queens: the two-UInt32 `Stats` record struct returned through every recursion level probably goes through memory (serial 1.4x C; not profiled). On a core pair it is 1.16x C (perf2); the il-shapes report (R0) found the struct-return gap to be a one-cpu tier-0 artefact
 - [ ] raytrace: the sphere table is a bounds-checked `Float32` array parameter where C folds it into immediates; 2^26 colf fork-tree leaves (serial 1.4x C)
 
 ## Compiler issues found (minimal repros; the compiler is unchanged)

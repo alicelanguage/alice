@@ -564,6 +564,17 @@ public sealed class Emitter
     const string Hot = "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n";
 
     /// <summary>
+    /// `ALICE_NO_AO=1` (or `all`) stops the inferred AggressiveOptimization below; `ALICE_NO_AO=loop,nest` stops only
+    /// the named rules (`kernel`, `leaves`, `nest`, `loop`). A written `@[Hot]` is always honoured. For A/B
+    /// measurements on a core pair (benchmarks/README.md, R0): on one cpu tier 1 never arrives, so AO looks better
+    /// there than it is.
+    /// </summary>
+    static readonly HashSet<string> NoAo = (Environment.GetEnvironmentVariable("ALICE_NO_AO") ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
+
+    static bool Ao(string rule) => !NoAo.Contains(rule) && !NoAo.Contains("1") && !NoAo.Contains("all");
+
+    /// <summary>
     /// A self-recursive static function over primitives and primitive arrays, returning one of them, is a compute kernel: fully optimized
     /// from its first call instead of spending its hottest frames in tier 0 and OSR. With no reference parameters it
     /// has no virtual call sites, so tiered PGO has nothing to devirtualize.
@@ -600,18 +611,17 @@ public sealed class Emitter
     static readonly HashSet<string> Conversions = ["to_i", "to_f", "to_i8", "to_i16", "to_i32", "to_i64", "to_u8", "to_u16", "to_u32", "to_u64", "to_f32", "to_f64"];
 
     /// <summary>
-    /// A loop over primitives that calls primitive helpers (<see cref="LoopLeaves"/>) or works on an owned array
-    /// (ADR 0016): its body reads and writes only locals and array elements and calls only those helpers,
-    /// conversions, `Math` and the branchless selects. Tier 0 does not inline, so every helper call is a real call
-    /// until the method is promoted, and PGO learns nothing there (no virtual call, cast or allocation site): bfs
-    /// `maze` spent 31% of its samples in tier-0 and OSR code at 2^17 mazes, kmeans `chunk` (64 iterations a call,
-    /// too few for OSR) 7-16% in tier 0. Such a method is compiled fully optimized at its first call. A plain loop
-    /// over its own locals keeps tiered PGO (OSR promotes it quickly).
+    /// A loop over an owned array (ADR 0016) whose body reads and writes only locals and array elements and calls
+    /// only primitive helpers (<see cref="LoopLeaves"/>), conversions, `Math` and the branchless selects: bfs `maze`
+    /// spent 31% of its samples in tier-0 and OSR code. Compiled fully optimized at its first call: bfs 3-8% faster
+    /// cold on a serial core pair (bend2 NOTES, perf2). A primitive loop that only calls helpers keeps tiered PGO:
+    /// kmeans `chunk`, mandelbrot and nbody were within 3% either way on the core pair; the earlier 20% kmeans gain
+    /// was measured on one cpu, where tier 1 never arrives (R0).
     /// </summary>
     bool PrimitiveLoop(List<MStmt> body)
     {
+        if (!Owned(body)) return false;
         var leaves = LoopLeaves().Select(m => m.CsName).ToHashSet();
-        bool owned = Owned(body), leafCall = false;
         bool Expr(MExpr e)
         {
             switch (e)
@@ -620,7 +630,7 @@ public sealed class Emitter
                 case MCast { TypeCs: "int" or "long" or "double" or "float" or "short" or "sbyte" or "byte" or "ushort" or "uint" or "ulong" } c: return Expr(c.E);
                 case MBinary or MUnary or MCond or MIndex: return MirFacts.Children(e).All(Expr);
                 case MCall { Name: "unchecked" or "checked", Target: null, Args: [var x] }: return Expr(x);
-                case MCall { Target: null } c when leaves.Contains(c.Name): leafCall = true; return c.Args.All(Expr);
+                case MCall { Target: null } c when leaves.Contains(c.Name): return c.Args.All(Expr);
                 case MCall { Target: MCode { Text: "global::Alice.Runtime.Branchless" or "global::System.Math" or "Math" or "MathF" } } c: return c.Args.All(Expr);
                 case MCall { Args.Count: 0, Target: { } t } c when Conversions.Contains(c.Name): return Expr(t);
                 default: return false;
@@ -638,15 +648,10 @@ public sealed class Emitter
             MBreak or MContinue => true,
             _ => false,
         };
-        bool Hot(MStmt loop)
-        {
-            leafCall = false;
-            return Stmt(loop) && (leafCall || owned);
-        }
         bool Any(List<MStmt> b) => b.Any(s => s switch
         {
-            MWhile w => Hot(w) || Any(w.Body),
-            MFor f => Hot(f) || Any(f.Body),
+            MWhile w => Stmt(w) || Any(w.Body),
+            MFor f => Stmt(f) || Any(f.Body),
             MIf i => Any(i.Then) || (i.Else != null && Any(i.Else)),
             MBlock bl => Any(bl.Body),
             MForeach fe => Any(fe.Body),
@@ -762,7 +767,8 @@ public sealed class Emitter
         if (lowerer.Forked) extra += SerialClone(d, m, owner, ret, ps, returns);
         extra += lowerer.FlushSpecializations();   // ADR 0026
         lowerer.CloneOk = false;
-        string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) || LoopLeaves().Contains(m) || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && (LoopNest(body, 0) || !m.IsAsync && !m.UsesYield && PrimitiveLoop(body)) ? Hot : "");
+        string attrs = extra + Attrs(d.Attrs) + (Ao("kernel") && Kernel(d, m, inst, body) || Ao("leaves") && LoopLeaves().Contains(m)
+            || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && (Ao("nest") && LoopNest(body, 0) || Ao("loop") && !m.IsAsync && !m.UsesYield && PrimitiveLoop(body)) ? Hot : "");
         if (m.IsCtor)
         {
             string baseInit = "";
