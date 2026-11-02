@@ -48,6 +48,7 @@
 | 0037 | [Affine arena memory for sum types](adr/0037-affine-arena-sum-types.md) (accepted, planned; amends 0006, extends 0016/0017) |
 | 0038 | [Static dataflow networks over bounded SPSC rings](adr/0038-static-dataflow-networks.md) (accepted, planned; amends 0005) |
 | 0039 | [Connection-Machine data-parallel primitives](adr/0039-connection-machine-primitives.md) (accepted, planned) |
+| 0040 | [The paradigms in IL: how AirToIl lowers fork/join, arenas, CM primitives and dataflow](adr/0040-paradigms-in-il.md) (accepted, direction; extends 0033) |
 | 0036 | [Alice Core, the standard library: `Alice.Core.*` in the runtime, .NET names with Ruby spelling, regex tiers, own JSON engine, own HTTP/1.1 + Kestrel adapter](adr/0036-alice-core.md) (accepted; contracts frozen) |
 
 ## Projects
