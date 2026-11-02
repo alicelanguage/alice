@@ -164,6 +164,7 @@ public sealed partial class Printer
                 return P(i.Target) + "(" + Join(i.Args) + ")";
             case MNew n:
                 string init = n.Init == null ? "" : n.Init.Count == 0 ? " { }" : " { " + Join(n.Init) + " }";
+                if (n.TypeCs == "") return $"new({Join(n.Args)}){init}";   // target-typed
                 return n.Init != null && n.Args.Count == 0 ? $"new {n.TypeCs}(){init}" : $"new {n.TypeCs}({Join(n.Args)}){init}";
             case MNewArray a:
                 if (a.Items != null) return a.ElemCs == "" ? "new[] { " + Join(a.Items) + " }" : $"new {a.ElemCs}[] {{ {Join(a.Items)} }}";
@@ -193,6 +194,8 @@ public sealed partial class Printer
                     lineDirty = true;   // the rest of the enclosing statement maps to the lambda's last line: re-emit ours next
                     return head + "\n" + pr.sb;
                 }
+            case MCast { Bare: true } bc:
+                return "(" + bc.TypeCs + ")" + (bc.E is MCast { Bare: true } or MUnary { Postfix: false } ? E(bc.E) : P(bc.E));
             case MCast c:
                 return "((" + c.TypeCs + ")" + P(c.E) + ")";
             case MIs i:

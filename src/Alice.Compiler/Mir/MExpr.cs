@@ -103,6 +103,9 @@ public sealed class MCast : MExpr
 {
     public string TypeCs = "";
     public MExpr E = null!;
+    /// <summary>Printed `(T)e` without the enclosing parentheses: a cast that is itself an operand of a cast or a
+    /// whole argument. A prefix-unary or bare-cast operand is not parenthesized (`(nint)(T)&amp;f`).</summary>
+    public bool Bare;
 }
 
 public sealed class MIs : MExpr

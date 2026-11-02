@@ -137,20 +137,19 @@ public sealed partial class Lowerer
             return;
         }
         string helper = $"__fused_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
-        var hp = new Backend.Printer("", 1);
-        string sig = string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
+        var sig = captured.Select(HelperParam).ToList();
         MCall CallHelper() => new() { Name = helper, Args = captured.Select(l => (MExpr)LRef(l.CsName, l.Type.ToAir())).ToList() };
         MStmt call;
         if (accT != null)
         {
-            hp.Root(new MReturn { Value = new MCall { Target = AirLeaf.TypeName("global::Alice.Runtime.Par"), Name = $"Reduce<{accT}>", Args = { new AirStoreCount(store), new MLambda { Params = { lo, hi }, Body = kernel }, Combine("+", "a", "b"), AirConst.Int(4096) } } });
-            Extra.Add($"private static {accT} {helper}({sig})\n{{\n{hp}}}\n");
+            var reduce = new MCall { Target = AirLeaf.TypeName("global::Alice.Runtime.Par"), Name = $"Reduce<{accT}>", Args = { new AirStoreCount(store), new MLambda { Params = { lo, hi }, Body = kernel }, Combine("+", "a", "b"), AirConst.Int(4096) } };
+            AddHelper(HelperMethod(helper, true, AirOf(fs.Reduce!.Block!.Result, accT), sig, new MReturn { Value = reduce }));
             call = new MAssign { Target = LRef(fs.ResultTemp, accA), Value = CallHelper() };
         }
         else
         {
-            hp.Root(new MExprStmt { E = new MCall { Target = AirLeaf.TypeName("global::Alice.Runtime.Par"), Name = "Range", Args = { new AirStoreCount(store), new MLambda { Params = { lo, hi }, Body = kernel }, AirConst.Int(4096) } } });
-            Extra.Add($"private static void {helper}({sig})\n{{\n{hp}}}\n");
+            var range = new MCall { Target = AirLeaf.TypeName("global::Alice.Runtime.Par"), Name = "Range", Args = { new AirStoreCount(store), new MLambda { Params = { lo, hi }, Body = kernel }, AirConst.Int(4096) } };
+            AddHelper(HelperMethod(helper, true, AirLeaf.Void, sig, new MExprStmt { E = range }));
             call = new MExprStmt { E = CallHelper() };
         }
         o.Add(new MIf { Cond = new AirParGuard { Count = new AirStoreCount(store), Min = Threshold, Type = BoolT }, Then = { call }, Else = new List<MStmt> { new MBlock { Body = serial } } });

@@ -65,10 +65,14 @@ public sealed partial class Printer
         if (d.Field is { } f)
             return $"{Vis(f.Vis)} {(f.Static ? "static " : "")}{(f.ReadOnly ? "readonly " : "")}{f.Type.ToCs()} {f.Name} = {E(d.FieldInit!)};\n";
         var m = d.Method!;
+        string attrs = string.Concat(d.Attributes.Select(a => "[" + a.Type.ToCs()
+            + (a.Args.Count + a.Named.Count > 0 ? "(" + string.Join(", ", a.Args.Select(E).Concat(a.Named.Select(nv => nv.Name + " = " + E(nv.Value)))) + ")" : "") + "]\n"));
+        string ps = string.Join(", ", m.Params.Select(x => x.Type.ToCs() + " " + x.Name));
+        string head = $"{attrs}{Vis(m.Vis)} {(m.Is(AirMethodFlags.Static) ? "static " : "")}{(d.Unsafe ? "unsafe " : "")}{m.Ret.ToCs()} {m.Name}({ps})";
+        if (d.ExprBody != null) return head + " => " + E(d.ExprBody) + ";\n";
         var p = new Printer("", 1);
         p.Stmts(m.Body!);
-        string ps = string.Join(", ", m.Params.Select(x => x.Type.ToCs() + " " + x.Name));
-        return $"{Vis(m.Vis)} {(m.Is(AirMethodFlags.Static) ? "static " : "")}{m.Ret.ToCs()} {m.Name}({ps})\n{{\n{p}}}\n";
+        return $"{head}\n{{\n{p}}}\n";
     }
 
     static string Vis(AirVis v) => v.ToString().ToLowerInvariant();

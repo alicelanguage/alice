@@ -158,7 +158,7 @@ public sealed partial class MirDump
             case MBinary b: return $"({b.Op}{(b.Checked ? "" : " unchecked")} {E(b.L)} {E(b.R)})";
             case MUnary u: return $"({u.Op}{(u.Postfix ? " postfix" : "")}{(u.Checked ? "" : " unchecked")} {E(u.E)})";
             case MCond c: return $"(cond {E(c.C)} {E(c.A)} {E(c.B)})";
-            case MCast c: return $"(cast {c.TypeCs} {E(c.E)})";
+            case MCast c: return $"(cast{(c.Bare ? " bare" : "")} {c.TypeCs} {E(c.E)})";
             case MIs i: return $"(is {E(i.E)} {i.TypeCs})";
             case MInterp ip:
                 {
