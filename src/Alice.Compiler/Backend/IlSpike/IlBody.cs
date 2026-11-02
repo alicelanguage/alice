@@ -712,10 +712,8 @@ public sealed class IlBody
         switch (c)
         {
             case AirLocalRef { Narrowed: true }: throw new SpikeUnsupported("AirLocalRef:narrowed");
-            // unresolved by the binder (ADR 0032 says reject); Main's ARGV arrives this way, so names of parameters/locals and
-            // CLR static paths are still accepted, anything else is reported as AirName
-            case AirName n: return FindLocalOrArg(n.Path) || StaticPath(n.Path) != null ? Code(n.Path) : throw new SpikeUnsupported("AirName", n.Path);
-            case AirRawCs: throw new SpikeUnsupported("AirRawCs", c.Text);
+            // names the binder left unresolved now lower as by-name AirTypeRef/AirLocalRef/AirMemberPath (air-b1 D0.7b):
+            // read by name below like any leaf; AirName/AirRawCs no longer exist
             case AirThis or AirBase: throw new SpikeUnsupported("AirThis");
             case AirFieldRef f: throw new SpikeUnsupported("AirFieldRef", f.Name);
             case AirNull: il.Emit(OpCodes.Ldnull); return typeof(object);
