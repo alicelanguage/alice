@@ -17,9 +17,9 @@ if ((build)); then
   dotnet build "$ROOT/src/Alice.Cli" -c Release -v q -nologo >/dev/null
   for n in "${NAMES[@]}"; do
     (cd alice && dotnet "$ALICE" -q build "$n.al" -o "out/$n.dll")
-    # serial: Bend's C twin as is (the _OPENMP blocks compile out); parallel: the same file with -fopenmp
+    # serial: Bend's C twin as is (the _OPENMP blocks compile out); parallel: the same file with clang -fopenmp
     clang -O3 -march=native "c/$n.c" -o "c/${n}_serial"
-    gcc -O3 -march=native -fopenmp "c/$n.c" -o "c/${n}_omp"
+    clang -O3 -march=native -fopenmp "c/$n.c" -o "c/${n}_omp"
   done
 fi
 
@@ -41,8 +41,9 @@ for n in "${NAMES[@]}"; do
   echo "done $n" >&2
 done
 mv results/checksums.tsv.new results/checksums.tsv
-# .NET startup floor: one maze / pair / table (the smallest input of the first workload that takes one)
-hyperfine -N -w 1 -r "$RUNS" --export-json results/startup.json \
-  -n "alice/1" "$ONE env DOTNET_PROCESSOR_COUNT=1 dotnet alice/out/bfs.dll 0" -n "alice/N" "dotnet alice/out/bfs.dll 0" >/dev/null
+# .NET startup floor: the first workload found in alice/ at its smallest input (argument 0)
+FIRST=$(basename "$(ls alice/*.al | head -1)" .al)
+hyperfine -N -w 1 -r "$RUNS" --export-json results/startup.json   -n "alice/1" "$ONE env DOTNET_PROCESSOR_COUNT=1 dotnet alice/out/$FIRST.dll 0" -n "alice/N" "dotnet alice/out/$FIRST.dll 0" >/dev/null
+echo "$FIRST" > results/startup.txt
 nproc > results/cores.txt
 python3 report.py

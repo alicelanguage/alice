@@ -2,7 +2,7 @@
 
 Median of cold-process wall time in ms (max in parentheses), peak RSS in MB (median). Serial = 1 core (`taskset`, `DOTNET_PROCESSOR_COUNT=1` for Alice), parallel = all 32 cores. Bend columns are the pinned numbers of bend/bench/runtime/_pin_/apple_m4_max.txt: **a different machine (Apple M4 Max, 16 cores)**, for reference only; compare them through the X/C ratios, never directly.
 
-Alice startup floor (`bfs 0`, one maze): serial 26 ms, parallel 43 ms.
+Alice startup floor (`bfs 0`, smallest input): serial 26 ms, parallel 43 ms.
 
 ## Serial, 1 core
 
@@ -21,27 +21,27 @@ Alice startup floor (`bfs 0`, one maze): serial 26 ms, parallel 43 ms.
 
 | workload | Alice ms | C ms | Alice / C | Alice RSS | C RSS | Bend M4 ms (different machine) | Bend / C on M4 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| bfs | 839 (872) | 350 (365) | 2.40 | 40 | 3 | 343 | 0.10 |
-| editdist | 726 (753) | 205 (289) | 3.55 | 39 | 3 | 236 | 0.12 |
-| gameoflife | 1123 (1257) | 3166 (3536) | 0.35 | 41 | 3 | 647 | 0.10 |
-| hashmap | 162 (262) | 97 (98) | 1.67 | 45 | 7 | 238 | 0.38 |
-| kmeans | 2774 (3167) | 971 (1028) | 2.86 | 84 | 184 | 268 | 0.13 |
-| lexer | 201 (203) | 151 (154) | 1.33 | 40 | 3 | 198 | 0.19 |
-| mandelbrot | 349 (410) | 318 (460) | 1.10 | 38 | 3 | 395 | 0.11 |
-| merkle | 1120 (1295) | 660 (721) | 1.70 | 319 | 131 | 422 | 0.12 |
+| bfs | 839 (872) | 301 (326) | 2.79 | 40 | 5 | 343 | 0.10 |
+| editdist | 726 (753) | 507 (556) | 1.43 | 39 | 5 | 236 | 0.12 |
+| gameoflife | 1123 (1257) | 637 (648) | 1.76 | 41 | 5 | 647 | 0.10 |
+| hashmap | 162 (262) | 87 (139) | 1.87 | 45 | 10 | 238 | 0.38 |
+| kmeans | 2774 (3167) | 269 (310) | 10.30 | 84 | 189 | 268 | 0.13 |
+| lexer | 201 (203) | 164 (206) | 1.23 | 40 | 5 | 198 | 0.19 |
+| mandelbrot | 349 (410) | 183 (187) | 1.91 | 38 | 5 | 395 | 0.11 |
+| merkle | 1120 (1295) | 510 (543) | 2.19 | 319 | 134 | 422 | 0.12 |
 
 ## Parallel speedup (serial median / parallel median)
 
 | workload | Alice | C (OpenMP) | Bend on M4 (16 cores, different machine) |
 |---|---:|---:|---:|
-| bfs | 12.9x | 18.4x | 11.4x |
-| editdist | 15.6x | 42.9x | 10.8x |
-| gameoflife | 12.7x | 5.0x | 12.1x |
-| hashmap | 9.0x | 14.7x | 11.5x |
-| kmeans | 11.9x | 2.9x | 7.7x |
-| lexer | 10.4x | 10.0x | 10.8x |
-| mandelbrot | 10.6x | 7.7x | 11.3x |
-| merkle | 10.7x | 10.4x | 10.0x |
+| bfs | 12.9x | 21.4x | 11.4x |
+| editdist | 15.6x | 17.3x | 10.8x |
+| gameoflife | 12.7x | 24.8x | 12.1x |
+| hashmap | 9.0x | 16.4x | 11.5x |
+| kmeans | 11.9x | 10.4x | 7.7x |
+| lexer | 10.4x | 9.2x | 10.8x |
+| mandelbrot | 10.6x | 13.5x | 11.3x |
+| merkle | 10.7x | 13.5x | 10.0x |
 
 ## Alice against Bend, machine-independent
 

@@ -31,7 +31,7 @@ size by default (and the small size as arguments, for checking); the C program h
 | | Serial (column "1") | Parallel (all cores) |
 |---|---|---|
 | Alice | no annotations; `DOTNET_PROCESSOR_COUNT=1`, pinned with `taskset -c $CORE` (default 0), so `Par.Forkable` is false and calls run the `__serial` clone | the compiler forks the pure recursive pairs itself (ADR 0015); `alice explain` shows every `batch`-like function as "fork/join" |
-| C | Bend's `main.c`, unchanged: clang `-O3 -march=native`, pinned like Alice | the same file with gcc `-O3 -march=native -fopenmp`: `omp task` over the top 10 levels of the same recursion (`lexer`: `omp parallel for` over its line loop) |
+| C | Bend's `main.c`, unchanged: clang `-O3 -march=native`, pinned like Alice | the same file with clang `-O3 -march=native -fopenmp` (libomp): `omp task` over the top 10 levels of the same recursion (`lexer`: `omp parallel for` over its line loop) |
 | Bend | not run here (not installed); the pinned `apple_m4_max.txt` numbers, copied to `bend_pin_apple_m4_max.txt` | same file, PAR-CPU column (16 cores) |
 
 Bend's `main.c` files are all serial. `c/<name>.c` is Bend's file with the OpenMP path added inside `#ifdef _OPENMP`
@@ -47,7 +47,7 @@ machine-independent comparison is each language divided by the serial C twin on 
 
 ## Results
 
-Machine: x86-64 build box, 32 cores, 61 GB, Arch Linux, .NET 10.0.114, clang 23, gcc (system). The box was shared
+Machine: x86-64 build box, 32 cores, 61 GB, Arch Linux, .NET 10.0.114, clang 23 with libomp. The box was shared
 with other jobs during the run (load average 8-10 on 32 cores), so read ratios within ~1.2x as equal. Median ms,
 lower is better. Full tables with max, peak RSS and every ratio: [results/summary.md](results/summary.md).
 
@@ -66,19 +66,19 @@ lower is better. Full tables with max, peak RSS and every ratio: [results/summar
 
 ### Parallel, 32 cores
 
-| workload | Alice | C (OpenMP, gcc) | Alice speedup | C speedup | Bend speedup on M4 (16 cores) | Alice / C serial | Bend PAR / C on M4 |
+| workload | Alice | C (OpenMP) | Alice speedup | C speedup | Bend speedup on M4 (16 cores) | Alice / C serial | Bend PAR / C on M4 |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| bfs | 839 | 350 | 12.9x | 18.4x | 11.4x | 0.130 | 0.096 |
-| editdist | 726 | 205 | 15.6x | 42.9x* | 10.8x | **0.083** | 0.118 |
-| gameoflife | 1123 | 3166* | 12.7x | 5.0x* | 12.1x | **0.071** | 0.095 |
-| hashmap | 162 | 97 | 9.0x | 14.7x | 11.5x | **0.114** | 0.383 |
-| kmeans | 2774 | 971 | 11.9x | 2.9x | 7.7x | 0.987 | 0.130 |
-| lexer | 201 | 151 | 10.4x | 10.0x | 10.8x | **0.133** | 0.191 |
-| mandelbrot | 349 | 318 | 10.6x | 7.7x | 11.3x | 0.142 | 0.105 |
-| merkle | 1120 | 660 | 10.7x | 10.4x | 10.0x | 0.163 | 0.123 |
+| bfs | 839 | 301 | 12.9x | 21.4x | 11.4x | 0.130 | 0.096 |
+| editdist | 726 | 507 | 15.6x | 17.3x | 10.8x | **0.083** | 0.118 |
+| gameoflife | 1123 | 637 | 12.7x | 24.8x | 12.1x | **0.071** | 0.095 |
+| hashmap | 162 | 87 | 9.0x | 16.4x | 11.5x | **0.114** | 0.383 |
+| kmeans | 2774 | 269 | 11.9x | 10.4x | 7.7x | 0.987 | 0.130 |
+| lexer | 201 | 164 | 10.4x | 9.2x | 10.8x | **0.133** | 0.191 |
+| mandelbrot | 349 | 183 | 10.6x | 13.5x | 11.3x | 0.142 | 0.105 |
+| merkle | 1120 | 510 | 10.7x | 13.5x | 10.0x | 0.163 | 0.123 |
 
-\* The parallel C build is gcc (clang has no OpenMP runtime on this box), the serial one clang, so the C speedup
-mixes two compilers: gcc's `editdist` is faster than clang's, its `gameoflife` several times slower.
+Both C builds are clang. The C 32-core column was measured again after libomp was installed (the first run used
+gcc); the Alice columns are from the first run.
 
 **Against Bend** (machine-independent: each divided by the serial C twin on its own machine; bold = Alice ahead).
 Serial: Alice ahead on `gameoflife`, `hashmap`, `lexer`, equal on `editdist` (1.29 vs 1.28). Parallel: Alice ahead
@@ -124,6 +124,28 @@ What made Alice fast where it is (applied in the ports, all plain Alice):
 - **Int32 node links** in `hashmap` (`-1` for nil) instead of UInt32 links converted with `.to_i32` per hop:
   2789 -> 2326 ms.
 
+## Compiler work queued
+
+Tick an item when a compiler or runtime change fixes it and the workload is re-measured.
+
+Language and compiler issues (repros in the next section):
+
+- [ ] 1. compound wrapping assignment `x &+= y` (AL0101)
+- [ ] 2. a UInt32 literal first assigned inside an `if` body is typed Int32 (AL0304)
+- [ ] 3. an enum constructor call as the argument of another does not parse (AL0101 "expected type")
+- [ ] 4. a top-level `[..._u32]` constant is emitted as `int[]`; errors land in the generated `.g.cs`
+- [ ] 5. swapping two fresh array locals makes a fork leaf impure, so the caller's fork disappears
+- [ ] 6. `String#to_u32` reports a leaked .NET constraint error (AL0300) instead of "no such method"
+- [ ] 7. `UInt32 >> UInt32` is undefined (AL0301); shift counts must be Int32
+
+Codegen causes (Findings 1-5):
+
+- [ ] kmeans: no SIMD for the 8-distance kernel, `dst`/`min2` not inlined into `chunk`, tier-0 time, GC stats trees
+- [ ] merkle: the 22-round Speck loop is not unrolled; a bounds-checked `rk[i]` load per round
+- [ ] bfs: bounds checks on pooled fixed-size arrays; checked `to_i32`/`to_u32` conversions
+- [ ] mandelbrot: the branchless select `c ? a : b` in a loop becomes branches, not `cmov`
+- [ ] lexer: bounds checks on `buf[p]` under a loop bound that is not `buf.size`
+
 ## Compiler issues found (minimal repros; the compiler is unchanged)
 
 | # | Repro | Result | Workaround in the ports |
@@ -162,7 +184,7 @@ value from `main.bend` ([results/checksums.tsv](results/checksums.tsv)). The sma
 - Bend's numbers are pinned results from an Apple M4 Max, not measured here (Bend is not installed on this box).
   Only the X/C ratios compare across machines, and they assume the C twin stands in the same relation to Bend on
   both CPUs.
-- Cold process: Alice pays ~26 ms startup and JIT (the `bfs 0` floor) and runs its first calls in tier-0 code; on
+- Cold process: Alice pays ~26 ms startup and JIT (the startup floor: the first workload in `alice/` at input 0) and runs its first calls in tier-0 code; on
   the short runs (`hashmap`, `lexer`, the parallel `mandelbrot`) that is a visible share.
 - Alice structs and enums replace Bend's records and data types one to one; where main.c uses an arena (kmeans,
   merkle), Alice allocates GC objects, as Bend allocates nodes on its heap.
