@@ -17,7 +17,10 @@ namespace Alice.Cli.Proof;
 /// </summary>
 public static class SmtProver
 {
-    public sealed record Outcome(string Rule, bool Proved, string? Counterexample, string? Untranslatable);
+    public sealed record Outcome(string Rule, bool Proved, string? Counterexample, string? Untranslatable, double Ms = 0);
+
+    /// <summary>Z3's limit per rule when `alice prove --timeout` is not given: a nonlinear 64-bit query can run for hours.</summary>
+    public const uint DefaultTimeoutMs = 20000;
 
     /// <summary>Z3's native library: the system one (`pacman -S z3`, `apt install libz3-4`, `brew install z3`) or
     /// ALICE_Z3=/path/to/libz3. Any architecture: the C API is called directly.</summary>
@@ -31,7 +34,7 @@ public static class SmtProver
         return "Z3 is not installed: install it (pacman -S z3, apt install libz3-4, brew install z3) or set ALICE_Z3=/path/to/libz3";
     }
 
-    public static List<Outcome> Prove(List<SourceFile> files, IEnumerable<string> refs)
+    public static List<Outcome> Prove(List<SourceFile> files, IEnumerable<string> refs, uint timeoutMs = DefaultTimeoutMs)
     {
         var asts = files.Select(f => Parser.ParseFile(f.Text, f.Path)).ToList();
         new Binder(asts, new ClrTypes(refs)).Bind();
@@ -41,12 +44,13 @@ public static class SmtProver
         foreach (var rule in rules)
         {
             using var ctx = new Context();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                var ex = new Exec(ctx, methods);
-                r.Add(ex.Check(rule));
+                var ex = new Exec(ctx, methods, timeoutMs);
+                r.Add(ex.Check(rule) with { Ms = sw.Elapsed.TotalMilliseconds });
             }
-            catch (Untranslatable u) { r.Add(new Outcome(rule.RuleName!, false, null, u.Message)); }
+            catch (Untranslatable u) { r.Add(new Outcome(rule.RuleName!, false, null, u.Message, sw.Elapsed.TotalMilliseconds)); }
         }
         return r;
     }
@@ -64,7 +68,7 @@ public static class SmtProver
     sealed class Untranslatable(string why) : Exception(why);
 
     /// <summary>Symbolic execution of one rule. Values are Z3 terms; `err` accumulates the inputs that raise.</summary>
-    sealed class Exec(Context z, Dictionary<MethodSym, MethodDecl> methods)
+    sealed class Exec(Context z, Dictionary<MethodSym, MethodDecl> methods, uint timeoutMs)
     {
         BoolExpr err = z.MkFalse();
         int depth;
@@ -94,7 +98,7 @@ public static class SmtProver
             }
             var result = Body(rule.Body, env);
             using var s = z.MkSolver();
-            s.TimeoutMs = 20000;   // a nonlinear 64-bit query can run for hours: give up, enumerate instead
+            s.TimeoutMs = timeoutMs;   // a nonlinear 64-bit query can run for hours: give up, enumerate instead
             s.Assert(domain.ToArray());
             s.Assert(z.MkOr(err, z.MkNot((BoolExpr)result)));   // an input that raises or returns false
             var status = s.Check();
@@ -201,13 +205,7 @@ public static class SmtProver
             switch (e)
             {
                 case LitExpr { Kind: "bool" } b: return z.MkBool(b.Text == "true");
-                case LitExpr { Kind: "int" } li:
-                    {
-                        string t = li.Text.Replace("_", "");
-                        foreach (var suf in new[] { "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "L" })
-                            if (t.EndsWith(suf, StringComparison.OrdinalIgnoreCase)) { t = t[..^suf.Length]; break; }
-                        return z.MkBV(long.Parse(t, System.Globalization.CultureInfo.InvariantCulture), Width(li.Type));
-                    }
+                case LitExpr { Kind: "int" } li: return z.MkBV(IntLiteral(li.Text), Width(li.Type));
                 case NameExpr { Res: "local", Sym: LocalSym l } when env.TryGetValue(l, out var v): return v;
                 case ConstExpr ce when ce.Ref.Name.Split('.', ':').LastOrDefault(x => x.Length > 0) is "MIN" or "MAX" && ce.Type.IsInteger:
                     {
@@ -249,6 +247,23 @@ public static class SmtProver
                     }
             }
             throw new Untranslatable($"`{e.GetType().Name.Replace("Expr", "").ToLowerInvariant()}` expressions are not supported by --smt");
+        }
+
+        /// <summary>`1_000`, `0xFF`, `0b1010`, `0o17`, `7_i64`, `18446744073709551615_u64` as the literal's 64-bit pattern
+        /// (MkBV keeps the low bits of the literal's width).</summary>
+        static long IntLiteral(string text)
+        {
+            string t = text.Replace("_", "");
+            foreach (var suf in new[] { "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "L" })
+                if (t.EndsWith(suf, StringComparison.OrdinalIgnoreCase)) { t = t[..^suf.Length]; break; }
+            bool neg = t.StartsWith('-');
+            if (neg) t = t[1..];
+            int radix = t.Length > 2 && t[0] == '0' ? char.ToLowerInvariant(t[1]) switch { 'x' => 16, 'b' => 2, 'o' => 8, _ => 10 } : 10;
+            if (radix != 10) t = t[2..];
+            ulong u;
+            try { u = System.Convert.ToUInt64(t, radix); }
+            catch (Exception e) when (e is FormatException or OverflowException or ArgumentException) { throw new Untranslatable($"integer literal `{text}` is not supported by --smt"); }
+            return neg ? unchecked(-(long)u) : unchecked((long)u);
         }
 
         BitVecExpr MinOf(uint w) => z.MkBV(-(1L << (int)Math.Min(63, w - 1)), w);
@@ -328,7 +343,8 @@ public static class SmtProver
                         return z.MkITE(z.MkBVSLT(x, z.MkBV(0, x.SortSize)), z.MkBVNeg(x), x);
                     case "to_i8" or "to_i16" or "to_i32" or "to_i" or "to_i64" or "to_u8" or "to_u16" or "to_u32" or "to_u64":
                         return Convert(x, c.Recv.Type, c.Type, live, check: true);
-                    case "to_i8_b" or "to_i16_b" or "to_i32_b" or "to_i64_b" or "to_u8_b" or "to_u32_b":   // `to_X!`: wrapping
+                    // `to_X!`: wrapping (CreateTruncating, Prelude.Primitives.cs); `to_X` above is CreateChecked
+                    case "to_i_b" or "to_i8_b" or "to_i16_b" or "to_i32_b" or "to_i64_b" or "to_u8_b" or "to_u16_b" or "to_u32_b" or "to_u64_b":
                         return Convert(x, c.Recv.Type, c.Type, live, check: false);
                 }
             }

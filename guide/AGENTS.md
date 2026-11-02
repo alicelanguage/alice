@@ -7,8 +7,12 @@ Before writing Alice:
 
 - Run `alice guide` and read it. Topics: `alice guide performance`, `alice guide proofs`, `alice guide interop`.
 - Check your work with `alice check` (types only) and `alice run file.al`.
-- Run `alice prove --check` before committing when the project has a `RULES.al`. If a rule fails, fix the code;
-  change the rule only if the rule itself is wrong, and say so. Commit the regenerated `PROOF.al`.
+- Run `alice prove --check` before committing when the project has a `RULES.al` (`alice build --prove` does
+  the same after the build). It exits non-zero when a rule fails or `PROOF.al` is stale.
+- A failing rule prints its counterexample: `rule NAME FAILS: x = 7, lo = -3 -> false` (or
+  `-> raised OverflowException`). That exact input breaks the rule. Loop: read the input, fix the code, run
+  `alice prove` again, until every rule is proven. Change the rule only if the rule itself is wrong, and say
+  so. Commit the regenerated `PROOF.al`. `alice prove --check --format json` gives the same as JSON.
 - Run `alice explain file.al` after changing hot code: it lists the optimizations each method got.
 
 ### Not Ruby, not Crystal
@@ -17,13 +21,13 @@ Before writing Alice:
 |---|---|
 | `xs << 1` / `xs.push(1)` on an array | `Array(T)` is a fixed-size .NET array. Use `List(T)` (`xs = List(Int32).new`, then `xs << 1`) |
 | `h["missing"]` returns `nil` | raises `KeyNotFoundException`. Use `h.fetch(k, default)` or check `h.has_key?(k)` |
-| `h[k] += 1` on a new key | raises. Initialise first: `h[k] = h.fetch(k, 0) + 1` |
+| `h[k] += 1` on a new key | raises on a plain Hash. Give it a default, `h = Hash(String, Int32).new(0)`, or write `h[k] = h.fetch(k, 0) + 1` |
 | `s << "x"` on a String | strings are immutable .NET strings. Use `s += "x"`, interpolation, or `System.Text.StringBuilder` |
 | big integers grow forever | `Int32`/`Int64` raise `OverflowException`. Use `Int64` or `&+ &- &*` (wrapping) on purpose |
 | `Array<Int32>`, `Hash<K, V>` | generics use parentheses: `Array(Int32)`, `Hash(String, Int32)` |
 | `require "json"` (a gem) | `require` loads `.al` files. Libraries are NuGet packages: `alice add <Package>`, then use the .NET API |
 | `x.size` on a value that may be `nil` | compile error AL0310. Check `if x`, `x.nil?`, use `x || default`, or `x.not_nil!` |
-| `x = risky rescue fallback` | no `rescue` modifier. Write `x = begin ... rescue e : Exception ... end` |
+| `x = risky rescue fallback` | works as in Ruby (`(expr rescue v)` as a value too) and rescues every exception. To rescue one type, write `begin ... rescue e : FormatException ... end` |
 | `"a" < "b"` on strings | `<`/`>` are not defined on strings. Use `"a" <=> "b"` (returns -1, 0, 1) |
 | `-7 / 2 == -3` (C#/Java habit) | integer `/` and `%` are floored, as in Ruby: `-7 / 2 == -4`, `-7 % 3 == 2` |
 | monkey-patching hot paths, `method_missing`, `send` | they work but run through reflection. Prefer plain methods in performance-sensitive code |

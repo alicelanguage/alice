@@ -36,9 +36,11 @@ public static partial class Explain
         for (int i = 0; i < heads.Count; i++)
         {
             string name = heads[i].Groups[1].Value;
-            var h = Regex.Match(name, @"^__(?:fork|parfor|fused|parwords|managed)_(\w+?)_?\d*$");
+            var h = Regex.Match(name, @"^__(?:fork|parfor|par|fused|parwords|managed)_(\w+?)_?\d*$");
             if (name.StartsWith("__") && !h.Success) continue;
             string owner = h.Success ? h.Groups[1].Value : name;
+            // helpers of top-level code are named after `main` (Lowerer: Method?.CsName ?? "main"): they belong to Main
+            if (h.Success && owner == "main" && !heads.Any(x => x.Groups[1].Value == "main")) owner = "Main";
             int end = i + 1 < heads.Count ? heads[i + 1].Index : cs.Length;
             string body = cs[heads[i].Index..end];
             var list = report.TryGetValue(owner, out var l) ? l : report[owner] = new List<string>();

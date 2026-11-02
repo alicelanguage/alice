@@ -39,13 +39,19 @@ public sealed record Diagnostic(string Severity, string Code, string File, int L
         ("unterminated", "AL0103"),
     ];
 
+    /// <summary>A message that names its own code (`error AL0215: ...`) keeps it; the needle table is the fallback.</summary>
+    static readonly Regex Explicit = new(@"^error (?<code>AL\d{4}): ", RegexOptions.Singleline);
+
     public static Diagnostic FromMessage(string message)
     {
         var m = Positioned.Match(message);
-        string code = Codes.FirstOrDefault(c => message.Contains(c.Needle)).Code ?? "AL0001";
-        if (!m.Success) return new Diagnostic("error", code, "", 0, 0, message);
+        string msg = m.Success ? m.Groups["msg"].Value : message;
+        string? own = Explicit.Match(msg) is { Success: true } ex ? ex.Groups["code"].Value : null;
+        if (own != null) msg = msg[Explicit.Match(msg).Length..];
+        string code = own ?? Codes.FirstOrDefault(c => message.Contains(c.Needle)).Code ?? "AL0001";
+        if (!m.Success) return new Diagnostic("error", code, "", 0, 0, msg);
         int col = m.Groups["col"].Success ? int.Parse(m.Groups["col"].Value) : 1;
-        return new Diagnostic("error", code, m.Groups["file"].Value, int.Parse(m.Groups["line"].Value), col, m.Groups["msg"].Value);
+        return new Diagnostic("error", code, m.Groups["file"].Value, int.Parse(m.Groups["line"].Value), col, msg);
     }
 }
 

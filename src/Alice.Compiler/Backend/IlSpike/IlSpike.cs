@@ -322,7 +322,7 @@ public static class IlSpikeCompiler
             switch (o)
             {
                 case MCode c: Add("MCode:" + Leaf(c.Text)); return;
-                case MCall c when c.Target == null && c.Name == "unchecked": Add("MCall:unchecked()"); break;
+                case MCall c when c.Target == null && c.Name is "unchecked" or "checked": Add($"MCall:{c.Name}()"); break;
                 case MBlock b: Add(b.Lock != null ? "MBlock:lock" : b.Unchecked ? "MBlock:unchecked" : b.Unsafe ? "MBlock:unsafe" : "MBlock"); break;
                 case MExpr or MStmt or MCatch: Add(o.GetType().Name); break;
                 case System.Collections.IEnumerable list: foreach (var x in list) Visit(x); return;
