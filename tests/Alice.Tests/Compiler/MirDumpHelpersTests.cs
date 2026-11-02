@@ -75,6 +75,45 @@ public class MirDumpHelpersTests
         Assert.IsType<MReturn>(Assert.Single(m.Body!));
     }
 
+    /// <summary>Lowering builds typed nodes only: no `new MCode(` text leaf anywhere under Lowering/ (MCode.Empty, the
+    /// statement sentinel, and MCode as the typed leaves' base class are not constructions).</summary>
+    [Fact]
+    public void Lowering_constructs_no_text_leaves()
+    {
+        var d = new DirectoryInfo(AppContext.BaseDirectory);
+        while (d != null && !File.Exists(Path.Combine(d.FullName, "Alice.sln"))) d = d.Parent;
+        var dir = Path.Combine(d!.FullName, "src", "Alice.Compiler", "Lowering");
+        var hits = Directory.GetFiles(dir, "*.cs").SelectMany(f => File.ReadLines(f).Select((l, i) => (f, i, l)))
+            .Where(x => x.l.Contains("new MCode(")).Select(x => Path.GetFileName(x.f) + ":" + (x.i + 1)).ToList();
+        Assert.Empty(hits);
+    }
+
+    /// <summary>Every helper the lowering adds is a typed declaration: no C# text in Lowerer.Extra.</summary>
+    [Fact]
+    public void Word_count_and_gpu_helpers_are_typed()
+    {
+        var l = Lower("def f(text : String) : Int32\n  counts = Dictionary(String, Int32).new\n  for w in text.Split(\" \")\n"
+            + "    counts[w] = counts.GetValueOrDefault(w) + 1\n  end\n  counts.Count\nend\n");
+        var d = Typed(l, "__parwords_");
+        Assert.Equal(["__text", "__dict"], d.Method!.Params.Select(p => p.Name));
+        Assert.All(l.Extra, x => Assert.True(l.TypedExtra.ContainsKey(x), x));
+    }
+
+    /// <summary>The typed `__parwords` helper counts like the serial loop on a text above the parallel threshold.</summary>
+    [Fact]
+    public void Parallel_word_count_matches_the_serial_count()
+    {
+        const string src = "def f(text : String) : Int32\n  counts = Dictionary(String, Int32).new\n  for w in text.Split(' ')\n"
+            + "    counts[w] = counts.GetValueOrDefault(w) + 1\n  end\n  counts[\"w7\"] * 100000 + counts.Count\nend\n";
+        string cs = AliceCompiler.Transpile(src);
+        Assert.Contains("__parwords_", cs);
+        var f = System.Reflection.Assembly.Load(AliceCompiler.Emit([cs], "wc" + Guid.NewGuid().ToString("N"), exe: false)).GetType("Program")!.GetMethod("f")!;
+        var words = Enumerable.Range(0, 200_000).Select(k => "w" + (k * 7919 % 1000)).ToArray();
+        string text = string.Join(' ', words);
+        int expected = words.Count(w => w == "w7") * 100000 + words.Distinct().Count();
+        Assert.Equal(expected, f.Invoke(null, [text]));
+    }
+
     [Fact]
     public void Ir_has_no_text_escape_hatch()
     {

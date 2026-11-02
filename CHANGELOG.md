@@ -71,6 +71,12 @@
   is `AirFrozen` (not rewritten by the passes), and constant paths, inherited members and unresolved names lower
   as `AirFieldRef`/`AirTypeRef`/`AirParamRef`/`AirLocalRef` (`AirMemberPath` for a member chain). Emitted C# is
   byte-identical.
+- Every helper the lowering adds is a typed declaration (`AirHelperDecl`; Lowerer.Extra holds no hand-written C#):
+  SoA fusion, specializations, native callbacks, the parallel word count and the `gpu for` kernel and its fields.
+  The word-count helper and the GPU kernel print with standard formatting (braces, parentheses, one field per
+  declaration); no other C# changes. Fixed: a `gpu for` whose range end is a conditional (`a..(c ? b : a)`)
+  launched the wrong number of threads; the host trip count now parenthesizes the end. Lowering builds no `MCode`
+  text leaf anywhere (a test checks it).
 - AIR MCode removal batch 2 (backend plan D0.5): the allocation-free iterators, stream fusion and idiom rewrites
   (`Lowerer.Iterators/Fusion/Idioms`) build typed nodes instead of C# text: locals, literals, `default`, static
   receivers, and `AirRangeLength`, `AirRefOrAddDefault`, `AirRefOrNullRef`, `AirAlternateLookup`, `AirSpanSplit`,

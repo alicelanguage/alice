@@ -31,7 +31,7 @@ public sealed partial class MirDump
             case AirLength l:
                 return $"(length {l.Member} {E(l.Target)})";
             case AirTripCount t:
-                return $"(trip-count {E(t.Start)} {E(t.End)}{(t.Inclusive ? " inclusive" : "")}{(t.EndAsWritten ? " as-written" : "")})";
+                return $"(trip-count {E(t.Start)} {E(t.End)}{(t.Inclusive ? " inclusive" : "")})";
             case AirOffset o:
                 return $"(offset {E(o.Base)} {E(o.Offset)})";
             case AirPresizeCount c:

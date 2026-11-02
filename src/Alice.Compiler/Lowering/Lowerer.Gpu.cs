@@ -95,49 +95,90 @@ public sealed partial class Lowerer
         body.InsertRange(0, pre);
         pre = savedPre;
         inParallelGen = saved;
-        var kp = new Backend.Printer("", 2);
-        foreach (var st in body) kp.Root(st);
-        string ps = string.Join(", ", new[] { "int __ga", "int __gn" }.Concat(acc != null ? [$"{AccView()} __gacc"] : [])
-            .Concat(arrays.Select(a => $"{View(a)} {a.CsName}")).Concat(scalars.Select(s => $"{s.Type.Cs} {s.CsName}")));
+        foreach (var st in body) Optimizer.Pipeline.Run([st]);   // statement by statement, as the kernel always was
         // explicitly grouped: a grid-stride loop over the launch's range, so a grid capped at the device's width covers
         // any count. A reduction adds into a register; the group then reduces (warp shuffles, then shared memory over
         // the warps' partials) and its first thread does the one atomic add of the group
-        var kb = new System.Text.StringBuilder();
-        kb.Append($"private static void {kernel}({ps})\n{{\n");
-        if (acc != null) kb.Append($"    {acc.Type.Cs} __gr = 0;\n");
-        kb.Append("    int __gs = global::ILGPU.Grid.DimX * global::ILGPU.Group.DimX;\n");
-        kb.Append("    for (int __gt = global::ILGPU.Grid.GlobalIndex.X; __gt < __gn; __gt = __gn - __gt > __gs ? __gt + __gs : __gn)\n    {\n");
-        kb.Append($"        int {plan.LoopVar.CsName} = __gt + __ga;\n        unchecked\n        {{\n{kp}        }}\n    }}\n");
+        var intT = AirLeaf.Int;
+        MExpr G(string type, params string[] members)
+        {
+            MExpr e = AirTypeRef.Named("global::ILGPU." + type);
+            foreach (var m in members) e = new MMember { Target = e, Name = m };
+            return e;
+        }
+        static AirLocalRef K(string n, AirType? t = null) => new(n, t);
+        static MBinary B(AirBinOp op, MExpr l, MExpr r) => new() { Op = op, L = l, R = r };
+        var kbody = new List<MStmt>();
+        var accT = acc != null ? new AirType.ClrRef(acc.Type.Cs, null, []) : null;
+        if (acc != null) kbody.Add(new MDecl { Name = "__gr", TypeCs = acc.Type.Cs, Init = AirConst.Int(0) });
+        kbody.Add(new MDecl { Name = "__gs", TypeCs = "int", Init = B(AirBinOp.Mul, G("Grid", "DimX"), G("Group", "DimX")) });
+        kbody.Add(new MFor
+        {
+            VarType = "int", Var = "__gt", Start = G("Grid", "GlobalIndex", "X"), Cmp = "<", End = K("__gn", intT),
+            Step = " = __gn - __gt > __gs ? __gt + __gs : __gn",   // the step never overflows Int32
+            Body =
+            {
+                new MDecl { Name = plan.LoopVar.CsName, TypeCs = "int", Init = B(AirBinOp.Add, K("__gt", intT), K("__ga", intT)) },
+                new MBlock { Unchecked = true, Body = body },
+            },
+        });
         if (acc != null)
-            kb.Append($$"""
-                    unchecked
+        {
+            MExpr Gsh(MExpr ix) => new MIndex { Target = K("__gsh"), Args = { ix } };
+            kbody.Add(new MBlock
+            {
+                Unchecked = true,
+                Body =
+                {
+                    new MFor
                     {
-                        for (int __gd = global::ILGPU.Warp.WarpSize / 2; __gd > 0; __gd >>= 1) __gr += global::ILGPU.Warp.ShuffleDown(__gr, __gd);
-                        var __gsh = global::ILGPU.SharedMemory.GetDynamic<{{acc.Type.Cs}}>();
-                        if (global::ILGPU.Warp.IsFirstLane) __gsh[global::ILGPU.Warp.WarpIdx] = __gr;
-                        global::ILGPU.Group.Barrier();
-                        for (int __gw = global::ILGPU.Group.DimX / global::ILGPU.Warp.WarpSize / 2; __gw > 0; __gw >>= 1)
+                        VarType = "int", Var = "__gd", Start = B(AirBinOp.Div, G("Warp", "WarpSize"), AirConst.Int(2)), Cmp = ">", End = AirConst.Int(0), Step = " >>= 1",
+                        Body = { new MAssign { Target = K("__gr", accT), Op = "+=", Value = new MCall { Target = G("Warp"), Name = "ShuffleDown", Args = { K("__gr", accT), K("__gd", intT) } } } },
+                    },
+                    new MDecl { Name = "__gsh", Init = new MCall { Target = G("SharedMemory"), Name = $"GetDynamic<{acc.Type.Cs}>" } },
+                    new MIf { Cond = G("Warp", "IsFirstLane"), Then = { new MAssign { Target = Gsh(G("Warp", "WarpIdx")), Value = K("__gr", accT) } } },
+                    new MExprStmt { E = new MCall { Target = G("Group"), Name = "Barrier" } },
+                    new MFor
+                    {
+                        VarType = "int", Var = "__gw", Start = B(AirBinOp.Div, B(AirBinOp.Div, G("Group", "DimX"), G("Warp", "WarpSize")), AirConst.Int(2)), Cmp = ">", End = AirConst.Int(0), Step = " >>= 1",
+                        Body =
                         {
-                            if (global::ILGPU.Group.IdxX < __gw) __gsh[global::ILGPU.Group.IdxX] += __gsh[global::ILGPU.Group.IdxX + __gw];
-                            global::ILGPU.Group.Barrier();
-                        }
-                        if (global::ILGPU.Group.IdxX == 0) global::ILGPU.Atomic.Add(ref __gacc[0], __gsh[0]);
-                    }
-
-                """);
-        kb.Append("}\n");
-        kb.Append($"private static global::System.Action<global::ILGPU.KernelConfig, {string.Join(", ", ptypes)}>? {field};\n");
-        kb.Append($"private static int {group}, {cap};\n");
+                            new MIf { Cond = B(AirBinOp.Lt, G("Group", "IdxX"), K("__gw", intT)), Then = { new MAssign { Target = Gsh(G("Group", "IdxX")), Op = "+=", Value = Gsh(B(AirBinOp.Add, G("Group", "IdxX"), K("__gw", intT))) } } },
+                            new MExprStmt { E = new MCall { Target = G("Group"), Name = "Barrier" } },
+                        },
+                    },
+                    new MIf
+                    {
+                        Cond = B(AirBinOp.Eq, G("Group", "IdxX"), AirConst.Int(0)),
+                        Then = { new MExprStmt { E = new MCall { Target = G("Atomic"), Name = "Add", Args = { new MArg { Prefix = "ref ", E = new MIndex { Target = K("__gacc"), Args = { AirConst.Int(0) } } }, Gsh(AirConst.Int(0)) } } } },
+                    },
+                },
+            });
+        }
+        static AirType Named(string cs) => new AirType.ClrRef(cs, null, []);
+        var kps = new List<AirParamDecl> { new("__ga", intT), new("__gn", intT) };
+        if (acc != null) kps.Add(new("__gacc", Named(AccView())));
+        kps.AddRange(arrays.Select(a => new AirParamDecl(a.CsName, Named(View(a)))));
+        kps.AddRange(scalars.Select(sc => new AirParamDecl(sc.CsName, Named(sc.Type.Cs))));
+        AddHelper(new AirHelperDecl { Method = new AirMethodDecl { Name = kernel, Vis = AirVis.Private, Flags = AirMethodFlags.Static, Params = kps, Ret = AirLeaf.Void, Body = kbody } });
+        var launcher = new AirType.ClrRef("global::System.Action", null, [Named("global::ILGPU.KernelConfig"), .. ptypes.Select(Named)]) { Nullable = true };
+        AddHelper(new AirHelperDecl { Field = new AirFieldDecl { Name = field, Type = launcher, Vis = AirVis.Private, Static = true } });
+        AddHelper(new AirHelperDecl { Field = new AirFieldDecl { Name = group, Type = intT, Vis = AirVis.Private, Static = true } });
+        AddHelper(new AirHelperDecl { Field = new AirFieldDecl { Name = cap, Type = intT, Vis = AirVis.Private, Static = true } });
         // the device accumulator, allocated once per thread (two threads may launch the same loop at once)
-        if (acc != null) kb.Append($"[global::System.ThreadStatic] private static global::ILGPU.Runtime.MemoryBuffer1D<{acc.Type.Cs}, global::ILGPU.Stride1D.Dense>? {scalar};\n");
-        Extra.Add(kb.ToString());
+        if (acc != null)
+            AddHelper(new AirHelperDecl
+            {
+                Field = new AirFieldDecl { Name = scalar, Type = Named($"global::ILGPU.Runtime.MemoryBuffer1D<{acc.Type.Cs}, global::ILGPU.Stride1D.Dense>?"), Vis = AirVis.Private, Static = true },
+                Attributes = { new AirAttribute { Type = Named("global::System.ThreadStatic") } },
+            });
         UsesGpu = true;
 
         // the host: bounds, upload, launch (kernel compiled once per process), copy back what the body wrote
         var host = new List<MStmt>
         {
             new MDecl { Name = start, TypeCs = "int", Init = Expr(r.A) },
-            new MDecl { Name = count, TypeCs = "int", Init = new AirTripCount { End = Expr(r.B), Start = new AirLocalRef(start, AirLeaf.Int), Inclusive = !r.Excl, EndAsWritten = true, Type = AirLeaf.Int } },
+            new MDecl { Name = count, TypeCs = "int", Init = new AirTripCount { End = Expr(r.B), Start = new AirLocalRef(start, AirLeaf.Int), Inclusive = !r.Excl, Type = AirLeaf.Int } },
         };
         // ILGPU's extension classes, found by reflection at compile time: fully qualified calls need no imports
         var accType = binder.Clr.Find("ILGPU.Runtime.Accelerator", 0, []);

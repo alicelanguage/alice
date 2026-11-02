@@ -143,7 +143,7 @@ public sealed partial class Lowerer
         ctx.RemoveAt(ctx.Count - 1);
         spanKey = saved;
         MStmt serial = new MForeach { Vars = { range }, Coll = new AirSpanSplit { Str = str, Sep = sep }, Body = body };
-        if (spanOnly && f.Body.Count == 1 && counters.Count == 1 && ParallelWordCount(counters[0], str, Backend.Printer.E(sep)) is { } par)
+        if (spanOnly && f.Body.Count == 1 && counters.Count == 1 && ParallelWordCount(counters[0], str, sep) is { } par)
             return new MIf { Cond = new AirParGuard { Count = new MMember { Target = str, Name = "Length", Type = new AirType.Prim(PrimKind.Int) }, Min = Threshold, Type = new AirType.Prim(PrimKind.Bool) }, Then = { par }, Else = new List<MStmt> { serial } };
         return serial;
     }
@@ -153,7 +153,7 @@ public sealed partial class Lowerer
     /// string), each worker counts into its own dictionary via the span lookup, and partials are merged in chunk
     /// order, which reproduces the serial insertion (and therefore iteration) order.
     /// </summary>
-    MStmt? ParallelWordCount(Assign counter, MExpr str, string sep)
+    MStmt? ParallelWordCount(Assign counter, MExpr str, MExpr sep)
     {
         if (inParallelGen || ctx.Contains("lambda") || Method is { TypeParams.Count: > 0 }) return null;
         var cu = CounterUpdate(counter);
@@ -165,42 +165,73 @@ public sealed partial class Lowerer
         IsDictionary(dict.Type, out _, out var vt);
         string V = TypeCs(vt);
         string helper = $"__parwords_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
-        string d = "__dict", text = "__text";
-        string deltaCs = Backend.Printer.E(Expr(delta));
-        var ps = new List<string> { $"string {text}", $"global::System.Collections.Generic.Dictionary<string, {V}> {d}" };
-        ps.AddRange(captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
-        string body = $$"""
-                int parts = global::System.Math.Min(global::Alice.Runtime.Par.Workers, {{text}}.Length / 16384 + 1);   // one partial dictionary per core keeps the merge small
-                var cuts = new global::System.Collections.Generic.List<int> { -1 };
-                for (int k = 1; k < parts; k++)
+        var strT = new AirType.Prim(PrimKind.String);
+        var intT = new AirType.Prim(PrimKind.Int);
+        var dictT = new AirType.ClrRef("global::System.Collections.Generic.Dictionary", null, [strT, AirOf(vt, V)]);
+        var ps = new List<AirParamDecl> { new("__text", strT), new("__dict", dictT) };
+        ps.AddRange(captured.Select(HelperParam));
+        AirLocalRef L(string n, AirType? t = null) => new(n, t);
+        MExpr Text() => L("__text", strT);
+        MExpr Len(MExpr e) => new MMember { Target = e, Name = "Length", Type = intT };
+        MExpr Count(MExpr e) => new MMember { Target = e, Name = "Count", Type = intT };
+        MBinary Bin(AirBinOp op, MExpr l, MExpr r) => new() { Op = op, L = l, R = r };
+        MExpr I(int v) => AirConst.Int(v);
+        MExpr Cut(MExpr k) => new MIndex { Target = L("cuts"), Args = { k }, Type = intT };
+        var math = AirTypeRef.Named("global::System.Math");
+        var par = AirTypeRef.Named("global::Alice.Runtime.Par");
+        var cm = AirTypeRef.Named(CM);
+        MExpr RefOrAdd(MExpr dictE, MExpr key) => new MCall { Target = cm, Name = "GetValueRefOrAddDefault", Args = { dictE, key, new MArg { Prefix = "out ", E = new AirDiscard() } } };
+        string dictCs = dictT.ToCs();
+        // the chunk body: count one chunk's words into its own dictionary through the span lookup
+        var chunk = new List<MStmt>
+        {
+            new MDecl { Name = "len", TypeCs = "int", Init = Bin(AirBinOp.Sub, Bin(AirBinOp.Sub, Cut(Bin(AirBinOp.Add, L("c"), I(1))), Cut(L("c"))), I(1)) },
+            new MDecl { Name = "local", Init = new MNew { TypeCs = dictCs, Args = { new MCall { Target = math, Name = "Min", Args = { Bin(AirBinOp.Add, Bin(AirBinOp.Div, L("len"), I(64)), I(16)), I(16384) } } } } },   // pre-sized (bounded): few rehashes while counting
+            new MDecl { Name = "alt", Init = new AirAlternateLookup { Dict = L("local") } },
+            new MDecl { Name = "span", Init = new MCall { Target = Text(), Name = "AsSpan", Args = { Bin(AirBinOp.Add, Cut(L("c")), I(1)), Bin(AirBinOp.Sub, Bin(AirBinOp.Sub, Cut(Bin(AirBinOp.Add, L("c"), I(1))), Cut(L("c"))), I(1)) } } },
+            new MForeach
+            {
+                Vars = { "r" }, Coll = new MCall { Target = L("span"), Name = "Split", Args = { sep } },
+                Body = { new MAssign { Target = RefOrAdd(L("alt"), new MIndex { Target = L("span"), Args = { L("r") } }), Op = op, Value = Expr(delta) } },
+            },
+            new MAssign { Target = new MIndex { Target = L("locals"), Args = { L("c") } }, Value = L("local") },
+        };
+        var body = new List<MStmt>
+        {
+            // one partial dictionary per core keeps the merge small
+            new MDecl { Name = "parts", TypeCs = "int", Init = new MCall { Target = math, Name = "Min", Args = { new MMember { Target = par, Name = "Workers" }, Bin(AirBinOp.Add, Bin(AirBinOp.Div, Len(Text()), I(16384)), I(1)) } } },
+            new MDecl { Name = "cuts", Init = new MNew { TypeCs = "global::System.Collections.Generic.List<int>", Init = [I(-1)] } },
+            new MFor
+            {
+                VarType = "int", Var = "k", Start = I(1), Cmp = "<", End = L("parts"),
+                Body =
                 {
-                    int at = {{text}}.IndexOf({{sep}}, (int)((long){{text}}.Length * k / parts));
-                    if (at < 0) break;
-                    if (at > cuts[^1]) cuts.Add(at);
-                }
-                cuts.Add({{text}}.Length);
-                var locals = new global::System.Collections.Generic.Dictionary<string, {{V}}>[cuts.Count - 1];
-                global::Alice.Runtime.Par.Range(locals.Length, (lo, hi) =>
+                    new MDecl { Name = "at", TypeCs = "int", Init = new MCall { Target = Text(), Name = "IndexOf", Args = { sep, new MCast { TypeCs = "int", E = Bin(AirBinOp.Div, Bin(AirBinOp.Mul, new MCast { TypeCs = "long", E = Len(Text()) }, L("k")), L("parts")) } } } },
+                    new MIf { Cond = Bin(AirBinOp.Lt, L("at"), I(0)), Then = { new MBreak() } },
+                    new MIf { Cond = Bin(AirBinOp.Gt, L("at"), new MIndex { Target = L("cuts"), Args = { new MUnary { Op = AirUnOp.FromEnd, E = I(1) } } }), Then = { new MExprStmt { E = new MCall { Target = L("cuts"), Name = "Add", Args = { L("at") } } } } },
+                },
+            },
+            new MExprStmt { E = new MCall { Target = L("cuts"), Name = "Add", Args = { Len(Text()) } } },
+            new MDecl { Name = "locals", Init = new MNewArray { ElemCs = dictCs, Size = Bin(AirBinOp.Sub, Count(L("cuts")), I(1)) } },
+            new MExprStmt
+            {
+                E = new MCall
                 {
-                    for (int c = lo; c < hi; c++)
-                    {
-                    int len = cuts[c + 1] - cuts[c] - 1;
-                    var local = new global::System.Collections.Generic.Dictionary<string, {{V}}>(global::System.Math.Min(len / 64 + 16, 16384));   // pre-sized (bounded): few rehashes while counting
-                    var alt = local.GetAlternateLookup<global::System.ReadOnlySpan<char>>();
-                    var span = {{text}}.AsSpan(cuts[c] + 1, cuts[c + 1] - cuts[c] - 1);
-                    foreach (var r in span.Split({{sep}}))
-                        {{CM}}.GetValueRefOrAddDefault(alt, span[r], out _) {{op}} {{deltaCs}};
-                    locals[c] = local;
-                    }
-                }, 1);
-                int total = {{d}}.Count;
-                foreach (var local in locals) total += local.Count;
-                {{d}}.EnsureCapacity(total);
-                foreach (var local in locals)
-                    foreach (var kv in local)
-                        {{CM}}.GetValueRefOrAddDefault({{d}}, kv.Key, out _) += kv.Value;
-            """;
-        Extra.Add($"private static void {helper}({string.Join(", ", ps)})\n{{\n{body}\n}}\n");
+                    Target = par, Name = "Range",
+                    Args = { Len(L("locals")), new MLambda { Params = { "lo", "hi" }, Body = [new MFor { VarType = "int", Var = "c", Start = L("lo"), Cmp = "<", End = L("hi"), Body = chunk }] }, I(1) },
+                },
+            },
+            new MDecl { Name = "total", TypeCs = "int", Init = Count(L("__dict", dictT)) },
+            new MForeach { Vars = { "local" }, Coll = L("locals"), Body = { new MAssign { Target = L("total"), Op = "+=", Value = Count(L("local")) } } },
+            new MExprStmt { E = new MCall { Target = L("__dict", dictT), Name = "EnsureCapacity", Args = { L("total") } } },
+            new MForeach
+            {
+                Vars = { "local" }, Coll = L("locals"),
+                Body = { new MForeach { Vars = { "kv" }, Coll = L("local"), Body = { new MAssign { Target = RefOrAdd(L("__dict", dictT), new MMember { Target = L("kv"), Name = "Key" }), Op = "+=", Value = new MMember { Target = L("kv"), Name = "Value" } } } } },
+            },
+        };
+        // not run through the MIR passes: this body was always emitted as written
+        AddHelper(new AirHelperDecl { Method = new AirMethodDecl { Name = helper, Vis = AirVis.Private, Flags = AirMethodFlags.Static, Params = ps, Ret = AirLeaf.Void, Body = body } });
         var call = new MCall { Name = helper, Args = { str, new AirLocalRef(dict.CsName, dict.Type.ToAir()) }, Type = new AirType.Prim(PrimKind.Void) };
         call.Args.AddRange(captured.Select(l => (MExpr)new AirLocalRef(l.CsName, l.Type.ToAir())));
         return new MExprStmt { E = call };

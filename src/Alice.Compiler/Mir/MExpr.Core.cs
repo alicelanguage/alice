@@ -262,9 +262,6 @@ public sealed class AirTripCount : AirParExpr
     public MExpr End = null!;
     public MExpr Start = null!;
     public bool Inclusive;
-    /// <summary>End printed as written, never parenthesized: the `gpu for` host bound, whose text always was
-    /// `end - start` (Lowerer.Gpu).</summary>
-    public bool EndAsWritten;
 
     public override IEnumerable<MExpr> Children() => [End, Start];
 }
