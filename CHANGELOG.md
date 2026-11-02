@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Security: `alice publish` pushes to NuGet feeds itself over https with the API key in a request header instead of
+  a `dotnet nuget push` argument; `--dotnet-push` keeps the old path.
+- Telemetry docs: https-only endpoints and `ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`.
 - Security: an `alice-toolchain` file must name an exact version or channel; paths and other text are rejected, and
   only toolchains installed under `~/.alice/toolchains` are started.
 - Security: `dotnet`, `node` and `clang` are started from absolute `PATH` entries, never from the working directory.
@@ -21,6 +24,7 @@
 - Range analysis: locals passed by `ref`/`out` lose their value range; their arithmetic stays checked (audit F15).
 - `@[Native]` C: bounds-checked indexing, trapping integer overflow and division, masked shifts, collision-free generated names (audit F16).
 - Ownership: borrows and owned results through virtual calls must hold for every override (audit F18, partial).
+  `docs/production.md`.
 - ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
 
 ## 0.14.0 - 2026-10-27

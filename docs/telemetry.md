@@ -70,6 +70,8 @@ are posted in batches (`{"events":[…]}`) with a 2 s timeout. The CLI waits at 
 re-queued, and never change a command's output or exit code.
 
 Endpoint resolution: `ALICE_TELEMETRY_ENDPOINT`, else `endpoint` in `telemetry.toml`, else the built-in default.
+Endpoints must be `https://`; plain `http://` is accepted only for a loopback collector (`localhost`, `127.0.0.1`,
+`::1`), anything else counts as no endpoint and nothing is sent.
 **The built-in default is currently disabled** (`TelemetrySender.ServerLive = false`), so an official build sends nothing
 until a collector is deployed.
 
@@ -90,6 +92,7 @@ docker run -d -p 127.0.0.1:8080:8080 -v alice-telemetry:/data \
 | `ALICE_TELEMETRY_DB` | `/data/telemetry.db` | SQLite file |
 | `ALICE_TELEMETRY_RETENTION_DAYS` | `180` | purged daily |
 | `ALICE_TELEMETRY_RATE_PER_HOUR` | `600` | events per install id per hour (429 beyond) |
+| `ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR` | `100000` | events per hour from all clients together (429 beyond); bounds storage, since install ids are client-chosen |
 | `ALICE_TELEMETRY_ADMIN_TOKEN` | unset | required for `/v1/stats`; unset disables it (404) |
 | `ASPNETCORE_URLS` | `http://+:8080` | |
 
