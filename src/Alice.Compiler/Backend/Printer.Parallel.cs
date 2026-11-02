@@ -42,7 +42,7 @@ public sealed partial class Printer
             case AirLength l:
                 return E(l.Target) + "." + l.Member;
             case AirTripCount t:
-                return E(t.End) + " - " + E(t.Start) + (t.Inclusive ? " + 1" : "");
+                return TripEnd(t.End) + " - " + E(t.Start) + (t.Inclusive ? " + 1" : "");
             case AirOffset o:
                 return E(o.Base) + " + " + E(o.Offset);
             case AirPresizeCount c:
@@ -50,4 +50,9 @@ public sealed partial class Printer
         }
         return null;
     }
+
+    /// <summary>The range end left of `- start`: an additive or multiplicative operand keeps its C# (left-associative), anything
+    /// looser (`c ? a : b`, `a ?? b`, comparisons, shifts) is parenthesized.</summary>
+    static string TripEnd(MExpr e) =>
+        e is MBinary { Op: AirBinOp.Add or AirBinOp.Sub or AirBinOp.Mul or AirBinOp.Div or AirBinOp.Mod } ? E(e) : P(e);
 }

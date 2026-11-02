@@ -138,8 +138,8 @@ public sealed class AirLength : AirParExpr
 
 // TODO merge into MExpr.cs (common nodes, air-b1)
 /// <summary>
-/// `end - start[ + 1]`, the trip count of a range loop. <see cref="End"/> prints without parentheses, as the text
-/// form did (Lowerer.LoopPar); frozen.
+/// `end - start[ + 1]`, the trip count of a range loop. <see cref="End"/> is parenthesized unless it is atomic or an
+/// additive or multiplicative operation (`(c ? a : b) - start`); frozen.
 /// </summary>
 public sealed class AirTripCount : AirParExpr
 {
