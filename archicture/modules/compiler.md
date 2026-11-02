@@ -46,6 +46,30 @@ sorted tables are emitted sorted, framework TypeRefs resolve against the ref pac
 PDB id are content hashes (byte-identical rebuilds). Tests: `tests/Alice.Tests/Backends/IlBuilderTests` (ILVerify,
 collectible ALC runs, determinism, PDB round-trip).
 
+`Air/Passes/Synthesize` (D1.6, IL backend only; the C# path never runs it): `Synthesize.Run(binder)` returns an
+`AirModuleDecl` (`Mir/AirDecls.cs`) and sets `TypeSym.Synth`. It declares, with MIR bodies, what Roslyn synthesizes for
+the C# backend: record/record struct members in Roslyn's shapes (backing fields `<x>k__BackingField`, init setters,
+primary and copy constructors, `EqualityContract`, `Equals(T)`/`Equals(object)`, Roslyn's `GetHashCode` formula,
+`ToString`+`PrintMembers` printing `Point { x = 1, y = 2 }`, `Deconstruct`, `op_Equality`/`op_Inequality`, `<Clone>$`,
+`__With(all fields)` for `with`); sum types (abstract base with private ctor, abstract `Tag`, `Is<Variant>`, sealed nested
+variants, unit `Value` + `.cctor`); derived `op_Inequality`/`op_GreaterThan`/`op_GreaterThanOrEqual` (Emitter rules); the
+`IEnumerable.GetEnumerator` bridge; auto-properties; default and struct constructors; `.cctor` for static/constant
+initializers; `def to_s` as the `ToString` override; `<Module>..cctor` running class bodies. What `AirToIl` must honour:
+- Leaves: `AirThis` is ldarg.0; `AirBase` (typed with the base type) is `this` with a non-virtual `call` (`.ctor` on
+  base `object` is `object::.ctor`); `AirTypeOf` is ldtoken + `Type.GetTypeFromHandle`; `AirParamRef` of a
+  `ByRef(Out)` type as an assignment target is a store through the out parameter.
+- `MMember` on an Alice type names a backing field or a property: property reads call `get_`, property assignments call
+  `set_` (init setters included). Calls are by name; overloads (`Equals(T)`/`(object)`/`(Base)`, `StringBuilder.Append`
+  string/char/object) resolve from the arguments' static `Type`, which every synthesized node carries.
+- `As` is `MCond(MIs, MCast, AirNull)`; `MBinary { Checked = false }` is unchecked (the hash); `System.Type` equality is an
+  explicit `op_Equality` call.
+- `AirTypeDecl.FieldInits` must be prepended to every user constructor that does not chain `this(...)` (synthesized ones
+  already contain them); `AirMethodDecl.User != null` takes its body from lowering; `Implements` is a MethodImpl row;
+  `AirMethodFlags.InitOnly` is modreq(IsExternalInit); `Virtual` alone is `newslot`; names are CLR names (no `@`).
+- Not synthesized here: user operator wrappers (`op_Equality(Self, T)` -> `self.op_Eq`), events, plain/`@x` fields
+  (declarations, D0.8). Tests: `tests/Alice.Tests/Compiler/SynthesizeTests` (dumps, and an MIR evaluator compared with
+  the C# backend's output).
+
 `Optimizer/` (ADR 0014): `Pipeline` runs `Passes/` over MIR with `MirRewriter`/`MirFacts`. `Backend/CEmitter`:
 `@[Native]` functions -> C for clang. `Backend/Emitter` also lowers `rule` declarations for `alice prove` (AL0214).
 
