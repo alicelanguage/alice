@@ -53,15 +53,13 @@ public sealed partial class Lowerer
         var captured = Captured(c);
         if (captured == null) { pre.AddRange(serial); return rSerial; }
         string helper = $"__par_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
-        string ps = string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
+        var ps = captured.Select(HelperParam).ToList();
         MCall HelperCall(AirType? t) => new() { Name = helper, Args = captured.Select(l => (MExpr)AirLeaf.Name(l.CsName, l.Type.ToAir())).ToList(), Type = t };
         var big = new AirParGuard { Count = n(), Min = Threshold, Type = AirLeaf.Bool };
-        var hp = new Backend.Printer("", 1);
         if (resultType == null)
         {
             var range = new AirPar { Kind = AirParKind.Range, Count = n(), Kernel = new MLambda { Params = { lo, hi }, Body = kernel }, Type = AirLeaf.Void };
-            hp.Root(new MExprStmt { E = range });
-            Extra.Add($"private static void {helper}({ps})\n{{\n{hp}}}\n");
+            AddHelper(HelperMethod(helper, true, AirLeaf.Void, ps, new MExprStmt { E = range }));
             pre.Add(new MIf { Cond = big, Then = { new MExprStmt { E = HelperCall(AirLeaf.Void) } }, Else = serial });
             return MCode.Empty;
         }
@@ -78,13 +76,40 @@ public sealed partial class Lowerer
             Combine = Combine(combine!, "a", "b"),
             Type = rt,
         };
-        hp.Root(new MReturn { Value = reduce });
-        Extra.Add($"private static {T} {helper}({ps})\n{{\n{hp}}}\n");
+        AddHelper(HelperMethod(helper, true, AirOf(resultType, T), ps, new MReturn { Value = reduce }));
         pre.Add(new MDecl { Name = res, TypeCs = T, Init = AirLeaf.Default(rt) });
         serial.Add(new MAssign { Target = AirLeaf.Name(res, rt), Value = rSerial });
         pre.Add(new MIf { Cond = big, Then = { new MAssign { Target = AirLeaf.Name(res, rt), Value = HelperCall(rt) } }, Else = serial });
         return AirLeaf.Name(res, rt);
     }
+
+    /// <summary>Typed helper members already printed into <see cref="Extra"/>, keyed by that Extra string (by reference).</summary>
+    public readonly Dictionary<string, AirHelperDecl> TypedExtra = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>Prints a typed helper into <see cref="Extra"/> (C# backend) and records it for the IL backend.</summary>
+    void AddHelper(AirHelperDecl d)
+    {
+        string text = Backend.Printer.Helper(d);
+        TypedExtra[text] = d;
+        Extra.Add(text);
+    }
+
+    /// <summary>A private helper method whose body is <paramref name="stmt"/>, run through the MIR passes.</summary>
+    static AirHelperDecl HelperMethod(string name, bool isStatic, AirType ret, List<AirParamDecl> ps, MStmt stmt)
+    {
+        var body = new List<MStmt> { stmt };
+        Optimizer.Pipeline.Run(body);
+        return new AirHelperDecl
+        {
+            Method = new AirMethodDecl { Name = name, Vis = AirVis.Private, Flags = isStatic ? AirMethodFlags.Static : AirMethodFlags.None, Params = ps, Ret = ret, Body = body },
+        };
+    }
+
+    /// <summary>The AIR type that spells <paramref name="cs"/> (the C# the lowering chose for <paramref name="t"/>).</summary>
+    static AirType AirOf(AType t, string cs) => t.ToAir() is var a && a.ToCs() == cs ? a : new AirType.ClrRef(cs, null, []);
+
+    /// <summary>A captured local passed by value to a helper.</summary>
+    AirParamDecl HelperParam(LocalSym l) => new(l.CsName, AirOf(l.Type, LocalTypeCs(l)));
 
     /// <summary>
     /// The combine lambda of a parallel reduction: `static (a, b) => a + b` for "+", `static (a, b) =>

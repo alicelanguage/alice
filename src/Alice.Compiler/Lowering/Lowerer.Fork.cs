@@ -68,7 +68,7 @@ public sealed partial class Lowerer
         // hoisted locals (assigned in a branch) are already declared at the top of the method
         if (declares && !hoisted.Contains(l1)) outp.Add(new MDecl { Name = l1.CsName, TypeCs = TypeCs(l1.Type) });
         if (declares && !hoisted.Contains(l2)) outp.Add(new MDecl { Name = l2.CsName, TypeCs = TypeCs(l2.Type) });
-        if (!EmitFork(outp, l1.CsName, l2.CsName, TypeCs(l1.Type), TypeCs(l2.Type), c1, c2, lv, rv)) return 0;
+        if (!EmitFork(outp, l1.CsName, l2.CsName, l1, l2, TypeCs(l1.Type), TypeCs(l2.Type), c1, c2, lv, rv)) return 0;
         return consumed;
     }
 
@@ -77,11 +77,11 @@ public sealed partial class Lowerer
     /// The lambdas live in a helper: capturing this method's locals would allocate a closure on every call,
     /// forking or not; in the helper only the calls near the root that actually fork pay for it.
     /// </summary>
-    bool EmitFork(List<MStmt> outp, string n1, string n2, string t1, string t2, CallExpr c1, CallExpr c2, MExpr lv, MExpr rv) =>
-        EmitFork(outp, [n1, n2], [t1, t2], [c1, c2], [lv, rv]);
+    bool EmitFork(List<MStmt> outp, string n1, string n2, LocalSym l1, LocalSym l2, string t1, string t2, CallExpr c1, CallExpr c2, MExpr lv, MExpr rv) =>
+        EmitFork(outp, [n1, n2], [AirOf(l1.Type, t1), AirOf(l2.Type, t2)], [c1, c2], [lv, rv]);
 
     /// <summary>Two or three calls: `if (Par.Forkable) (n1, n2[, n3]) = helper(...); else { n1 = c1; ... }`.</summary>
-    bool EmitFork(List<MStmt> outp, List<string> names, List<string> types, List<CallExpr> calls, List<MExpr> lambdas)
+    bool EmitFork(List<MStmt> outp, List<string> names, List<AirType> types, List<CallExpr> calls, List<MExpr> lambdas)
     {
         var captured = new List<LocalSym>();
         foreach (var n in calls.SelectMany(WalkExpr).OfType<NameExpr>())
@@ -96,11 +96,9 @@ public sealed partial class Lowerer
             return true;
         }
         string helper = $"__fork_{(Method!.CsName ?? "main").TrimStart('@')}_{++helperN}";
-        var hp = new Backend.Printer("", 1);
-        var fork = new AirForkJoin();
+        var fork = new AirForkJoin { Type = new AirType.Tuple(types, null) };
         foreach (var lam in lambdas) fork.Branches.Add(new MLambda { ExprBody = lam });
-        hp.Root(new MReturn { Value = fork });
-        Extra.Add($"private {HelperStatic}({string.Join(", ", types)}) {helper}({string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"))})\n{{\n{hp}}}\n");
+        AddHelper(HelperMethod(helper, HelperStatic != "", new AirType.Tuple(types, null), captured.Select(HelperParam).ToList(), new MReturn { Value = fork }));
         var call = new MCall { Name = helper, Args = captured.Select(l => (MExpr)AirLeaf.Name(l.CsName, l.Type.ToAir())).ToList() };
         // below the fork depth, recursion continues in `m__serial`: one Forkable check per branch, not one per call
         serialCalls = CloneOk;
@@ -152,7 +150,7 @@ public sealed partial class Lowerer
         var types = calls.Select(c => TypeCs(c.Type)).ToList();
         var decls = new List<MStmt>();
         for (int k = 0; k < calls.Count; k++) decls.Add(new MDecl { Name = names[k], TypeCs = types[k] });
-        if (!EmitFork(decls, names, types, calls, lambdas)) return [];
+        if (!EmitFork(decls, names, calls.Select((c, k) => AirOf(c.Type, types[k])).ToList(), calls, lambdas)) return [];
         foreach (var m in decls) m.Line = s.Line;
         outp.AddRange(decls);
         for (int k = 0; k < calls.Count; k++) forkedCalls[calls[k]] = names[k];

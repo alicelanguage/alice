@@ -115,7 +115,7 @@ public sealed partial class MirDump
                 Nested($"using{(u.Await ? " await" : "")} {u.Name} = {E(u.Value)}{at}", u.Body);
                 break;
             default:
-                Line(s.GetType().Name + at);
+                if (!StmtLower(s, at)) Line(s.GetType().Name + at);
                 break;
         }
     }
@@ -181,6 +181,7 @@ public sealed partial class MirDump
                 }
         }
         if (CoreVector(e) is { } vec) return vec;
+        if (CoreLower(e) is { } lo) return lo;
         if (CoreIterators(e) is { } iter) return iter;
         if (CoreParallel(e) is { } par) return par;
         return "(" + e.GetType().Name + ")";
