@@ -55,6 +55,10 @@
 
 - ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
 - ADRs 0037-0039 (affine arena sum types, static dataflow networks, Connection-Machine primitives) accepted as direction; error codes AL0220-AL0229 reserved.
+- ADR 0036 (Alice Core standard library) accepted, with its frozen contracts in `Alice.Runtime/Core/Abstractions`
+  (regex AST, span inputs, JSON document/iterator/writer, HTTP request/response views) and `benchmarks/core/`
+  (corpus fetch, comparators, forge baselines). Alice spellings now bind to .NET names on `Alice.Core` types,
+  statics included: `empty?` -> `IsEmpty`, `save!` -> `Save`, `read_all` -> `ReadAll`.
 
 ## 0.14.0 - 2026-10-27
 

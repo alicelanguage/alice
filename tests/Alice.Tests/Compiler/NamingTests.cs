@@ -84,6 +84,42 @@ public class NamingTests
         Assert.Equal("3\nfalse\n4.0\ntrue", sw.ToString().Trim().ReplaceLineEndings("\n"));
     }
 
+    [Theory]
+    [InlineData("read_all", "ReadAll")]
+    [InlineData("empty?", "IsEmpty")]
+    [InlineData("has_key?", "HasKey")]
+    [InlineData("save!", "Save")]
+    public void Core_spellings_follow_dotnet_naming(string alice, string dotnet) =>
+        Assert.Contains(dotnet, Alice.Compiler.Semantics.Binder.CoreSpellings(alice));
+
+    /// <summary>ADR 0036: Alice.Core is written with .NET names; Alice code calls it in Ruby spelling, statics and
+    /// instance members alike, and a Core member wins over a Prelude helper of the same Alice name.</summary>
+    [Fact]
+    public void Core_members_bind_from_ruby_spelling()
+    {
+        const string src = """
+            a = Alice.Core.Json.JsonAny.undefined
+            puts a.undefined?
+            puts a.null?
+            puts a.kind
+            puts Alice.Core.Text.Utf8Input.is_utf8?
+            puts Alice.Core.Text.Utf16Input.is_utf8?
+            """;
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("JsonAny.Undefined", cs);
+        Assert.Contains(".IsUndefined", cs);
+        Assert.Contains(".IsNull", cs);
+        Assert.Contains(".Kind", cs);
+        Assert.Contains("Utf8Input.IsUtf8", cs);
+        Assert.Equal("true\nfalse\nUndefined\ntrue\nfalse", AliceCompiler.Run(src).Trim().ReplaceLineEndings("\n"));
+    }
+
+    [Fact]
+    public void IsCoreType_matches_only_alice_core_namespaces() =>
+        Assert.True(Alice.Compiler.Semantics.Binder.IsCoreType(typeof(Alice.Core.Json.JsonAny))
+            && !Alice.Compiler.Semantics.Binder.IsCoreType(typeof(Alice.Runtime.Names))
+            && !Alice.Compiler.Semantics.Binder.IsCoreType(typeof(string)));
+
     [Fact]
     public void Manifest_naming_reaches_msbuild_and_is_validated()
     {

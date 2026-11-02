@@ -20,5 +20,9 @@ Path: `src/Alice.Runtime`. Pure C#. Depends on nothing in-repo.
 | `Dataflow/` (planned, ADR 0038) | `Ring` (bounded SPSC), `Stage`, `Graph`, `Replicate` (ordered sink) |
 | `Dataflow/` | static dataflow networks (ADR 0038, P3.1): `Ring<T>` (bounded SPSC ring, padded cached head/tail), `RingWriter<T>` (batch publish of 64), `Graph`/`Pipe<T>` (Source -> Stage* -> Sink, `Run` rethrows the first exception), `Replicate` (k workers, sequence-numbered batches, ordered reorder window or `ordered: false`); stages are `IThreadPoolWorkItem`s woken with one CAS, 0 bytes per item |
 | `Prelude/` | Ruby helpers (`name?` -> `name_q`), formatting, IO, `Dynamic` (`send`, `respond_to?`) |
+| `Core/` | Alice Core standard library, namespaces `Alice.Core.*` (ADR 0036): `Core/<Module>/` per module (`Text`, `Json`, `Csv`, `Toml`, `Fs`, `Process`, `Time`, `Crypto`, `Net`, `Log`, `Cli`, `Collections`). .NET names; Alice reaches them in Ruby spelling through the binder (`Binder.CoreSpellings`) |
+| `Core/Abstractions/` | Frozen contracts (ADR 0036): `RegexNode`/`RegexPattern`/`RegexFeatures`, `IInput<TUnit>` (`Utf8Input`, `Utf16Input`), `JsonDocument`/`JsonAny`/`JsonIterator`/`JsonWriter` (partial; bodies in `Stubs/` until C2.3/C2.4), `HttpRequest`/`HttpResponse` views |
 
-Invariants: no native code of its own (only user-opted `@[Native]`/`lib` calls), no compiler dependency.
+Invariants: no native code of its own (only user-opted `@[Native]`/`lib` calls), no compiler dependency, no eager
+reference-type statics on startup paths (`StartupTests`; Core caches live in lazy holders). Core hot paths carry an
+allocation test and a row in `benchmarks/core/` (ADR 0036).

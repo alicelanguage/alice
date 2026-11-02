@@ -48,12 +48,13 @@
 | 0037 | [Affine arena memory for sum types](adr/0037-affine-arena-sum-types.md) (accepted, planned; amends 0006, extends 0016/0017) |
 | 0038 | [Static dataflow networks over bounded SPSC rings](adr/0038-static-dataflow-networks.md) (accepted, planned; amends 0005) |
 | 0039 | [Connection-Machine data-parallel primitives](adr/0039-connection-machine-primitives.md) (accepted, planned) |
+| 0036 | [Alice Core, the standard library: `Alice.Core.*` in the runtime, .NET names with Ruby spelling, regex tiers, own JSON engine, own HTTP/1.1 + Kestrel adapter](adr/0036-alice-core.md) (accepted; contracts frozen) |
 
 ## Projects
 
 | Project | Role | Note |
 |---|---|---|
-| `src/Alice.Runtime` | Runtime library (SIMD, sparse, Par, math, concurrency, prelude) | `modules/runtime.md` |
+| `src/Alice.Runtime` | Runtime library (SIMD, sparse, Par, math, concurrency, prelude) and the Alice Core standard library (`Alice.Core.*`, ADR 0036) | `modules/runtime.md` |
 | `src/Alice.Compiler` | Compiler: Syntax -> Semantics -> Lowering/MIR -> Backend (Roslyn IL); planned: AIR + direct IL/wasm (ADR 0032-0034) | `modules/compiler.md` |
 | `src/Alice.Cli` | `alice` command | `modules/cli.md` |
 | `src/Alice.Sdk` | MSBuild props/targets for `.alproj` | `docs/tooling.md` |
