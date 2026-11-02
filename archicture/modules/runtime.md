@@ -14,6 +14,9 @@ Path: `src/Alice.Runtime`. Pure C#. Depends on nothing in-repo.
 | `Digest/` | hashing helpers |
 | `Concurrency/` | `Channel<T>`, `Mutex<T>`, `Atomic` |
 | `Actors/` | `ProcessCore` (mailbox scheduling, links, monitors, restart), `Actor<T>`, `Actor<S, T>`, `Supervisor`, `ExitReason` (ADR 0028) |
+| `Arena/` (planned, ADR 0037) | `Arena` per-type per-lane slabs with free lists, `ArenaRegion` (`scope` resets), `Term` layout helpers |
+| `Cm/` (planned, ADR 0039) | `Scan`, `Segmented`, `Combine`, `Compact`, `Permute`, `SortByKey` over `KernelPool`; fixed chunking by `n` |
+| `Dataflow/` (planned, ADR 0038) | `Ring` (bounded SPSC), `Stage`, `Graph`, `Replicate` (ordered sink) |
 | `Prelude/` | Ruby helpers (`name?` -> `name_q`), formatting, IO, `Dynamic` (`send`, `respond_to?`) |
 
 Invariants: no native code of its own (only user-opted `@[Native]`/`lib` calls), no compiler dependency.
