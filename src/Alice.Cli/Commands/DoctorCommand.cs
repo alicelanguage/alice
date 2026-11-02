@@ -51,7 +51,7 @@ public static class DoctorCommand
     {
         try
         {
-            var psi = new ProcessStartInfo(exe, args) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            var psi = new ProcessStartInfo(Projects.Executables.Resolve(exe), args) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
             using var p = Process.Start(psi);
             if (p == null) return null;
             string o = p.StandardOutput.ReadToEnd();

@@ -70,21 +70,82 @@ public sealed partial class Binder
     /// <summary>Visible to other threads from the current concurrent block?</summary>
     bool IsShared(Expr? e) => InConcurrent && e switch
     {
-        NameExpr { Res: "local", Sym: LocalSym l } => l.SpawnDepth < spawnDepth,
+        NameExpr { Res: "local", Sym: LocalSym l } => l.SpawnDepth < spawnDepth || l.SharedAlias,
         NameExpr { Res: "field" } => true,
         IvarExpr or SelfExpr => true,
         CallExpr { Res: "field" } f => IsShared(f.Recv) || f.Recv == null,
         _ => false,
     };
 
+    /// <summary>
+    /// May this value be a reference to state another thread also sees? A local copy of a captured reference
+    /// (`ys = xs`), either branch of a conditional, the list `xs << v` returns and a reference element of a shared
+    /// collection (`row = grid[i]`) all are: writes through them race like writes through the original (audit F10).
+    /// </summary>
+    bool AliasesShared(Expr? e)
+    {
+        if (!InConcurrent || e == null || ValueLike(e.Type)) return false;
+        return e switch
+        {
+            TernaryExpr t => AliasesShared(t.A) || AliasesShared(t.B),
+            BinaryExpr { Res: "coalesce" } b => AliasesShared(b.L) || AliasesShared(b.R),
+            BinaryExpr { Res: "append" } b => AliasesShared(b.L),
+            BinaryExpr { Op: "||" or "&&" or "or" or "and" } b => AliasesShared(b.L) || AliasesShared(b.R),
+            IndexExpr ix => AliasesShared(ix.Target),
+            TypeTestExpr { Kind: "as" } tt => AliasesShared(tt.E),
+            StmtExpr => true,   // if / case as a value: assume any branch may yield the shared value
+            _ => IsShared(e) || (e is CallExpr { Res: "field" } f && AliasesShared(f.Recv)),
+        };
+    }
+
+    /// <summary>Copied on assignment (numbers, structs, strings) or safe to share: an alias of it cannot race.</summary>
+    static bool ValueLike(AType t) =>
+        t.Kind is "prim" or "enum" or "void" or "null" || t.IsString || t.Clr is { IsValueType: true } || ThreadSafe(t)
+        || t.Sym is { Kind: "struct" or "record struct" or "enum" };
+
+    /// <summary>A local assigned inside a concurrent body from a shared reference is shared from then on.</summary>
+    void NoteAlias(LocalSym? l, Expr? value)
+    {
+        if (l != null && !l.SharedAlias && AliasesShared(value)) l.SharedAlias = true;
+    }
+
     CompileException Race(Node at, string what) =>
         Err(at, $"data race: {what} from code that runs concurrently; use Mutex(T), Atomic, Channel(T), Actor(T) or a System.Collections.Concurrent type");
 
     void CheckMutatingCall(CallExpr c, AType recv, MethodSym? alice)
     {
-        if (!IsShared(c.Recv) || ThreadSafe(recv)) return;
+        if (ThreadSafe(recv)) return;
         bool mutating = alice?.Mutates ?? MutatingNames.Contains(c.Name);
-        if (mutating) throw Race(c, $"`{c.Name}` mutates a shared {recv.Cs}");
+        if (!mutating) return;
+        if (alice is not { IsCtor: true }) NoteSelfWrite(c.Recv);   // `@items.Add(x)` writes self's state (F9)
+        if (IsShared(c.Recv)) throw Race(c, $"`{c.Name}` mutates a shared {recv.Cs}");
+    }
+
+    /// <summary>
+    /// State reachable from self: an ivar or field, self, an element of one (`@grid[i]`) or a field of one
+    /// (`@pos.x`). Writing it, appending to it or calling a mutating method on it mutates the object (audit F9).
+    /// </summary>
+    static bool SelfState(Expr? e) => e switch
+    {
+        IvarExpr or SelfExpr => true,
+        NameExpr { Res: "field" } => true,
+        CallExpr { Res: "field" } f => f.Recv == null || SelfState(f.Recv),
+        IndexExpr ix => SelfState(ix.Target),
+        _ => false,
+    };
+
+    /// <summary>The current method writes `target`: when it is self's state the method mutates.</summary>
+    void NoteSelfWrite(Expr? target)
+    {
+        if (curMethod != null && SelfState(target)) SetMutates(curMethod);
+    }
+
+    /// <summary>Mutates feeds AL0202, AL0210 and AL0230 of callers bound earlier: a change asks for another pass.</summary>
+    void SetMutates(MethodSym m)
+    {
+        if (m.Mutates) return;
+        m.Mutates = true;
+        changed = true;
     }
 
     /// <summary>
@@ -94,7 +155,7 @@ public sealed partial class Binder
     void SelfCallEffects(Node at, MethodSym m)
     {
         if (m.IsStatic || !m.Mutates || m.IsCtor) return;
-        if (curMethod is { IsStatic: false }) curMethod.Mutates = true;
+        if (curMethod is { IsStatic: false }) SetMutates(curMethod);
         if (InConcurrent) throw Race(at, $"`{m.Name}` writes fields of self");
     }
 

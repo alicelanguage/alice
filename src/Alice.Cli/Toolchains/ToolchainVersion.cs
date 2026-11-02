@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+
 namespace Alice.Cli.Toolchains;
 
 /// <summary>`MAJOR.MINOR.PATCH[-pre]` (leading `v` allowed). Prereleases sort before their release; `-nightly.N` is the nightly channel.</summary>
@@ -5,16 +8,22 @@ public sealed record ToolchainVersion(int Major, int Minor, int Patch, string? P
 {
     public string Channel => Pre == null ? "stable" : Pre.StartsWith("nightly") ? "nightly" : "preview";
 
+    /// <summary>SemVer prerelease: dot-separated non-empty identifiers of ASCII letters, digits and `-`.</summary>
+    static readonly Regex PreRelease = new(@"^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*\z", RegexOptions.CultureInvariant);
+
     public static ToolchainVersion? TryParse(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
         var s = text.Trim().TrimStart('v', 'V');
         string? pre = null;
         int dash = s.IndexOf('-');
-        if (dash >= 0) { pre = s[(dash + 1)..]; s = s[..dash]; if (pre.Length == 0) return null; }
+        if (dash >= 0) { pre = s[(dash + 1)..]; s = s[..dash]; if (!PreRelease.IsMatch(pre)) return null; }
         var parts = s.Split('.');
         if (parts.Length != 3) return null;
-        if (!int.TryParse(parts[0], out int a) || !int.TryParse(parts[1], out int b) || !int.TryParse(parts[2], out int c)) return null;
+        // digits only: the text names a directory under toolchains/, so no sign, space, separator or `..` gets through
+        const NumberStyles digits = NumberStyles.None;
+        if (!int.TryParse(parts[0], digits, CultureInfo.InvariantCulture, out int a) || !int.TryParse(parts[1], digits, CultureInfo.InvariantCulture, out int b)
+            || !int.TryParse(parts[2], digits, CultureInfo.InvariantCulture, out int c)) return null;
         if (a < 0 || b < 0 || c < 0) return null;
         return new ToolchainVersion(a, b, c, pre);
     }

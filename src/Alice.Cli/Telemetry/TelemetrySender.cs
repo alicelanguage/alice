@@ -21,7 +21,8 @@ public static class TelemetrySender
     public static string? ResolveEndpoint(Consent c, Func<string, string?> env)
     {
         var e = env("ALICE_TELEMETRY_ENDPOINT") is { Length: > 0 } v ? v : c.Endpoint ?? (ServerLive ? DefaultEndpoint : "");
-        return Uri.TryCreate(e, UriKind.Absolute, out var u) && u.Scheme is "https" or "http" ? e : null;
+        // https only; plain http just for a collector on this machine (self-hosting, tests)
+        return Uri.TryCreate(e, UriKind.Absolute, out var u) && (u.Scheme == "https" || (u.Scheme == "http" && u.IsLoopback)) ? e : null;
     }
 
     /// <summary>Posts the queued batch as `{"events":[...]}`; on failure the batch is re-queued (still capped).</summary>

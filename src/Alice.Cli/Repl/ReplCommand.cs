@@ -182,7 +182,8 @@ public static class ReplCommand
     static void Shell(string cmd)
     {
         bool win = OperatingSystem.IsWindows();
-        var psi = new ProcessStartInfo(win ? "cmd.exe" : "/bin/sh") { UseShellExecute = false };
+        // absolute path: a bare name is searched in the working directory first
+        var psi = new ProcessStartInfo(win ? Path.Combine(Environment.SystemDirectory, "cmd.exe") : "/bin/sh") { UseShellExecute = false };
         psi.ArgumentList.Add(win ? "/c" : "-c");
         psi.ArgumentList.Add(cmd);
         using var p = Process.Start(psi);

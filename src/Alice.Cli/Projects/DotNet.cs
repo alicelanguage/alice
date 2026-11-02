@@ -24,7 +24,7 @@ public static class DotNet
 
     public static Result Run(IEnumerable<string> args, Action<string>? onLine = null, bool inherit = false)
     {
-        var psi = new ProcessStartInfo("dotnet") { RedirectStandardOutput = !inherit, RedirectStandardError = !inherit, UseShellExecute = false };
+        var psi = new ProcessStartInfo(Executables.Resolve("dotnet")) { RedirectStandardOutput = !inherit, RedirectStandardError = !inherit, UseShellExecute = false };
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["DOTNET_NOLOGO"] = "1";
         psi.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";

@@ -100,8 +100,12 @@ public sealed partial class Binder
             if (td.TypeParams.Count > 0) s.TypeParams = td.TypeParams;
             if (td.IsAbstract) s.IsAbstract = true;
             if (td.Attrs.Contains("Stack")) s.IsStack = true;
+            // runtime reflection (instance_variable_get/set) reaches non-public fields only of types marked as Alice's
+            if (kind is "class" or "struct" or "record" or "record struct" && !td.Attrs.Contains(AliceTypeAttr)) td.Attrs.Add(AliceTypeAttr);
         }
     }
+
+    const string AliceTypeAttr = "global::Alice.Runtime.AliceType";
 
     /// <summary>Phase 2: bases, fields, accessors, method signatures.</summary>
     void Declare()

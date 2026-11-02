@@ -179,8 +179,11 @@ public static class SmtProver
                             if (ifs.Else != null) Block(ifs.Else, f, rest, last);
                             break;
                         }
-                    case ExprStmt:
-                        break;   // a value not used: pure, nothing to do
+                    case ExprStmt es:
+                        // the value is dropped but the expression still runs: a call that divides by zero or
+                        // overflows fails the rule (audit F14); an untranslatable one makes the rule untranslatable
+                        Eval(es.Expr, f.Env, live);
+                        break;
                     default:
                         throw new Untranslatable($"`{s.GetType().Name.Replace("Stmt", "").ToLowerInvariant()}` statements are not supported by --smt");
                 }

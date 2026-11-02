@@ -185,4 +185,17 @@ public class TelemetryTests : IDisposable
         Assert.Equal("https://x", TelemetrySender.ResolveEndpoint(new Consent(ConsentState.Granted, 1, "a", "https://x"), Env()));
         Assert.Equal("https://y", TelemetrySender.ResolveEndpoint(new Consent(ConsentState.Granted, 1, "a", null), Env(("ALICE_TELEMETRY_ENDPOINT", "https://y"))));
     }
+
+    [Theory]
+    [InlineData("http://telemetry.example/v1/events", false)]
+    [InlineData("ftp://telemetry.example/v1/events", false)]
+    [InlineData("http://127.0.0.1:8080/v1/events", true)]
+    [InlineData("http://localhost:8080/v1/events", true)]
+    [InlineData("http://[::1]:8080/v1/events", true)]
+    [InlineData("https://telemetry.example/v1/events", true)]
+    public void EndpointMustBeHttpsExceptLoopback(string endpoint, bool accepted)
+    {
+        var c = new Consent(ConsentState.Granted, 1, "a", null);
+        Assert.Equal(accepted ? endpoint : null, TelemetrySender.ResolveEndpoint(c, Env(("ALICE_TELEMETRY_ENDPOINT", endpoint))));
+    }
 }

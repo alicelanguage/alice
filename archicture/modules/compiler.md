@@ -7,6 +7,8 @@ Path: `src/Alice.Compiler`. Pure C#. Depends on: Roslyn, `Alice.Runtime` (refere
 | `Semantics/` | `Binder/`, `Symbols/`, `Types/` | HIR: types, symbols, inferred returns, hoisted locals |
 | `Lowering/` | `Lowerer*` | MIR (`Mir/`): inlined/fused loops, typed temps |
 | `Backend/` | `Emitter`, `Printer`, `AliceCompiler` | C# with `#line` -> Roslyn Release IL |
+| `Air/` (planned, ADR 0032) | `AirType`, `AirDecls`, `AirDump`, `AirVerifier`, `Passes/` | typed structured AIR; `Mir/` is migrated into it in place (byte-identical C# as acceptance) |
+| `Backend/CSharp/`, `Backend/Il/` (planned, ADR 0033) | `AirToCSharp`; `IlBuilder`, `MetadataWriter`, `PdbWriter`, `AirToIl` | C# (oracle, generator programs); IL + portable PDB via System.Reflection.Metadata |
 
 Lowering files (`Lowering/`):
 
@@ -30,14 +32,17 @@ Lowering files (`Lowering/`):
 | `Lowerer.Ranges` | integer value ranges: unchecked arithmetic where overflow is impossible (ADR 0013, 0014) |
 | `Lowerer.Gpu` | `gpu for` -> ILGPU kernels (ADR 0021) |
 | `Lowerer.Callbacks` | lambdas passed to `lib` `Callback(...)` -> `[UnmanagedCallersOnly]` function pointers (ADR 0018; AL0215) |
+| `Lowerer.Affine` (planned, ADR 0037) | arena sum types: term packing, `case` Take/Borrow, slab alloc, `scope` regions, lane-local frees |
+| `Lowerer.Dataflow` (planned, ADR 0038) | `dataflow do` / `stream def` / proven `Channel`+`spawn` networks -> fused batch stages over SPSC rings |
+| `Lowerer.Cm` (planned, ADR 0039) | scan, combine, compaction, permute shapes and `cm for` (AL0227-AL0229) -> `Cm/` kernels |
 
 `Optimizer/` (ADR 0014): `Pipeline` runs `Passes/` over MIR with `MirRewriter`/`MirFacts`. `Backend/CEmitter`:
 `@[Native]` functions -> C for clang. `Backend/Emitter` also lowers `rule` declarations for `alice prove` (AL0214).
 
-`Semantics/Binder/Binder.Races`: AL0202 race check (ADR 0008). `Semantics/Binder/Binder.Mixins`: `include`/`extend` (module `def x` = template, re-bound per class). `AliceCompiler.LoadWithRequires`: transitive `require`. `Syntax/Formatter`: `alice fmt`.
+`Semantics/Binder/Binder.Races`: AL0202 race check (ADR 0008). Planned: `Binder.Affine` (arena eligibility, move analysis, whole-program demotion; AL0220-AL0223, ADR 0037) and `Binder.Dataflow` (graph, SPSC/acyclic and capture checks; AL0224-AL0226, ADR 0038). `Semantics/Binder/Binder.Mixins`: `include`/`extend` (module `def x` = template, re-bound per class). `AliceCompiler.LoadWithRequires`: transitive `require`. `Syntax/Formatter`: `alice fmt`.
 
 Invariants:
-- Single IL backend (ADR 0001, 0007).
+- Single IL backend (ADR 0001, 0007); planned: single IR (AIR), IL-first, C# kept as supported target and oracle (ADR 0032, 0033).
 - Literal-block iterator kernels allocate 0 bytes (`AllocationTests`).
 - Null-safety diagnostics are errors; `val` reassignment and data races in concurrent contexts are errors (ADR 0004, 0008).
 - Parallelization only for code proven pure; serial otherwise.

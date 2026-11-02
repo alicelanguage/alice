@@ -1,5 +1,5 @@
 # 0001 - .NET platform language, single Roslyn/IL backend
-Status: accepted
+Status: accepted; amended by 0033 (single IR, IL-first: AIR is emitted to IL directly, the Roslyn/C# backend stays a supported target and oracle)
 Context: Root `AGENTS.md` assumes a Rust Cargo workspace. The user explicitly overrode this for Alice: it is a .NET language with Crystal/Ruby syntax and full C#/.NET interop (namespaces, classes, structs, interfaces, generics, attributes, NuGet, any assembly; C# can reference Alice assemblies).
 Decision:
 - .NET 10 solution `Alice.sln`; projects under `src/`, tests under `tests/`. No Rust crates layout.

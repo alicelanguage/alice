@@ -1,5 +1,58 @@
 # Changelog
 
+## Unreleased
+
+- Runtime: `Arena/` (ADR 0037, P1.1): `Term`, `Arena<TSlot>` lane-local slabs with Take/Borrow/free list, `ArenaRegion` resets; tree(23) build+sum 145 ms serial (records 522 ms), 15 ms with forks on 32 cores (`benchmarks/arena`).
+- Security: `alice publish` pushes to NuGet feeds itself over https with the API key in a request header instead of
+  a `dotnet nuget push` argument; `--dotnet-push` keeps the old path.
+- Telemetry docs: https-only endpoints and `ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`.
+- Security: an `alice-toolchain` file must name an exact version or channel; paths and other text are rejected, and
+  only toolchains installed under `~/.alice/toolchains` are started.
+- Security: `dotnet`, `node` and `clang` are started from absolute `PATH` entries, never from the working directory.
+- Security: `alice.toml` package names, dependency ids and versions, and target frameworks are validated; other values
+  are XML- and MSBuild-escaped in the generated `.alproj`.
+- Security: `GITHUB_TOKEN` is sent only to `api.github.com`; release assets are downloaded only over https from GitHub.
+- Security: telemetry endpoints must be https (plain http only for loopback); the collector adds a global hourly cap
+  (`ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`).
+- Security: `install.sh` refuses plain-http URLs and http redirects on the wget fallback.
+- Security: the `alice run` cache is owner-only and its images carry a per-install HMAC; other entries are misses.
+- Security: `SECURITY.md` (disclosure policy, supported versions, workspace trust) and a security limits table in
+  `docs/production.md`, including the NuGet API key still passed to `dotnet nuget push` as an argument.
+- Ownership: mentions inside `spawn`, `using`, `await` and if/case values are now checked; such buffers stay with the GC (audit F2).
+- Ownership: arguments to `method_missing` and dynamic calls escape instead of staying pooled (audit F3).
+- Ownership: `xs << v` keeps a list pooled only as a whole statement whose value is dropped (audit F7).
+- Loop parallelization: a written array passed to a callee or read whole keeps the loop serial (AL0209 for `par for`) unless proven distinct (audit F8).
+- Range analysis: locals passed by `ref`/`out` lose their value range; their arithmetic stays checked (audit F15).
+- `@[Native]` C: bounds-checked indexing, trapping integer overflow and division, masked shifts, collision-free generated names (audit F16).
+- Ownership: borrows and owned results through virtual calls must hold for every override (audit F18, partial).
+  `docs/production.md`.
+- Prelude, Hash: `fetch(k) { }`, `delete`, `each_key`/`each_value`, `dig(a, b[, c])`, `include?`, `member?`,
+  `has_value?`, `key`, `store`, `length`, `update`, `merge` with a block, `filter_map`, `to_h` with a block, `values_at`,
+  `slice`, `except`, `clear`; a pair has `first`/`last`/`key`/`value`/`to_a`; `DefaultHash(K, V).new(default)` (or with
+  a `{ |h, k| }` block) is a Hash whose missing keys read as the default.
+- Prelude, Enum: `to_i`/`value` (was a C# constraint error), `@[Flags]` `includes?`/`has_flag`, and on the type
+  `Color.values`/`names`/`parse`/`parse?`/`from_value`/`from_value?` (C# 14 static extension members).
+- Prelude, String/Char: `lstrip`/`rstrip`, `bytesize`, `codepoints`, `blank?`, `camelcase`/`underscore`, `to_i(base)`,
+  `to_i?`, `each_char` without a block, String pads, `match` returning MatchData, `gsub`/`sub(/re/)` with a block; Char
+  `upcase`, `downcase`, `letter?`, `digit?`, `whitespace?` and the other predicates.
+- Prelude, Range/Array/Tuple: `("a".."e")`, `('a'..'d')`, Ranges of Comparables, `reverse_each`/`step` without a
+  block; `flatten(depth)`, `max(n)`, `slice_when`, `to_set`, `grep(/re/)`, `find_index(v)`, `transpose`, `to_h` on
+  pairs and with a block, `sum(init)`, `filter_map`, `dup`/`clone`; Tuple `size`/`to_a`.
+- Prelude, objects and names: `p a, b`, `p nil`, `pp`, `hash`/`eql?`/`equal?` on every value, `ENV`,
+  `STDOUT`/`STDERR`/`STDIN`, `at_exit`. Hashes print as `{"a" => 1}` (was `[[a, 1]]`), tuples as `{1, "one"}` (was
+  `(1, one)`).
+- Security: `instance_variable_get/set` reach every ivar of an Alice class but only public fields of other types; readonly fields are never written, and foreign or readonly arrays come back as copies (`[AliceType]`, audit F4).
+- Security: `safe def` (AL0212) is now an allow-list. Prelude I/O, environment and process functions, `lib` funs, reflection, `send`/`instance_variable_*`/`method_missing`, inherited .NET members and unknown receivers are rejected anywhere in the body (`using`, `spawn`, if-as-value included), and constructors are checked (audit F5).
+- Security: reflection and dynamic-dispatch Prelude entry points carry `[Ambient]`, which `safe def` rejects (audit F6).
+- `@items << x`, `@items[i] = v` and mutating calls on an ivar make a method mutating, so `pure def` (AL0210) and concurrent callers (AL0202) see them; `xs << v` on a shared list is AL0202 (audit F9).
+- AL0202 follows copies: a local assigned a shared reference inside a concurrent block (`ys = xs`, a conditional, a reference element, a `for` variable) is shared too (audit F10).
+- AL0230 checks generic messages with their type arguments (`Box(Array(Int32))` is not sendable); type parameters, pointers and types unknown after inference are not sendable (audit F11).
+- `alice prove --smt` evaluates every statement of a rule, so a discarded call that raises fails the rule as it does under enumeration (audit F14).
+- AL0221: a declared field or getter of a non-nilable reference type that no `initialize` assigns (and has no initializer) is a compile error instead of nil at runtime (audit F17).
+
+- ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
+- ADRs 0037-0039 (affine arena sum types, static dataflow networks, Connection-Machine primitives) accepted as direction; error codes AL0220-AL0229 reserved.
+
 ## 0.14.0 - 2026-10-27
 
 - Telemetry ships disabled in this release: `alice` never asks, records or sends, and `alice telemetry` only reports
