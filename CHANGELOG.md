@@ -10,6 +10,7 @@
   with the managed fallback, and pointer load/store/arithmetic/`sizeof`; `IlModule`/`MetadataWriter` gain P/Invoke
   (`IlMethodDef.PInvoke`, ModuleRef + ImplMap rows). Not wired into AirToIl yet; the FfiTests calls, driven from an IL
   `Main`, print what the C# backend prints, and NativeAOT publishes the emitted dll.
+- IL backend state machines (backend plan D1.8, ADR 0032/0033): `Air/Passes/StateMachines*.cs` rewrites async methods, iterators and async iterators, for the IL backend only, into C#-shaped state-machine types (`AirTypeDecl`: `<>1__state`, method builder, hoisted locals, awaiter fields, MoveNext with `AwaitUnsafeOnCompleted`, try/finally across awaits, awaits in finally, `await foreach`/`await using`; iterator `Dispose` running pending finally blocks, `GetEnumerator` thread fast path; `AsyncIteratorMethodBuilder` + `ManualResetValueTaskSourceCore<bool>`; awaits and yields inside rescue clauses, yields inside begin/rescue, async lambdas via `StateMachines.AsyncLambdas`) plus a kickoff body, with the jump nodes `AirLabel`/`AirGoto`/`AirGotoTable` (`Mir/MExpr.StateMachines.cs`). The C# backend never runs it: emitted C# is unchanged.
 - AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is

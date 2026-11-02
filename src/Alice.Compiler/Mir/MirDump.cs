@@ -115,7 +115,7 @@ public sealed partial class MirDump
                 Nested($"using{(u.Await ? " await" : "")} {u.Name} = {E(u.Value)}{at}", u.Body);
                 break;
             default:
-                if (!StmtLower(s, at)) Line(s.GetType().Name + at);
+                if (!StmtLower(s, at) && !StmtStateMachines(s, at)) Line(s.GetType().Name + at);
                 break;
         }
     }
