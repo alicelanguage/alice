@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- IL backend FFI (backend plan D1.10, ADR 0018/0033): `Backend/Il/AirToIl.Ffi.cs` emits `lib` funs as blittable P/Invoke
+  rows (ImplMap: EntryPoint, ExactSpelling, WinApi, no CharSet/SetLastError; `[SuppressGCTransition]` for `@[Fast]`)
+  behind inlined wrappers (UTF-8 strings on a `localloc` buffer via `Utf8Arg`, pinned arrays, out/ref byrefs, borrowed
+  string returns, Bool as byte), `[UnmanagedCallersOnly]` callback trampolines passed by `ldftn`, `@[Native]` `calli`
+  with the managed fallback, and pointer load/store/arithmetic/`sizeof`; `IlModule`/`MetadataWriter` gain P/Invoke
+  (`IlMethodDef.PInvoke`, ModuleRef + ImplMap rows). Not wired into AirToIl yet; the FfiTests calls, driven from an IL
+  `Main`, print what the C# backend prints, and NativeAOT publishes the emitted dll.
 - AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is
