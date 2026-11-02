@@ -36,8 +36,8 @@ adds an "Idiomatic shape" table. Details and the shape comparison: [NOTES-bench2
 
 | | Serial (column "1") | Parallel (all cores) |
 |---|---|---|
-| Alice | no annotations; `DOTNET_PROCESSOR_COUNT=1`, pinned with `taskset -c $CORE` (default 0), so `Par.Forkable` is false and calls run the `__serial` clone | the compiler forks the pure recursive pairs itself (ADR 0015); `alice explain` shows every `batch`-like function as "fork/join" |
-| C | Bend's `main.c`, unchanged: clang `-O3 -march=native`, pinned like Alice | the same file with clang `-O3 -march=native -fopenmp` (libomp): `omp task` over the top 10 levels of the same recursion (`lexer`: `omp parallel for` over its line loop) |
+| Alice | no annotations; `ALICE_PAR=0`, pinned with `taskset -c $SERIAL_CPUS` (default `14,30`: one physical core, both hyperthreads), so `Par.Forkable` is false and calls run the `__serial` clone | the compiler forks the pure recursive pairs itself (ADR 0015); `alice explain` shows every `batch`-like function as "fork/join" |
+| C | Bend's `main.c`, unchanged: clang `-O3 -march=native -ffp-contract=off` (no FMA contraction, so float checksums match Bend), pinned like Alice | the same file with clang `-O3 -march=native -ffp-contract=off -fopenmp` (libomp): `omp task` over the top 10 levels of the same recursion (`lexer`: `omp parallel for` over its line loop) |
 | Bend | not run here (not installed); the pinned `apple_m4_max.txt` numbers, copied to `bend_pin_apple_m4_max.txt` | same file, PAR-CPU column (16 cores) |
 
 Bend's `main.c` files are all serial. `c/<name>.c` is Bend's file with the OpenMP path added inside `#ifdef _OPENMP`
@@ -45,6 +45,12 @@ blocks by [omp_patch.py](omp_patch.py); with those blocks removed the file is by
 (`diff <(sed '/#ifdef _OPENMP/,/#endif/d' c/bfs.c) bend/bench/runtime/bfs/main.c`), so the serial C column is Bend's
 own C twin. Two OpenMP paths change data layout, not work: `kmeans` gives each forked restart its own stats arena,
 and `merkle` builds into a preallocated arena at the post-order slots the serial build would use.
+
+Serial Alice uses `ALICE_PAR=0`, not `DOTNET_PROCESSOR_COUNT=1`: the runtime switch turns off forks and parallel
+loops (`Par.Forkable` false, `Par.Workers` 1) and leaves the CPU count alone. `DOTNET_PROCESSOR_COUNT=1` also puts
+.NET itself into single-CPU mode (GC, thread pool, JIT tiering), which measured 3-4x slower on some code
+(`JsonDocument.Parse` 3.08 ms vs 0.85 ms). Serial runs get one physical core with both hyperthreads, for C and Alice
+alike, so the JIT's background tier-up and the GC can use the sibling thread as on any one-core machine.
 
 Time is **cold-process wall time** (hyperfine `-N`, median of 5, one warm-up): startup, JIT and the work together,
 as in [../bend-vs](../bend-vs/README.md). Peak RSS is hyperfine 2's `memory_peak_resident` of the same runs.
@@ -59,16 +65,27 @@ lower is better. Full tables with max, peak RSS and every ratio: [results/summar
 
 ### Serial, 1 core
 
+Re-measured with `ALICE_PAR=0` on `taskset -c 14,30` (Alice and C) and `-ffp-contract=off` for C; the earlier
+rows used `DOTNET_PROCESSOR_COUNT=1` on core 0. The parallel table below is from the earlier run.
+
 | workload | Alice | C | Alice / C | Bend / C on M4 (reference) |
 |---|---:|---:|---:|---:|
-| bfs | 10843 | 6441 | 1.68 | 1.09 |
-| editdist | 11348 | 8774 | 1.29 | 1.28 |
-| gameoflife | 14296 | 15807 | **0.90** | 1.15 |
-| hashmap | 1464 | 1426 | **1.03** | 4.41 |
-| kmeans | 32904 | 2809 | 11.71 | 1.00 |
-| lexer | 2097 | 1513 | **1.39** | 2.07 |
-| mandelbrot | 3712 | 2462 | 1.51 | 1.19 |
-| merkle | 11963 | 6880 | 1.74 | 1.23 |
+| bfs | 9722 | 5549 | 1.75 | 1.09 |
+| editdist | 11156 | 8684 | 1.28 | 1.28 |
+| gameoflife | 13680 | 13797 | **0.99** | 1.15 |
+| hashmap | 1393 | 1206 | **1.15** | 4.41 |
+| kmeans | 29707 | 2688 | 11.05 | 1.00 |
+| lexer | 1924 | 1395 | **1.38** | 2.07 |
+| mandelbrot | 3419 | 2228 | 1.53 | 1.19 |
+| merkle | 8731 | 6551 | 1.33 | 1.23 |
+| nbody | 8119 | 8508 | **0.95** | 1.12 |
+| queens | 6345 | 5486 | **1.16** | 1.50 |
+| raytrace | 9794 | 8044 | **1.22** | 1.27 |
+| symreg | 6115 | 4631 | **1.32** | 1.37 |
+| terrain | 5821 | 2653 | 2.19 | 1.01 |
+| tree-bitonic | 135175 | 11378 | 11.88 | 1.06 |
+| tree-matmul | 33256 | 5481 | 6.07 | 0.70 |
+| tree-radix | 25229 | 7809 | 3.23 | 1.46 |
 
 ### Parallel, 32 cores
 
