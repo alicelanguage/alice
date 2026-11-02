@@ -656,6 +656,7 @@ public sealed class Emitter
     /// <summary>The body declares an owned array: `var buf = Own&lt;T&gt;.Rent(n)`.</summary>
     static bool Owned(List<MStmt> body) => body.Any(s => s switch
     {
+        MDecl { Init: Mir.AirRent } => true,
         MDecl { Init: MCall { Name: "Rent", Target: MCode { Text: var t } } } => t.StartsWith("global::Alice.Runtime.Own<", StringComparison.Ordinal),
         MIf i => Owned(i.Then) || (i.Else != null && Owned(i.Else)),
         MWhile w => Owned(w.Body),

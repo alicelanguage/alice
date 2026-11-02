@@ -155,11 +155,21 @@ Language and compiler issues (repros in the next section):
 
 Codegen causes (Findings 1-5):
 
-- [ ] kmeans: no SIMD for the 8-distance kernel, `dst`/`min2` not inlined into `chunk`, tier-0 time, GC stats trees
-- [ ] merkle: the 22-round Speck loop is not unrolled; a bounds-checked `rk[i]` load per round
-- [ ] bfs: bounds checks on pooled fixed-size arrays; checked `to_i32`/`to_u32` conversions
-- [ ] mandelbrot: the branchless select `c ? a : b` in a loop becomes branches, not `cmov`
-- [ ] lexer: bounds checks on `buf[p]` under a loop bound that is not `buf.size`
+- [x] kmeans: `dst`/`min2` not inlined into `chunk`, tier-0 time, data-dependent branches in `min2`/`dst`. Fixed:
+  `chunk` is fully optimized at its first call (helpers inlined), integer selects are branch-free (`Branchless.U32`;
+  branch misses 1.85G -> 0.06G). 2^17 serial 7151 -> 5702 ms, full size 42.9 -> 33.1 s ([NOTES](NOTES-bench2.md))
+- [ ] kmeans: no SIMD for the 8-distance kernel (clang packs the 8 `dst` calls into one vector, SLP), GC stats trees;
+  queued for a vectorize worker
+- [x] merkle: the 22-round Speck loop is not unrolled; a bounds-checked `rk[i]` load per round. Fixed: small literal
+  loops are fully unrolled (`rk[0]` ... `rk[21]`): 12.3 -> 11.0 s serial
+- [x] bfs: tier-0 and OSR time in `maze` (31% of samples at 2^17). Fixed: a loop over an owned array is fully
+  optimized at its first call: 10.5 -> 9.3 s serial. Bounds checks measured as no cost (constant-length spans by
+  hand: 2753 vs 2760 ms); the remaining gap is branch misses (0.8G) and `Own<T>` thread-static slots
+- [ ] mandelbrot: not a `cmov` problem after all (11M branch misses in the whole run; as a branch-free select the
+  escape freeze was 2x slower, so conditional updates stay branches). clang knows the 51 iterations: it unrolls
+  `mit` by 3 and turns `it * 8 / tn` into a multiply; in Alice `tn` is a parameter
+- [ ] lexer: bounds checks on `buf[p]` measured as no cost (a constant-length span by hand: 1895 -> 1982 ms); cause
+  not found
 - [ ] terrain: clang vectorizes the noise fill (C with `-fno-vectorize` is 1.5x slower); the Gauss-Seidel sweep has bounds-checked neighbour loads and checked `to_u32` (Alice serial 6.1 s, C 2.7 s)
 - [ ] queens: the two-UInt32 `Stats` record struct returned through every recursion level probably goes through memory (serial 1.4x C; not profiled)
 - [ ] raytrace: the sphere table is a bounds-checked `Float32` array parameter where C folds it into immediates; 2^26 colf fork-tree leaves (serial 1.4x C)

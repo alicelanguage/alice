@@ -124,6 +124,7 @@ public class PackageTests : IDisposable
         Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
         var cfg = File.ReadAllText(Directory.GetFiles(Path.Combine(dir, "bin"), "gcauto.runtimeconfig.json", SearchOption.AllDirectories).Single());
         Assert.Contains($"\"System.GC.Server\": {(server ? "true" : "false")}", cfg);
+        Assert.Equal(server, cfg.Contains("\"System.GC.HeapCount\": 8"));   // capped server heaps: startup floor on many cores
     }
 
     [Fact]
