@@ -468,13 +468,13 @@ sealed partial class StateMachineRewriter
         AirBinOp cmp = f.Cmp switch { "<" => AirBinOp.Lt, "<=" => AirBinOp.Le, ">" => AirBinOp.Gt, ">=" => AirBinOp.Ge, "!=" => AirBinOp.Ne, _ => (AirBinOp)(-1) };
         if ((int)cmp < 0) { No(At(f) + $"loop comparison `{f.Cmp}`"); return null; }
         MStmt step;
-        if (f.Step == "++" || f.Step == "--")
-            step = Set(v, new MBinary { Op = f.Step == "++" ? AirBinOp.Add : AirBinOp.Sub, L = v, R = I(1), Type = vt });
-        else if (StepAdd.Match(f.Step) is { Success: true } sa)
-            step = Set(v, new MBinary { Op = sa.Groups[1].Value == "+" ? AirBinOp.Add : AirBinOp.Sub, L = v, R = Operand(sa.Groups[2].Value), Type = vt });
-        else if (StepUnchecked.Match(f.Step) is { Success: true } su && su.Groups[1].Value == f.Var)
-            step = Set(v, new MBinary { Op = su.Groups[2].Value == "+" ? AirBinOp.Add : AirBinOp.Sub, Checked = false, L = v, R = Operand(su.Groups[3].Value), Type = vt });
-        else { No(At(f) + $"loop step `{f.Step}`"); return null; }
+        if (f.Step.Op is "++" or "--")
+            step = Set(v, new MBinary { Op = f.Step.Op == "++" ? AirBinOp.Add : AirBinOp.Sub, L = v, R = I(1), Type = vt });
+        else if (f.Step is { Op: "+=" or "-=", Value: MCode sv } && sv.Text.Length > 0 && sv.Text.All(ch => char.IsLetterOrDigit(ch) || ch == '_'))
+            step = Set(v, new MBinary { Op = f.Step.Op == "+=" ? AirBinOp.Add : AirBinOp.Sub, L = v, R = Operand(sv.Text), Type = vt });
+        else if (f.Step.UncheckedStep(f.Var) is { R: MCode ur } ub && ur.Text.Length > 0 && ur.Text.All(ch => char.IsLetterOrDigit(ch) || ch == '_'))
+            step = Set(v, new MBinary { Op = ub.Op, Checked = false, L = v, R = Operand(ur.Text), Type = vt });
+        else { No(At(f) + $"loop step `{f.Step.Op}`"); return null; }
         string cont = Label("continue");
         ContinueToGoto(f.Body, cont, 0);
         var loop = new MWhile { Cond = Bin(cmp, v, f.End), Body = [new MBlock { Body = f.Body }, new AirLabel { Name = cont }, step], Line = f.Line };
@@ -719,7 +719,9 @@ sealed partial class StateMachineRewriter
     static bool IsIdent(string s) => Ident.IsMatch(s) && s is not ("true" or "false" or "null" or "this" or "base" or "default");
 
     static bool Uses(IEnumerable<MStmt> list, string name) =>
-        list.Any(s => SmTree.All(s, lambdas: true).Any(n => n is MExpr e && RefName(e) == name || n is MFor f && f.Step.Contains(name)));
+        list.Any(s => SmTree.All(s, lambdas: true).Any(n => n is MExpr e && RefName(e) == name || n is MFor { Step.Value: { } sv } && StepMentions(sv, name)));
+
+    static bool StepMentions(MExpr e, string name) => RefName(e) == name || Optimizer.MirFacts.Children(e).Any(c => StepMentions(c, name));
 
     /// <summary>
     /// Decides which locals become fields (Release: declared before a suspension and used at or after it; inside an

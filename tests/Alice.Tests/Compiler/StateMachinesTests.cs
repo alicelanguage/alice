@@ -183,7 +183,7 @@ public class StateMachinesTests
         Decl("total", I, K(0)),
         new MFor
         {
-            Var = "i", VarType = "int", Start = K(0), Cmp = "<", End = L("n", I), Step = "++",
+            Var = "i", VarType = "int", Start = K(0), Cmp = "<", End = L("n", I),
             Body =
             [
                 Do(Delay()),
@@ -629,7 +629,7 @@ public class StateMachinesTests
             [
                 new MFor
                 {
-                    Var = "i", VarType = "int", Start = K(0), Cmp = "<", End = L("n", I), Step = "= unchecked(i + 1)",
+                    Var = "i", VarType = "int", Start = K(0), Cmp = "<", End = L("n", I), Step = AirForStep.UncheckedAdd("i", new AirConst(AirConstKind.Int, "1")),
                     Body = [Do(Delay()), Yield(L("i", I))],
                 },
             ],

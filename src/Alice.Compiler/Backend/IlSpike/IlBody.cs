@@ -453,12 +453,12 @@ public sealed class IlBody
         loops.Pop();
         Mark(cont);
         var name = new MCode(f.Var);
-        switch (f.Step.Replace(" ", ""))
+        switch (f.Step)
         {
-            case "++": Assign(name, "+=", new MCode("1")); break;
-            case "--": Assign(name, "-=", new MCode("1")); break;
-            case var st when st.Length > 2 && st[1] == '=' && st[0] is '+' or '-': Assign(name, st[..2], new MCode(st[2..])); break;
-            default: throw new SpikeUnsupported("MFor:step", f.Step);
+            case { Op: "++" }: Assign(name, "+=", AirConst.Of(1)); break;
+            case { Op: "--" }: Assign(name, "-=", AirConst.Of(1)); break;
+            case { Op: "+=" or "-=", Value: { } sv }: Assign(name, f.Step.Op, sv); break;
+            default: throw new SpikeUnsupported("MFor:step", f.Step.Op);
         }
         Mark(cond);
         var cmp = new MBinary { Op = AirOps.ParseBin(f.Cmp), L = name, R = f.End };

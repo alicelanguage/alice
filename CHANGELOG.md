@@ -118,6 +118,10 @@
   declaration); no other C# changes. Fixed: a `gpu for` whose range end is a conditional (`a..(c ? b : a)`)
   launched the wrong number of threads; the host trip count now parenthesizes the end. Lowering builds no `MCode`
   text leaf anywhere (a test checks it).
+- `MFor.Step` is typed: `AirForStep` (an operator token plus an AIR value: `++`, `--`, `+= k`, `>>= k`,
+  `= unchecked(i + 1)`), and the `gpu for` grid-stride step is an `AirGridStep` node. InductionVariables, LoopTiling,
+  LoopUnroll, Dependence, StateMachines, AirToIl and the IL spike read the fields instead of parsing text. Emitted
+  C# is byte-identical.
 - AIR MCode removal batch 2 (backend plan D0.5): the allocation-free iterators, stream fusion and idiom rewrites
   (`Lowerer.Iterators/Fusion/Idioms`) build typed nodes instead of C# text: locals, literals, `default`, static
   receivers, and `AirRangeLength`, `AirRefOrAddDefault`, `AirRefOrNullRef`, `AirAlternateLookup`, `AirSpanSplit`,

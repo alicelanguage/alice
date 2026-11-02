@@ -66,7 +66,7 @@ public class OptimizerTests
         var f = new MFor { Var = "i", VarType = type, Start = new MCode("0"), Cmp = cmp, End = new MCode("n") };
         if (bodyWrites) f.Body.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode("i"), Postfix = true } });
         new InductionVariables().Run([f]);
-        Assert.Equal(step, f.Step);
+        Assert.Equal(step, Printer.Step(f.Step));
     }
 
     [Theory]
@@ -102,7 +102,7 @@ public class OptimizerTests
     {
         var f = Loop("1", "<=", Length);
         new InductionVariables().Run([f]);
-        Assert.Equal(" = unchecked(j + 1)", f.Step);   // j <= Length <= Array.MaxLength < Int32::MAX
+        Assert.Equal(" = unchecked(j + 1)", Printer.Step(f.Step));   // j <= Length <= Array.MaxLength < Int32::MAX
     }
 
     [Theory]

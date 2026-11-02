@@ -30,6 +30,8 @@ public sealed partial class MirDump
                 return $"(release {r.PoolCs} {E(r.Target)})";
             case AirLength l:
                 return $"(length {l.Member} {E(l.Target)})";
+            case AirGridStep gs:
+                return $"(grid-step {E(gs.Index)} {E(gs.Count)} {E(gs.Stride)})";
             case AirTripCount t:
                 return $"(trip-count {E(t.Start)} {E(t.End)}{(t.Inclusive ? " inclusive" : "")})";
             case AirOffset o:

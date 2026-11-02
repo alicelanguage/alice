@@ -114,6 +114,23 @@ public class MirDumpHelpersTests
         Assert.Equal(expected, f.Invoke(null, [text]));
     }
 
+    /// <summary>`MFor.Step` is typed (AirForStep) and prints the C# the step string spelled.</summary>
+    [Fact]
+    public void For_steps_are_typed_and_print_the_old_text()
+    {
+        Assert.Equal("++", Alice.Compiler.Backend.Printer.Step(AirForStep.Inc()));
+        Assert.Equal("--", Alice.Compiler.Backend.Printer.Step(AirForStep.Dec()));
+        Assert.Equal(" += 2", Alice.Compiler.Backend.Printer.Step(AirForStep.By("+=", AirConst.Int(2))));
+        var u = AirForStep.UncheckedAdd("i", AirConst.Int(1));
+        Assert.Equal(" = unchecked(i + 1)", Alice.Compiler.Backend.Printer.Step(u));
+        Assert.True(u.IsIncrement("i"));
+        Assert.False(u.IsIncrement("j"));
+        var grid = AirForStep.By("=", new AirGridStep { Index = new AirLocalRef("t"), Count = new AirLocalRef("n"), Stride = new AirLocalRef("s") });
+        Assert.Equal(" = n - t > s ? t + s : n", Alice.Compiler.Backend.Printer.Step(grid));
+        Assert.Equal("for i int = `0`; < `n`; = (call unchecked _ (Add unchecked (local i) (const 1):int))\n",
+            MirDump.Of([new MFor { Var = "i", VarType = "int", Start = new MCode("0"), End = new MCode("n"), Step = u }]));
+    }
+
     [Fact]
     public void Ir_has_no_text_escape_hatch()
     {

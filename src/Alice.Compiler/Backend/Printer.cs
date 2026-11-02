@@ -95,7 +95,7 @@ public sealed partial class Printer
                 Block(w.Body);
                 break;
             case MFor f:
-                Line($"for ({f.VarType ?? "var"} {f.Var} = {E(f.Start)}; {f.Var} {f.Cmp} {E(f.End)}; {f.Var}{f.Step})");
+                Line($"for ({f.VarType ?? "var"} {f.Var} = {E(f.Start)}; {f.Var} {f.Cmp} {E(f.End)}; {f.Var}{Step(f.Step)})");
                 Block(f.Body);
                 break;
             case MForeach fe:
@@ -145,6 +145,9 @@ public sealed partial class Printer
     static bool Atomic(MExpr e) => e is AirFrozen fz ? Atomic(fz.E) : e is not AirAssignExpr && e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr || AtomicIterators(e) || AtomicVector(e);
 
     static string P(MExpr e) => Atomic(e) ? E(e) : "(" + E(e) + ")";
+
+    /// <summary>The C# after the loop variable in a `for` header: `++`, ` += 2`, ` = unchecked(i + 1)`.</summary>
+    public static string Step(AirForStep s) => s.Value == null ? s.Op : " " + s.Op + " " + E(s.Value);
 
     public static string E(MExpr e)
     {

@@ -86,7 +86,7 @@ public sealed partial class MirDump
                 Nested($"while {E(w.Cond)}{at}", w.Body);
                 break;
             case MFor f:
-                Nested($"for {f.Var} {f.VarType ?? "var"} = {E(f.Start)}; {f.Cmp} {E(f.End)}; {f.Step}{(f.MinStart is long m ? " minstart " + m : "")}{at}", f.Body);
+                Nested($"for {f.Var} {f.VarType ?? "var"} = {E(f.Start)}; {f.Cmp} {E(f.End)}; {f.Step.Op}{(f.Step.Value != null ? " " + E(f.Step.Value) : "")}{(f.MinStart is long m ? " minstart " + m : "")}{at}", f.Body);
                 break;
             case MForeach fe:
                 Nested($"foreach{(fe.Await ? " await" : "")} ({string.Join(", ", fe.Vars)}) in {E(fe.Coll)}{at}", fe.Body);

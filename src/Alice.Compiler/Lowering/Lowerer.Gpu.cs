@@ -115,7 +115,8 @@ public sealed partial class Lowerer
         kbody.Add(new MFor
         {
             VarType = "int", Var = "__gt", Start = G("Grid", "GlobalIndex", "X"), Cmp = "<", End = K("__gn", intT),
-            Step = " = __gn - __gt > __gs ? __gt + __gs : __gn",   // the step never overflows Int32
+            // the step never overflows Int32
+            Step = AirForStep.By("=", new AirGridStep { Index = K("__gt", intT), Count = K("__gn", intT), Stride = K("__gs", intT), Type = intT }),
             Body =
             {
                 new MDecl { Name = plan.LoopVar.CsName, TypeCs = "int", Init = B(AirBinOp.Add, K("__gt", intT), K("__ga", intT)) },
@@ -132,7 +133,7 @@ public sealed partial class Lowerer
                 {
                     new MFor
                     {
-                        VarType = "int", Var = "__gd", Start = B(AirBinOp.Div, G("Warp", "WarpSize"), AirConst.Int(2)), Cmp = ">", End = AirConst.Int(0), Step = " >>= 1",
+                        VarType = "int", Var = "__gd", Start = B(AirBinOp.Div, G("Warp", "WarpSize"), AirConst.Int(2)), Cmp = ">", End = AirConst.Int(0), Step = AirForStep.By(">>=", AirConst.Int(1)),
                         Body = { new MAssign { Target = K("__gr", accT), Op = "+=", Value = new MCall { Target = G("Warp"), Name = "ShuffleDown", Args = { K("__gr", accT), K("__gd", intT) } } } },
                     },
                     new MDecl { Name = "__gsh", Init = new MCall { Target = G("SharedMemory"), Name = $"GetDynamic<{acc.Type.Cs}>" } },
@@ -140,7 +141,7 @@ public sealed partial class Lowerer
                     new MExprStmt { E = new MCall { Target = G("Group"), Name = "Barrier" } },
                     new MFor
                     {
-                        VarType = "int", Var = "__gw", Start = B(AirBinOp.Div, B(AirBinOp.Div, G("Group", "DimX"), G("Warp", "WarpSize")), AirConst.Int(2)), Cmp = ">", End = AirConst.Int(0), Step = " >>= 1",
+                        VarType = "int", Var = "__gw", Start = B(AirBinOp.Div, B(AirBinOp.Div, G("Group", "DimX"), G("Warp", "WarpSize")), AirConst.Int(2)), Cmp = ">", End = AirConst.Int(0), Step = AirForStep.By(">>=", AirConst.Int(1)),
                         Body =
                         {
                             new MIf { Cond = B(AirBinOp.Lt, G("Group", "IdxX"), K("__gw", intT)), Then = { new MAssign { Target = Gsh(G("Group", "IdxX")), Op = "+=", Value = Gsh(B(AirBinOp.Add, G("Group", "IdxX"), K("__gw", intT))) } } },

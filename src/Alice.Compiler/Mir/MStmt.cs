@@ -64,7 +64,7 @@ public sealed class MFor : MStmt
     public MExpr Start = null!;
     public string Cmp = "<";
     public MExpr End = null!;
-    public string Step = "++";
+    public AirForStep Step = new();
     public List<MStmt> Body = new();
     public long? MinStart;           // a proven lower bound of Start when it is not a literal (parallel chunk loops)
 }
@@ -110,4 +110,33 @@ public sealed class MUsing : MStmt
     public string Name = "";
     public MExpr Value = null!;
     public List<MStmt> Body = new();
+}
+
+/// <summary>
+/// The step of a counted <see cref="MFor"/>, assignment-shaped: `i++`, `i--`, `i += k`, `i -= k`, `i >>= k`, or
+/// `i = v` (`i = unchecked(i + 1)` once InductionVariables proved the increment cannot overflow). <see cref="Op"/> is
+/// the operator token, as in <see cref="MAssign.Op"/>; <see cref="Value"/> is null for ++ and --.
+/// </summary>
+public sealed class AirForStep
+{
+    public string Op = "++";
+    public MExpr? Value;
+
+    public static AirForStep Inc() => new();
+    public static AirForStep Dec() => new() { Op = "--" };
+    public static AirForStep By(string op, MExpr value) => new() { Op = op, Value = value };
+
+    /// <summary>`v = unchecked(v + k)`.</summary>
+    public static AirForStep UncheckedAdd(string v, MExpr k, AirType? type = null) => new()
+    {
+        Op = "=",
+        Value = new MCall { Name = "unchecked", Args = { new MBinary { Op = AirBinOp.Add, Checked = false, L = new AirLocalRef(v, type), R = k, Type = type } }, Type = type },
+    };
+
+    /// <summary>`v++`, or `v = unchecked(v + 1)`.</summary>
+    public bool IsIncrement(string v) => Op == "++" || Op == "=" && Value is MCall { Name: "unchecked", Args: [MBinary { Op: AirBinOp.Add, L: MCode l, R: MCode { Text: "1" } }] } && l.Text == v;
+
+    /// <summary>The `(v + k)` or `(v - k)` inside `v = unchecked(...)`, when the step is that shape.</summary>
+    public MBinary? UncheckedStep(string v) =>
+        Op == "=" && Value is MCall { Name: "unchecked", Args: [MBinary { Op: AirBinOp.Add or AirBinOp.Sub, L: MCode l } b] } && l.Text == v ? b : null;
 }

@@ -41,6 +41,8 @@ public sealed partial class Printer
                 return r.PoolCs + ".Release(" + E(r.Target) + ")";
             case AirLength l:
                 return E(l.Target) + "." + l.Member;
+            case AirGridStep gs:
+                return $"{E(gs.Count)} - {E(gs.Index)} > {E(gs.Stride)} ? {E(gs.Index)} + {E(gs.Stride)} : {E(gs.Count)}";
             case AirTripCount t:
                 return TripEnd(t.End) + " - " + E(t.Start) + (t.Inclusive ? " + 1" : "");
             case AirOffset o:
