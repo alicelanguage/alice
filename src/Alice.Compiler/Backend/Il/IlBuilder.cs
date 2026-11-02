@@ -136,8 +136,8 @@ public sealed class IlBuilder
     /// so every emitted instruction (and its sequence point) stays.</summary>
     public IlPeephole Peephole { get; set; } = IlPeephole.All;
 
-    /// <summary>Encode every branch in its long form (additive helper, D1.4): the fallback for a body whose
-    /// serialized bytes fail the decode check (short-branch fixup corruption, see Backend/IlSpike/README.md).</summary>
+    /// <summary>Encode every branch in its long form. A debug knob only: the short-branch corruption it used to work
+    /// around came from multi-chunk code buffers and is fixed in <see cref="Encode"/>.</summary>
     public bool LongBranches { get; set; }
 
     public IReadOnlyList<IlLocal> Locals => locals;
@@ -770,7 +770,9 @@ public sealed class IlBuilder
             }
         }
 
-        var enc = new InstructionEncoder(new BlobBuilder(), new ControlFlowBuilder());
+        // one chunk for the whole body: the ControlFlowBuilder branch fixup of SRM drops the byte after a short-branch
+        // operand that ends a BlobBuilder chunk (256 bytes by default), as in kmeans `chunk`
+        var enc = new InstructionEncoder(new BlobBuilder(Math.Max(off[n], 16)), new ControlFlowBuilder());
         var handles = new LabelHandle[labelPos.Count];
         for (int i = 0; i < handles.Length; i++) handles[i] = enc.DefineLabel();
         var seq = new List<IlSequencePoint>();

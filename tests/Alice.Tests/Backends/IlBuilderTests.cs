@@ -717,6 +717,47 @@ public class IlBuilderTests
         Assert.Equal(4, BodySize(m, "Debug"));     // ldc.i4.2 ldc.i4.3 add ret
     }
 
+    /// <summary>A short branch whose operand byte lands on any offset around the 256-byte chunk boundary of the
+    /// code BlobBuilder, next to a long branch, serializes byte-exactly (the kmeans `chunk` corruption).</summary>
+    [Fact]
+    public void Short_branches_across_blob_chunk_boundaries_serialize_exactly()
+    {
+        var m = NewModule("Chunks");
+        var t = m.DefineType("Demo", "C", StaticClass);
+        var expected = new Dictionary<string, byte[]>();
+        for (int pad = 240; pad < 272; pad++)
+        {
+            var f = t.DefineMethod("F" + pad, PublicStatic, IlType.Int32, [IlType.Int32]);
+            var il = f.Il;
+            il.Peephole = IlPeephole.None;
+            var near = il.DefineLabel(); var far = il.DefineLabel();
+            for (int k = 0; k < pad; k++) il.Emit(ILOpCode.Nop);
+            il.EmitLoadArg(0); il.EmitBranch(near, IlCond.True);        // brtrue.s, operand at pad + 2
+            il.EmitLoadConst(1); il.EmitReturn();
+            il.MarkLabel(near);
+            il.EmitLoadArg(0); il.EmitBranch(far, IlCond.False);         // forced long: 200 bytes away
+            for (int k = 0; k < 200; k++) il.Emit(ILOpCode.Nop);
+            il.EmitLoadConst(2); il.EmitReturn();
+            il.MarkLabel(far);
+            il.EmitLoadConst(3); il.EmitReturn();
+            expected[f.Name] = [.. Enumerable.Repeat((byte)0x00, pad), 0x02, 0x2D, 0x02, 0x17, 0x2A, 0x02, 0x39, 200 + 2, 0, 0, 0,
+                .. Enumerable.Repeat((byte)0x00, 200), 0x18, 0x2A, 0x19, 0x2A];
+        }
+        var (pe, _) = m.Emit();
+        foreach (var (name, bytes) in expected)
+        {
+            var body = Body(pe, name, out var rd);
+            Assert.True(bytes.AsSpan().SequenceEqual(body.GetILBytes()), name + " serialized differently");
+            rd.Dispose();
+        }
+        Run(m, asm =>
+        {
+            Assert.Equal(2, Call(asm, "Demo.C", "F255", 1));   // brtrue.s taken, brfalse not
+            Assert.Equal(1, Call(asm, "Demo.C", "F255", 0));
+            return 0;
+        });
+    }
+
     [Fact]
     public void Prefixes_encode_before_their_instruction()
     {
