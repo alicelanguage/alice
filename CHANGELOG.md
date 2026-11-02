@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Security: an `alice-toolchain` file must name an exact version or channel; paths and other text are rejected, and
+  only toolchains installed under `~/.alice/toolchains` are started.
+- Security: `dotnet`, `node` and `clang` are started from absolute `PATH` entries, never from the working directory.
+- Security: `alice.toml` package names, dependency ids and versions, and target frameworks are validated; other values
+  are XML- and MSBuild-escaped in the generated `.alproj`.
+- Security: `GITHUB_TOKEN` is sent only to `api.github.com`; release assets are downloaded only over https from GitHub.
+- Security: telemetry endpoints must be https (plain http only for loopback); the collector adds a global hourly cap
+  (`ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`).
+- Security: `install.sh` refuses plain-http URLs and http redirects on the wget fallback.
+- Security: the `alice run` cache is owner-only and its images carry a per-install HMAC; other entries are misses.
+- Security: `SECURITY.md` (disclosure policy, supported versions, workspace trust) and a security limits table in
+  `docs/production.md`, including the NuGet API key still passed to `dotnet nuget push` as an argument.
 - ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
 
 ## 0.14.0 - 2026-10-27

@@ -95,6 +95,34 @@ public class ToolchainCliTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Override_file_with_a_path_never_runs_a_binary(bool relative)
+    {
+        // an untrusted checkout must not pick the binary that every `alice` command dispatches to
+        var planted = Path.Combine(home, "planted");
+        Directory.CreateDirectory(planted);
+        Directory.CreateDirectory(Path.Combine(home, "toolchains"));
+        var marker = Path.Combine(home, "ran");
+        var exe = Path.Combine(planted, Alice.Cli.Toolchains.Platform.ExeName);
+        File.WriteAllText(exe, $"#!/bin/sh\ntouch '{marker}'\n");
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(exe, (UnixFileMode)0b111_101_101);
+        var cwd = Directory.GetCurrentDirectory();
+        var dir = Path.Combine(home, "checkout");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "alice-toolchain"), (relative ? Path.Combine("..", "planted") : planted) + "\n");
+        Directory.SetCurrentDirectory(dir);
+        try
+        {
+            var (code, output) = Cli("version");
+            Assert.Equal(2, code);
+            Assert.Contains("not a toolchain version", output);
+            Assert.False(File.Exists(marker));
+        }
+        finally { Directory.SetCurrentDirectory(cwd); }
+    }
+
+    [Theory]
     [InlineData("bash", "complete -F")]
     [InlineData("zsh", "#compdef alice")]
     [InlineData("fish", "complete -c alice")]

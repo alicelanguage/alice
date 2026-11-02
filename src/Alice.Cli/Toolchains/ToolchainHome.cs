@@ -21,8 +21,23 @@ public sealed class ToolchainHome(string root)
     public string ShimPath => Path.Combine(BinDir, OperatingSystem.IsWindows() ? "alice.cmd" : "alice");
     string SettingsPath => Path.Combine(Root, "settings.json");
 
-    public string ToolchainDir(string version) => Path.Combine(ToolchainsDir, version);
+    /// <summary>
+    /// `toolchains/VERSION`. The version comes from repo content (`alice-toolchain`), so only a parsed version is a path
+    /// component, and the result must stay directly under <see cref="ToolchainsDir"/>.
+    /// </summary>
+    public string ToolchainDir(string version)
+    {
+        string name = ToolchainVersion.TryParse(version)?.ToString()
+            ?? throw new ToolchainException($"'{Shorten(version)}' is not a toolchain version", "use a version like 0.10.1, or a channel: stable, nightly");
+        string root = Path.GetFullPath(ToolchainsDir), dir = Path.GetFullPath(Path.Combine(root, name));
+        if (!string.Equals(Path.GetDirectoryName(dir), root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.Ordinal))
+            throw new ToolchainException($"'{Shorten(version)}' is not a toolchain version");
+        return dir;
+    }
+
     public string ExePath(string version) => Path.Combine(ToolchainDir(version), Platform.ExeName);
+
+    static string Shorten(string s) => s.Length > 40 ? s[..40] + "…" : s;
 
     public List<ToolchainVersion> Installed() =>
         !Directory.Exists(ToolchainsDir) ? new()
@@ -31,7 +46,7 @@ public sealed class ToolchainHome(string root)
             .Select(d => ToolchainVersion.TryParse(Path.GetFileName(d))).OfType<ToolchainVersion>()
             .OrderDescending().ToList();
 
-    public bool IsInstalled(string version) => File.Exists(ExePath(version));
+    public bool IsInstalled(string version) => ToolchainVersion.TryParse(version) != null && File.Exists(ExePath(version));
 
     public string? Default
     {

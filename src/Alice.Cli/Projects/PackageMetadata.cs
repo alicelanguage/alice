@@ -1,4 +1,3 @@
-using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -12,7 +11,7 @@ public static class PackageMetadata
 {
     public static readonly string[] Kinds = ["exe", "lib", "tool", "game", "wasm"];
 
-    static readonly Regex Id = new(@"^[A-Za-z0-9_]+([.-][A-Za-z0-9_]+)*$");
+    static readonly Regex Id = MsBuildText.PackageId;
     static readonly Regex SemVer = new(@"^\d+(\.\d+){1,3}(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$");
 
     static readonly (string Key, string Property)[] Plain =
@@ -32,7 +31,7 @@ public static class PackageMetadata
             throw new InvalidOperationException($"[package] version \"{v}\" is not a valid version (expected e.g. 1.2.3 or 1.2.3-beta.1)");
 
         var p = new StringBuilder();
-        void Prop(string k, string val) => p.Append($"    <{k}>{SecurityElement.Escape(val)}</{k}>\n");
+        void Prop(string k, string val) => p.Append($"    <{k}>{MsBuildText.Escape(val)}</{k}>\n");
         Prop("PackageId", id);
         Prop("IsPackable", kind == "game" ? "false" : "true");
         foreach (var (key, prop) in Plain)
@@ -55,10 +54,10 @@ public static class PackageMetadata
         if (readme != null)
         {
             Prop("PackageReadmeFile", Path.GetFileName(readme));
-            items.Append($"    <None Include=\"$(AliceSourceRoot){SecurityElement.Escape(readme)}\" Pack=\"true\" PackagePath=\"/\" />\n");
+            items.Append($"    <None Include=\"$(AliceSourceRoot){MsBuildText.Escape(readme, item: true)}\" Pack=\"true\" PackagePath=\"/\" />\n");
         }
         if (pkg.TryGetValue("icon", out var ic))
-            items.Append($"    <None Include=\"$(AliceSourceRoot){SecurityElement.Escape((string)ic)}\" Pack=\"true\" PackagePath=\"/\" />\n");
+            items.Append($"    <None Include=\"$(AliceSourceRoot){MsBuildText.Escape((string)ic, item: true)}\" Pack=\"true\" PackagePath=\"/\" />\n");
         return (p.ToString(), items.ToString());
     }
 
