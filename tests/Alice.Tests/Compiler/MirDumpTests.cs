@@ -92,8 +92,7 @@ public class MirDumpTests
             (new AirSizeOf(i32), "sizeof(int)", "(sizeof int):int"),
             (new AirDiscard(), "_", "(discard)"),
             (new AirYieldBreak(), "yield break", "(yieldbreak)"),
-            (new AirName("System.Console"), "System.Console", "(name System.Console)"),
-            (new AirRawCs("a => a"), "a => a", "(cs `a => a`)"),
+            (new AirMemberPath(new AirFieldRef("MASK"), ["Length"]), "MASK.Length", "(path (field MASK) Length)"),
         ];
         foreach (var (node, cs, dump) in cases)
         {

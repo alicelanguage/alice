@@ -67,7 +67,7 @@ public sealed partial class MirDump
         switch (s)
         {
             case MDecl d:
-                Line($"decl {d.Name} {d.TypeCs ?? "var"}{(d.RentLength != null ? " rent " + d.RentLength : "")}{(d.Init != null ? " = " + E(d.Init) : "")}{at}");
+                Line($"decl{(d.Using ? " using" : "")} {d.Name} {d.TypeCs ?? "var"}{(d.RentLength != null ? " rent " + d.RentLength : "")}{(d.Init != null ? " = " + E(d.Init) : "")}{at}");
                 break;
             case MDeconstruct dc:
                 Line($"deconstruct{(dc.Declare ? " decl" : "")} ({string.Join(", ", dc.Names)}) = {E(dc.Value)}{at}");
@@ -137,6 +137,7 @@ public sealed partial class MirDump
             case AirParamRef p: return "(param " + p.Name + ")";
             case AirFieldRef f: return "(field " + f.Name + ")";
             case AirArrayLength al: return "(length " + al.Array + ")";
+            case AirStoreCount sc: return "(store-count " + sc.Store + ")";
             case AirTypeRef tr: return "(type " + tr.Ref.ToCs() + ")";
             case AirMethodGroup mg: return "(methodgroup " + (mg.Owner?.ToCs() ?? "_") + " " + mg.Name + ")";
             case AirDefault d: return d.Forgiving ? "(default!)" : "(default)";
@@ -144,8 +145,9 @@ public sealed partial class MirDump
             case AirSizeOf so: return "(sizeof " + so.Of.ToCs() + ")";
             case AirDiscard: return "(discard)";
             case AirYieldBreak: return "(yieldbreak)";
-            case AirName n: return "(name " + n.Path + ")";
-            case AirRawCs raw: return "(cs `" + raw.Text + "`)";
+            case AirMemberPath mp: return "(path " + E(mp.Head) + " " + string.Join(".", mp.Members) + ")";
+            case AirFrozen fz: return "(frozen " + E(fz.E) + ")";
+            case AirAssignExpr ae: return "(assign-expr " + E(ae.Target) + " " + ae.Op + " " + E(ae.Value) + ")";
             case MCode c: return "`" + c.Text + "`";
             case MCall c: return $"(call{(c.Safe ? "?" : "")} {c.Name} {(c.Target != null ? E(c.Target) : "_")}{L(c.Args)})";
             case MMember m: return $"(member{(m.Safe ? "?" : "")} {m.Name} {E(m.Target)})";
@@ -173,7 +175,7 @@ public sealed partial class MirDump
             case MArg a: return $"(arg \"{a.Prefix}\" {E(a.E)})";
             case MLambda l:
                 {
-                    string head = "(lambda" + (l.Static ? " static" : "") + (l.Hot ? " hot" : "") + " (" + string.Join(", ", l.Params) + ")";
+                    string head = "(lambda" + (l.Static ? " static" : "") + (l.Hot ? " hot" : "") + (l.BareParam ? " bare" : "") + (l.InlineBody ? " inline" : "") + " (" + string.Join(", ", l.Params) + ")";
                     if (l.ExprBody != null) return head + " " + E(l.ExprBody) + ")";
                     var inner = new MirDump { ind = ind + 1 };
                     inner.Stmts(l.Body!);

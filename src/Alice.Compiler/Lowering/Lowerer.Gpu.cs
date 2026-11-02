@@ -137,7 +137,7 @@ public sealed partial class Lowerer
         var host = new List<MStmt>
         {
             new MDecl { Name = start, TypeCs = "int", Init = Expr(r.A) },
-            new MDecl { Name = count, TypeCs = "int", Init = new MCode($"{Backend.Printer.E(Expr(r.B))} - {start}{(r.Excl ? "" : " + 1")}") },
+            new MDecl { Name = count, TypeCs = "int", Init = new AirTripCount { End = Expr(r.B), Start = new AirLocalRef(start, AirLeaf.Int), Inclusive = !r.Excl, EndAsWritten = true, Type = AirLeaf.Int } },
         };
         // ILGPU's extension classes, found by reflection at compile time: fully qualified calls need no imports
         var accType = binder.Clr.Find("ILGPU.Runtime.Accelerator", 0, []);
@@ -148,42 +148,65 @@ public sealed partial class Lowerer
         string? zero = viewType == null ? null : binder.Clr.ExtensionHost("MemSetToZero", viewType);
         if (alloc == null || copy == null || load == null || zero == null || binder.Clr.Find("ILGPU.Runtime.KernelUtil", 0, []) == null)
             throw No("this ILGPU version lacks Allocate1D / CopyToCPU / MemSetToZero / LoadStreamKernel / KernelUtil (ILGPU 1.x is supported)");
-        static MStmt Line(string code) => new MExprStmt { E = new MCode(code) };
+        // the ILGPU host statements, through the extension hosts found above
+        static AirLocalRef L(string name) => new(name);
+        static MMember ViewOf(string buffer) => new() { Target = L(buffer), Name = "View" };
+        static MStmt Do(MExpr e) => new MExprStmt { E = e };
+        var gpuApi = AirTypeRef.Named("global::__AliceGpu");
         var launch = new List<MStmt>
         {
-            Line("var __acc = global::__AliceGpu.Accelerator"),
-            Line($"{field} ??= {load}.LoadStreamKernel<{string.Join(", ", ptypes)}>(__acc, {kernel})"),
-            Line($"int __gg = global::__AliceGpu.Grid({field}, ref {group}, ref {cap}, {count})"),
+            new MDecl { Name = "__acc", Init = new MMember { Target = gpuApi, Name = "Accelerator" } },
+            new MAssign { Target = new AirFieldRef(field), Op = "??=", Value = new MCall { Target = AirTypeRef.Named(load), Name = $"LoadStreamKernel<{string.Join(", ", ptypes)}>", Args = { L("__acc"), new AirMethodGroup(null, kernel) } } },
+            new MDecl { Name = "__gg", TypeCs = "int", Init = new MCall { Target = AirTypeRef.Named("global::__AliceGpu"), Name = "Grid", Args = { new AirFieldRef(field), new MArg { Prefix = "ref ", E = new AirFieldRef(group) }, new MArg { Prefix = "ref ", E = new AirFieldRef(cap) }, new AirLocalRef(count, AirLeaf.Int) } } },
         };
         gpuAlloc = alloc;
         gpuCopy = copy;
         foreach (var a in arrays)
-            launch.Add(Line(gpuRegion != null
-                ? $"var __gb_{a.CsName.TrimStart('@')} = {gpuRegion}.Get({a.CsName}, {(overwritten.Contains(a) && Whole(a) ? "false" : "true")}, {(written.Contains(a) ? "true" : "false")})"   // resident until the region ends
-                : overwritten.Contains(a)
-                    ? $"using var __gb_{a.CsName.TrimStart('@')} = __acc.Allocate1D<{a.Type.Elem!.Cs}>({a.CsName}.Length)"   // write-only: no upload
-                    : $"using var __gb_{a.CsName.TrimStart('@')} = {alloc}.Allocate1D(__acc, {a.CsName})"));
+        {
+            string gb = "__gb_" + a.CsName.TrimStart('@');
+            var arr = new AirLocalRef(a.CsName, a.Type.ToAir());
+            if (gpuRegion != null)   // resident until the region ends
+                launch.Add(new MDecl { Name = gb, Init = new MCall { Target = L(gpuRegion), Name = "Get", Args = { arr, AirConst.Bool(!(overwritten.Contains(a) && Whole(a))), AirConst.Bool(written.Contains(a)) } } });
+            else if (overwritten.Contains(a))   // write-only: no upload
+                launch.Add(new MDecl { Using = true, Name = gb, Init = new MCall { Target = L("__acc"), Name = $"Allocate1D<{a.Type.Elem!.Cs}>", Args = { new MMember { Target = arr, Name = "Length" } } } });
+            else
+                launch.Add(new MDecl { Using = true, Name = gb, Init = new MCall { Target = AirTypeRef.Named(alloc), Name = "Allocate1D", Args = { L("__acc"), arr } } });
+        }
         if (acc != null)
         {
-            launch.Add(Line($"var __gb_acc = {scalar} ??= __acc.Allocate1D<{acc.Type.Cs}>(1)"));
-            launch.Add(Line($"{zero}.MemSetToZero(__gb_acc.View)"));
+            launch.Add(new MDecl { Name = "__gb_acc", Init = new AirAssignExpr { Target = new AirFieldRef(scalar), Op = "??=", Value = new MCall { Target = L("__acc"), Name = $"Allocate1D<{acc.Type.Cs}>", Args = { AirConst.Int(1) } } } });
+            launch.Add(Do(new MCall { Target = AirTypeRef.Named(zero), Name = "MemSetToZero", Args = { ViewOf("__gb_acc") } }));
         }
         // the reduction's shared memory holds one partial per warp
-        string shared = acc != null ? $", global::ILGPU.SharedMemoryConfig.RequestDynamic<{acc.Type.Cs}>({group} / __acc.WarpSize)" : "";
-        launch.Add(Line($"{field}(new global::ILGPU.KernelConfig(__gg, {group}{shared}), {start}, {count}{(acc != null ? ", __gb_acc.View" : "")}{string.Concat(arrays.Select(a => $", __gb_{a.CsName.TrimStart('@')}.View"))}{string.Concat(scalars.Select(sc => ", " + sc.CsName))})"));
-        if (gpuRegion == null || acc != null) launch.Add(Line("__acc.Synchronize()"));   // in a region, launches queue on one stream
+        var config = new MNew { TypeCs = "global::ILGPU.KernelConfig", Args = { L("__gg"), new AirFieldRef(group) } };
+        if (acc != null)
+            config.Args.Add(new MCall { Target = AirTypeRef.Named("global::ILGPU.SharedMemoryConfig"), Name = $"RequestDynamic<{acc.Type.Cs}>", Args = { new MBinary { Op = AirBinOp.Div, L = new AirFieldRef(group), R = new MMember { Target = L("__acc"), Name = "WarpSize" } } } });
+        var run = new MInvoke { Target = new AirFieldRef(field), Args = { config, new AirLocalRef(start, AirLeaf.Int), new AirLocalRef(count, AirLeaf.Int) } };
+        if (acc != null) run.Args.Add(ViewOf("__gb_acc"));
+        run.Args.AddRange(arrays.Select(a => (MExpr)ViewOf("__gb_" + a.CsName.TrimStart('@'))));
+        run.Args.AddRange(scalars.Select(sc => (MExpr)new AirLocalRef(sc.CsName, sc.Type.ToAir())));
+        launch.Add(Do(run));
+        if (gpuRegion == null || acc != null) launch.Add(Do(new MCall { Target = L("__acc"), Name = "Synchronize" }));   // in a region, launches queue on one stream
         if (gpuRegion == null)
             foreach (var a in arrays.Where(written.Contains))
-                launch.Add(Line(overwritten.Contains(a)
-                    ? $"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View.SubView({start}, {count}), ref {a.CsName}[{start}], {count})"   // only the range came from the device
-                    : $"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View, {a.CsName})"));
+            {
+                string gb = "__gb_" + a.CsName.TrimStart('@');
+                var arr = new AirLocalRef(a.CsName, a.Type.ToAir());
+                launch.Add(Do(overwritten.Contains(a)
+                    ? new MCall   // only the range came from the device
+                    {
+                        Target = AirTypeRef.Named(copy), Name = "CopyToCPU",
+                        Args = { new MCall { Target = ViewOf(gb), Name = "SubView", Args = { new AirLocalRef(start, AirLeaf.Int), new AirLocalRef(count, AirLeaf.Int) } }, new MArg { Prefix = "ref ", E = new MIndex { Target = arr, Args = { new AirLocalRef(start, AirLeaf.Int) } } }, new AirLocalRef(count, AirLeaf.Int) },
+                    }
+                    : new MCall { Target = AirTypeRef.Named(copy), Name = "CopyToCPU", Args = { ViewOf(gb), arr } }));
+            }
         if (acc != null)
         {
-            launch.Add(Line($"{acc.Type.Cs} __gsum = 0"));
-            launch.Add(Line($"{copy}.CopyToCPU(__gb_acc.View, ref __gsum, 1)"));
-            launch.Add(Line($"{acc.CsName} += __gsum"));
+            launch.Add(new MDecl { Name = "__gsum", TypeCs = acc.Type.Cs, Init = AirConst.Int(0) });
+            launch.Add(Do(new MCall { Target = AirTypeRef.Named(copy), Name = "CopyToCPU", Args = { ViewOf("__gb_acc"), new MArg { Prefix = "ref ", E = L("__gsum") }, AirConst.Int(1) } }));
+            launch.Add(new MAssign { Target = new AirLocalRef(acc.CsName, acc.Type.ToAir()), Op = "+=", Value = L("__gsum") });
         }
-        host.Add(new MIf { Cond = new MCode($"{count} > 0"), Then = { new MBlock { Body = launch } } });
+        host.Add(new MIf { Cond = new MBinary { Op = AirBinOp.Gt, L = new AirLocalRef(count, AirLeaf.Int), R = AirConst.Int(0), Type = AirLeaf.Bool }, Then = { new MBlock { Body = launch } } });
         return new MBlock { Body = host };
     }
 
@@ -239,7 +262,7 @@ public sealed partial class Lowerer
         List<MStmt> body;
         try { body = Stmts(region.Body, tail, target); }
         finally { gpuRegion = saved; }
-        return new MUsing { Name = r, Value = new MCode("new global::__AliceGpu.Region()"), Body = body };
+        return new MUsing { Name = r, Value = new MNew { TypeCs = "global::__AliceGpu.Region" }, Body = body };
     }
 
     readonly HashSet<NameExpr> regionLengthReads = new(ReferenceEqualityComparer.Instance);

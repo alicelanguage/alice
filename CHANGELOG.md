@@ -27,10 +27,18 @@
 - AIR typed leaves (backend plan D0.4, batch 1): `Lowerer.Expressions/Statements/Calls` no longer build opaque
   `MCode` text; they build `AirConst`, `AirNull`, `AirThis`, `AirBase`, `AirLocalRef`, `AirParamRef`, `AirFieldRef`,
   `AirArrayLength`, `AirTypeRef`, `AirMethodGroup`, `AirDefault`, `AirTypeOf`, `AirSizeOf`, `AirDiscard`,
-  `AirYieldBreak` and `AirName` (`Mir/MExpr.Core.cs`) with the binder's type and source span where the HIR has them.
+  `AirYieldBreak` and `AirMemberPath` (`Mir/MExpr.Core.cs`) with the binder's type and source span where the HIR has them.
   They derive from `MCode` until the passes are ported (D0.9), and `alice emit --air` dumps them by kind; batch 2's
-  stand-in leaves are merged into them. Two
-  `AirRawCs` escape hatches remain (event-adapter lambda, `gpu for` reduction value). Emitted C# is byte-identical.
+  stand-in leaves are merged into them. Emitted C# is byte-identical.
+- AIR batch 4b (backend plan D0.7b): `Lowerer.SoA/SoAFusion/Specialize/Gpu/Callbacks` build typed nodes: the SoA
+  vector prologues use the vector nodes, `SoaCtx.StoreLeaf` carries the store as a typed leaf (so the SoA store
+  is no text), `AirStoreCount` (Mir/MExpr.Soa.cs) is a store row count. The parallel lowerings share `AirLeaf` and
+  `AirLength`/`AirTripCount`/`AirOffset` from Mir/MExpr.Core.cs. No text escape hatch is left in the IR: the
+  `AirRawCs` and `AirName` nodes are gone. The ILGPU host launch is typed statements (`MDecl.Using`,
+  `AirAssignExpr`), the event adapter is an `MLambda` (`BareParam`, `InlineBody`), the `gpu for` reduction value
+  is `AirFrozen` (not rewritten by the passes), and constant paths, inherited members and unresolved names lower
+  as `AirFieldRef`/`AirTypeRef`/`AirParamRef`/`AirLocalRef` (`AirMemberPath` for a member chain). Emitted C# is
+  byte-identical.
 - AIR MCode removal batch 2 (backend plan D0.5): the allocation-free iterators, stream fusion and idiom rewrites
   (`Lowerer.Iterators/Fusion/Idioms`) build typed nodes instead of C# text: locals, literals, `default`, static
   receivers, and `AirRangeLength`, `AirRefOrAddDefault`, `AirRefOrNullRef`, `AirAlternateLookup`, `AirSpanSplit`,

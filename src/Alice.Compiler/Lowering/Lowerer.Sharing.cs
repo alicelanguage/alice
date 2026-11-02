@@ -39,7 +39,7 @@ public sealed partial class Lowerer
             hp.Root(new MExprStmt { E = init });
             Extra.Add($"internal static readonly {ne.Type.Cs} {field} = {hp.ToString().Trim().TrimEnd(';')};\n");
         }
-        return AirLeaf.Name(field, ne.Type.ToAir());   // a static readonly field: a leaf, so receivers stay simple
+        return new AirFieldRef(field, ne.Type.ToAir());   // a static readonly field: a leaf, so receivers stay simple
     }
 
     bool Shareable(TypeSym t)

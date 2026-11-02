@@ -281,8 +281,7 @@ public sealed partial class Lowerer
                     var f = (FieldSym)fc.Sym!;
                     if (sc.Regs != null) return sc.Regs.TryGetValue(f.CsName, out var reg) ? LRef(reg, vt) : null;
                     if (f.Type.Cs != T) return null;
-                    // SoaCtx carries the store as C# text until Lowerer.SoA is converted (D0.7)
-                    var column = new MMember { Target = new AirRawCs(sc.Store), Name = f.CsName, Type = new AirType.Array(f.Type.ToAir()) };
+                    var column = new MMember { Target = sc.StoreLeaf, Name = f.CsName, Type = new AirType.Array(f.Type.ToAir()) };
                     return new AirVectorLoad { Vec = vt, Array = column, Index = LRef(sc.Idx, IntT), Type = vt };
                 }
             case CallExpr c when !wantMask:

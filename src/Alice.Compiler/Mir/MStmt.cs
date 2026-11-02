@@ -24,6 +24,7 @@ public sealed class MDecl : MStmt
     public string? TypeCs;          // null => var
     public MExpr? Init;
     public string? RentLength;      // Init is Own<T>.Rent(RentLength) of an owned array; RentLength names a local
+    public bool Using;              // `using var x = ...`: disposed at the end of the enclosing block
 }
 
 public sealed class MDeconstruct : MStmt

@@ -134,7 +134,7 @@ public sealed partial class Lowerer
         var call = new MCall { Name = name };
         for (int i = 0; i < args.Count; i++)
             if (!lams.Any(l => l.Index == i)) call.Args.Add(args[i]);
-        foreach (var (l, byRef) in req.Caps) call.Args.Add(byRef ? new MArg { Prefix = "ref ", E = new MCode(l.CsName) } : new MCode(l.CsName));
+        foreach (var (l, byRef) in req.Caps) call.Args.Add(byRef ? new MArg { Prefix = "ref ", E = new AirLocalRef(l.CsName, l.Type.ToAir()) } : new AirLocalRef(l.CsName, l.Type.ToAir()));
         return call;
     }
 
@@ -255,7 +255,7 @@ public sealed partial class Lowerer
         foreach (int k in fn.Caps)
         {
             var (_, byRef) = specializing.Caps[k];
-            MExpr v = new MCode("__cap" + k);
+            MExpr v = new AirParamRef("__cap" + k);   // the clone's capture parameter
             call.Args.Add(byRef ? new MArg { Prefix = "ref ", E = v } : v);
         }
         return call;

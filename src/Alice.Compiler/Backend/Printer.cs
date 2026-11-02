@@ -70,7 +70,7 @@ public sealed partial class Printer
         switch (s)
         {
             case MDecl d:
-                Line($"{d.TypeCs ?? "var"} {d.Name}{(d.Init != null ? " = " + E(d.Init) : "")};");
+                Line($"{(d.Using ? "using " : "")}{d.TypeCs ?? "var"} {d.Name}{(d.Init != null ? " = " + E(d.Init) : "")};");
                 break;
             case MDeconstruct dc:
                 Line(dc.Declare ? $"var ({string.Join(", ", dc.Names)}) = {E(dc.Value)};" : $"({string.Join(", ", dc.Names)}) = {E(dc.Value)};");
@@ -142,7 +142,7 @@ public sealed partial class Printer
     }
 
     // a negative literal (`-5`) is not atomic: `-5.abs()` in C# is `-(5.abs())`
-    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr || AtomicIterators(e) || AtomicVector(e);
+    static bool Atomic(MExpr e) => e is AirFrozen fz ? Atomic(fz.E) : e is not AirAssignExpr && e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr || AtomicIterators(e) || AtomicVector(e);
 
     static string P(MExpr e) => Atomic(e) ? E(e) : "(" + E(e) + ")";
 
@@ -150,6 +150,10 @@ public sealed partial class Printer
     {
         switch (e)
         {
+            case AirFrozen fz:
+                return E(fz.E);
+            case AirAssignExpr ae:
+                return E(ae.Target) + " " + ae.Op + " " + E(ae.Value);
             case MCode c:   // also every typed leaf (AirConst, AirLocalRef, AirTypeRef...): Text is its C# spelling
                 return c.Text;
             case MCall c:
@@ -176,8 +180,9 @@ public sealed partial class Printer
             case MLambda l:
                 {
                     string head = (l.Hot ? "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)] " : "")
-                        + (l.Static ? "static " : "") + "(" + string.Join(", ", l.Params) + ") => ";
+                        + (l.Static ? "static " : "") + (l.BareParam ? l.Params[0] : "(" + string.Join(", ", l.Params) + ")") + " => ";
                     if (l.ExprBody != null) return head + E(l.ExprBody);
+                    if (l.InlineBody) return head + "{ " + string.Concat(l.Body!.Select(s => E(((MExprStmt)s).E) + "; ")) + "}";
                     // block bodies map back to Alice lines too (stack traces, CallerLineNumber, debugger)
                     var pr = new Printer(ambientFile ?? "", 0) { lastLine = int.MaxValue };
                     pr.Line("{");

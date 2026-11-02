@@ -42,7 +42,7 @@ public sealed partial class Printer
             case AirLength l:
                 return E(l.Target) + "." + l.Member;
             case AirTripCount t:
-                return TripEnd(t.End) + " - " + E(t.Start) + (t.Inclusive ? " + 1" : "");
+                return (t.EndAsWritten ? E(t.End) : TripEnd(t.End)) + " - " + E(t.Start) + (t.Inclusive ? " + 1" : "");
             case AirOffset o:
                 return E(o.Base) + " + " + E(o.Offset);
             case AirPresizeCount c:

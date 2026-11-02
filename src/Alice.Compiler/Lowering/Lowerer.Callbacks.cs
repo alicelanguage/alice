@@ -33,7 +33,7 @@ public sealed partial class Lowerer
                 + $"    catch (global::System.Exception __e)\n    {{\n        global::Alice.Runtime.NativeCallback.Fail(__e);\n        {zero}\n    }}\n}}\n");
             // the address is taken in an unsafe helper so the call site stays safe code
             Extra.Add($"private static unsafe global::Alice.Runtime.NativeFn {name}_fn() => new((nint)({cs})&{name});\n");
-            args[i] = new MCode(name + "_fn()");
+            args[i] = new MCall { Name = name + "_fn" };
         }
     }
 }
