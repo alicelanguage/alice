@@ -19,8 +19,12 @@ public static class AliceCompiler
     public static List<string> TranspileAll(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, Semantics.ClrTypes clr) =>
         TranspileFull(files, extraRefs, "alice_native", clr).CSharp;
 
-    public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, bool dotnetNames = false, bool sequential = false) =>
-        TranspileFull(files, extraRefs, nativeLib, null, dotnetNames, sequential);
+    public static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, bool dotnetNames = false, bool sequential = false, bool strict = false) =>
+        TranspileFull(files, extraRefs, nativeLib, null, dotnetNames, sequential, strict);
+
+    /// <summary>Strict typing (AL0220): every expression, local, parameter and return must be statically typed.</summary>
+    public static List<string> TranspileStrict(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs = null) =>
+        TranspileFull(files, extraRefs, "alice_native", null, strict: true).CSharp;
 
     /// <summary>
     /// Whether the compiled program runs code in parallel (forks, parallel loops): `[runtime] gc = "auto"` then picks
@@ -33,7 +37,7 @@ public static class AliceCompiler
     public static string TranspileDotnetNames(string src, string file = "main.al") =>
         TranspileFull([new SourceFile(file, src)], null, "alice_native", null, true).CSharp[0];
 
-    static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, Semantics.ClrTypes? clr, bool dotnetNames = false, bool sequential = false)
+    static (List<string> CSharp, string? C) TranspileFull(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs, string nativeLib, Semantics.ClrTypes? clr, bool dotnetNames = false, bool sequential = false, bool strict = false)
     {
         var asts = files.Select(f =>
         {
@@ -41,10 +45,12 @@ public static class AliceCompiler
             if (f.LibraryOnly) ast.Items.RemoveAll(i => i is Syntax.StmtItem);
             return ast;
         }).ToList();
-        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs)) { DotnetNames = dotnetNames };
+        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs)) { DotnetNames = dotnetNames, Strict = strict };
         binder.Bind();
         var emitter = new Backend.Emitter(binder, sequential) { NativeLib = nativeLib };
         var cs = asts.Select(emitter.EmitFile).ToList();
+        if (binder.StrictErrors.Count > 0)
+            throw new CompileException(binder.StrictErrors.OrderBy(d => d.File, StringComparer.Ordinal).ThenBy(d => d.Line).ThenBy(d => d.Col).ToList());
         return (cs, emitter.Native.IsEmpty ? null : emitter.Native.Source);
     }
 

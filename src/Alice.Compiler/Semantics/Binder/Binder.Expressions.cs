@@ -40,7 +40,10 @@ public sealed partial class Binder
                     UseThis();
                     if (sup.Args != null) BindArgs(sup.Args);
                     var bm = curType.BaseClass?.FindMethod(curMethod?.Name ?? "", sup.Args?.Count ?? curMethod?.Params.Count ?? 0);
-                    return bm?.Ret ?? AType.Unknown;
+                    if (bm != null) return bm.Ret;
+                    // `super` in an override of a .NET virtual (MonoGame's Update/Draw): the base method's result
+                    return curMethod != null && (sup.Args == null || sup.Args.Count == curMethod.Params.Count) && ClrOverride(curMethod, curType) is { } cb
+                        ? ClrTypes.FromClr(cb.ReturnType) : AType.Unknown;
                 }
             case ConstExpr ce:
                 return BindConst(ce);
@@ -57,7 +60,7 @@ public sealed partial class Binder
                     if (IsConcurrentType(t)) MarkConcurrentArgs(ne.Args);
                     CheckActorNew(ne, t);
                     BindArgs(ne.Args);
-                    if (ne.Block != null) BindLambda(ne.Block, new List<AType>());
+                    if (ne.Block != null) BindLambda(ne.Block, t.Kind == "array" ? [AType.Int] : new List<AType>());
                     return t;
                 }
             case IndexExpr ix:
@@ -121,7 +124,7 @@ public sealed partial class Binder
                     if (t.Clr is { IsGenericType: true } g && (g.GetGenericTypeDefinition() == typeof(Task<>) || g.GetGenericTypeDefinition() == typeof(ValueTask<>)))
                         return t.Args.Count == 1 ? t.Args[0] : ClrTypes.FromClr(g.GetGenericArguments()[0]);
                     if (t.Clr == typeof(Task) || t.Clr == typeof(ValueTask)) return AType.Void;
-                    return t.Kind == "dynamic" ? AType.Dynamic : AType.Unknown;
+                    return t.Kind == "dynamic" ? t : AType.Unknown;
                 }
             case SpawnExpr sp:
                 {
@@ -280,6 +283,22 @@ public sealed partial class Binder
             return cur;
         }
         ce.Res = "unknown";
+        if (ce.Ref.Args.Count > 0) return AType.Unknown;
+        // the program arguments (the Main parameter; Prelude.ARGV inside methods)
+        if (name == "ARGV") return AType.Array(AType.String);
+        // a member chain on a constant value (`ARGV.Length`, `MASK.Length`): emitted as written, typed here
+        AType? headType = segs[0] == "ARGV" ? AType.Array(AType.String) : (curType.FindField(segs[0]) ?? Program.FindField(segs[0]))?.Type;
+        if (segs.Length > 1 && headType is { IsKnown: true })
+        {
+            AType at = headType;
+            foreach (var seg in segs.Skip(1))
+            {
+                (at, _) = at.Kind == "array" && at.Clr == null && ClrTypes.Lookup(typeof(Array), seg, 0, false, false) is { Kind: not "method" } am
+                    ? (am.Type, false) : MemberType(at, seg, false);
+                if (!at.IsKnown) break;
+            }
+            return at;
+        }
         return AType.Unknown;
     }
 
@@ -334,7 +353,7 @@ public sealed partial class Binder
             foreach (var pr in t.Clr.GetProperties())
                 if (pr.GetIndexParameters().Length == ix.Args.Count && pr.Name == "Item") return ClrTypes.FromClr(pr.PropertyType);
         }
-        return t.Kind == "dynamic" ? AType.Dynamic : AType.Unknown;
+        return t.Kind == "dynamic" ? t : AType.Unknown;
     }
 
     AType BindBinary(BinaryExpr b)
@@ -394,7 +413,7 @@ public sealed partial class Binder
         }
         if (l.IsNumeric && r.IsUnknown) return l;
         if (r.IsNumeric && l.IsUnknown) return r;
-        if (l.Kind == "dynamic" || r.Kind == "dynamic") return AType.Dynamic;
+        if (l.Kind == "dynamic" || r.Kind == "dynamic") return ReferenceEquals(l, AType.Any) || ReferenceEquals(r, AType.Any) ? AType.Any : AType.Dynamic;
         if (l.Clr != null && l.Clr.IsEnum) return l;
         return AType.Unknown;
     }

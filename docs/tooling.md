@@ -8,15 +8,15 @@ Run from source: `dotnet run --project src/Alice.Cli -- <command>`.
 |---|---|
 | `alice new <name> [--lib\|--tool\|--game\|--wasm]` | create package (exe, library with `naming = "dotnet"`, .NET tool, MonoGame game, or [WebAssembly](#webassembly-kind--wasm) package): `alice.toml`, `src/`, `test/`, `.gitignore`; inside a workspace it is added to `members` |
 | `alice new <name> --workspace` | create workspace root (`[workspace] members = []`) |
-| `alice build [dir\|files] [--release] [--native] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT |
-| `alice run [dir\|file.al] [member] [-- args]` | build and run; workspace with several exe members: `alice run <member>` |
-| `alice check` | type-check, no output |
+| `alice build [dir\|files] [--release] [--native] [--strict] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT; `--strict` = [strict typing](language.md#strict-typing-al0220) for this build |
+| `alice run [dir\|file.al] [member] [--strict] [-- args]` | build and run; workspace with several exe members: `alice run <member>` |
+| `alice check [--strict]` | type-check, no output; `--strict`: anything not statically typed is AL0220 |
 | `alice test [files]` | build the package, run every `def test_*` in `test/*.al` |
 | `alice fmt [--check] [paths]` | format `.al` files in place; `--check` lists unformatted files, exit 1 (CI) |
 | `alice add <pkg> [--version v] [--path p]` | add dependency to `alice.toml` (default version `*`), regenerate, restore |
 | `alice update` | delete `alice.lock`, rebuild, lock newly resolved versions |
 | `alice clean [dir]` | remove `bin/` and `obj/` |
-| `alice emit file.al` | print lowered C# |
+| `alice emit [--strict] file.al` | print lowered C# |
 | `alice explain [files]` | show which optimizations each method received (parallel loops, stack arrays, presized collections, shared immutable objects, ...) |
 | `alice prove [files] [--check] [--smt]` | prove every `rule` (usually in `RULES.al`) and write `PROOF.al`; `--check` verifies only (CI); `--smt` proves rules over whole Int32/Int64 ranges with Z3 ([rules and proofs](#rules-and-proofs-alice-prove)) |
 | `alice guide [topic]` | print the Alice guide (`guide/GUIDE.md`); topics: `performance`, `proofs`, `interop` |
@@ -60,6 +60,7 @@ shared = { workspace = true }   # workspace member by name
 native = true                # PublishAot (identical method bodies folded, AOT analyzers on)
 ready_to_run = true          # `alice build --release` also publishes precompiled code to bin/r2r (or: alice build --r2r)
 threads = false              # single-threaded target: parallel loops, pipelines and forks compile to serial code (wasm default)
+strict = true                # strict typing: an inferred `dynamic` (not written as `Any`) is error AL0220 (or: --strict)
 
 [runtime]
 gc = "auto"                  # default: server GC if the program runs in parallel, else workstation; or workstation | server | low-memory

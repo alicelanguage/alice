@@ -181,7 +181,7 @@ public sealed partial class Binder
             var f = curType.FindField(iv.Name);
             if (f == null)
             {
-                curType.Fields[iv.Name] = new FieldSym { Name = iv.Name, CsName = Mangle(iv.Name), Type = vt0.IsKnown ? vt0 : AType.Dynamic, Kind = "inferred", Owner = curType };
+                curType.Fields[iv.Name] = new FieldSym { Name = iv.Name, CsName = Mangle(iv.Name), Type = vt0.IsKnown || ReferenceEquals(vt0, AType.Any) ? vt0 : AType.Dynamic, Kind = "inferred", Owner = curType };
                 changed = true;
             }
             else if (!f.Type.IsKnown && vt0.IsKnown)
@@ -379,8 +379,9 @@ public sealed partial class Binder
                     {
                         var field = ds.Fields[ds.FieldOrder[i]];
                         var arg = ne.Args[i].Value!;
-                        if (arg is NameExpr n && n.Name == "_") d.Parts.Add((field.CsName, null, null));
-                        else if (arg is NameExpr bn && FindLocal(bn.Name) == null) d.Parts.Add((field.CsName, Declare(arg, bn.Name, field.Type), null));
+                        // the binding names are typed nodes too (strict mode, AL0220): `when Shape::Circle(r)` binds r : Float64
+                        if (arg is NameExpr n && n.Name == "_") { d.Parts.Add((field.CsName, null, null)); n.Type = field.Type; }
+                        else if (arg is NameExpr bn && FindLocal(bn.Name) == null) { d.Parts.Add((field.CsName, Declare(arg, bn.Name, field.Type), null)); bn.Type = field.Type; }
                         else
                         {
                             BindExpr(arg);
