@@ -6,7 +6,16 @@ namespace Alice.Compiler.Mir;
 /// </summary>
 public abstract class MStmt
 {
-    public int Line;
+    int line;
+
+    /// <summary>Alice source line (0: synthesized by the lowerer); the line of <see cref="Span"/> when one is set.</summary>
+    public int Line
+    {
+        get => Span?.Line ?? line;
+        set { line = value; if (Span is { } s) Span = s with { Line = value }; }
+    }
+
+    public Span? Span;
 }
 
 public sealed class MDecl : MStmt

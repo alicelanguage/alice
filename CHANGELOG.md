@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- AIR foundation (backend plan D0.2/D0.3): MIR nodes gain an optional typed `AirType Type` and source `Span`
+  (`MStmt.Line` reads the span's line when one is set). `AirType` is a closed sum (Prim, ClrRef, AliceType,
+  TypeParam, Array, ByRef, Pointer, FnPtr, Tuple, Unknown, plus a nullable bit) whose `ToCs()` spells exactly what
+  `AType.Cs` spells; `AType.ToAir()` is the one conversion. `MBinary.Op`/`MUnary.Op` are enums (`AirBinOp`,
+  `AirUnOp`, `await` is `AirUnOp.Await`) with a `Checked` flag, cleared inside compiler-made `unchecked(...)`.
+  Emitted C# is byte-identical on the corpus (`tools/emit-corpus.sh`, reused by later AIR work). Hidden
+  `alice emit --air <file>` prints the MIR text dump (`MirDump`) for tests.
+
 ## 0.14.0 - 2026-10-27
 
 - Telemetry ships disabled in this release: `alice` never asks, records or sends, and `alice telemetry` only reports

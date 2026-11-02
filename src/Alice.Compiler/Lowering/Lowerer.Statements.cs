@@ -174,9 +174,9 @@ public sealed partial class Lowerer
             return;
         }
         // x += a*b / x -= a*b on floats -> x = fma(+-a, b, x)
-        if (!StrictMath && !inGpuKernel && a.Op is "+=" or "-=" && IsFloat(a.Target.Type) && a.Value is BinaryExpr { Op: "*" } vb && IsFloat(vb.L.Type) && IsFloat(vb.R.Type) && value is MBinary { Op: "*" } mv)
+        if (!StrictMath && !inGpuKernel && a.Op is "+=" or "-=" && IsFloat(a.Target.Type) && a.Value is BinaryExpr { Op: "*" } vb && IsFloat(vb.L.Type) && IsFloat(vb.R.Type) && value is MBinary { Op: AirBinOp.Mul } mv)
         {
-            o.Add(new MAssign { Target = target, Value = Fma(a.Op == "+=" ? mv.L : new MUnary { Op = "-", E = mv.L }, mv.R, target, a.Target.Type) });
+            o.Add(new MAssign { Target = target, Value = Fma(a.Op == "+=" ? mv.L : new MUnary { Op = AirUnOp.Neg, E = mv.L }, mv.R, target, a.Target.Type) });
             return;
         }
         switch (a.Op)
@@ -191,7 +191,7 @@ public sealed partial class Lowerer
                 o.Add(new MAssign { Target = target, Op = "??=", Value = value });
                 break;
             case "&&=":
-                o.Add(new MAssign { Target = target, Value = new MBinary { Op = "&&", L = target, R = value } });
+                o.Add(new MAssign { Target = target, Value = new MBinary { Op = AirBinOp.And, L = target, R = value } });
                 break;
             default:
                 o.Add(new MAssign { Target = target, Op = a.Op, Value = value });
@@ -205,9 +205,9 @@ public sealed partial class Lowerer
     {
         var t = e.Type;
         if (!t.IsKnown || t.Cs == "bool" || t.Kind == "dynamic") return m;
-        if (t.Cs == "bool?") return new MBinary { Op = "==", L = m, R = new MCode("true") };
+        if (t.Cs == "bool?") return new MBinary { Op = AirBinOp.Eq, L = m, R = new MCode("true") };
         if (t.Cs.EndsWith('?') || t.Clr is { IsValueType: false } || t.Sym is { Kind: "class" or "record" or "interface" })
-            return new MBinary { Op = "!=", L = m, R = new MCode("null") };
+            return new MBinary { Op = AirBinOp.Ne, L = m, R = new MCode("null") };
         return m;
     }
 
@@ -237,7 +237,7 @@ public sealed partial class Lowerer
         var body = Stmts(w.Body, Tail.None, null);
         ctx.RemoveAt(ctx.Count - 1);
         if (condPre.Count == 0) return new MWhile { Cond = cond, Body = body };
-        condPre.Add(new MIf { Cond = new MUnary { Op = "!", E = cond }, Then = { new MBreak() } });
+        condPre.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = cond }, Then = { new MBreak() } });
         condPre.AddRange(body);
         return new MWhile { Cond = new MCode("true"), Body = condPre };
     }
@@ -305,9 +305,9 @@ public sealed partial class Lowerer
             foreach (var p in w.Patterns)
             {
                 MExpr one = Pattern(subj, p, binds);
-                cond = cond == null ? one : new MBinary { Op = "||", L = cond, R = one };
+                cond = cond == null ? one : new MBinary { Op = AirBinOp.Or, L = cond, R = one };
             }
-            if (w.Guard != null) cond = new MBinary { Op = "&&", L = cond!, R = Expr(w.Guard) };
+            if (w.Guard != null) cond = new MBinary { Op = AirBinOp.And, L = cond!, R = Expr(w.Guard) };
             var node = new MIf { Cond = cond!, Then = binds };
             node.Then.AddRange(Stmts(w.Body, tail, target));
             if (first == null) first = node; else last!.Else = new List<MStmt> { node };
@@ -334,8 +334,8 @@ public sealed partial class Lowerer
             {
                 var fe = new MMember { Target = new MCode(tmp), Name = field };
                 // `is var` binds inside the condition, so a guard (`in C(r) if r > 1`) can use the names
-                if (bind != null) cond = new MBinary { Op = "&&", L = cond, R = new MIs { E = fe, TypeCs = "var " + bind.CsName } };
-                else if (eq != null) cond = new MBinary { Op = "&&", L = cond, R = new MBinary { Op = "==", L = fe, R = Expr(eq) } };
+                if (bind != null) cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { E = fe, TypeCs = "var " + bind.CsName } };
+                else if (eq != null) cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MBinary { Op = AirBinOp.Eq, L = fe, R = Expr(eq) } };
             }
             return cond;
         }
@@ -349,33 +349,33 @@ public sealed partial class Lowerer
                 string slot = hp.Binds[k]?.CsName ?? Temp("hv");
                 MExpr one = new MCall { Target = subj, Name = "TryGetValue", Args = { Expr(hp.Keys[k]), new MArg { Prefix = "out var ", E = new MCode(slot) } } };
                 if (hp.Binds[k] == null && hp.Values[k] is not BindPatternExpr)
-                    one = new MBinary { Op = "&&", L = one, R = new MBinary { Op = "==", L = new MCode(slot), R = Expr(hp.Values[k]) } };
-                hc = hc == null ? one : new MBinary { Op = "&&", L = hc, R = one };
+                    one = new MBinary { Op = AirBinOp.And, L = one, R = new MBinary { Op = AirBinOp.Eq, L = new MCode(slot), R = Expr(hp.Values[k]) } };
+                hc = hc == null ? one : new MBinary { Op = AirBinOp.And, L = hc, R = one };
             }
             return hc ?? new MCode("true");
         }
         if (p.Res == "arraypat" && p is ArrayPatternExpr ap)
         {
             string len = ap.Type.Kind == "array" || ap.Type.IsString ? "Length" : "Count";
-            MExpr cond = new MBinary { Op = ap.Rest != null ? ">=" : "==", L = new MMember { Target = subj, Name = len }, R = new MCode(ap.Names.Count.ToString()) };
+            MExpr cond = new MBinary { Op = ap.Rest != null ? AirBinOp.Ge : AirBinOp.Eq, L = new MMember { Target = subj, Name = len }, R = new MCode(ap.Names.Count.ToString()) };
             for (int i = 0; i < ap.Literals.Count; i++)
                 if (ap.Literals[i] is { } lit)
-                    cond = new MBinary { Op = "&&", L = cond, R = new MBinary { Op = "==", L = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, R = Expr(lit) } };
+                    cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MBinary { Op = AirBinOp.Eq, L = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, R = Expr(lit) } };
             for (int i = 0; i < ap.Binds.Count; i++)
-                if (ap.Binds[i] != null) cond = new MBinary { Op = "&&", L = cond, R = new MIs { E = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, TypeCs = "var " + ap.Binds[i].CsName } };
+                if (ap.Binds[i] != null) cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { E = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, TypeCs = "var " + ap.Binds[i].CsName } };
             if (ap.RestSym != null)
-                cond = new MBinary { Op = "&&", L = cond, R = new MIs { TypeCs = "var " + ap.RestSym.CsName, E = new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "ToArray", Args = { new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "Skip", Args = { subj, new MCode(ap.Names.Count.ToString()) } } } } } };
+                cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { TypeCs = "var " + ap.RestSym.CsName, E = new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "ToArray", Args = { new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "Skip", Args = { subj, new MCode(ap.Names.Count.ToString()) } } } } } };
             return cond;
         }
         if (p.Res == "type") return new MIs { E = subj, TypeCs = p.Type.Cs };
         if (p is RangeExpr r)
             return new MBinary
             {
-                Op = "&&",
-                L = new MBinary { Op = ">=", L = subj, R = Expr(r.A) },
-                R = new MBinary { Op = r.Excl ? "<" : "<=", L = subj, R = Expr(r.B) },
+                Op = AirBinOp.And,
+                L = new MBinary { Op = AirBinOp.Ge, L = subj, R = Expr(r.A) },
+                R = new MBinary { Op = r.Excl ? AirBinOp.Lt : AirBinOp.Le, L = subj, R = Expr(r.B) },
             };
-        return new MBinary { Op = "==", L = subj, R = Expr(p) };
+        return new MBinary { Op = AirBinOp.Eq, L = subj, R = Expr(p) };
     }
 
     static bool IsSimple(string text) => text.All(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '@' || ch == '.');

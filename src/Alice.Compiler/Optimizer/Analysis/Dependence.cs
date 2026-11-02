@@ -96,8 +96,8 @@ public static class Dependence
         MIndex ix => Element(ix, vars, write: false, into),
         MCode c => MirFacts.IntLiteral(c, out _) || FloatLiteral(c.Text) || Affine.Identifier(c.Text),
         MCall { Target: MCode { Text: "Prelude" }, Name: "fma" } c => c.Args.All(x => Pure(x, vars, into)),
-        MUnary { Op: "-", Postfix: false } u => Float(u.E, into) && Pure(u.E, vars, into),
-        MBinary { Op: "+" or "-" or "*" } b => (Float(b.L, into) || Float(b.R, into)) && Pure(b.L, vars, into) && Pure(b.R, vars, into),
+        MUnary { Op: AirUnOp.Neg, Postfix: false } u => Float(u.E, into) && Pure(u.E, vars, into),
+        MBinary { Op: AirBinOp.Add or AirBinOp.Sub or AirBinOp.Mul } b => (Float(b.L, into) || Float(b.R, into)) && Pure(b.L, vars, into) && Pure(b.R, vars, into),
         _ => false,
     };
 
@@ -107,8 +107,8 @@ public static class Dependence
         MCode c => FloatLiteral(c.Text),
         MCall { Target: MCode { Text: "Prelude" }, Name: "fma" } => true,
         MCast { TypeCs: "double" or "float" } => true,
-        MUnary { Op: "-" } u => Float(u.E, seen),
-        MBinary { Op: "+" or "-" or "*" or "/" } b => Float(b.L, seen) || Float(b.R, seen),
+        MUnary { Op: AirUnOp.Neg } u => Float(u.E, seen),
+        MBinary { Op: AirBinOp.Add or AirBinOp.Sub or AirBinOp.Mul or AirBinOp.Div } b => Float(b.L, seen) || Float(b.R, seen),
         _ => false,
     };
 

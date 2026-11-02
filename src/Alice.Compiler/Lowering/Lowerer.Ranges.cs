@@ -182,7 +182,7 @@ public sealed partial class Lowerer
     {
         if (b.Op is not ("+" or "-" or "*") || b.Type.Cs is not ("int" or "long") || b.L.Type.Cs != b.Type.Cs && b.R.Type.Cs != b.Type.Cs) return null;
         if (RangeOf(b.L) is not { } lr || RangeOf(b.R) is not { } rr || Arith(b.Op, lr, rr) is not { } res || !res.Within(Interval.Of(b.Type.Cs))) return null;
-        return new MCall { Name = "unchecked", Args = { new MBinary { Op = b.Op, L = l, R = r } } };
+        return new MCall { Name = "unchecked", Args = { Optimizer.MirFacts.Unchecked(new MBinary { Op = AirOps.ParseBin(b.Op), L = l, R = r }) } };
     }
 
     /// <summary>

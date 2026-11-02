@@ -39,5 +39,6 @@ public static class Pipeline
             var pass = make();
             if (!Disabled.Contains(pass.Name)) pass.Run(body);
         }
+        MirDump.Captured(body);
     }
 }

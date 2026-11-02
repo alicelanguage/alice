@@ -73,7 +73,7 @@ public static class MirFacts
         {
             case MCode c:
                 return !writesOnly ? c.Text == name : c.Text != name && (num ? WriteForm(c.Text, name) : ContainsWord(c.Text, name));   // opaque text using it: assume a write
-            case MUnary u when u.Op is "++" or "--":
+            case MUnary u when u.Op is AirUnOp.Inc or AirUnOp.Dec:
                 return Names(u.E, name) || Mentions(u.E, name, writesOnly, num);
             case MArg a when a.Prefix.StartsWith("ref") || a.Prefix.StartsWith("out"):
                 return Names(a.E, name) || Mentions(a.E, name, writesOnly, num);
@@ -122,6 +122,28 @@ public static class MirFacts
         MArg a => [a.E],
         _ => [],
     };
+
+    /// <summary>
+    /// Clears <see cref="MBinary.Checked"/> / <see cref="MUnary.Checked"/> on every operator textually inside
+    /// <paramref name="e"/>, as C# `unchecked(e)` does; returns <paramref name="e"/> for wrapping.
+    /// </summary>
+    public static MExpr Unchecked(MExpr e)
+    {
+        new UncheckedMarker().Mark(e);
+        return e;
+    }
+
+    sealed class UncheckedMarker : MirRewriter
+    {
+        public void Mark(MExpr e) => Expr(e);
+
+        protected override MExpr Rewrite(MExpr e)
+        {
+            if (e is MBinary b) b.Checked = false;
+            else if (e is MUnary u) u.Checked = false;
+            return e;
+        }
+    }
 
     /// <summary>Whether a body calls the unqualified method `name` (a self call when `name` is the enclosing method).</summary>
     public static bool Calls(List<MStmt> body, string name)

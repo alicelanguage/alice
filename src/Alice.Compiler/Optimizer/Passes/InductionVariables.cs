@@ -43,9 +43,9 @@ public sealed class InductionVariables : MirRewriter, IMirPass
                     ? new MCode($"(long)((ulong){var} {op} {dv}UL)")
                     : new MCode($"(int)((uint){var} {op} {dv}u)");
             }
-            if (e is MBinary { Op: "+" or "-", L: MCode { Text: var t } } b && t == var && MirFacts.IntLiteral(b.R, out long k) && k >= 0)
+            if (e is MBinary { Op: AirBinOp.Add or AirBinOp.Sub, L: MCode { Text: var t } } b && t == var && MirFacts.IntLiteral(b.R, out long k) && k >= 0)
             {
-                bool safe = b.Op == "+" ? hi <= max - k : lo >= min + k;
+                bool safe = b.Op == AirBinOp.Add ? hi <= max - k : lo >= min + k;
                 if (safe) return new MCall { Name = "unchecked", Args = { b } };
             }
             return e;

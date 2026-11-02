@@ -168,9 +168,9 @@ public sealed class Printer
             case MIndex ix:
                 return P(ix.Target) + "[" + Join(ix.Args) + "]";
             case MBinary b:
-                return P(b.L) + " " + b.Op + " " + P(b.R);
+                return P(b.L) + " " + b.Op.ToCs() + " " + P(b.R);
             case MUnary u:
-                return u.Postfix ? P(u.E) + u.Op : u.Op + P(u.E);
+                return u.Postfix ? P(u.E) + u.Op.ToCs() : u.Op.ToCs() + P(u.E);
             case MCond c:
                 return P(c.C) + " ? " + P(c.A) + " : " + P(c.B);
             case MLambda l:
