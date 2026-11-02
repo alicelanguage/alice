@@ -14,7 +14,7 @@ public sealed partial class Binder
             // guard clause: `return unless n` / `break unless n` / `next unless n` / `raise ... unless n` narrows n
             // for the rest of the block (when the rest never reassigns it)
             if (body[i] is IfStmt { Conds: [UnaryExpr { Op: "!", E: NameExpr { Sym: LocalSym g } }], Else: null } gi
-                && gi.Bodies[0] is [.., var last] && last is ReturnStmt or BreakStmt or NextStmt or ExprStmt { Expr: CallExpr { Name: "raise" } }
+                && gi.Bodies[0] is [.., var last] && last is ReturnStmt or BreakStmt or NextStmt or RaiseStmt or ExprStmt { Expr: CallExpr { Name: "raise" } }
                 && NullableValue(g.Type) && !Assigns(body.Skip(i + 1), g.Name))
             {
                 narrowed[g] = narrowed.GetValueOrDefault(g) + 1;
@@ -25,20 +25,20 @@ public sealed partial class Binder
     }
 
     /// <summary>
-    /// `recv.name = v` (and `recv.name += v` on a plain receiver) where the receiver's type has `def name=(v)`
+    /// `recv.name = v` (and `recv.name += v` on a plain receiver: a local, `self`, `@x` or a type, `Counter.total += 1`) where the receiver's type has `def name=(v)`
     /// (<see cref="Parser.SetterName"/>): a call of the writer. `a << b` as a statement (not a block's tail value) on a
     /// user operator: kept in a temporary (C# allows no operator expression as a statement).
     /// </summary>
     Stmt Writer(Stmt s, bool tail = false)
     {
         if (s is Assign { Target: CallExpr { Recv: { } wr, Args.Count: 0, Block: null, Parens: false } wc } wa && wa.Op is "=" or "+=" or "-=" or "*=" or "/=" or "%=" or "<<=" or "|=" or "&="
-            && (wa.Op == "=" || wr is NameExpr or SelfExpr or IvarExpr)
+            && (wa.Op == "=" || wr is NameExpr or SelfExpr or IvarExpr or ConstExpr)
             && BindExpr(wr).Sym?.FindMethod(Parser.SetterName(wc.Name), 1) != null)
         {
             Expr v = wa.Value;
             if (wa.Op != "=")
             {
-                Expr again = wr switch { NameExpr n => new NameExpr { Name = n.Name, Line = n.Line, Col = n.Col }, IvarExpr i => new IvarExpr { Name = i.Name, Line = i.Line, Col = i.Col }, _ => new SelfExpr { Line = wr.Line, Col = wr.Col } };
+                Expr again = wr switch { NameExpr n => new NameExpr { Name = n.Name, Line = n.Line, Col = n.Col }, IvarExpr i => new IvarExpr { Name = i.Name, Line = i.Line, Col = i.Col }, ConstExpr c => new ConstExpr { Ref = c.Ref, Line = c.Line, Col = c.Col }, _ => new SelfExpr { Line = wr.Line, Col = wr.Col } };
                 v = new BinaryExpr { Op = wa.Op[..^1], L = new CallExpr { Recv = again, Name = wc.Name, Line = wc.Line, Col = wc.Col }, R = wa.Value, Line = wa.Line, Col = wa.Col };
             }
             return new ExprStmt { Line = wa.Line, Col = wa.Col, Expr = new CallExpr { Line = wc.Line, Col = wc.Col, Recv = wr, Name = Parser.SetterName(wc.Name), Parens = true, Args = [new Arg { Line = wa.Line, Value = v }] } };
@@ -400,8 +400,11 @@ public sealed partial class Binder
                 if (c.Subject != null && p is ArrayPatternExpr ap)
                 {
                     var et = Builtins.ElemOf(subj);
-                    foreach (var lit in ap.Literals) if (lit != null) BindExpr(lit);
+                    for (int i = 0; i < ap.Literals.Count; i++)
+                        if (ap.Pins.Contains(i) && ap.Literals[i] is NameExpr pin && ap.Names.Take(i).Contains(pin.Name)) ap.Late.Add(i);
+                        else if (ap.Literals[i] is { } lit) BindExpr(lit);
                     ap.Binds = ap.Names.Select(n => n == "_" ? null! : Declare(ap, n, et)).ToList();
+                    foreach (int i in ap.Late) BindExpr(ap.Literals[i]!);   // `[a, ^a]`: the pin reads the `a` bound just above
                     ap.RestSym = ap.Rest != null ? Declare(ap, ap.Rest, AType.Array(et)) : null;
                     p.Res = "arraypat";
                     p.Type = subj;

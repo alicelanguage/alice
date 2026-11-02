@@ -1,6 +1,6 @@
 # Alice guide
 
-For Alice 0.13.2. Printed by `alice guide`. Written for people and for AI
+For Alice {{version}}. Printed by `alice guide`. Written for people and for AI
 agents: every example compiles, every rule says what the compiler enforces. Topics: `alice guide performance`, `alice guide proofs`,
 `alice guide interop`.
 

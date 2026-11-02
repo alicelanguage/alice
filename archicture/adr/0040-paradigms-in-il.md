@@ -198,7 +198,7 @@ L_v256:  ...
 ```
 
 **Facts the node carries.** Op, `Inclusive`, `Ordered`, element `AirType`; `Fused` (the element expression is not a
-plain read, so a kernel method is generated); for `AirPermute` the `PermutationProof` source (AL0229); the tile size.
+plain read, so a kernel method is generated); for `AirPermute` the `PermutationProof` source (AL0249); the tile size.
 
 **Pinned by.** ILVerify: the fused kernels are unverifiable by design (unmanaged pointers, `localloc`, `calli` in the
 pool); the test asserts that the only ILVerify findings are in generated `__cm_*` kernel methods (an exact allowlist by
@@ -246,7 +246,7 @@ L_cond:
 ```
 
 **Facts the node carries.** `AirStage`: method, state type, `Parallel`, `Ordered`, input and output element types;
-`AirRing`: element type, capacity (power of two); the graph's SPSC/acyclic proof (AL0226 passed).
+`AirRing`: element type, capacity (power of two); the graph's SPSC/acyclic proof (AL0246 passed).
 
 **Pinned by.** ILVerify clean (`ldftn` + the runtime's pointer overload is verifiable at the call site; the pointer
 call itself is inside the runtime); behaviour: `DataflowTests` (compiler) under both backends, output bit-identical
@@ -287,8 +287,8 @@ beats the C# backend's form of the same program.
 | `AirLane` hoisting | the hoisted lane/slab local is not live across `AirAwait`/`AirYield` and is not captured by an `AirLambda` |
 | `AirTermPack` | payload width at most 32 bits; tag below 128 |
 | `AirArenaRegion` | the reset runs on every exit (lowered as finally) |
-| `AirScan`/`AirCombine` | op associative for the element type (mirrors AL0228); `Ordered` set on float combines |
-| `AirPermute` | carries a `PermutationProof` under `cm for` (mirrors AL0229) |
+| `AirScan`/`AirCombine` | op associative for the element type (mirrors AL0248); `Ordered` set on float combines |
+| `AirPermute` | carries a `PermutationProof` under `cm for` (mirrors AL0249) |
 | CM kernels | kernel signature is exactly `void(void*, int32, int32)`; the context is a stack local not stored to the heap; `localloc` size constant, at most 16 KiB, not inside a loop |
 | `AirDataflow` | each `AirRing` has exactly one producer and one consumer stage; capacity a power of two; stage signature `(ref TState, ReadOnlySpan<TIn>, ref RingWriter<TOut>)`; `RingWriter` never escapes its stage (byref-like rule of ADR 0032) |
 | volatile ops | `volatile.` loads/stores only on ring index fields named by the runtime surface |

@@ -454,6 +454,13 @@ public static class Builtins
             case "join":
             case "inspect":
                 return AType.String;
+            case "sort_by_key" when args.Count == 1 && recv.Kind == "array" && args[0].Kind == "array":
+                {
+                    // `(uint[] keys, V[] values)`: a named tuple, so `s.keys` / `s.values` are its elements
+                    var t = new AType("tuple", $"({recv.Cs} keys, {args[0].Cs} values)") { Args = [recv, args[0]], TupleNames = ["keys", "values"] };
+                    if (recv.Clr is { } kc && args[0].Clr is { } vc) t.Clr = typeof(ValueTuple<,>).MakeGenericType(kc, vc);
+                    return t;
+                }
             case "keys":
                 return recv.Args.Count == 2 ? AType.Array(recv.Args[0]) : AType.Unknown;
             case "values":

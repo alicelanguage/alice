@@ -83,7 +83,9 @@ public sealed partial class Parser
             if (IsOp("-") && Peek(1) is { Kind: "int" or "float", Space: false } num && !(Peek(2).Kind == "op" && Peek(2).Text == "**"))
             {
                 Next();
-                num.Text = "-" + num.Text;
+                // the token is merged in place; a re-parse of the same tokens (one rescue body per `rescue A, B`) sees
+                // it merged already
+                if (!num.Text.StartsWith("-")) num.Text = "-" + num.Text;
                 return Power();
             }
             string op = Next().Text;
@@ -264,7 +266,7 @@ public sealed partial class Parser
             case "regex":
                 return true;
             case "id":
-                return c.Text == "not" || c.Text == "nil" || c.Text == "true" || c.Text == "false" || c.Text == "self" || !IsKeyword(c.Text);
+                return c.Text == "not" || c.Text == "await" || c.Text == "nil" || c.Text == "true" || c.Text == "false" || c.Text == "self" || !IsKeyword(c.Text);
             case "op":
                 if (c.Text == "->" || c.Text == "(" || c.Text == "[" || c.Text == "!") return true;
                 if (c.Text == "-" || c.Text == "*" || c.Text == "&") return !Peek(1).Space;

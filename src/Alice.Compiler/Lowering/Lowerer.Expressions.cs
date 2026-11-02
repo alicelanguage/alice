@@ -52,6 +52,12 @@ public sealed partial class Lowerer
                     }
                     return new MNew { TypeCs = ne.Type.Cs == "var" ? ne.TypeRef.Name : ne.Type.Cs, Args = args };
                 }
+            case IndexExpr { Slice: "range", Args: [{ Value: RangeExpr sr }] } si:   // `xs[1..]`, `s[1..3]`
+                return new MCall { Target = AirTypeRef.Prelude(), Name = "slice_range", Args = { Expr(si.Target), Expr(sr.A), Expr(sr.B), AirConst.Bool(sr.Excl) } };
+            case IndexExpr { Slice: "len" } sl:   // `s[1, 3]`
+                return new MCall { Target = AirTypeRef.Prelude(), Name = "slice_len", Args = { Expr(sl.Target), Expr(sl.Args[0].Value!), Expr(sl.Args[1].Value!) } };
+            case IndexExpr { FromEnd: > 0 } fe:   // `xs[-1]`
+                return new MIndex { Target = Expr(fe.Target), Args = { new MBinary { Op = AirBinOp.Sub, L = new MMember { Target = Expr(fe.Target), Name = fe.Target.Type.Kind == "array" || fe.Target.Type.IsString ? "Length" : "Count" }, R = AirConst.Int(fe.FromEnd) } } };
             case IndexExpr ix when TryFlatIndex(ix) is MExpr flat:
                 return flat;
             case IndexExpr { TupleElement: { } el } te:
