@@ -513,6 +513,68 @@ puts Shape::Rect(1.0, 2.0) == Shape::Rect(1.0, 2.0)   # true
 
 Variants are constructed with `Type::Variant(args)` (lowered to sealed nested records). `Type(args)` also constructs ordinary classes and records (`Point(1, 2)` is `Point.new(1, 2)`); with type arguments it names a generic type (`List(Int32).new`).
 
+#### `affine enum`: sum types in an arena (ADR 0037)
+
+A sum type whose payload fields are all unmanaged (numbers, `Bool`, `Char`, plain enums, records of those) or other
+such sum types (recursion allowed) is **arena-eligible**: the compiler can keep its values in a per-type struct arena
+instead of one GC object per node. A variant with no fields or one field of at most 32 bits (`Leaf(v : UInt32)`,
+`Emp`) is **packed** into the 64-bit term itself and never allocates.
+
+The proof is whole-program and silent. Every value must be used **affinely**: consumed by one `case`, passed once to
+an Alice method, returned, assigned, or built into another node. Per `case` arm the compiler decides:
+
+| Decision | When | Effect |
+|---|---|---|
+| Take | the scrutinee is owned, not used again on any path from the arm, and the arm has no guard | fields are read, the node is freed |
+| Borrow | the scrutinee is used later on some path, or it is a `borrow` parameter | fields are read in place; they stay borrowed until the scrutinee dies, when its slot is dropped and the fields own their nodes |
+| Keep | `affine enum` only: the value was moved into a call, node or local and is read again | Bend 2's counted redirect: the receiver and the local each hold a count; the local's last read releases its count |
+
+A local that holds a packed value is copied, not moved, so `Tree::Node(leaf, leaf)` is fine. A `borrow p`
+parameter (ADR 0017) only reads: its `case` arms Borrow and the caller keeps ownership.
+
+Any escape **demotes the type** to sealed records everywhere in the program: storing a value in a field, a
+collection, a nullable (`Tree?`) or a generic type; capturing it in a block or lambda; passing it to .NET (`puts t`);
+`==`, `hash`, `to_s` or string interpolation; using it in `rescue`/`ensure`; or using it after it was moved. The
+program still runs, at record speed. `affine enum` makes the same sites compile errors:
+
+```crystal
+affine enum Tree               # arena form, or a compile error
+  Leaf(v : UInt32)
+  Node(l : Tree, r : Tree)
+end
+
+def total(t : Tree) : UInt32
+  case t                       # Take: t is not used again, its node is freed
+  when Tree::Leaf(v) then v
+  when Tree::Node(l, r) then total(l) &+ total(r)
+  end
+end
+
+def size(borrow t : Tree) : UInt32
+  case t                       # Borrow: the caller still owns t
+  when Tree::Leaf(v) then 1_u32
+  when Tree::Node(l, r) then size(l) &+ size(r)
+  end
+end
+
+t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))
+n = size(t)                    # lends t
+puts total(t) &+ n             # consumes t
+```
+
+| Code | Under `affine enum` |
+|---|---|
+| AL0240 | a payload field is a reference type that is not an affine enum (`A(s : String)`) |
+| AL0241 | an affine value escapes (the list above) |
+| AL0242 | an affine value is used after a `case` consumed it or it was moved into a call (`total(t)` twice); a read after a move is a Keep instead |
+| AL0243 | a `borrow` parameter, or a field read from it, is consumed |
+
+Calls move their arguments unless the parameter is `borrow` (there is no interprocedural borrow inference yet), so a
+value read twice needs `borrow` on the reading callee. The pass only records facts for now: the arena lowering is
+`Lowering/Lowerer.Affine.cs` (ADR 0040), and the emitted C# is the same with or without `affine`. Until that lowering
+lands, the ADR 0016 check still rejects a `case` on a `borrow` parameter (AL0213), so `size` above does not compile yet. `affine` is a
+modifier only in front of `enum`; it stays an ordinary name elsewhere.
+
 ### Modules
 
 ```crystal

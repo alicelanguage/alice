@@ -55,6 +55,7 @@ public sealed class EnumDecl : Item
     public List<string> Names = new();
     public List<Expr?> Values = new();
     public List<List<Param>?> Fields = new();   // sum type: Circle(r : Float64); null for unit variants
+    public bool Affine;                          // `affine enum T`: arena form or a compile error (ADR 0037)
     public bool IsAdt => Fields.Any(f => f != null);
 }
 

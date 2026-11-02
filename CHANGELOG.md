@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Affine arena analysis (ADR 0037, P1.2): `Semantics/Binder/Binder.Affine.cs` + `Binder.Affine.Flow.cs` decide per sum type arena vs records (payload rule, packing of 0-field and <=32-bit variants, slot layout), per `case` arm Take/Borrow/Keep, per use Move/Keep/BorrowArg and Drops, over a CFG with liveness and move states; any escape (field, collection, nullable, block, .NET call, `==`/`hash`/`to_s`, `rescue`) or use after move demotes the type to records whole-program. `affine enum` (new modifier) makes those sites AL0240-AL0243 (now live in docs/errors.md; docs/language.md `affine enum`). Facts only (`binder.Affine`), no lowering change: emitted C# is unchanged. Tests `tests/Alice.Tests/Compiler/AffineTests.cs` (bend2 ports: tree-radix Arr/Map, tree-bitonic Tree, merkle Path arena; tree-matmul Mat/Vec, merkle Mt, symreg Expr demote on reuse after a move).
 - Book compiler issues (/work/reports/book-compiler-issues.md), tests in `tests/Alice.Tests/Compiler/BookIssuesTests.cs`:
   - Syntax: `puts await f(x)` (`await` starts a command argument); `^name` pins inside array patterns, also of a name
     bound earlier in the pattern (`in [a, ^a]`); `rescue A, B => e` no longer emits `--1` in the second catch (a
