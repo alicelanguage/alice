@@ -35,7 +35,7 @@ public class IlLowerTests
     static AirType Alice(string name, string kind) => new AirType.AliceType(new TypeSym { Name = name, Kind = kind, Type = new AType(kind, name) }, []);
 
     static AirLocalRef L(string n, AirType t) => new(n, t);
-    static AirConst K(object? v) => new(v);
+    static MExpr K(object? v) => v == null ? new AirNull() : AirConst.Of(v);
     static MCode C(string text, AirType? t = null) => new(text) { Type = t };
     static MBinary Bin(AirBinOp op, MExpr l, MExpr r, AirType? t = null) => new() { Op = op, L = l, R = r, Type = t };
     static MDecl Decl(string n, string t, MExpr? init = null) => new() { Name = n, TypeCs = t, Init = init };
@@ -64,14 +64,12 @@ public class IlLowerTests
     static string Lowered(List<MStmt> body, IMirPass pass)
     {
         pass.Run(body);
-        new View(csharp: false).Go(body);
         return MirDump.Of(body);
     }
 
     static string Lowered(List<MStmt> body, out IlLowerContext ctx)
     {
         ctx = IlLowering.Run(body);
-        new View(csharp: false).Go(body);
         return MirDump.Of(body);
     }
 
@@ -145,7 +143,7 @@ public class IlLowerTests
             "  while (call MoveNext (local __ile1):global::System.Collections.Generic.IEnumerator<int>):bool\n" +
             "    decl x int = (member Current (local __ile1):global::System.Collections.Generic.IEnumerator<int>):int\n" +
             "finally\n" +
-            "  if (Ne (local __ile1):global::System.Collections.Generic.IEnumerator<int> (const nil):object):bool\n" +
+            "  if (Ne (local __ile1):global::System.Collections.Generic.IEnumerator<int> (null):object):bool\n" +
             "    expr (call Dispose (local __ile1):global::System.Collections.Generic.IEnumerator<int>):void\n", Lowered(body, new ForeachLower()));
     }
 
@@ -213,9 +211,9 @@ public class IlLowerTests
             Out(Interp(["a", "b"], L("s", S))),
         };
         Assert.Equal(
-            "expr (call Append `__o` (call Concat (type string):string `\"<\"`:string (local s):string `\">\"`:string):string)\n" +
+            "expr (call Append `__o` (call Concat (type string) `\"<\"`:string (local s):string `\">\"`:string):string)\n" +
             "expr (call Append `__o` (Coalesce (local s):string? (const \"\"):string):string)\n" +
-            "expr (call Append `__o` (call Concat (type string):string `\"a\"`:string (local s):string `\"b\"`:string):string)\n",
+            "expr (call Append `__o` (call Concat (type string) `\"a\"`:string (local s):string `\"b\"`:string):string)\n",
             Lowered(body, new InterpLower()));
     }
 
@@ -224,12 +222,12 @@ public class IlLowerTests
     {
         var body = new List<MStmt> { Out(Interp(["n=", "!"], L("n", I))) };
         Assert.Equal(
-            "expr (call Append `__o` (call seq _ (lambda ()\n" +
-            "  decl __ilh1 global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler = (new global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler (const 3):int (const 1):int (member InvariantCulture (type global::System.Globalization.CultureInfo):global::System.Globalization.CultureInfo):global::System.Globalization.CultureInfo):global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler\n" +
+            "expr (call Append `__o` (seq\n" +
+            "  decl __ilh1 global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler = (new global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler (const 3):int (const 1):int (member InvariantCulture (type global::System.Globalization.CultureInfo)):global::System.Globalization.CultureInfo):global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler\n" +
             "  expr (call AppendLiteral (local __ilh1):global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler `\"n=\"`:string):void\n" +
             "  expr (call AppendFormatted (local __ilh1):global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler (local n):int):void\n" +
             "  expr (call AppendLiteral (local __ilh1):global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler `\"!\"`:string):void\n" +
-            ") (call ToStringAndClear (local __ilh1):global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler):string))\n",
+            ") (call ToStringAndClear (local __ilh1):global::System.Runtime.CompilerServices.DefaultInterpolatedStringHandler):string):string)\n",
             Lowered(body, new InterpLower()));
     }
 
@@ -280,9 +278,9 @@ public class IlLowerTests
         Assert.Equal("if (is (local o):object string s)\n  expr (call Append `__o` (local s):string)\n", MirDump.Of(body));
         Assert.Equal(
             "decl s string\n" +
-            "if (Ne (call seq _ (lambda ()\n" +
-            "  assign (local s):string = (call as string _ (local o):object)\n" +
-            ") (local s):string) (const nil):object):bool\n" +
+            "if (Ne (seq\n" +
+            "  assign (local s):string = (as string (local o):object):string\n" +
+            ") (local s):string):string (null):object):bool\n" +
             "  expr (call Append `__o` (local s):string)\n", Lowered(body, new PatternTemps()));
     }
 
@@ -293,9 +291,9 @@ public class IlLowerTests
         Assert.Equal(
             "block\n" +
             "  decl n int\n" +
-            "  while (And (is (local o):object int):bool (call seq _ (lambda ()\n" +
+            "  while (And (is (local o):object int):bool (seq\n" +
             "    assign (local n):int = (cast int (local o):object):int\n" +
-            "  ) (const true):bool)):bool\n" +
+            "  ) (const true):bool):bool):bool\n" +
             "    break\n", Lowered(body, new PatternTemps()));
     }
 
@@ -306,11 +304,11 @@ public class IlLowerTests
         Assert.Equal(
             "decl __ilp1 object\n" +
             "decl p Point\n" +
-            "decl ok bool = (And (is (call seq _ (lambda ()\n" +
+            "decl ok bool = (And (is (seq\n" +
             "  assign (local __ilp1):object = (call Next `Src`):object\n" +
-            ") (local __ilp1):object) Point):bool (call seq _ (lambda ()\n" +
+            ") (local __ilp1):object):object Point):bool (seq\n" +
             "  assign (local p):Point = (cast Point (local __ilp1):object):Point\n" +
-            ") (const true):bool)):bool\n", Lowered(body, new PatternTemps()));
+            ") (const true):bool):bool):bool\n", Lowered(body, new PatternTemps()));
     }
 
     [Fact]
@@ -319,9 +317,9 @@ public class IlLowerTests
         var body = new List<MStmt> { new MExprStmt { E = Bin(AirBinOp.And, new MIs { E = L("a", I), TypeCs = "var x" }, Bin(AirBinOp.Gt, L("x", I), K(1), B), B) } };
         Assert.Equal(
             "decl x int\n" +
-            "expr (And (call seq _ (lambda ()\n" +
+            "expr (And (seq\n" +
             "  assign (local x):int = (local a):int\n" +
-            ") (const true):bool) (Gt (local x):int (const 1):int):bool):bool\n", Lowered(body, new PatternTemps()));
+            ") (const true):bool):bool (Gt (local x):int (const 1):int):bool):bool\n", Lowered(body, new PatternTemps()));
     }
 
     [Fact]
@@ -380,7 +378,7 @@ public class IlLowerTests
             "  try\n" +
             "    expr (call Append `__o` `\"in\"`)\n" +
             "  finally\n" +
-            "    if (Ne (local r):CRes (const nil):object):bool\n" +
+            "    if (Ne (local r):CRes (null):object):bool\n" +
             "      expr (call Dispose (local r):CRes):void\n", Lowered(body, new UsingLockLower()));
     }
 
@@ -405,11 +403,11 @@ public class IlLowerTests
             "  decl __illock1 object = (local gate):object\n" +
             "  decl __iltaken2 bool = (const false):bool\n" +
             "  try\n" +
-            "    expr (call Enter (type global::System.Threading.Monitor):global::System.Threading.Monitor (local __illock1):object (arg \"ref \" (local __iltaken2):bool)):void\n" +
+            "    expr (call Enter (type global::System.Threading.Monitor) (local __illock1):object (arg \"ref \" (local __iltaken2):bool)):void\n" +
             "    expr (call Append `__o` `\"x\"`)\n" +
             "  finally\n" +
             "    if (local __iltaken2):bool\n" +
-            "      expr (call Exit (type global::System.Threading.Monitor):global::System.Threading.Monitor (local __illock1):object):void\n", Lowered(body, new UsingLockLower()));
+            "      expr (call Exit (type global::System.Threading.Monitor) (local __illock1):object):void\n", Lowered(body, new UsingLockLower()));
     }
 
     [Fact]
@@ -470,13 +468,17 @@ public class IlLowerTests
     {
         var body = new List<MStmt> { Chain(() => L("i", I), [([0, 1], Arm("a")), ([2], Arm("b")), ([4], Arm("c")), ([5, 1], Arm("d"))], Arm("-")) };
         Assert.Equal(
-            "block\n" +
-            "  expr (call switch _ (local i):int `min 0` `table [0, 0, 1, -1, 2, 3]`)\n" +
-            "  if `case 0`\n    expr (call Append `__o` `\"a\"`)\n" +
-            "  if `case 1`\n    expr (call Append `__o` `\"b\"`)\n" +
-            "  if `case 2`\n    expr (call Append `__o` `\"c\"`)\n" +
-            "  if `case 3`\n    expr (call Append `__o` `\"d\"`)\n" +
-            "  if `default`\n    expr (call Append `__o` `\"-\"`)\n", Lowered(body, new SwitchLower()));
+            "switch (local i):int min 0 table [0, 0, 1, -1, 2, 3]\n" +
+            "case 0\n" +
+            "  expr (call Append `__o` `\"a\"`)\n" +
+            "case 1\n" +
+            "  expr (call Append `__o` `\"b\"`)\n" +
+            "case 2\n" +
+            "  expr (call Append `__o` `\"c\"`)\n" +
+            "case 3\n" +
+            "  expr (call Append `__o` `\"d\"`)\n" +
+            "default\n" +
+            "  expr (call Append `__o` `\"-\"`)\n", Lowered(body, new SwitchLower()));
     }
 
     [Fact]
@@ -495,8 +497,17 @@ public class IlLowerTests
         var head = Chain(() => L("c", Ch), [(['a'], Arm("a")), (['b'], Arm("b")), (['c'], Arm("c"))], [guard]);
         var body = new List<MStmt> { head };
         string dump = Lowered(body, new SwitchLower());
-        Assert.StartsWith("block\n  expr (call switch _ (local c):char `min 97` `table [0, 1, 2]`)\n", dump);
-        Assert.EndsWith("  if `default`\n    if (Gt (local c):char (const 'x'):char):bool\n      expr (call Append `__o` `\"big\"`)\n", dump);
+        Assert.Equal(
+            "switch (local c):char min 97 table [0, 1, 2]\n" +
+            "case 0\n" +
+            "  expr (call Append `__o` `\"a\"`)\n" +
+            "case 1\n" +
+            "  expr (call Append `__o` `\"b\"`)\n" +
+            "case 2\n" +
+            "  expr (call Append `__o` `\"c\"`)\n" +
+            "default\n" +
+            "  if (Gt (local c):char (const 'x'):char):bool\n" +
+            "    expr (call Append `__o` `\"big\"`)\n", dump);
     }
 
     [Fact]
@@ -504,23 +515,36 @@ public class IlLowerTests
     {
         var body = new List<MStmt> { Chain(() => L("s", NS), [(["apple"], Arm("1")), (["kiwi"], Arm("2")), (["fig"], Arm("3")), (["pear", "plum"], Arm("4"))], Arm("-")) };
         string dump = Lowered(body, new SwitchLower());
-        Assert.StartsWith(
+        Assert.Equal(
             "decl __ilarm1 int = (const -1):int\n" +
-            "if (Ne (local s):string? (const nil):object):bool\n" +
-            "  block\n" +
-            "    expr (call switch _ (member Length (local s):string?):int `min 3` `table [0, 1, 2]`)\n" +
-            "    if `case 0`\n" +
-            "      if (call Equals (type string):string (local s):string? (const \"fig\"):string):bool\n" +
-            "        assign (local __ilarm1):int = (const 2):int\n" +
-            "    if `case 1`\n" +
-            "      if (call Equals (type string):string (local s):string? (const \"kiwi\"):string):bool\n" +
-            "        assign (local __ilarm1):int = (const 1):int\n" +
+            "if (Ne (local s):string? (null):object):bool\n" +
+            "  switch (member Length (local s):string?):int min 3 table [0, 1, 2]\n" +
+            "  case 0\n" +
+            "    if (call Equals (type string) (local s):string? (const \"fig\"):string):bool\n" +
+            "      assign (local __ilarm1):int = (const 2):int\n" +
+            "  case 1\n" +
+            "    if (call Equals (type string) (local s):string? (const \"kiwi\"):string):bool\n" +
+            "      assign (local __ilarm1):int = (const 1):int\n" +
+            "    else\n" +
+            "      if (call Equals (type string) (local s):string? (const \"pear\"):string):bool\n" +
+            "        assign (local __ilarm1):int = (const 3):int\n" +
             "      else\n" +
-            "        if (call Equals (type string):string (local s):string? (const \"pear\"):string):bool\n", dump);
-        Assert.EndsWith("  expr (call switch _ (local __ilarm1):int `min 0` `table [0, 1, 2, 3]`)\n" +
-            "  if `case 0`\n    expr (call Append `__o` `\"1\"`)\n  if `case 1`\n    expr (call Append `__o` `\"2\"`)\n" +
-            "  if `case 2`\n    expr (call Append `__o` `\"3\"`)\n  if `case 3`\n    expr (call Append `__o` `\"4\"`)\n" +
-            "  if `default`\n    expr (call Append `__o` `\"-\"`)\n", dump);
+            "        if (call Equals (type string) (local s):string? (const \"plum\"):string):bool\n" +
+            "          assign (local __ilarm1):int = (const 3):int\n" +
+            "  case 2\n" +
+            "    if (call Equals (type string) (local s):string? (const \"apple\"):string):bool\n" +
+            "      assign (local __ilarm1):int = (const 0):int\n" +
+            "switch (local __ilarm1):int min 0 table [0, 1, 2, 3]\n" +
+            "case 0\n" +
+            "  expr (call Append `__o` `\"1\"`)\n" +
+            "case 1\n" +
+            "  expr (call Append `__o` `\"2\"`)\n" +
+            "case 2\n" +
+            "  expr (call Append `__o` `\"3\"`)\n" +
+            "case 3\n" +
+            "  expr (call Append `__o` `\"4\"`)\n" +
+            "default\n" +
+            "  expr (call Append `__o` `\"-\"`)\n", dump);
         Assert.DoesNotContain("GetHashCode", dump);
     }
 
@@ -537,7 +561,7 @@ public class IlLowerTests
         };
         string dump = Lowered(body, out var ctx);
         Assert.Empty(ctx.Unsupported);
-        Assert.Contains("assign (local s):string = (call as string _ (local o):object)", dump);
+        Assert.Contains("assign (local s):string = (as string (local o):object)", dump);
         Assert.StartsWith("decl n int\nif (And (is (local o):object int):bool", dump);
         Assert.Contains("  decl s string\n", dump);
         Assert.DoesNotContain("object int n", dump);
@@ -651,9 +675,7 @@ public class IlLowerTests
     {
         var body = new List<MStmt> { Out(Bin(AirBinOp.Add, L("a", NI), L("b", NI), NI)) };
         Assert.Equal(
-            "expr (call Append `__o` (cond (BitAnd (member HasValue (local a):int?):bool (member HasValue (local b):int?):bool):bool " +
-            "(new global::System.Nullable<int> (Add (call GetValueOrDefault (local a):int?):int (call GetValueOrDefault (local b):int?):int):int):int? " +
-            "(default int?):int?):int?)\n", Lowered(body, new NullableLift()));
+            "expr (call Append `__o` (cond (BitAnd (member HasValue (local a):int?):bool (member HasValue (local b):int?):bool):bool (new global::System.Nullable<int> (Add (call GetValueOrDefault (local a):int?):int (call GetValueOrDefault (local b):int?):int):int):int? (default):int?):int?)\n", Lowered(body, new NullableLift()));
     }
 
     [Fact]
@@ -661,9 +683,9 @@ public class IlLowerTests
     {
         var body = new List<MStmt> { Out(Bin(AirBinOp.Lt, L("a", NI), new MCall { Target = C("N"), Name = "Three", Type = I }, B)) };
         Assert.Equal(
-            "expr (call Append `__o` (call seq _ (lambda ()\n" +
+            "expr (call Append `__o` (seq\n" +
             "  decl __iln1 int = (call Three `N`):int\n" +
-            ") (BitAnd (Lt (call GetValueOrDefault (local a):int?):int (local __iln1):int):bool (member HasValue (local a):int?):bool):bool))\n",
+            ") (BitAnd (Lt (call GetValueOrDefault (local a):int?):int (local __iln1):int):bool (member HasValue (local a):int?):bool):bool):bool)\n",
             Lowered(body, new NullableLift()));
     }
 
@@ -681,7 +703,7 @@ public class IlLowerTests
             "expr (call Append `__o` (Not (member HasValue (local a):int?):bool):bool)\n" +
             "expr (call Append `__o` (member HasValue (local a):int?):bool)\n" +
             "expr (call Append `__o` (call GetValueOrDefault (local a):int? (const 7):int):int)\n" +
-            "expr (call Append `__o` (cond (member HasValue (local a):int?):bool (new global::System.Nullable<int> (Neg (call GetValueOrDefault (local a):int?):int):int):int? (default int?):int?):int?)\n",
+            "expr (call Append `__o` (cond (member HasValue (local a):int?):bool (new global::System.Nullable<int> (Neg (call GetValueOrDefault (local a):int?):int):int):int? (default):int?):int?)\n",
             Lowered(body, new NullableLift()));
     }
 
@@ -792,7 +814,7 @@ public class IlLowerTests
         string dump = MirDump.Of(lowered);
         foreach (var gone in new[] { "foreach", "using", "(interp", "(tuple", "deconstruct", " lock " })
             Assert.DoesNotContain(gone, dump);
-        new View(csharp: true).Go(lowered);
+        new CSharpView().Go(lowered);
         Assert.Equal(before, RunCs(lowered, extra));
     }
 
@@ -815,11 +837,10 @@ public class IlLowerTests
     }
 
     /// <summary>
-    /// Test view of the IL-only helper nodes: as standard nodes MirDump prints (`csharp: false`), or as C# the
-    /// Printer prints with the same meaning (`csharp: true`: a block expression is an immediately invoked lambda,
-    /// a jump table an if chain over its slots, declarations without a value start at default).
+    /// The IL-only helper nodes as C# the Printer prints with the same meaning: a block expression is an
+    /// immediately invoked lambda, a jump table an if chain over its slots, declarations without a value start at default.
     /// </summary>
-    sealed class View(bool csharp) : MirRewriter
+    sealed class CSharpView : MirRewriter
     {
         public void Go(List<MStmt> body)
         {
@@ -830,7 +851,7 @@ public class IlLowerTests
         protected override void Visit(MStmt s)
         {
             foreach (var b in Lists(s)) Fix(b);
-            if (csharp && s is MDecl { Init: null, TypeCs: { } t } d) d.Init = new AirDefault { TypeCs = t };
+            if (s is MDecl { Init: null, TypeCs: { } t } d) d.Init = new MCode("default(" + t + ")");
         }
 
         static IEnumerable<List<MStmt>> Lists(MStmt s) => s switch
@@ -856,13 +877,6 @@ public class IlLowerTests
             sw.Value = Expr(sw.Value);
             foreach (var c in sw.Cases) Go(c);
             if (sw.Default != null) Go(sw.Default);
-            if (!csharp)
-            {
-                var block = new MBlock { Body = { new MExprStmt { E = new MCall { Name = "switch", Args = { sw.Value, new MCode("min " + sw.Min), new MCode("table [" + string.Join(", ", sw.Table) + "]") } } } } };
-                for (int c = 0; c < sw.Cases.Count; c++) block.Body.Add(new MIf { Cond = new MCode("case " + c), Then = sw.Cases[c] });
-                if (sw.Default != null) block.Body.Add(new MIf { Cond = new MCode("default"), Then = sw.Default });
-                return block;
-            }
             string v = Printer.E(sw.Value);
             MIf? head = null, last = null;
             for (int c = 0; c < sw.Cases.Count; c++)
@@ -884,12 +898,10 @@ public class IlLowerTests
                 case AirSeq q:
                     Go(q.Pre);
                     q.Value = Expr(q.Value);
-                    return csharp
-                        ? new MInvoke { Target = new MCast { TypeCs = $"global::System.Func<{q.Type!.ToCs()}>", E = new MLambda { Body = [.. q.Pre, new MReturn { Value = q.Value }] } } }
-                        : new MCall { Name = "seq", Args = { new MLambda { Body = q.Pre }, q.Value } };
+                    return new MInvoke { Target = new MCast { TypeCs = $"global::System.Func<{q.Type!.ToCs()}>", E = new MLambda { Body = [.. q.Pre, new MReturn { Value = q.Value }] } } };
                 case AirAs a:
                     a.E = Expr(a.E);
-                    return csharp ? new MCode("(" + Printer.E(a.E) + " as " + a.TypeCs + ")") : new MCall { Name = "as " + a.TypeCs, Args = { a.E } };
+                    return new MCode("(" + Printer.E(a.E) + " as " + a.TypeCs + ")");
                 case MLambda { Body: { } b }:
                     Fix(b);
                     break;

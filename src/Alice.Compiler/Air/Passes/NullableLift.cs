@@ -22,7 +22,7 @@ public sealed class NullableLift(IlLowerContext? ctx = null) : IlPass(ctx)
         _ => e,
     };
 
-    static bool IsNull(MExpr e) => e is AirConst { Value: null } || e is MCode { Text: "null" };
+    static bool IsNull(MExpr e) => e is AirNull or MCode { Text: "null" };
 
     /// <summary>An operand read: the operand itself when it is simple, else a temp assigned in evaluation order.</summary>
     sealed class Operands(IlLowerContext ctx)
@@ -31,7 +31,7 @@ public sealed class NullableLift(IlLowerContext? ctx = null) : IlPass(ctx)
 
         public Func<MExpr> Bind(MExpr e)
         {
-            if (IsSimple(e)) return () => Copy(e);
+            if (IsSimple(e)) return () => Reread(e);
             string t = ctx.Temp("n");
             var ty = e.Type!;
             Pre.Add(Decl(t, ty, e));
@@ -41,13 +41,6 @@ public sealed class NullableLift(IlLowerContext? ctx = null) : IlPass(ctx)
         public MExpr Wrap(MExpr value) => Pre.Count == 0 ? value : new AirSeq { Pre = Pre, Value = value, Type = value.Type };
     }
 
-    static MExpr Copy(MExpr e) => e switch
-    {
-        AirLocalRef l => new AirLocalRef(l.Name, l.Type),
-        AirConst k => new AirConst(k.Value, k.Type),
-        MCode c => new MCode(c.Text) { Type = c.Type },
-        _ => e,
-    };
 
     static AirType Under(AirType t) => t with { Nullable = false };
 
@@ -62,7 +55,7 @@ public sealed class NullableLift(IlLowerContext? ctx = null) : IlPass(ctx)
         {
             C = has,
             A = new MNew { TypeCs = $"global::System.Nullable<{under.ToCs()}>", Args = [value], Type = under with { Nullable = true } },
-            B = new AirDefault { TypeCs = under.ToCs() + "?", Type = under with { Nullable = true } },
+            B = new AirDefault(under with { Nullable = true }),
             Type = under with { Nullable = true },
         };
 

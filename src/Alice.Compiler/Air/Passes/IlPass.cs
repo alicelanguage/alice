@@ -168,7 +168,22 @@ public abstract class IlPass : MirRewriter, IMirPass
     protected static bool IsIdent(string s) => Ident.IsMatch(s) && s is not ("true" or "false" or "null" or "this" or "base" or "default");
 
     /// <summary>Reading it twice has no effect and gives the same value: locals, parameters, literals.</summary>
-    protected static bool IsSimple(MExpr e) => e is AirLocalRef or AirConst || e is MCode c && (IsIdent(c.Text) || IlTypes.IntLiteral(c.Text) != null);
+    protected static bool IsSimple(MExpr e) =>
+        e is AirLocalRef { Narrowed: false } or AirParamRef or AirConst or AirNull || e.GetType() == typeof(MCode) && e is MCode c && (IsIdent(c.Text) || IlTypes.IntLiteral(c.Text) != null);
+
+    /// <summary>A second read of a simple expression: a fresh node, so the tree never shares one.</summary>
+    protected static MExpr Reread(MExpr e) => e switch
+    {
+        AirLocalRef l => new AirLocalRef(l.Name, l.Type, l.Narrowed),
+        AirParamRef p => new AirParamRef(p.Name, p.Type),
+        AirConst k => new AirConst(k.Kind, k.Literal, k.Type),
+        AirNull => new AirNull(),
+        MCode c when c.GetType() == typeof(MCode) => new MCode(c.Text) { Type = c.Type },
+        _ => e,
+    };
+
+    /// <summary>A literal: `nil` for null, else int, long, bool, char or string.</summary>
+    protected static MExpr Const(object? v) => v == null ? new AirNull() : AirConst.Of(v);
 }
 
 /// <summary>Type facts the lowering passes need, from <see cref="AirType"/> and reflection.</summary>
@@ -209,10 +224,9 @@ public static class IlTypes
     /// <summary>The value of an integer or char literal (AirConst or C# text), null otherwise.</summary>
     public static long? IntLiteral(MExpr e) => e switch
     {
-        AirConst { Value: int i } => i,
-        AirConst { Value: long l } => l,
-        AirConst { Value: char c } => c,
-        MCode c => IntLiteral(c.Text),
+        AirConst { Kind: AirConstKind.Int or AirConstKind.Char } k => IntLiteral(k.Literal),
+        AirConst => null,
+        MCode c when c.GetType() == typeof(MCode) => IntLiteral(c.Text),
         _ => null,
     };
 
@@ -226,8 +240,8 @@ public static class IlTypes
     /// <summary>The value of a string literal without escapes (AirConst or C# text), null otherwise.</summary>
     public static string? StringLiteral(MExpr e) => e switch
     {
-        AirConst { Value: string s } => s,
-        MCode { Text: ['"', .. var body, '"'] } when !body.Contains('\\') && !body.Contains('"') => body,
+        AirConst { Kind: AirConstKind.String, Literal: var lit } when !lit.Contains('\\') => lit,
+        MCode { Text: ['"', .. var body, '"'] } c when c.GetType() == typeof(MCode) && !body.Contains('\\') && !body.Contains('"') => body,
         _ => null,
     };
 

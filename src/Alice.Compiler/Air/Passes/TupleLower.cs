@@ -10,7 +10,7 @@ namespace Alice.Compiler.Air.Passes;
 /// (all values are evaluated before any target is written, so `(a, b) = (b, a)` swaps) or calls the type's
 /// `Deconstruct(out ...)`; tuple syntax in local types is spelled as ValueTuple, and the element names of every such
 /// local are recorded in <see cref="IlLowerContext.TupleLocalNames"/> for the PDB / TupleElementNames attribute (casts,
-/// allocations, defaults and type tests are respelled too, without names).
+/// allocations and type tests are respelled too, without names).
 /// </summary>
 public sealed class TupleLower(IlLowerContext? ctx = null) : IlPass(ctx)
 {
@@ -56,7 +56,6 @@ public sealed class TupleLower(IlLowerContext? ctx = null) : IlPass(ctx)
             case MCast c: c.TypeCs = Spell(c.TypeCs); break;
             case MNew n: n.TypeCs = Spell(n.TypeCs); break;
             case MNewArray a: a.ElemCs = Spell(a.ElemCs); break;
-            case AirDefault { TypeCs: { } dt } d: d.TypeCs = Spell(dt); break;
             case MIs i: i.TypeCs = Spell(i.TypeCs); break;
             case AirAs a: a.TypeCs = Spell(a.TypeCs); break;
         }
