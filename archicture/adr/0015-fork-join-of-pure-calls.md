@@ -28,3 +28,8 @@ a closure on its sequential path.
 
 Unlike BendRT, the .NET pool still steals work, so unequal splits are tolerated;
 Alice keeps the GC and adds no ownership rules.
+
+IL lowering (ADR 0040, section 1): under the IL backend a fork is one boxed struct frame (an `IThreadPoolWorkItem`
+holding the arguments, result and join state) with a direct call to the method, no closure and no delegate; the right
+branch is a plain call; `Par.Forkable` is two loads and a branch; self tail calls in the `__serial` clone become a loop
+and other legal tail calls get `tail.`.

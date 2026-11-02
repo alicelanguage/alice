@@ -20,6 +20,7 @@ public class LangNeedsTests
         { "hash default block that stores", "h = Hash(String, Int32).new { |hh, k| hh[k] = 7 }\nputs h[\"x\"]\nputs h.size\n", "7\n1" },
         { "hash capacity", "h = Hash(String, Int32).new(capacity: 16)\nh[\"a\"] = 1\nputs h.size\n", "1" },
         { "hash default in a field", "class Counter\n  def initialize\n    @counts = Hash(String, Int32).new(0)\n  end\n  def add(w : String)\n    @counts[w] += 1\n  end\n  def get(w : String) : Int32\n    @counts[w]\n  end\nend\nc = Counter.new\nc.add(\"x\")\nc.add(\"x\")\nputs c.get(\"x\")\nputs c.get(\"y\")\n", "2\n0" },
+        { "hash default through a declared field and parameter", "class Store\n  property counts : Hash(String, Int32)\n  def initialize\n    @counts = Hash(String, Int32).new(0)\n  end\n  def bump(w : String)\n    @counts[w] += 1\n  end\nend\ndef tally(h : Hash(String, Int32), w : String) : Int32\n  h[w] += 1\n  h[w]\nend\ndef peek(h : Hash(String, Int32)) : Int32\n  h[\"q\"]\nend\ns = Store.new\ns.bump(\"a\")\nputs s.counts[\"a\"]\nputs s.counts[\"zz\"]\nputs tally(Hash(String, Int32).new(0), \"q\")\nputs peek({\"q\" => 5})\n", "1\n0\n1\n5" },
         // 2. result types
         { "to_i? is Int32?", "puts \"x\".to_i?.nil?\nputs \"12\".to_i?.not_nil! + 1\nputs \"2.5\".to_f?.not_nil! * 2.0\n", "true\n13\n5.0" },
         { "match is MatchData?", "m = \"abc\".match(/b/)\nif m\n  puts \"yes\"\nend\nputs \"abc\".match(/z/).nil?\n", "yes\ntrue" },

@@ -17,19 +17,19 @@ if [[ "${1:-}" == build ]]; then
 fi
 
 mkdir -p results
-ONE="taskset -c 2"
+ONE="taskset -c ${SERIAL_CPUS:-14,30}"   # one physical core, both hyperthreads
 for w in "${WORK[@]}"; do
   set -- $w; name=$1; n=$2
   hyperfine -N -w 1 -r "$RUNS" --export-json "results/$name.json" \
     -n "bend/1"    "$ONE bend/$name $n +RTS --threads 1" \
     -n "bend/12"   "bend/$name $n" \
-    -n "alice/1"   "$ONE env DOTNET_PROCESSOR_COUNT=1 dotnet alice/out/bench.dll $name $n" \
+    -n "alice/1"   "$ONE env ALICE_PAR=0 dotnet alice/out/bench.dll $name $n" \
     -n "alice/12"  "dotnet alice/out/bench.dll $name $n" \
     -n "c/1"       "$ONE c/bench_serial $name $n" \
     -n "c/12"      "c/bench_omp $name $n" \
     -n "rust/1"    "$ONE rust/target/release/bench $name $n" \
     -n "rust/12"   "env PAR=1 rust/target/release/bench $name $n" \
-    -n "csharp/1"  "$ONE env PAR=0 DOTNET_PROCESSOR_COUNT=1 dotnet csharp/out/Bench.dll $name $n" \
+    -n "csharp/1"  "$ONE env PAR=0 dotnet csharp/out/Bench.dll $name $n" \
     -n "csharp/12" "env PAR=1 dotnet csharp/out/Bench.dll $name $n" >/dev/null
   echo "done $name" >&2
 done
@@ -42,10 +42,10 @@ hyperfine -N -w 1 -r "$RUNS" --export-json results/startup.json \
 for w in "${WORK[@]}"; do
   set -- $w; name=$1; n=$2
   for cfg in "bend/1|$ONE bend/$name $n +RTS --threads 1" "bend/12|bend/$name $n" \
-             "alice/1|$ONE env DOTNET_PROCESSOR_COUNT=1 dotnet alice/out/bench.dll $name $n" "alice/12|dotnet alice/out/bench.dll $name $n" \
+             "alice/1|$ONE env ALICE_PAR=0 dotnet alice/out/bench.dll $name $n" "alice/12|dotnet alice/out/bench.dll $name $n" \
              "c/1|$ONE c/bench_serial $name $n" "c/12|c/bench_omp $name $n" \
              "rust/1|$ONE rust/target/release/bench $name $n" "rust/12|env PAR=1 rust/target/release/bench $name $n" \
-             "csharp/1|$ONE env PAR=0 DOTNET_PROCESSOR_COUNT=1 dotnet csharp/out/Bench.dll $name $n" "csharp/12|env PAR=1 dotnet csharp/out/Bench.dll $name $n"; do
+             "csharp/1|$ONE env PAR=0 dotnet csharp/out/Bench.dll $name $n" "csharp/12|env PAR=1 dotnet csharp/out/Bench.dll $name $n"; do
     kb=$( { /usr/bin/time -f "%M" ${cfg#*|} >/dev/null; } 2>&1 | tail -1 )
     printf "%s\t%s\t%s\n" "$name" "${cfg%%|*}" "$kb" >> results/rss.tsv
   done

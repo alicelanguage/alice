@@ -9,7 +9,6 @@ public sealed partial class Printer
 
     static bool AtomicVector(MExpr e) => e switch
     {
-        AirLeafStandIn l => l.Text is not ['-', ..],   // as MCode (TODO merge: delete with the stand-ins)
         AirVectorOp v => v.Op != AirVecOp.Neg,
         AirVectorLoad or AirVectorStore => true,
         AirVectorReduce r => r.CastTo == null,
@@ -20,7 +19,6 @@ public sealed partial class Printer
     {
         switch (e)
         {
-            case AirLeafStandIn l: return l.Text;   // TODO merge: delete with the stand-ins
             case AirVectorOp v: return VecOp(v);
             case AirVectorLoad ld:
                 return $"{Api(ld.Vec)}.LoadUnsafe(ref {MemoryMarshal}.GetArrayDataReference({E(ld.Array)}), (nuint){E(ld.Index)})";

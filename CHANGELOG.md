@@ -6,7 +6,17 @@
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is
   byte-identical on the corpus.
+- Docs: ADR 0040 (paradigms in IL, accepted as direction): how AirToIl lowers fork/join, affine arenas, CM primitives and dataflow, with the AirVerifier rules they add; IL-lowering paragraphs in ADRs 0015, 0037, 0038, 0039.
 - Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
+- AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
+  build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,
+  `AirForkable`, `AirRent`, `AirRelease`, `AirLength`, `AirTripCount`, `AirOffset`, `AirPresizeCount` in
+  `Mir/MExpr.Parallel.cs`; leaves via `AirLeaf`), with C# printing and `--air` dump forms. Emitted C# is byte-identical
+  on the corpus.
+- IL backend infrastructure (backend plan D1.2, ADR 0033): `Backend/Il/` emits assemblies and portable PDBs directly with
+  System.Reflection.Metadata: `IlModule` facade, `IlBuilder` (labels, named/pinned locals, scopes, EH regions, max-stack,
+  short branches, prefixes, sequence points, peepholes), signature encoders, metadata writer with ref-pack AssemblyRefs
+  and deterministic MVID, PDB with Source Link and embedded sources. Not wired to the compiler yet (`AirToIl` is D1.4).
 - AIR foundation (backend plan D0.2/D0.3): MIR nodes gain an optional typed `AirType Type` and source `Span`
   (`MStmt.Line` reads the span's line when one is set). `AirType` is a closed sum (Prim, ClrRef, AliceType,
   TypeParam, Array, ByRef, Pointer, FnPtr, Tuple, Unknown, plus a nullable bit) whose `ToCs()` spells exactly what
@@ -14,9 +24,23 @@
   `AirUnOp`, `await` is `AirUnOp.Await`) with a `Checked` flag, cleared inside compiler-made `unchecked(...)`.
   Emitted C# is byte-identical on the corpus (`tools/emit-corpus.sh`, reused by later AIR work). Hidden
   `alice emit --air <file>` prints the MIR text dump (`MirDump`) for tests.
+- AIR typed leaves (backend plan D0.4, batch 1): `Lowerer.Expressions/Statements/Calls` no longer build opaque
+  `MCode` text; they build `AirConst`, `AirNull`, `AirThis`, `AirBase`, `AirLocalRef`, `AirParamRef`, `AirFieldRef`,
+  `AirArrayLength`, `AirTypeRef`, `AirMethodGroup`, `AirDefault`, `AirTypeOf`, `AirSizeOf`, `AirDiscard`,
+  `AirYieldBreak` and `AirName` (`Mir/MExpr.Core.cs`) with the binder's type and source span where the HIR has them.
+  They derive from `MCode` until the passes are ported (D0.9), and `alice emit --air` dumps them by kind; batch 2's
+  stand-in leaves are merged into them. Two
+  `AirRawCs` escape hatches remain (event-adapter lambda, `gpu for` reduction value). Emitted C# is byte-identical.
+- AIR MCode removal batch 2 (backend plan D0.5): the allocation-free iterators, stream fusion and idiom rewrites
+  (`Lowerer.Iterators/Fusion/Idioms`) build typed nodes instead of C# text: locals, literals, `default`, static
+  receivers, and `AirRangeLength`, `AirRefOrAddDefault`, `AirRefOrNullRef`, `AirAlternateLookup`, `AirSpanSplit`,
+  `AirStackBuffer`, with air-b4's `AirParGuard` for the parallel gate (Mir/MExpr.Iterators.cs, printed by Printer.Iterators.cs, dumped by
+  MirDump.Iterators.cs). Emitted C# is byte-identical on the corpus; loop starts the optimizer analyses stay its
+  literal form until the optimizer reads AIR leaves.
 - Ruby core behaviour that needed the compiler: `Hash(K, V).new(default)` and `Hash(K, V).new { |h, k| ... }` build an
   `Alice.Runtime.DefaultHash` (missing keys read as the default, `h[k] += 1` counts from it; a block ending in `h[k] = v`
-  returns v), `Hash(K, V).new(capacity: n)` is the capacity; `to_i?`/`to_f?` are `Int32?`/`Float64?`, `match` is
+  returns v; a field or parameter declared `Hash(K, V)` that is only ever given such hashes is typed DefaultHash too),
+  `Hash(K, V).new(capacity: n)` is the capacity; `to_i?`/`to_f?` are `Int32?`/`Float64?`, `match` is
   `MatchData?`, `Hash#delete` is `V?`, `dup`/`clone` keep the receiver's type, multi-key `dig` is the leaf `V?`,
   `max(n)`/`min(n)` are arrays, `each_char`/`reverse_each`/`step` without a block are sequences; `slice_when` blocks
   get two elements; `filter_map` with a nilable value-type result compiles; `t[0]` on tuples and `kv[0]`/`kv[1]` on
@@ -37,6 +61,7 @@
 - Runtime: `Alice.Runtime` dataflow networks (`Dataflow/`, ADR 0038 P3.1): bounded SPSC `Ring<T>`, `Graph` with
   `Source`/`Stage`/`Replicate`/`Sink` on the thread pool (backpressure, completion, first exception rethrown at `Run`),
   ordered or unordered replicated stages, 0 bytes per item; `benchmarks/dataflow` compares it with Task.Run + Channels.
+- Runtime: `Cm` data-parallel primitives (ADR 0039, P2.1/P2.2): inclusive/exclusive scan and reduce for 32/64-bit integers and floats with `+ * & | ^ min max` (AVX-512/AVX2/Vector128 lane-shift tiers), segmented scan/reduce, histogram and scatter-add (private tables merged in fixed order, `Interlocked` for large integer tables), compaction, checked permutation and a stable radix `SortByKey`. Chunking depends on the length only, so float results are bit-identical for any `DOTNET_PROCESSOR_COUNT`. Prelude: `prefix_sum`, `scan { }`, `segmented_sum`, `segmented_prefix_sum`, `histogram`, `compact { }`, `scatter_add`, `permute`, `sort_by_key`. `benchmarks/cm`: prefix_sum of 2^26 Int32 16 GB/s, 64K-bin histogram 6x a serial loop on 32 cores.
 - Security: `alice publish` pushes to NuGet feeds itself over https with the API key in a request header instead of
   a `dotnet nuget push` argument; `--dotnet-push` keeps the old path.
 - Telemetry docs: https-only endpoints and `ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`.

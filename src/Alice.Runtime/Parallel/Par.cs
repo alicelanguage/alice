@@ -5,7 +5,15 @@ namespace Alice.Runtime;
 /// <summary>Chunked data-parallel primitives. Chunking amortizes scheduling over many cheap iterations.</summary>
 public static class Par
 {
-    public static int Workers => Environment.ProcessorCount;
+    /// <summary>`ALICE_PAR=0` (also `false`, `off`): forks and parallel loops run serially on the calling thread,
+    /// without lowering the CPU count .NET sees (`DOTNET_PROCESSOR_COUNT=1` also slows the rest of the runtime).</summary>
+    public static readonly bool Serial = IsSerialSetting(Environment.GetEnvironmentVariable("ALICE_PAR"));
+
+    /// <summary>Whether an `ALICE_PAR` value turns parallelism off.</summary>
+    public static bool IsSerialSetting(string? value) =>
+        value?.Trim().ToLowerInvariant() is "0" or "false" or "off";
+
+    public static int Workers => Serial ? 1 : Environment.ProcessorCount;
 
     // ---- fork/join of independent pure calls (`a = f(x)` / `b = f(y)`), lazy task creation like BendRT's parallel let ----
 
@@ -19,7 +27,7 @@ public static class Par
     /// <summary>Forks spawn tasks only near the root: 2^depth tasks cover the cores, deeper forks run as plain calls.</summary>
     static readonly int MaxForkDepth = System.Numerics.BitOperations.Log2((uint)Math.Max(1, Environment.ProcessorCount)) + 3;
 
-    public static bool Forkable => forkDepth < MaxForkDepth && Environment.ProcessorCount > 1;
+    public static bool Forkable => forkDepth < MaxForkDepth && !Serial && Environment.ProcessorCount > 1;
 
     /// <summary>Offers <paramref name="left"/> to the pool and runs <paramref name="right"/> on this thread, then joins.
     /// A left half no pool thread has started yet is run inline by the join, so nested forks never block the pool.

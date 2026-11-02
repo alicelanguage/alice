@@ -144,3 +144,8 @@ the forge); `tests/Alice.Tests/Compiler/AffineTests.cs` (every escape kind demot
 AL0223; `alice explain` names the site; Take vs Borrow selection); `tests/parity` unchanged; `benchmarks/bend-vs`
 `tree` serial within 1.3x of Bend with checksum 4290772992; the seven `benchmarks/bend2` ports above within 1.5x of
 the C twin serial and above Bend PAR-CPU on 32 cores.
+
+IL lowering (ADR 0040, section 2): terms are `uint64` in IL; packing and `case` dispatch are bit operations and one
+`switch` on the top byte; the lane slab is read once per method; slot access uses the lane cursor and `Unsafe.Add`
+without bounds checks, and drops the stale check when the node carries `SlotProof.Live`; a `Take` reads the fields and
+pushes the free list in three operations.

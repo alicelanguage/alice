@@ -17,6 +17,22 @@ gc = "workstation"   # default
 # gc = "low-memory"  # non-concurrent GC with System.GC.ConserveMemory = 7: smallest footprint
 ```
 
+With `gc = "auto"` (the default when `alice.toml` does not set it) and for single-file `alice build`, a program
+that forks or runs parallel loops gets server GC with a 16 MB gen0 budget and **at most 8 heaps**
+(`System.GC.HeapCount = 8`; the runtime caps it at the core count, so min(cores, 8)). One heap per core made the
+startup floor grow with the machine. Bend 2 workloads on 32 cores, cold runs alternating between configurations,
+median ms (the box was shared, load 30):
+
+| configuration | bfs at size 0 (startup) | bfs | kmeans | tree-bitonic (idiomatic) |
+|---|---:|---:|---:|---:|
+| server, DATAS, 32 heaps (before) | 38 | 588 | 2306 | 468 |
+| 4 heaps | 29 | 573 | 2055 | 427 |
+| **8 heaps** | 29 | 579 | 1949 | 422 |
+| 16 heaps | 30 | 575 | 1804 | 416 |
+| workstation | 27 | 574 | 2507 | 399 |
+
+Setting a heap count turns DATAS off. `DOTNET_GCHeapCount` (hexadecimal) overrides it for experiments.
+
 Measured on the polyglot suite: server GC started slower and used up to 70% more RSS on short runs (merkle: 126 MB → 216 MB), and was ~13% faster only on one long allocation-heavy workload. The usual .NET environment variables (`DOTNET_gcServer`, `DOTNET_GCgen0size`, ...) still override the configuration for experiments.
 
 ### Globalization

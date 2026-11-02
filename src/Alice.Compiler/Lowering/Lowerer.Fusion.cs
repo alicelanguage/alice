@@ -123,7 +123,7 @@ public sealed partial class Lowerer
                 if (bytes > budget || count.GetValueOrDefault(l) != 1 || stackArrays.ContainsKey(l) || hoisted.Contains(l) || !OnlyElementUses(b.Body, l)) continue;
                 stackArrays[l] = (elem, len);
                 budget -= bytes;
-                before.Add(new MDecl { Name = l.CsName, TypeCs = $"global::System.Span<{elem}>", Init = new MCode($"stackalloc {elem}[{len}]") });
+                before.Add(new MDecl { Name = l.CsName, TypeCs = $"global::System.Span<{elem}>", Init = new AirStackBuffer { ElemCs = elem, Length = len } });
             }
         }
     }

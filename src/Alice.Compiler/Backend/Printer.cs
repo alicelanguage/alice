@@ -142,7 +142,7 @@ public sealed partial class Printer
     }
 
     // a negative literal (`-5`) is not atomic: `-5.abs()` in C# is `-(5.abs())`
-    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp || AtomicVector(e);
+    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr || AtomicIterators(e) || AtomicVector(e);
 
     static string P(MExpr e) => Atomic(e) ? E(e) : "(" + E(e) + ")";
 
@@ -150,7 +150,7 @@ public sealed partial class Printer
     {
         switch (e)
         {
-            case MCode c:
+            case MCode c:   // also every typed leaf (AirConst, AirLocalRef, AirTypeRef...): Text is its C# spelling
                 return c.Text;
             case MCall c:
                 return (c.Target != null ? P(c.Target) + (c.Safe ? "?." : ".") : "") + c.Name + "(" + Join(c.Args) + ")";
@@ -210,6 +210,8 @@ public sealed partial class Printer
                 return a.Prefix + E(a.E);
         }
         if (EVector(e) is { } vec) return vec;
+        if (EIterators(e) is { } iter) return iter;
+        if (EParallel(e) is { } par) return par;
         throw new InvalidOperationException(e.GetType().Name);
     }
 

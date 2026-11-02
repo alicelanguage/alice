@@ -24,10 +24,15 @@ python3 report.py  # rebuild results/summary.md from results/*.json
 | | Serial (column "1") | Parallel (column "12") |
 |---|---|---|
 | Bend | native binary, `+RTS --threads 1`, pinned to one core | native binary, default 12 threads; every parallel let is a fork, the runtime decides |
-| Alice | no annotations; pinned to one core with `DOTNET_PROCESSOR_COUNT=1`, so `Par.Forkable` is false and calls run the `__serial` clone | the compiler forks the pure recursive pairs itself (ADR 0015) |
+| Alice | no annotations; `ALICE_PAR=0`, so `Par.Forkable` is false and calls run the `__serial` clone | the compiler forks the pure recursive pairs itself (ADR 0015) |
 | C | clang `-O3 -march=native -ffp-contract=off` | gcc `-fopenmp`, `omp task` above depth 10 |
 | Rust | `-C target-cpu=native`, LTO, plain recursion | `rayon::join` above depth 10 |
 | C# | .NET 10 Release, TieredPGO, plain recursion | `Parallel.Invoke` above depth 10, fork lambdas in separate helpers |
+
+Serial rows are pinned with `taskset -c $SERIAL_CPUS` (default `14,30`, one physical core with both hyperthreads on
+the forge box; the results below were measured with `taskset -c 2` on the laptop). Serial Alice uses `ALICE_PAR=0`
+and serial C# only `PAR=0`; neither sets `DOTNET_PROCESSOR_COUNT=1` any more, which also puts .NET itself into a
+single-CPU mode that measured 3-4x slower on some code. The tables below predate that change.
 
 Time is **cold-process wall time** (hyperfine `-N`, median of 5, one warm-up): startup, JIT and the work together, as
 in the polyglot suite's FAIRNESS.md. .NET pays ~22-27 ms startup and JIT. Bend, C and Rust pay ~1 ms.

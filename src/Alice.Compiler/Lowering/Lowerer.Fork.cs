@@ -92,16 +92,16 @@ public sealed partial class Lowerer
         if (captured.Any(l => !l.Type.IsKnown || l.Type.Nullable)) return false;
         if (Sequential)   // single-threaded target: a checked fork runs its calls in order
         {
-            for (int k = 0; k < names.Count; k++) outp.Add(new MAssign { Target = new MCode(names[k]), Value = Isolated(calls[k], []) });
+            for (int k = 0; k < names.Count; k++) outp.Add(new MAssign { Target = AirLeaf.Name(names[k]), Value = Isolated(calls[k], []) });
             return true;
         }
         string helper = $"__fork_{(Method!.CsName ?? "main").TrimStart('@')}_{++helperN}";
         var hp = new Backend.Printer("", 1);
-        var fork = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Fork" };
-        foreach (var lam in lambdas) fork.Args.Add(new MLambda { ExprBody = lam });
+        var fork = new AirForkJoin();
+        foreach (var lam in lambdas) fork.Branches.Add(new MLambda { ExprBody = lam });
         hp.Root(new MReturn { Value = fork });
         Extra.Add($"private {HelperStatic}({string.Join(", ", types)}) {helper}({string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"))})\n{{\n{hp}}}\n");
-        var call = new MCode($"{helper}({string.Join(", ", captured.Select(l => l.CsName))})");
+        var call = new MCall { Name = helper, Args = captured.Select(l => (MExpr)AirLeaf.Name(l.CsName, l.Type.ToAir())).ToList() };
         // below the fork depth, recursion continues in `m__serial`: one Forkable check per branch, not one per call
         serialCalls = CloneOk;
         Forked |= CloneOk;
@@ -110,8 +110,8 @@ public sealed partial class Lowerer
         var then = new MDeconstruct { Value = call };
         then.Names.AddRange(names);
         var els = new List<MStmt>();
-        for (int k = 0; k < names.Count; k++) els.Add(new MAssign { Target = new MCode(names[k]), Value = serial[k] });
-        outp.Add(new MIf { Cond = new MCode("global::Alice.Runtime.Par.Forkable"), Then = { then }, Else = els });
+        for (int k = 0; k < names.Count; k++) els.Add(new MAssign { Target = AirLeaf.Name(names[k]), Value = serial[k] });
+        outp.Add(new MIf { Cond = new AirForkable { Type = AirLeaf.Bool }, Then = { then }, Else = els });
         return true;
     }
 

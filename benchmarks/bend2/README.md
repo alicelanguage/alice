@@ -36,8 +36,8 @@ adds an "Idiomatic shape" table. Details and the shape comparison: [NOTES-bench2
 
 | | Serial (column "1") | Parallel (all cores) |
 |---|---|---|
-| Alice | no annotations; `DOTNET_PROCESSOR_COUNT=1`, pinned with `taskset -c $CORE` (default 0), so `Par.Forkable` is false and calls run the `__serial` clone | the compiler forks the pure recursive pairs itself (ADR 0015); `alice explain` shows every `batch`-like function as "fork/join" |
-| C | Bend's `main.c`, unchanged: clang `-O3 -march=native`, pinned like Alice | the same file with clang `-O3 -march=native -fopenmp` (libomp): `omp task` over the top 10 levels of the same recursion (`lexer`: `omp parallel for` over its line loop) |
+| Alice | no annotations; `ALICE_PAR=0`, pinned with `taskset -c $SERIAL_CPUS` (default `14,30`: one physical core, both hyperthreads), so `Par.Forkable` is false and calls run the `__serial` clone | the compiler forks the pure recursive pairs itself (ADR 0015); `alice explain` shows every `batch`-like function as "fork/join" |
+| C | Bend's `main.c`, unchanged: clang `-O3 -march=native -ffp-contract=off` (no FMA contraction, so float checksums match Bend), pinned like Alice | the same file with clang `-O3 -march=native -ffp-contract=off -fopenmp` (libomp): `omp task` over the top 10 levels of the same recursion (`lexer`: `omp parallel for` over its line loop) |
 | Bend | not run here (not installed); the pinned `apple_m4_max.txt` numbers, copied to `bend_pin_apple_m4_max.txt` | same file, PAR-CPU column (16 cores) |
 
 Bend's `main.c` files are all serial. `c/<name>.c` is Bend's file with the OpenMP path added inside `#ifdef _OPENMP`
@@ -45,6 +45,12 @@ blocks by [omp_patch.py](omp_patch.py); with those blocks removed the file is by
 (`diff <(sed '/#ifdef _OPENMP/,/#endif/d' c/bfs.c) bend/bench/runtime/bfs/main.c`), so the serial C column is Bend's
 own C twin. Two OpenMP paths change data layout, not work: `kmeans` gives each forked restart its own stats arena,
 and `merkle` builds into a preallocated arena at the post-order slots the serial build would use.
+
+Serial Alice uses `ALICE_PAR=0`, not `DOTNET_PROCESSOR_COUNT=1`: the runtime switch turns off forks and parallel
+loops (`Par.Forkable` false, `Par.Workers` 1) and leaves the CPU count alone. `DOTNET_PROCESSOR_COUNT=1` also puts
+.NET itself into single-CPU mode (GC, thread pool, JIT tiering), which measured 3-4x slower on some code
+(`JsonDocument.Parse` 3.08 ms vs 0.85 ms). Serial runs get one physical core with both hyperthreads, for C and Alice
+alike, so the JIT's background tier-up and the GC can use the sibling thread as on any one-core machine.
 
 Time is **cold-process wall time** (hyperfine `-N`, median of 5, one warm-up): startup, JIT and the work together,
 as in [../bend-vs](../bend-vs/README.md). Peak RSS is hyperfine 2's `memory_peak_resident` of the same runs.
@@ -59,16 +65,27 @@ lower is better. Full tables with max, peak RSS and every ratio: [results/summar
 
 ### Serial, 1 core
 
+Re-measured with `ALICE_PAR=0` on `taskset -c 14,30` (Alice and C) and `-ffp-contract=off` for C; the earlier
+rows used `DOTNET_PROCESSOR_COUNT=1` on core 0. The parallel table below is from the earlier run.
+
 | workload | Alice | C | Alice / C | Bend / C on M4 (reference) |
 |---|---:|---:|---:|---:|
-| bfs | 10843 | 6441 | 1.68 | 1.09 |
-| editdist | 11348 | 8774 | 1.29 | 1.28 |
-| gameoflife | 14296 | 15807 | **0.90** | 1.15 |
-| hashmap | 1464 | 1426 | **1.03** | 4.41 |
-| kmeans | 32904 | 2809 | 11.71 | 1.00 |
-| lexer | 2097 | 1513 | **1.39** | 2.07 |
-| mandelbrot | 3712 | 2462 | 1.51 | 1.19 |
-| merkle | 11963 | 6880 | 1.74 | 1.23 |
+| bfs | 9722 | 5549 | 1.75 | 1.09 |
+| editdist | 11156 | 8684 | 1.28 | 1.28 |
+| gameoflife | 13680 | 13797 | **0.99** | 1.15 |
+| hashmap | 1393 | 1206 | **1.15** | 4.41 |
+| kmeans | 29707 | 2688 | 11.05 | 1.00 |
+| lexer | 1924 | 1395 | **1.38** | 2.07 |
+| mandelbrot | 3419 | 2228 | 1.53 | 1.19 |
+| merkle | 8731 | 6551 | 1.33 | 1.23 |
+| nbody | 8119 | 8508 | **0.95** | 1.12 |
+| queens | 6345 | 5486 | **1.16** | 1.50 |
+| raytrace | 9794 | 8044 | **1.22** | 1.27 |
+| symreg | 6115 | 4631 | **1.32** | 1.37 |
+| terrain | 5821 | 2653 | 2.19 | 1.01 |
+| tree-bitonic | 135175 | 11378 | 11.88 | 1.06 |
+| tree-matmul | 33256 | 5481 | 6.07 | 0.70 |
+| tree-radix | 25229 | 7809 | 3.23 | 1.46 |
 
 ### Parallel, 32 cores
 
@@ -136,13 +153,13 @@ Tick an item when a compiler or runtime change fixes it and the workload is re-m
 
 Language and compiler issues (repros in the next section):
 
-- [ ] 1. compound wrapping assignment `x &+= y` (AL0101)
-- [ ] 2. a UInt32 literal first assigned inside an `if` body is typed Int32 (AL0304)
-- [ ] 3. an enum constructor call as the argument of another does not parse (AL0101 "expected type")
-- [ ] 4. a top-level `[..._u32]` constant is emitted as `int[]`; errors land in the generated `.g.cs`
+- [x] 1. compound wrapping assignment `x &+= y` (AL0101) (fixed, not re-measured)
+- [x] 2. a UInt32 literal first assigned inside an `if` body is typed Int32 (AL0304) (fixed, not re-measured)
+- [x] 3. an enum constructor call as the argument of another does not parse (AL0101 "expected type") (fixed, not re-measured)
+- [x] 4. a top-level `[..._u32]` constant is emitted as `int[]`; errors land in the generated `.g.cs` (fixed, not re-measured)
 - [ ] 5. swapping two fresh array locals makes a fork leaf impure, so the caller's fork disappears
-- [ ] 6. `String#to_u32` reports a leaked .NET constraint error (AL0300) instead of "no such method"
-- [ ] 7. `UInt32 >> UInt32` is undefined (AL0301); shift counts must be Int32
+- [x] 6. `String#to_u32` reports a leaked .NET constraint error (AL0300) instead of "no such method" (fixed, not re-measured)
+- [x] 7. `UInt32 >> UInt32` is undefined (AL0301); shift counts must be Int32 (fixed, not re-measured)
 - [ ] 8. a sum-type constructor whose first argument is a qualified path (`T::N(T::L(2), a)`, `M::Node(M::Free, r)`) does not parse (AL0101; same root as 3)
 - [ ] 9. a local initialised with a nullary variant (`r = M::Free`) is typed as the variant, so `r = M::Node(..)` fails (AL0304)
 - [ ] 10. reading a top-level constant (`CUT = 3`, or `val cut = 3`) in a recursive method silently turns off fork/join
@@ -155,11 +172,21 @@ Language and compiler issues (repros in the next section):
 
 Codegen causes (Findings 1-5):
 
-- [ ] kmeans: no SIMD for the 8-distance kernel, `dst`/`min2` not inlined into `chunk`, tier-0 time, GC stats trees
-- [ ] merkle: the 22-round Speck loop is not unrolled; a bounds-checked `rk[i]` load per round
-- [ ] bfs: bounds checks on pooled fixed-size arrays; checked `to_i32`/`to_u32` conversions
-- [ ] mandelbrot: the branchless select `c ? a : b` in a loop becomes branches, not `cmov`
-- [ ] lexer: bounds checks on `buf[p]` under a loop bound that is not `buf.size`
+- [x] kmeans: `dst`/`min2` not inlined into `chunk`, tier-0 time, data-dependent branches in `min2`/`dst`. Fixed:
+  `chunk` is fully optimized at its first call (helpers inlined), integer selects are branch-free (`Branchless.U32`;
+  branch misses 1.85G -> 0.06G). 2^17 serial 7151 -> 5702 ms, full size 42.9 -> 33.1 s ([NOTES](NOTES-bench2.md))
+- [ ] kmeans: no SIMD for the 8-distance kernel (clang packs the 8 `dst` calls into one vector, SLP), GC stats trees;
+  queued for a vectorize worker
+- [x] merkle: the 22-round Speck loop is not unrolled; a bounds-checked `rk[i]` load per round. Fixed: small literal
+  loops are fully unrolled (`rk[0]` ... `rk[21]`): 12.3 -> 11.0 s serial
+- [x] bfs: tier-0 and OSR time in `maze` (31% of samples at 2^17). Fixed: a loop over an owned array is fully
+  optimized at its first call: 10.5 -> 9.3 s serial. Bounds checks measured as no cost (constant-length spans by
+  hand: 2753 vs 2760 ms); the remaining gap is branch misses (0.8G) and `Own<T>` thread-static slots
+- [ ] mandelbrot: not a `cmov` problem after all (11M branch misses in the whole run; as a branch-free select the
+  escape freeze was 2x slower, so conditional updates stay branches). clang knows the 51 iterations: it unrolls
+  `mit` by 3 and turns `it * 8 / tn` into a multiply; in Alice `tn` is a parameter
+- [ ] lexer: bounds checks on `buf[p]` measured as no cost (a constant-length span by hand: 1895 -> 1982 ms); cause
+  not found
 - [ ] terrain: clang vectorizes the noise fill (C with `-fno-vectorize` is 1.5x slower); the Gauss-Seidel sweep has bounds-checked neighbour loads and checked `to_u32` (Alice serial 6.1 s, C 2.7 s)
 - [ ] queens: the two-UInt32 `Stats` record struct returned through every recursion level probably goes through memory (serial 1.4x C; not profiled)
 - [ ] raytrace: the sphere table is a bounds-checked `Float32` array parameter where C folds it into immediates; 2^26 colf fork-tree leaves (serial 1.4x C)

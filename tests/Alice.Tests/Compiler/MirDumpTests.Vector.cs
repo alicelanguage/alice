@@ -88,7 +88,7 @@ public class MirDumpVectorTests
         const string src = "def f(n : Int32) : Int32\n  out = Array(Int32).new(1000, 0)\n  for i in 0...1000\n    p = [i, i * 2]\n    out[i] = p[0] + p[1]\n  end\n  out[999] + n\nend\nputs f(1)\n";
         string dump = MirDump.Collect(() => AliceCompiler.Transpile(src));
         // leaf forms (locals, constants) belong to the common nodes; assert only the stack nodes' shape
-        Assert.Matches(@" global::System\.Span<int> = \(stackalloc int \S+\):global::System\.Span<int>", dump);
-        Assert.Matches(@"assign \(index \S+:global::System\.Span<int> \S+\) = \(Mul", dump);
+        Assert.Matches(@" global::System\.Span<int> = \(stackalloc int .+\):global::System\.Span<int>", dump);
+        Assert.Matches(@"assign \(index .+:global::System\.Span<int> .+\) = \(Mul", dump);
     }
 }

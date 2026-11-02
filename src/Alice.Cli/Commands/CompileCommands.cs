@@ -24,6 +24,13 @@ public static class CompileCommands
         public List<string> Rest = new();
     }
 
+    /// <summary>
+    /// Server GC heaps for parallel programs (the runtime caps it at the core count, so min(cores, 8)). One heap per
+    /// core cost the 32-core box ~10 ms of startup (bfs 0: 38 -> 29 ms) and no throughput: bfs, kmeans and the
+    /// idiomatic tree-bitonic ran 2-15% faster with 8 heaps (docs/heap-gc.md). Alice.targets uses the same value.
+    /// </summary>
+    const int ServerHeaps = 8;
+
     static Options Parse(List<string> a)
     {
         var o = new Options();
@@ -185,7 +192,7 @@ public static class CompileCommands
         foreach (var r in o.Refs) File.Copy(r, Path.Combine(dir, Path.GetFileName(r)), true);
         if (exe)
             File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"),
-                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":" + (AliceCompiler.UsesParallel(cs) ? "true,\"System.GC.Gen0MaxBudget\":16777216" : "false") + ",\"System.GC.Concurrent\":true}}}");
+                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":" + (AliceCompiler.UsesParallel(cs) ? "true,\"System.GC.Gen0MaxBudget\":16777216,\"System.GC.HeapCount\":" + ServerHeaps : "false") + ",\"System.GC.Concurrent\":true}}}");
         UiH.Status(T("finished"), dll);
         return 0;
     }

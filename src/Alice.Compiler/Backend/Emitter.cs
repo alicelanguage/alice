@@ -593,6 +593,80 @@ public sealed class Emitter
         _ => false,
     });
 
+    /// <summary>Prelude conversions a primitive loop may call: inlined generic math, nothing for PGO to learn.</summary>
+    static readonly HashSet<string> Conversions = ["to_i", "to_f", "to_i8", "to_i16", "to_i32", "to_i64", "to_u8", "to_u16", "to_u32", "to_u64", "to_f32", "to_f64"];
+
+    /// <summary>
+    /// A loop over primitives that calls primitive helpers (<see cref="LoopLeaves"/>) or works on an owned array
+    /// (ADR 0016): its body reads and writes only locals and array elements and calls only those helpers,
+    /// conversions, `Math` and the branchless selects. Tier 0 does not inline, so every helper call is a real call
+    /// until the method is promoted, and PGO learns nothing there (no virtual call, cast or allocation site): bfs
+    /// `maze` spent 31% of its samples in tier-0 and OSR code at 2^17 mazes, kmeans `chunk` (64 iterations a call,
+    /// too few for OSR) 7-16% in tier 0. Such a method is compiled fully optimized at its first call. A plain loop
+    /// over its own locals keeps tiered PGO (OSR promotes it quickly).
+    /// </summary>
+    bool PrimitiveLoop(List<MStmt> body)
+    {
+        var leaves = LoopLeaves().Select(m => m.CsName).ToHashSet();
+        bool owned = Owned(body), leafCall = false;
+        bool Expr(MExpr e)
+        {
+            switch (e)
+            {
+                case MCode { Text: var t }: return !t.Contains('(') && !t.Contains("new ");   // a name or literal, not opaque code with a call
+                case MCast { TypeCs: "int" or "long" or "double" or "float" or "short" or "sbyte" or "byte" or "ushort" or "uint" or "ulong" } c: return Expr(c.E);
+                case MBinary or MUnary or MCond or MIndex: return MirFacts.Children(e).All(Expr);
+                case MCall { Name: "unchecked", Target: null, Args: [var x] }: return Expr(x);
+                case MCall { Target: null } c when leaves.Contains(c.Name): leafCall = true; return c.Args.All(Expr);
+                case MCall { Target: MCode { Text: "global::Alice.Runtime.Branchless" or "global::System.Math" or "Math" or "MathF" } } c: return c.Args.All(Expr);
+                case MCall { Args.Count: 0, Target: { } t } c when Conversions.Contains(c.Name): return Expr(t);
+                default: return false;
+            }
+        }
+        bool Stmt(MStmt s) => s switch
+        {
+            MDecl d => d.Init == null || Expr(d.Init),
+            MAssign a => Expr(a.Target) && Expr(a.Value),
+            MExprStmt es => Expr(es.E),
+            MIf i => Expr(i.Cond) && i.Then.All(Stmt) && (i.Else ?? []).All(Stmt),
+            MWhile w => Expr(w.Cond) && w.Body.All(Stmt),
+            MFor f => Expr(f.Start) && Expr(f.End) && f.Body.All(Stmt),
+            MBlock { Lock: null } b => b.Body.All(Stmt),
+            MBreak or MContinue => true,
+            _ => false,
+        };
+        bool Hot(MStmt loop)
+        {
+            leafCall = false;
+            return Stmt(loop) && (leafCall || owned);
+        }
+        bool Any(List<MStmt> b) => b.Any(s => s switch
+        {
+            MWhile w => Hot(w) || Any(w.Body),
+            MFor f => Hot(f) || Any(f.Body),
+            MIf i => Any(i.Then) || (i.Else != null && Any(i.Else)),
+            MBlock bl => Any(bl.Body),
+            MForeach fe => Any(fe.Body),
+            MTry t => Any(t.Body),
+            _ => false,
+        });
+        return Any(body);
+    }
+
+    /// <summary>The body declares an owned array: `var buf = Own&lt;T&gt;.Rent(n)`.</summary>
+    static bool Owned(List<MStmt> body) => body.Any(s => s switch
+    {
+        MDecl { Init: Mir.AirRent } => true,
+        MDecl { Init: MCall { Name: "Rent", Target: MCode { Text: var t } } } => t.StartsWith("global::Alice.Runtime.Own<", StringComparison.Ordinal),
+        MIf i => Owned(i.Then) || (i.Else != null && Owned(i.Else)),
+        MWhile w => Owned(w.Body),
+        MFor f => Owned(f.Body),
+        MForeach fe => Owned(fe.Body),
+        MBlock b => Owned(b.Body),
+        MTry t => Owned(t.Body),
+        _ => false,
+    });
+
     HashSet<MethodSym>? loopLeaves;
 
     /// <summary>
@@ -685,7 +759,7 @@ public sealed class Emitter
         if (lowerer.Forked) extra += SerialClone(d, m, owner, ret, ps, returns);
         extra += lowerer.FlushSpecializations();   // ADR 0026
         lowerer.CloneOk = false;
-        string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) || LoopLeaves().Contains(m) || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && LoopNest(body, 0) ? Hot : "");
+        string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) || LoopLeaves().Contains(m) || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && (LoopNest(body, 0) || !m.IsAsync && !m.UsesYield && PrimitiveLoop(body)) ? Hot : "");
         if (m.IsCtor)
         {
             string baseInit = "";

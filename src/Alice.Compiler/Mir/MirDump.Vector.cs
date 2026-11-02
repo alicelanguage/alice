@@ -5,7 +5,6 @@ public sealed partial class MirDump
 {
     string? CoreVector(MExpr e) => e switch
     {
-        AirLeafStandIn l => "`" + l.Text + "`",   // as MCode (TODO merge: delete with the stand-ins)
         AirVectorOp v => $"(v.{v.Op} {v.Vec.ToCs()}{L(v.Args)})",
         AirVectorLoad ld => $"(v.load {ld.Vec.ToCs()} {E(ld.Array)} {E(ld.Index)})",
         AirVectorStore st => $"(v.store {st.Vec.ToCs()} {E(st.Value)} {E(st.Array)} {E(st.Index)})",
