@@ -3,7 +3,7 @@ using System.Numerics;
 namespace Alice.Runtime;
 
 /// <summary>Chunked data-parallel primitives. Chunking amortizes scheduling over many cheap iterations.</summary>
-public static class Par
+public static partial class Par
 {
     /// <summary>`ALICE_PAR=0` (also `false`, `off`): forks and parallel loops run serially on the calling thread,
     /// without lowering the CPU count .NET sees (`DOTNET_PROCESSOR_COUNT=1` also slows the rest of the runtime).</summary>
