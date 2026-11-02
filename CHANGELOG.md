@@ -2,12 +2,34 @@
 
 ## Unreleased
 
+- IL backend Synthesize pass (backend plan D1.6, ADR 0032/0033): `Air/Passes/Synthesize.cs` builds, for the IL backend only, explicit declarations with MIR bodies (`Mir/AirDecls.cs`: `AirModuleDecl`/`AirTypeDecl`/`AirMethodDecl`/`AirFieldDecl`/`AirPropertyDecl`, on `TypeSym.Synth`) for what Roslyn synthesizes today: record and record struct members (backing fields, init accessors, primary/copy constructors, EqualityContract, Equals, GetHashCode, ToString/PrintMembers, Deconstruct, ==/!=, `<Clone>$`, `__With`), sum types (abstract base, sealed nested variants, `Tag`, `Is<Variant>`, unit `Value`), derived `!=`/`>`/`>=`, the IEnumerable bridge, auto-properties, field/constant initializers, default and struct constructors, `to_s` as ToString and the module initializer. Emitted C# is byte-identical on the corpus.
+- IL backend FFI (backend plan D1.10, ADR 0018/0033): `Backend/Il/AirToIl.Ffi.cs` emits `lib` funs as blittable P/Invoke
+  rows (ImplMap: EntryPoint, ExactSpelling, WinApi, no CharSet/SetLastError; `[SuppressGCTransition]` for `@[Fast]`)
+  behind inlined wrappers (UTF-8 strings on a `localloc` buffer via `Utf8Arg`, pinned arrays, out/ref byrefs, borrowed
+  string returns, Bool as byte), `[UnmanagedCallersOnly]` callback trampolines passed by `ldftn`, `@[Native]` `calli`
+  with the managed fallback, and pointer load/store/arithmetic/`sizeof`; `IlModule`/`MetadataWriter` gain P/Invoke
+  (`IlMethodDef.PInvoke`, ModuleRef + ImplMap rows). Not wired into AirToIl yet; the FfiTests calls, driven from an IL
+  `Main`, print what the C# backend prints, and NativeAOT publishes the emitted dll.
 - AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is
   byte-identical on the corpus.
 - Docs: ADR 0040 (paradigms in IL, accepted as direction): how AirToIl lowers fork/join, affine arenas, CM primitives and dataflow, with the AirVerifier rules they add; IL-lowering paragraphs in ADRs 0015, 0037, 0038, 0039.
+- IL-only lowering passes (backend plan D1.7, ADR 0032/0033) in `Air/Passes/`, entry `IlLowering.Run`, called only by
+  the IL backend (C# output unchanged): ForeachLower (arrays, spans, strings as counted loops; struct enumerators kept
+  in a typed local, never boxed; other enumerables in try/finally with a null-checked Dispose), InterpLower
+  (`string.Concat` for up to 4 string parts, else an invariant-culture `DefaultInterpolatedStringHandler`),
+  PatternTemps (declaration and `var` patterns as explicit isinst into typed locals, with C# scopes), UsingLockLower
+  (try/finally Dispose, `Monitor.Enter(o, ref taken)`, `Lock.EnterScope()`), SwitchLower (dense int/char jump tables,
+  string cases as a length switch plus an ordinal `string.Equals` chain, no hashing), TupleLower (ValueTuple
+  construction, ItemN/Rest access, deconstruction, element names recorded for TupleElementNames) and NullableLift
+  (C# lifted-operator semantics with HasValue/GetValueOrDefault). Helper nodes `AirSeq`, `AirAs`, `AirSwitch` live in
+  `Mir/MExpr.Lower.cs`; what a pass cannot lower (`await foreach`/`await using`, untyped operands, `bool?` logic) is
+  left as is and listed in `IlLowerContext.Unsupported`.
 - Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
+- AIR helper declarations (backend plan D0.7c): the `__par_*`, `__parfor_*` and `__fork_*` helper methods and the
+  `__shared_*` constant fields are typed declarations (`AirHelperDecl` over `AirMethodDecl`/`AirFieldDecl`, MIR bodies) in
+  `Lowerer.TypedExtra`; their C# in `Lowerer.Extra` is printed from them (`Printer.Helper`), byte-identical on the corpus.
 - AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
   build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,
   `AirForkable`, `AirRent`, `AirRelease`, `AirLength`, `AirTripCount`, `AirOffset`, `AirPresizeCount` in

@@ -35,9 +35,13 @@ public sealed partial class Lowerer
             field = $"__shared_{t.Name}_{++sharedN}";
             sharedFields[(Type, t.Name + "(" + key + ")")] = field;
             var init = new MNew { TypeCs = ne.Type.Cs, Args = Args(ne.Args) };
-            var hp = new Backend.Printer("", 0);
-            hp.Root(new MExprStmt { E = init });
-            Extra.Add($"internal static readonly {ne.Type.Cs} {field} = {hp.ToString().Trim().TrimEnd(';')};\n");
+            var st = new MExprStmt { E = init };
+            Optimizer.Pipeline.Run([st]);
+            AddHelper(new AirHelperDecl
+            {
+                Field = new AirFieldDecl { Name = field, Type = AirOf(ne.Type, ne.Type.Cs), Vis = AirVis.Internal, Static = true, ReadOnly = true },
+                FieldInit = st.E,
+            });
         }
         return new AirFieldRef(field, ne.Type.ToAir());   // a static readonly field: a leaf, so receivers stay simple
     }

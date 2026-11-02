@@ -55,4 +55,21 @@ public sealed partial class Printer
     /// looser (`c ? a : b`, `a ?? b`, comparisons, shifts) is parenthesized.</summary>
     static string TripEnd(MExpr e) =>
         e is MBinary { Op: AirBinOp.Add or AirBinOp.Sub or AirBinOp.Mul or AirBinOp.Div or AirBinOp.Mod } ? E(e) : P(e);
+
+    /// <summary>
+    /// C# for a typed helper member (Mir/AirDecls.Helpers.cs), spelled as the lowering used to write it:
+    /// `private [static ]Ret name(T a, ...)` + body, or `internal static readonly T name = init;`.
+    /// </summary>
+    public static string Helper(AirHelperDecl d)
+    {
+        if (d.Field is { } f)
+            return $"{Vis(f.Vis)} {(f.Static ? "static " : "")}{(f.ReadOnly ? "readonly " : "")}{f.Type.ToCs()} {f.Name} = {E(d.FieldInit!)};\n";
+        var m = d.Method!;
+        var p = new Printer("", 1);
+        p.Stmts(m.Body!);
+        string ps = string.Join(", ", m.Params.Select(x => x.Type.ToCs() + " " + x.Name));
+        return $"{Vis(m.Vis)} {(m.Is(AirMethodFlags.Static) ? "static " : "")}{m.Ret.ToCs()} {m.Name}({ps})\n{{\n{p}}}\n";
+    }
+
+    static string Vis(AirVis v) => v.ToString().ToLowerInvariant();
 }
