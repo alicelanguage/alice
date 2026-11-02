@@ -3,6 +3,11 @@
 ## Unreleased
 
 - Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
+- AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
+  build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,
+  `AirForkable`, `AirRent`, `AirRelease`, `AirLength`, `AirTripCount`, `AirOffset`, `AirPresizeCount` in
+  `Mir/MExpr.Parallel.cs`; leaves via `AirLeaf`), with C# printing and `--air` dump forms. Emitted C# is byte-identical
+  on the corpus.
 - AIR foundation (backend plan D0.2/D0.3): MIR nodes gain an optional typed `AirType Type` and source `Span`
   (`MStmt.Line` reads the span's line when one is set). `AirType` is a closed sum (Prim, ClrRef, AliceType,
   TypeParam, Array, ByRef, Pointer, FnPtr, Tuple, Unknown, plus a nullable bit) whose `ToCs()` spells exactly what
