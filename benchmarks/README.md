@@ -2,6 +2,10 @@
 
 Alice vs C# on the same .NET runtime. Each Alice program has a C# twin with the same algorithm and checksum.
 
+## Serial core pairs on the shared forge box
+
+Serial runs pin to one physical core with both hyperthreads, one pair per worker so pinned runs never overlap: bench1 `taskset -c 14,30` (the `SERIAL_CPUS` default of `bend2/run.sh` and `bend-vs/run.sh`), perf `15,31`, everyone else `13,29`; serial Alice uses `ALICE_PAR=0`, never `DOTNET_PROCESSOR_COUNT=1`.
+
 ## Run
 
 ```bash
