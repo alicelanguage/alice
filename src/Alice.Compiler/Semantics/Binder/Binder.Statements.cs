@@ -9,6 +9,7 @@ public sealed partial class Binder
         var guarded = new List<LocalSym>();
         for (int i = 0; i < body.Count; i++)
         {
+            body[i] = Writer(body[i], tail: i == body.Count - 1);
             BindStmt(body[i]);
             // guard clause: `return unless n` / `break unless n` / `next unless n` / `raise ... unless n` narrows n
             // for the rest of the block (when the rest never reassigns it)
@@ -22,6 +23,36 @@ public sealed partial class Binder
         }
         foreach (var g in guarded) Unnarrow(g);
     }
+
+    /// <summary>
+    /// `recv.name = v` (and `recv.name += v` on a plain receiver) where the receiver's type has `def name=(v)`
+    /// (<see cref="Parser.SetterName"/>): a call of the writer. `a << b` as a statement (not a block's tail value) on a
+    /// user operator: kept in a temporary (C# allows no operator expression as a statement).
+    /// </summary>
+    Stmt Writer(Stmt s, bool tail = false)
+    {
+        if (s is Assign { Target: CallExpr { Recv: { } wr, Args.Count: 0, Block: null, Parens: false } wc } wa && wa.Op is "=" or "+=" or "-=" or "*=" or "/=" or "%=" or "<<=" or "|=" or "&="
+            && (wa.Op == "=" || wr is NameExpr or SelfExpr or IvarExpr)
+            && BindExpr(wr).Sym?.FindMethod(Parser.SetterName(wc.Name), 1) != null)
+        {
+            Expr v = wa.Value;
+            if (wa.Op != "=")
+            {
+                Expr again = wr switch { NameExpr n => new NameExpr { Name = n.Name, Line = n.Line, Col = n.Col }, IvarExpr i => new IvarExpr { Name = i.Name, Line = i.Line, Col = i.Col }, _ => new SelfExpr { Line = wr.Line, Col = wr.Col } };
+                v = new BinaryExpr { Op = wa.Op[..^1], L = new CallExpr { Recv = again, Name = wc.Name, Line = wc.Line, Col = wc.Col }, R = wa.Value, Line = wa.Line, Col = wa.Col };
+            }
+            return new ExprStmt { Line = wa.Line, Col = wa.Col, Expr = new CallExpr { Line = wc.Line, Col = wc.Col, Recv = wr, Name = Parser.SetterName(wc.Name), Parens = true, Args = [new Arg { Line = wa.Line, Value = v }] } };
+        }
+        if (!tail && s is ExprStmt { Expr: BinaryExpr { Op: "<<" or ">>" or "+" or "-" or "*" or "/" or "%" or "&" or "|" or "^" } ob } es
+            && OperandType(ob.L).Sym?.FindMethod(ob.Op, 1) != null)
+            return new Assign { Line = es.Line, Col = es.Col, Target = new NameExpr { Name = "__op" + ++opTemps, Line = es.Line, Col = es.Col }, Value = ob };
+        return s;
+    }
+
+    int opTemps;
+
+    /// <summary>The type of the leftmost operand of an operator chain (`l << a << b` -> l).</summary>
+    AType OperandType(Expr e) => e is BinaryExpr { Op: "<<" } b ? OperandType(b.L) : BindExpr(e);
 
     /// <summary>Locals known non-nil in the current region (flow typing for nullable value types; C# narrows
     /// nullable references itself).</summary>

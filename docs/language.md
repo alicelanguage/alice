@@ -26,7 +26,10 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 - Blocks close with `end` (or `}` for brace blocks).
 - `namespace Demo ... end`; `Demo::Calc.go` (`::` -> `.`).
 - `using System.Text` imports a .NET namespace; `using Tools` (an Alice module) imports its functions (`using static`).
-- `require "./lib/math"` loads `lib/math.al` relative to the requiring file; transitive, each file once. Missing file: `cannot find` error. Works in single-file CLI mode (`alice run main.al`).
+- `require "./lib/math"` loads `lib/math.al` relative to the requiring file; transitive, each file once. Missing file: `cannot find` error. Works in single-file CLI mode (`alice run main.al`). `require_relative "lib/math"` parses as `require "./lib/math"`.
+- A `\` at the end of a line continues the statement on the next line.
+- Compile-time names: `__FILE__` and `__DIR__` (absolute path of the source file / its directory, as in Crystal),
+  `__LINE__` (Int32), `__method__` (the enclosing `def`'s name as a String, `nil` outside a def).
 
 ## 2. Literals
 
@@ -36,15 +39,29 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 | `3.14` | `Float64` |
 | `true`, `false` | `Bool` |
 | `"text"`, `"x=#{x}"` | `String` (interpolation) |
+| `'text'` | `String`, Ruby single quotes: no interpolation, only `\\` and `\'` are escapes |
+| `'a'`, `'\n'`, `'\u{41}'` | `Char` (one character or one escape) |
+| `"a" "b"` | adjacent literals are one `String` (also across a `\` line continuation) |
+| `%q(raw)` / `%Q(x=#{x})` / `%(x=#{x})` | `String`; delimiters `( [ { < \| !` (brackets nest). `%q` is raw, `%Q` and `%()` interpolate |
 | `:name` | symbol (prints `name`; usable as hash key) |
+| `:+`, `:<=>`, `:[]`, `:<<` | operator symbol (a String); `inject(:+)` / `reduce(1, :*)` take it as the block `{ \|a, b\| a + b }` |
 | `nil` | nullable |
 | `[1, 2, 3]` | `Array(Int32)` (`int[]`) |
 | `{"a" => 1}` | `Hash(String, Int32)` |
 | `0...n` / `1..n` | range (exclusive / inclusive) |
-| `%w[a b]` / `%i[a b]` | `Array(String)` of words / symbols |
+| `xs[1..]`, `xs[..2]`, `xs[...2]` | open index range: `xs[1..-1]`, `xs[0..2]`, `xs[0...2]` |
+| `(1..)` | endless range, counts up lazily (to `Int32::MAX`) |
+| `when 4..`, `in ..3` | open range in a pattern (bounded by `Int32::MIN`/`MAX`); `..b` elsewhere is an error |
+| `%w[a b]` / `%i[a b]` | `Array(String)` of words / symbols; also `%w{}`, `%w()`, `%w<>`, `%w\|\|` |
 | `/\d+/i` | regex literal, flags `i m x s`, compiled once and cached |
 | `<<~EOS ... EOS` | heredoc, common indent stripped, interpolates |
 | `<<-EOS ... EOS` | heredoc, indented terminator, text kept as is |
+| `<<EOS ... EOS` | plain heredoc: terminator at column 0, text kept as is (only where an operand starts and an `EOS` line follows) |
+| `<<~'EOS' ... EOS` | raw heredoc (any of the forms above): no interpolation, no escapes |
+
+String and char escapes: `\n \t \r \0 \a \b \f \v \e \s \\ \" \'`, `\uXXXX`, `\u{1F600}` (any code point; `\u{48 49}`
+is several), `\xHH`, octal `\101`, and backslash-newline (nothing). An unknown `\c` is `c`, as in Ruby. A code
+point above U+FFFF does not fit in a `Char`. `alice fmt` keeps heredoc bodies byte for byte.
 
 ## 3. Types
 
@@ -233,6 +250,11 @@ C# loops take 9.3 ms and 32 MB per call; LINQ `Select().ToArray()` takes 11.7 ms
 | Array | `a + b`, `a - b`, `a & b` (intersection), `a \| b` (union) |
 | String | `"%05d\|%.2f" % [42, 3.14]` (format), `"ab" * 3` (repeat) |
 
+User-definable operators: `+ - * / % == != < <= > >= <=> << >> & | ^`, unary `-@` / `+@` / `~` (or `def -` with no
+parameters), `[]` (indexer) and `[]=` (its setter: `g[i] = v`). `def <<(x)` used as a statement (`log << "a" << "b"`)
+works too. `def ===` compiles (method `op_CaseEq`) but `when`/`===` do not dispatch to it yet; `def call` is an
+ordinary method, `obj.call(x)` / `obj.(x)` on a user class are not supported yet.
+
 Integer `/` on ints is integer division; `a/2` is division, not a regex. Signed `/` and `%` are floored (`-7 / 2 == -4`, `-7 % 3 == 2`, like `divmod`); `tdiv`/`remainder` truncate. Integer overflow raises `OverflowException`; `&+ &- &*` wrap. Floats print as `2.0`, `1.0e-07`, `1.0e+16` (ADR 0013). Limits: `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`. User operators: `def +(o : V2) : V2`.
 
 ## 5. Methods
@@ -261,6 +283,9 @@ def sq(x : Int32) : Int32 = x * x   # endless def
 def hi(n : String) = "hi #{n}"
 ```
 
+A writer is `def name=(v : T)`; `obj.name = v` and `obj.name += v` call it (it may sit beside a `getter name`
+or a `def name`). Crystal's `def name=(@name : T)` assigns the field. It compiles to a method `__set_name`.
+
 ### Blocks and yield
 
 ```crystal
@@ -274,6 +299,10 @@ def twice(&block : Int32 ->)        # no result
   yield 2
 end
 ```
+
+A block without `|params|` may use numbered parameters `_1`..`_9` (`xs.sort { _2 <=> _1 }`) or `it` (Ruby 3.4,
+`xs.map { it * 2 }`); they become the block's parameters. Mixing `it` and `_1`, or `_1` outside a block, is a parse
+error. A `do ... end` block may have `rescue` / `else` / `ensure` clauses before its `end`.
 
 ### Named tuples
 
@@ -339,6 +368,22 @@ puts ["a", "b"].map(&:upcase).join  # &:sym -> { |x| x.upcase }
 
 `if/elsif/else`, `unless`, postfix `if`/`unless`, `while`, `until`, `for x in xs`, `for i in 0...n`, `for k, v in hash`, `next`, `break`, `case/when/else` (multiple values per `when`, `then` form).
 
+Loops, Ruby forms:
+
+```crystal
+k += 1 while k < 5                  # modifier while / until
+begin                               # body runs first, then the test (do-while)
+  k += 1
+end while k < 3
+r = loop do                         # loop with a value: `break v` gives it
+  i += 1
+  break i * 10 if i == 3
+end
+```
+
+`break value` keeps its value only in `x = loop do ... end` (or `{ }`); in another loop a literal or variable value
+is dropped and any other value is an error; in a block (`xs.each { |x| break x }`) it is an error.
+
 `if` and `case` are expressions:
 
 ```crystal
@@ -354,6 +399,24 @@ end
 ```
 
 Exceptions: `begin / rescue e : Exception / ensure / end`, `raise "msg"`. `retry` inside `rescue` re-runs the `begin` body.
+
+```crystal
+def load(path : String) : String    # def-level rescue/ensure: no begin needed
+  File.ReadAllText(path)
+rescue FileNotFoundException, DirectoryNotFoundException => e
+  "missing: #{e.message}"           # one catch per listed type
+rescue e : IOException | UnauthorizedAccessException
+  raise                             # bare raise re-raises the rescued exception
+rescue => e                         # any Exception
+  ""
+else
+  ""                                # runs when nothing was raised (statement position only)
+ensure
+  puts "done"
+end
+n = Int32.Parse(s) rescue 0         # rescue modifier (also `(expr rescue v)`)
+raise ArgumentException, "bad"      # raise Klass, "message" = raise Klass.new("message")
+```
 
 ## 7. Dynamic (Ruby)
 
@@ -388,6 +451,10 @@ end
 | Form | Meaning |
 |---|---|
 | `getter` / `property` | read-only / read-write property |
+| `getter a, b : Int32` | several at once (without a type: inferred from `@a = ...`) |
+| `getter? ok : Bool` / `property? ok : Bool` | reader `ok?` (property also writes `a.ok = v`) |
+| `getter! v : T` / `property! v : T` | field `@v : T?`; `v` raises when nil, `v?` may be nil |
+| `class_getter n : Int32 = 0` / `class_property` / `class_setter` | class variable `@@n` (needs a value) with class methods `A.n`, `A.n = v` |
 | `attr_reader :x` / `attr_accessor :x, :y` / `attr_writer :x` | Ruby forms of `getter` / `property` / `setter`; type inferred from `@x = ...` |
 | `@x = v` in a method | declares field `@x`, type inferred (Ruby style) |
 | `alias hi hello` | `hi` calls `hello` |
@@ -403,7 +470,9 @@ end
 | `record struct Vec(x : Float64, y : Float64) ... end` | `record struct`, body may add methods |
 | `record Span(start : Int32, @[JsonPropertyName("end")] stop : Int32)` | parameter attributes target the property (what serializers read); `@[param: X]` targets the parameter |
 | `class Box(T)` / `class Node(T) where T : IComparable(T)` | generic class + constraint |
-| `abstract`, `private` | parsed; not covered by tests |
+| `abstract`, `private def` | abstract is checked; `private` / `protected` are enforced (AL0313) |
+| `private` / `protected` / `public` on its own line | visibility of every later `def` in this body (not `def self.`) |
+| `private :a, :b` / `private_class_method :s` | sets the visibility of methods defined above |
 
 Leaf classes are `sealed`; methods are `virtual` only when the class has an Alice subclass.
 

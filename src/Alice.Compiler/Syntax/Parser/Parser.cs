@@ -9,6 +9,20 @@ public sealed partial class Parser
     List<HashSet<string>> locals = new();
     bool noDo;
     readonly List<string> attrs = new();
+    /// <summary>Open blocks/lambdas: `_1` / `it` outside of one is an error.</summary>
+    int blockDepth;
+    /// <summary>`break value` statements; resolved by the loop or block that owns them (see Parser.Sugar.cs).</summary>
+    readonly Dictionary<BreakStmt, Expr> breakValues = new();
+    /// <summary>Visibility set by a bare `private` / `protected` / `public` line in the current type body.</summary>
+    string sectionVis = "public";
+    /// <summary>The enclosing `def` (for `__method__`).</summary>
+    string? curDef;
+    /// <summary>Counter for parser-introduced names (`__ok1`, `__dw2`, `__exc3`).</summary>
+    int hidden;
+    /// <summary>Innermost first: the rescue clauses being parsed (a bare `raise` re-raises their exception).</summary>
+    readonly List<RescueScope> rescues = new();
+    /// <summary>"index" while parsing `xs[...]` arguments, "pattern" in `when`/`in` patterns: where `a..` / `..b` are allowed.</summary>
+    string rangeCtx = "";
 
     const string Keywords = " if unless while until for in do end then else elsif case when begin rescue ensure return break next and or not def class struct module interface enum lib fun namespace using require getter property setter abstract private protected self nil true false super yield loop raise of forall spawn val where record async await retry alias attr_accessor attr_reader attr_writer lambda proc ";
 

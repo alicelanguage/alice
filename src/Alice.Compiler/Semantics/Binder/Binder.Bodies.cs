@@ -22,7 +22,7 @@ public sealed partial class Binder
             typeParams = new List<string>();
             scopes[0]["ARGV"] = new LocalSym { Name = "ARGV", CsName = "ARGV", Type = AType.Array(AType.String) };
             foreach (var it in f.Items)
-                if (it is StmtItem s) BindStmt(s.Stmt);
+                if (it is StmtItem s) BindStmt(s.Stmt = Writer(s.Stmt));
             f.HoistedLocals = hoisted;
         }
     }

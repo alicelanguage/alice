@@ -53,6 +53,19 @@
 - `alice prove --smt` evaluates every statement of a rule, so a discarded call that raises fails the rule as it does under enumeration (audit F14).
 - AL0221: a declared field or getter of a non-nilable reference type that no `initialize` assigns (and has no initializer) is a compile error instead of nil at runtime (audit F17).
 
+- Ruby/Crystal syntax (lowered in the parser to existing constructs): string escapes `\u{1F600}`, octal `\101`,
+  `\xHH`, `\s`, unknown `\c`; char escapes `'\u{41}'`; single-quoted Ruby strings `'no #{interp}'`; adjacent
+  literals `"a" "b"`; `%q()` / `%Q[]` / `%()`, `%w{}`/`%i<>` delimiters; plain `<<EOT` and raw `<<~'EOT'` heredocs;
+  operator symbols `:+ :<=> :[]` (`inject(:+)`); `_1`/`_2`/`it` block parameters (was an internal compiler error);
+  `def name=(v)` writers (`obj.name = v`, `obj.name += v`); unary `-@`/`+@`, `<<`, `>>`, `&`, `|`, `^`, `[]=`
+  operators (`def <<` leaked a C# error); `private`/`protected`/`public` sections, `private :sym`,
+  `private_class_method :sym`; `getter?`, `getter!`, `property?`, `property!`, `class_getter`, `class_property`,
+  `class_setter`, `getter a, b : T`; `x = loop do ... break v end`, `begin ... end while c`, modifier `while`/`until`;
+  `rescue => e`, `rescue A, B => e`, `rescue e : A | B`, `else`, def-level and `do`-block `rescue`/`ensure`, bare
+  `raise`, `raise Klass, "msg"`, `expr rescue v`; open ranges `xs[1..]`, `xs[..2]`, `(1..)`, `when 4..`, `in ..3`;
+  `require_relative` (parsed); `__FILE__`, `__DIR__`, `__LINE__`, `__method__`. `break value` in a block, `_1`
+  outside a block and other unsupported forms are parse errors (AL0101) instead of C# errors.
+- `alice fmt` keeps heredoc bodies byte for byte and ignores the contents of `%w[]`/`%q()` literals.
 - ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
 - ADRs 0037-0039 (affine arena sum types, static dataflow networks, Connection-Machine primitives) accepted as direction; error codes AL0220-AL0229 reserved.
 - ADR 0036 (Alice Core standard library) accepted, with its frozen contracts in `Alice.Runtime/Core/Abstractions`

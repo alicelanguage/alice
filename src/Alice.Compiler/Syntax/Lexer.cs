@@ -67,6 +67,7 @@ public sealed class Lexer
             int l = line, cl = col;
             if (c == ' ' || c == '\t' || c == '\r') { Adv(); space = true; }
             else if (c == '\\' && At(1) == '\n') { Adv(); Adv(); space = true; }
+            else if (c == '\\' && At(1) == '\r' && At(2) == '\n') { Adv(); Adv(); Adv(); space = true; }
             else if (c == '#') { while (pos < src.Length && src[pos] != '\n') Adv(); }
             else if (c == '\n') { Adv(); Newline(l, cl); }
             else if (char.IsDigit(c)) Number(l, cl);
@@ -120,17 +121,35 @@ public sealed class Lexer
         Add("regex", sb.ToString() + "\u0000" + src.Substring(fs, pos - fs), l, c);
     }
 
-    /// <summary>%w[a b c] -> ["a", "b", "c"] (and %i[] for symbols, which Alice represents as strings).</summary>
+    /// <summary>Closing delimiter of a %-literal; bracket pairs nest, any other punctuation closes itself.</summary>
+    static char CloseOf(char open) => open switch { '(' => ')', '[' => ']', '{' => '}', '<' => '>', _ => open };
+
+    /// <summary>The body of a %-literal starting at the opening delimiter (consumed, as is the closer); `\` escapes are kept.</summary>
+    string PercentBody(string what)
+    {
+        char open = src[pos], close = CloseOf(open);
+        Adv();
+        var sb = new StringBuilder();
+        int d = 1;
+        while (true)
+        {
+            if (pos >= src.Length) throw Err($"unterminated {what} literal");
+            char ch = src[pos];
+            if (ch == '\\' && pos + 1 < src.Length) { sb.Append(ch); Adv(); sb.Append(src[pos]); Adv(); continue; }
+            if (ch == close && open != close && --d == 0) { Adv(); break; }
+            if (ch == close && open == close) { Adv(); break; }
+            if (ch == open && open != close) d++;
+            sb.Append(ch);
+            Adv();
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>%w[a b c] -> ["a", "b", "c"] (and %i[] for symbols, which Alice represents as strings); any delimiter.</summary>
     void WordArray(int l, int c)
     {
         Adv(); Adv();
-        char close = src[pos] == '[' ? ']' : ')';
-        Adv();
-        int s = pos;
-        while (pos < src.Length && src[pos] != close) Adv();
-        if (pos >= src.Length) throw Err("unterminated %w literal");
-        var words = src.Substring(s, pos - s).Split((char[])[' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
-        Adv();
+        var words = PercentBody("%w").Split((char[])[' ', '\t', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
         Add("op", "[", l, c);
         for (int i = 0; i < words.Length; i++)
         {
@@ -140,17 +159,110 @@ public sealed class Lexer
         Add("op", "]", l, c);
     }
 
+    /// <summary>`%q(raw)` (no interpolation or escapes), `%Q(text #{x})` and `%(text #{x})` (like a "..." string).</summary>
+    void PercentString(int l, int c)
+    {
+        Adv();
+        char kind = src[pos] is 'q' or 'Q' ? src[pos] : 'Q';
+        if (src[pos] is 'q' or 'Q') Adv();
+        char open = src[pos], close = CloseOf(open);
+        string body = PercentBody("%" + kind);
+        // `\)` inside %( ... ) is the delimiter itself; in %q only `\\` and the delimiters are escapes
+        var sb = new StringBuilder();
+        for (int i = 0; i < body.Length; i++)
+        {
+            if (body[i] == '\\' && i + 1 < body.Length && (body[i + 1] == open || body[i + 1] == close || (kind == 'q' && body[i + 1] == '\\')))
+            {
+                sb.Append(body[++i]);
+                continue;
+            }
+            if (body[i] == '\\' && i + 1 < body.Length && kind != 'q') { sb.Append(body[i]).Append(body[++i]); continue; }
+            sb.Append(body[i]);
+        }
+        Add("str", kind == 'q' ? Raw(sb.ToString()) : QuoteOutsideHoles(sb.ToString()), l, c);
+    }
+
+    /// <summary>`%q`, `%Q`, `%(`: a literal only where an operand starts (`x %(y)` stays a modulo when x is not a command).</summary>
+    bool PercentStringStart()
+    {
+        if (src[pos] != '%') return false;
+        bool letter = At(1) is 'q' or 'Q';
+        char open = letter ? At(2) : At(1);
+        if (!(open is '(' or '[' or '{' or '<' or '|' or '!' || (letter && open is '/' or '^' or '~'))) return false;
+        Token? last = Last();
+        if (last == null || last.Kind == "nl") return true;
+        if (last.Kind == "op") return last.Text is not (")" or "]" or "}");
+        if (letter) return space && last.Kind == "id";
+        return last.Kind == "id" && space && " if unless when and or not return puts print p pp elsif while until in raise yield then else ".Contains(" " + last.Text + " ");
+    }
+
+    /// <summary>A string token body for text with no escapes or interpolation (`%q`, `'...'`, `<<~'EOT'`).</summary>
+    static string Raw(string text) => text.Replace("\\", "\\\\").Replace("#{", "\\#{").Replace("\"", "\\\"");
+
+    /// <summary>Escapes bare `"` of a double-quoted-style body (heredoc, %Q), leaving `\x` escapes and `#{...}` holes intact.</summary>
+    static string QuoteOutsideHoles(string text)
+    {
+        var sb = new StringBuilder();
+        int d = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char ch = text[i];
+            if (ch == '\\' && i + 1 < text.Length && d == 0) { sb.Append(ch).Append(text[++i]); continue; }
+            if (ch == '#' && i + 1 < text.Length && text[i + 1] == '{') { d++; sb.Append("#{"); i++; continue; }
+            if (d > 0 && ch == '{') d++;
+            if (d > 0 && ch == '}') d--;
+            if (ch == '"' && d == 0) sb.Append('\\');
+            sb.Append(ch);
+        }
+        return sb.ToString();
+    }
+
     /// <summary>
-    /// <<~EOS (indentation stripped) / <<-EOS (terminator may be indented). The body is lifted out of the source:
+    /// `<<~EOS` / `<<~'EOS'` / `<<-EOS` / `<<EOS` (plain, only where an operand starts and an `EOS` line follows).
+    /// </summary>
+    bool HeredocStart()
+    {
+        if (src[pos] != '<' || At(1) != '<') return false;
+        int k = 2;
+        bool plain = !(At(2) is '~' or '-');
+        if (!plain) k = 3;
+        bool quoted = At(k) is '\'' or '"';
+        char first = quoted ? At(k + 1) : At(k);
+        if (!char.IsUpper(first)) return false;
+        if (!plain) return true;
+        Token? last = Last();
+        bool prefix = last == null || last.Kind == "nl" || (last.Kind == "op" && last.Text is not (")" or "]" or "}")) || (last.Kind == "id" && space);
+        if (!prefix) return false;
+        int s = pos + k + (quoted ? 1 : 0), e = s;
+        while (e < src.Length && (char.IsLetterOrDigit(src[e]) || src[e] == '_')) e++;
+        string id = src[s..e];
+        int eol = src.IndexOf('\n', e);
+        if (eol < 0) return false;
+        foreach (var ln in src[(eol + 1)..].Split('\n'))
+            if (ln.TrimEnd('\r') == id) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// <<~EOS (indentation stripped) / <<-EOS (terminator may be indented) / <<EOS (terminator at column 0); a quoted
+    /// `'EOS'` opener makes the body raw (no escapes, no interpolation). The body is lifted out of the source:
     /// the rest of the opener line keeps lexing, then lexing resumes after the terminator line.
     /// </summary>
     void Heredoc(int l, int c)
     {
-        bool squiggly = At(2) == '~';
-        Adv(); Adv(); Adv();
+        Adv(); Adv();
+        char mode = src[pos] is '~' or '-' ? src[pos] : ' ';
+        if (mode != ' ') Adv();
+        char quote = src[pos] is '\'' or '"' ? src[pos] : '\0';
+        if (quote != '\0') Adv();
         int s = pos;
         while (pos < src.Length && (char.IsLetterOrDigit(src[pos]) || src[pos] == '_')) Adv();
         string id = src.Substring(s, pos - s);
+        if (quote != '\0')
+        {
+            if (pos >= src.Length || src[pos] != quote) throw Err($"expected closing {quote} after heredoc {id}");
+            Adv();
+        }
         int eol = src.IndexOf('\n', pos);
         if (eol < 0) throw Err($"heredoc {id} has no body");
         var lines = new List<string>();
@@ -160,19 +272,19 @@ public sealed class Lexer
         {
             int e = src.IndexOf('\n', k);
             string ln = e < 0 ? src[k..] : src[k..e];
-            if (ln.Trim() == id) { after = e < 0 ? src.Length : e + 1; break; }
+            if (mode == ' ' ? ln.TrimEnd('\r') == id : ln.Trim() == id) { after = e < 0 ? src.Length : e + 1; break; }
             lines.Add(ln.TrimEnd('\r'));
             if (e < 0) break;
             k = e + 1;
         }
         if (after < 0) throw Err($"heredoc terminator {id} not found");
-        if (squiggly)
+        if (mode == '~')
         {
             int indent = lines.Where(x => x.Trim().Length > 0).Select(x => x.Length - x.TrimStart().Length).DefaultIfEmpty(0).Min();
             lines = lines.Select(x => x.Length >= indent ? x[indent..] : x.TrimStart()).ToList();
         }
         string body = string.Join("\n", lines) + "\n";
-        Add("str", body.Replace("\"", "\\\""), l, c);
+        Add("str", quote == '\'' ? Raw(body) : QuoteOutsideHoles(body), l, c);
         skipAt = eol;
         skipTo = after;
     }
@@ -184,6 +296,14 @@ public sealed class Lexer
         if (last == null || last.Kind == "nl") return true;
         if (last.Kind == "op") return " ( [ { , => = == != << & ".Contains(" " + last.Text + " ");
         return space && last.Kind == "id";
+    }
+
+    /// <summary>Like <see cref="SymbolContext"/>, and after any operator (`:a <=> :b`, `x == :+`).</summary>
+    bool OpSymbolContext()
+    {
+        Token? last = Last();
+        if (last != null && last.Kind == "op") return last.Text is not (")" or "]" or "}");
+        return SymbolContext();
     }
 
     void Newline(int l, int c)
@@ -314,27 +434,146 @@ public sealed class Lexer
         Add("str", sb.ToString(), l, c);
     }
 
+    /// <summary>
+    /// `'a'`, `'\n'`, `'\u{41}'` is a Char (Crystal). A quoted text of any other length is Ruby's single-quoted
+    /// String: no interpolation, `\\` and `\'` are the only escapes.
+    /// </summary>
     void Chr(int l, int c)
     {
-        var sb = new StringBuilder("'");
+        var sb = new StringBuilder();
         Adv();
-        while (pos < src.Length && src[pos] != '\'')
+        while (pos < src.Length && src[pos] != '\'' && src[pos] != '\n')
         {
-            if (src[pos] == '\\') { sb.Append(src[pos]); Adv(); }
+            if (src[pos] == '\\' && pos + 1 < src.Length) { sb.Append(src[pos]); Adv(); }
             sb.Append(src[pos]); Adv();
         }
-        if (pos >= src.Length) throw new CompileException($"{file}:{l}:{c}: unterminated char literal");
+        if (pos >= src.Length || src[pos] != '\'') throw new CompileException($"{file}:{l}:{c}: unterminated char literal");
         Adv();
-        sb.Append('\'');
-        Add("char", sb.ToString(), l, c);
+        string body = sb.ToString();
+        if (IsOneChar(body))
+        {
+            int k = 0;
+            string cs;
+            try { cs = body[0] == '\\' ? CsEscape(body, ref k) : body; }
+            catch (CompileException e) { throw new CompileException($"{file}:{l}:{c}: {e.Message}"); }
+            if (cs.StartsWith("\\U")) throw new CompileException($"{file}:{l}:{c}: unexpected character literal '{body}': it does not fit in a Char (UTF-16); use a String \"{body}\"");
+            Add("char", "'" + (cs == "\"" ? "\\\"" : cs.Length == 0 ? "\\n" : cs) + "'", l, c);
+            return;
+        }
+        var text = new StringBuilder();
+        for (int i = 0; i < body.Length; i++)
+        {
+            if (body[i] == '\\' && i + 1 < body.Length && body[i + 1] is '\\' or '\'') { text.Append(body[++i]); continue; }
+            text.Append(body[i]);
+        }
+        Add("str", Raw(text.ToString()), l, c);
+    }
+
+    /// <summary>
+    /// The C# spelling of the Ruby/Crystal escape at `s[k]` (a backslash); advances `k` past it. `\u{1F600}` and
+    /// `\u{41 42}` become `\U0001F600` / two `\uXXXX`, octal `\101` and `\x41` become `A`, `\e` is ESC,
+    /// `\s` a space, a backslash-newline nothing, and an unknown `\c` is `c` (as in Ruby).
+    /// </summary>
+    public static string CsEscape(string s, ref int k)
+    {
+        static string U(int v) => v > 0xFFFF ? $"\\U{v:X8}" : $"\\u{v:X4}";
+        char n = k + 1 < s.Length ? s[k + 1] : '\\';
+        k += 2;
+        switch (n)
+        {
+            case 'n' or 't' or 'r' or 'a' or 'b' or 'f' or 'v' or '\\' or '"' or '\'':
+                return "\\" + n;
+            case 'e': return "\\u001b";
+            case 's': return " ";
+            case '\n': return "";
+            case 'u' when k < s.Length && s[k] == '{':
+                {
+                    int close = s.IndexOf('}', k);
+                    if (close < 0) throw new CompileException("unterminated \\u{...} escape");
+                    var sb = new StringBuilder();
+                    foreach (var hex in s[(k + 1)..close].Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        if (!int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int v) || v > 0x10FFFF || v is >= 0xD800 and <= 0xDFFF)
+                            throw new CompileException($"invalid unicode escape \\u{{{hex}}}: expected a code point up to 10FFFF");
+                        sb.Append(U(v));
+                    }
+                    k = close + 1;
+                    return sb.ToString();
+                }
+            case 'u':
+                {
+                    int e = k;
+                    while (e < s.Length && e < k + 4 && char.IsAsciiHexDigit(s[e])) e++;
+                    if (e - k != 4) throw new CompileException("invalid unicode escape: expected \\uXXXX or \\u{X...}");
+                    string r = "\\u" + s[k..e];
+                    k = e;
+                    return r;
+                }
+            case 'x':
+                {
+                    int e = k;
+                    while (e < s.Length && e < k + 2 && char.IsAsciiHexDigit(s[e])) e++;
+                    if (e == k) throw new CompileException("invalid hex escape: expected \\xHH");
+                    int v = Convert.ToInt32(s[k..e], 16);
+                    k = e;
+                    return U(v);
+                }
+            case >= '0' and <= '7':
+                {
+                    int e = k - 1;
+                    while (e < s.Length && e < k + 2 && s[e] is >= '0' and <= '7') e++;
+                    int v = Convert.ToInt32(s[(k - 1)..e], 8);
+                    k = e;
+                    return v == 0 ? "\\0" : U(v);
+                }
+            default:
+                return n.ToString();
+        }
+    }
+
+    /// <summary>One character or one escape (`\n`, `A`, `\u{1F}`, `\x41`, `\101`).</summary>
+    static bool IsOneChar(string b)
+    {
+        if (b.Length == 1) return true;
+        if (b.Length < 2 || b[0] != '\\') return false;
+        if (b.Length == 2) return true;
+        if (b[1] == 'u') return b.Length == 6 || (b[2] == '{' && b[^1] == '}' && !b.Contains(' '));
+        if (b[1] == 'x') return b.Length <= 4 && b[2..].All(char.IsAsciiHexDigit);
+        return b.Length <= 4 && b[1..].All(ch => ch is >= '0' and <= '7');
+    }
+
+    /// <summary>Operator method names lexed as one token after `def` / `def self.` (`def []=(i, v)`, `def -@`).</summary>
+    static readonly string[] DefOps = ["[]=", "[]", "===", "<=>", "==", "=~", "!=", "<<", ">>", "<=", ">=", "**", "+@", "-@", "~@", "!@", "+", "-", "*", "/", "%", "<", ">", "!", "~", "&", "|", "^"];
+
+    /// <summary>Operator symbols `:+`, `:<=>`, `:[]` (`inject(:+)`, `send(:<<, x)`).</summary>
+    static readonly string[] SymOps = ["[]=", "[]", "===", "<=>", "==", "=~", "!=", "<<", ">>", "<=", ">=", "**", "+@", "-@", "+", "-", "*", "/", "%", "<", ">", "!", "~", "&", "|", "^"];
+
+    bool AfterDef()
+    {
+        int n = toks.Count;
+        if (n >= 1 && toks[n - 1] is { Kind: "id", Text: "def" }) return true;
+        return n >= 3 && toks[n - 1] is { Kind: "op", Text: "." } && toks[n - 2] is { Kind: "id", Text: "self" } && toks[n - 3] is { Kind: "id", Text: "def" };
+    }
+
+    string? MatchOp(string[] ops)
+    {
+        foreach (var o in ops) if (string.CompareOrdinal(src, pos, o, 0, o.Length) == 0 && pos + o.Length <= src.Length) return o;
+        return null;
     }
 
     void Op(int l, int c)
     {
-        if (src[pos] == '<' && At(1) == '<' && (At(2) == '~' || At(2) == '-') && char.IsUpper(At(3))) { Heredoc(l, c); return; }
-        if (src[pos] == '%' && (At(1) == 'w' || At(1) == 'i') && (At(2) == '[' || At(2) == '(') && SymbolContext()) { WordArray(l, c); return; }
+        if (AfterDef() && MatchOp(DefOps) is { } dop)
+        {
+            for (int i = 0; i < dop.Length; i++) Adv();
+            Add("op", dop, l, c);
+            return;
+        }
+        if (HeredocStart()) { Heredoc(l, c); return; }
+        if (src[pos] == '%' && At(1) is 'w' or 'i' or 'W' or 'I' && At(2) is '[' or '(' or '{' or '<' or '|' && SymbolContext()) { WordArray(l, c); return; }
+        if (PercentStringStart()) { PercentString(l, c); return; }
         if (src[pos] == '/' && RegexContext()) { Regex(l, c); return; }
-        if (src[pos] == ':' && (char.IsLetter(At(1)) || At(1) == '_') && SymbolContext())
+        if (src[pos] == ':' && (char.IsLetter(At(1)) || At(1) == '_') && OpSymbolContext())
         {
             Adv();
             int s = pos;
@@ -342,6 +581,19 @@ public sealed class Lexer
             if (At(0) == '?' || At(0) == '!') Adv();
             Add("sym", src.Substring(s, pos - s), l, c);
             return;
+        }
+        if (src[pos] == ':' && At(1) != ':' && OpSymbolContext())
+        {
+            pos++;
+            string? so = MatchOp(SymOps);
+            pos--;
+            // `:-1` / `:+x` are not symbols (`c ? a :-1`)
+            if (so != null && !(so is "+" or "-" or "*" or "&" && char.IsLetterOrDigit(At(1 + so.Length))))
+            {
+                for (int i = 0; i <= so.Length; i++) Adv();
+                Add("sym", so, l, c);
+                return;
+            }
         }
         string? op = null;
         foreach (var o in Ops3) if (string.CompareOrdinal(src, pos, o, 0, 3) == 0) { op = o; break; }
