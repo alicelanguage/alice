@@ -5,13 +5,13 @@ namespace Alice.Runtime;
 /// <summary>Files, time, environment, JSON as free functions (no `File` module: it would clash with System.IO.File).</summary>
 public static partial class Prelude
 {
-    public static string read_file(string path) => System.IO.File.ReadAllText(path);
-    public static void write_file(string path, string text) => System.IO.File.WriteAllText(path, text);
-    public static bool file_exists_q(string path) => System.IO.File.Exists(path);
-    public static string[] read_lines(string path) => System.IO.File.ReadAllLines(path);
-    public static void sleep(double seconds) => Thread.Sleep(TimeSpan.FromSeconds(seconds));
-    public static DateTime now() => DateTime.Now;
-    public static string? env(string name) => Environment.GetEnvironmentVariable(name);
+    [Ambient] public static string read_file(string path) => System.IO.File.ReadAllText(path);
+    [Ambient] public static void write_file(string path, string text) => System.IO.File.WriteAllText(path, text);
+    [Ambient] public static bool file_exists_q(string path) => System.IO.File.Exists(path);
+    [Ambient] public static string[] read_lines(string path) => System.IO.File.ReadAllLines(path);
+    [Ambient] public static void sleep(double seconds) => Thread.Sleep(TimeSpan.FromSeconds(seconds));
+    [Ambient] public static DateTime now() => DateTime.Now;
+    [Ambient] public static string? env(string name) => Environment.GetEnvironmentVariable(name);
     /// <summary>AOT-safe JSON: primitives, strings, IDictionary, IEnumerable; other objects serialize via ToString.</summary>
     public static string to_json<T>(T value) => ToNode(value)?.ToJsonString() ?? "null";
 

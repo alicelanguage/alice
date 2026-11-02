@@ -38,6 +38,7 @@ same commit as any change that moves a row.
 |---|---|---|
 | ASP.NET Core in CI on machines without the shared framework | `examples/web/aspnet` builds and is checked only where ASP.NET Core is installed | `examples/verify.sh` on a full SDK |
 | WPF and MAUI code-behind | Avalonia XAML + Alice code-behind is tested; WPF (Windows-only) and MAUI are not exercised here | Avalonia for cross-platform UI, or XAML code-behind in C# with Alice view models |
+| `/` and `%` on `Any` values with the C# backend | C# `dynamic` truncates: `a / b` with `a : Any = -7`, `b : Any = 2` gives -3 (and `%` -1), where typed Alice code and the IL backend (`Alice.Runtime.Dyn`) give the floored -4 (and 2) | type the operands (`a : Int32`), or use `a.tdiv(b)` / `a.remainder(b)` when truncation is meant |
 | Interaction-net runtime | explored and parked: slower than fork/join on CPU (`benchmarks/inet/README.md`) | fork/join is the parallel model |
 | References and rename on unbound code | where the binder could not resolve a name (code with errors), matching falls back to the name | fix the errors first, or review the edit preview |
 | Ownership of fields and arrays of objects | collections stored in fields, and arrays of references, stay with the GC (local arrays of numbers and local lists and hashes of any type are pooled) | preallocate and reuse explicitly |
