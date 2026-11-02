@@ -43,6 +43,25 @@ Decision:
 - **Why an own backend.** The backend may emit IL that the C# compiler cannot express: `tail.` and `no.` prefixes,
   `ldelema` without bounds checks under proofs, custom modifiers (modreq/modopt), and other valid IL with no C#
   spelling. Going through C# would cap Alice at what C# can say; that is the reason this backend exists.
+- **Closure ABI** (pass `Air/Passes/ClosureConvert.cs`, IL backend only; nodes in `Mir/MExpr.Closures.cs`). A
+  capture-free lambda is a static method `<M>b__N` on the module's `<>c` holder; its delegate is created once, lazily,
+  and cached in the static field `<>9__M_N` (`AirDelegateCreate` with `CachedField`). A capturing lambda that never
+  escapes (a Par kernel, a `Par.Range/Reduce/Fork/For` argument, a fork branch, an immediately invoked lambda; any
+  other position escapes) gets a by-ref-like display struct `<>c__DisplayClass_M_N` on the caller's stack: read-only
+  captures are value fields, written ones `ref` fields to the caller's locals, and the body is a static method whose
+  first parameter is `ref` the display. Any other capturing lambda gets a sealed display class with one field per
+  capture, filled at creation, and the body as an instance method. A local or parameter that is written and captured by
+  an escaping closure is hoisted into a shared display of its declaring block (created at block entry, so fresh per
+  loop iteration); the method and the closures reach it through that display (a link field `<>8__N`). `this` is the
+  field `<>4__this`. A Par kernel or fork branch runs on other threads, so its display is a plain struct with value
+  fields only, copied once into the runtime's job: it implements `IParKernel` / `IParKernel<T>` / `IForkBranch<T>` with
+  the closure method as `Invoke` and is passed to the struct overloads `Par.Range<TKernel>(n, ref k)`,
+  `Par.Reduce<T, TKernel>(n, ref k, combine)` and `Par.Fork<A, B, TA, TB>(ref a, ref b)` (`Parallel/ParKernels.cs`,
+  jobs reused per thread: no allocation in steady state); a kernel that writes a capture is demoted to a display class.
+  `ref` fields appear only in directly invoked closures (a `ref struct`). `ALICE_CLOSURE_STRUCTS=off`
+  (`ClosureContext.StructDisplays = false`) demotes every display struct to a class. The pass runs after the IL
+  lowerings (`Pipeline.Il`: IlLowering, then ClosureConvert). A body the pass cannot convert soundly (for example a written `for` variable captured by an
+  escaping closure) keeps its lambdas and is reported as unsupported.
 - Staged path (a gate must pass before the next stage starts):
 
 | Stage | Deliverable | Gate |
