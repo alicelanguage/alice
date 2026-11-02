@@ -538,6 +538,9 @@ public sealed partial class Binder
 
     AType CallRetCore(MethodSym m, List<AType> argTypes)
     {
+        for (int i = 0; i < m.Params.Count && i < argTypes.Count; i++)
+            if (m.Params[i] is { Inferred: false } hp)
+                hp.Type = FlagHash(hp.Type, ref hp.DeclaredHash, ref hp.SawDefaultHash, ref hp.SawPlainHash, argTypes[i]);
         if (!m.HasInferredGenerics) return m.Ret;
         var args = new List<AType>();
         for (int i = 0; i < m.Params.Count; i++)

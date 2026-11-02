@@ -69,6 +69,8 @@ public sealed class ParamSym
     public bool Own;                  // `own xs`: moved in by the caller
     public bool Borrow;               // `borrow xs`: never retained by the callee
     public LocalSym? Local;           // the body's local for this parameter
+    public AType? DeclaredHash;       // a `Hash(K, V)` parameter only ever passed DefaultHash values is typed DefaultHash
+    public bool SawDefaultHash, SawPlainHash;
 }
 
 public sealed class MethodSym
@@ -120,6 +122,8 @@ public sealed class FieldSym
     public string Kind = "";          // field getter property setter const enum-member
     public bool IsStatic;
     public TypeSym Owner = null!;
+    public AType? DeclaredHash;       // a `Hash(K, V)` field only ever assigned DefaultHash values is typed DefaultHash
+    public bool SawDefaultHash, SawPlainHash;
 }
 
 public sealed class LocalSym
