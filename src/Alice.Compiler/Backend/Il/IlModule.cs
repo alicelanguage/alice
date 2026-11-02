@@ -280,6 +280,9 @@ public sealed class IlMethodDef : IlMethod
     public List<IlCustomAttribute> CustomAttributes { get; } = [];
     public bool IsStatic => (Attributes & MethodAttributes.Static) != 0;
 
+    /// <summary>A P/Invoke import (ImplMap row + ModuleRef): set <see cref="MethodAttributes.PinvokeImpl"/>, no body.</summary>
+    public IlPInvoke? PInvoke { get; set; }
+
     /// <summary>The body (created on first use). Abstract and runtime-implemented methods have none.</summary>
     public IlBuilder Il => body ??= (Attributes & MethodAttributes.Abstract) != 0
         ? throw new InvalidOperationException("abstract method " + this + " has no body")
@@ -302,6 +305,10 @@ public sealed class IlMethodDef : IlMethod
 
     public override string ToString() => Owner + "::" + name;
 }
+
+/// <summary>`DllImport(Module, EntryPoint = Entry)` as metadata: the ImplMap flags carry CharSet, CallingConvention,
+/// SetLastError and ExactSpelling.</summary>
+public sealed record IlPInvoke(string Module, string EntryPoint, MethodImportAttributes Flags);
 
 public sealed class IlMemberMethod(IlType parent, string name, MethodSig signature) : IlMethod
 {

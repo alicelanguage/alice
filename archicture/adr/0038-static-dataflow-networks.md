@@ -45,15 +45,15 @@ end
 
 | Error | Meaning |
 |---|---|
-| AL0224 | a `dataflow` stage or `stream def` captures a value that is neither sendable nor thread-safe (the ADR 0028 AL0230/AL0231 rule applied to stages) |
-| AL0225 | `stage(par: true)` on a block that is not pure (`PureBlock`, `Lowerer.Parallel.cs`) |
-| AL0226 | an edge in a `dataflow` block has more than one producer or consumer, or the graph has a cycle (bounded buffers could deadlock; use actors for feedback) |
+| AL0244 | a `dataflow` stage or `stream def` captures a value that is neither sendable nor thread-safe (the ADR 0028 AL0230/AL0231 rule applied to stages) |
+| AL0245 | `stage(par: true)` on a block that is not pure (`PureBlock`, `Lowerer.Parallel.cs`) |
+| AL0246 | an edge in a `dataflow` block has more than one producer or consumer, or the graph has a cycle (bounded buffers could deadlock; use actors for feedback) |
 
 ## Pipeline
 
 1. Analysis, new `Semantics/Binder/Binder.Dataflow.cs`: build the graph (nodes = `source`/`stage`/`sink` or `spawn`
-   blocks; edges = channels or the implicit `out`); check SPSC and acyclicity (AL0226), sendability of captures
-   (AL0224, reusing `Binder.Actors.cs`), purity for `par: true` (AL0225); classify each stage as static (one in, one
+   blocks; edges = channels or the implicit `out`); check SPSC and acyclicity (AL0246), sendability of captures
+   (AL0244, reusing `Binder.Actors.cs`), purity for `par: true` (AL0245); classify each stage as static (one in, one
    out per firing) or dynamic (n:m, stateful). Chains of static pure stages are fused and handed to the ADR 0029
    fuser.
 2. Lowering, new `Lowering/Lowerer.Dataflow.cs`: each fused stage becomes a static method
@@ -110,14 +110,14 @@ benchmark is `benchmarks/dataflow/`: a 3-stage file -> tokens -> counts pipeline
 - Per-item handoff dominates for cheap stages. Guard: batch publish and fusion, with a measured dispatch threshold
   like `Par.Offload` (`Parallel/Par.cs`).
 - An ordered sink after a replicated stage is a serial point; the window is sized to k x batch.
-- Users who expect feedback cycles get AL0226, which points at actors (ADR 0028).
+- Users who expect feedback cycles get AL0246, which points at actors (ADR 0028).
 - Existing `Channel`/`spawn`/actor programs keep their semantics; only proven networks change lowering.
 - Rejected: doing nothing for 1.0 (Workstream C needs streaming and the determinism invariant); full static dataflow
   with software pipelining and wavefronts (no workload needs it).
 
 Tests: `tests/Alice.Tests/Runtime/DataflowTests.cs` (ring wraparound, backpressure, completion and exception
 propagation, 0 allocations per item, >= 50 M items/s on a 3-stage integer pipeline on the forge);
-`tests/Alice.Tests/Compiler/DataflowTests.cs` (AL0224-AL0226, fusion of pure chains, inferred `Channel`/`spawn`
+`tests/Alice.Tests/Compiler/DataflowTests.cs` (AL0244-AL0246, fusion of pure chains, inferred `Channel`/`spawn`
 networks, output bit-identical across `DOTNET_PROCESSOR_COUNT=1` and 32, `stream def`); `benchmarks/dataflow` beats
 the `Task.Run` form 3x and matches the hand-written C# pipeline.
 

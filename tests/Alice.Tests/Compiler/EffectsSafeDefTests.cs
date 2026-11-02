@@ -48,6 +48,19 @@ public class EffectsSafeDefTests
     [InlineData("safe def f : Int64\n  System.DateTime.Now.Ticks\nend\nputs f\n")]
     public void Dotnet_statics_outside_the_allow_list_are_rejected(string src) => Rejected(src);
 
+    [Fact]
+    public void Ambient_prelude_functions_are_marked()
+    {
+        // defence in depth: the runtime itself says which entry points reach the machine
+        string[] ambient = ["puts", "print", "p", "gets", "exit", "read_file", "write_file", "file_exists_q", "read_lines", "sleep", "now", "env",
+            "send", "public_send", "respond_to_q", "define_method", "instance_variable_get", "instance_variable_set", "instance_variables", "methods"];
+        var all = typeof(Alice.Runtime.Prelude).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        foreach (var name in ambient)
+            Assert.All(all.Where(m => m.Name == name).ToList(), m => Assert.True(m.IsDefined(typeof(Alice.Runtime.AmbientAttribute), false), name));
+        Assert.DoesNotContain(all, m => m.Name is "format" or "raise" or "to_json" && m.IsDefined(typeof(Alice.Runtime.AmbientAttribute), false));
+        Rejected("safe def f(p : String) : Int32\n  Prelude.write_file(p, \"x\")\n  0\nend\nputs f(\"/tmp/x\")\n");
+    }
+
     public static TheoryData<string, string> SafePrograms => new()
     {
         { "safe def f(xs : Array(Int32)) : Int32\n  xs.sum + Math.sqrt(16.0).to_i\nend\nputs f([1, 2, 3])\n", "10" },

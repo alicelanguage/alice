@@ -1,3 +1,4 @@
+using Alice.Compiler.Air.Passes;
 using Alice.Compiler.Mir;
 using Alice.Compiler.Optimizer.Passes;
 
@@ -16,8 +17,36 @@ public interface IMirPass
 /// exposes constants to strength reduction. `ALICE_DISABLE_PASSES=const-fold,induction` switches passes off
 /// for A/B measurements.
 /// </summary>
+/// <summary>The backend the pipeline optimizes for: IL-only AIR passes (closure conversion) run only for <see cref="Il"/>.</summary>
+public enum AirBackend { CSharp, Il }
+
 public static class Pipeline
 {
+    /// <summary>
+    /// The backend of the current compilation (thread-local, default C#). The C# backend gets exactly the passes of
+    /// <see cref="Default"/>; under <see cref="AirBackend.Il"/> the passes of <see cref="Il"/> follow them on every body
+    /// lowered while an IL method context is set (<see cref="ClosureConvert.Current"/>).
+    /// </summary>
+    [ThreadStatic] public static AirBackend Backend;
+
+    /// <summary>IL-only passes, after <see cref="Default"/>: they replace what Roslyn lowers on the C# path. The IL
+    /// lowerings (foreach, using, switch, patterns, tuples, interpolation, nullable) run first, closure conversion
+    /// last, so it sees the smaller node set.</summary>
+    public static readonly IReadOnlyList<Func<IMirPass>> Il =
+    [
+        () => new IlLowerStage(),
+        () => new ClosureConvert(),
+    ];
+
+    /// <summary>What the IL lowerings left unsupported in the last body this thread ran through <see cref="Il"/>.</summary>
+    [ThreadStatic] public static IlLowerContext? LastIlLowering;
+
+    sealed class IlLowerStage : IMirPass
+    {
+        public string Name => "il-lower";
+        public void Run(List<MStmt> body) => LastIlLowering = IlLowering.Run(body);
+    }
+
     public static readonly IReadOnlyList<Func<IMirPass>> Default =
     [
         () => new ConstantFolding(),
@@ -41,6 +70,12 @@ public static class Pipeline
             var pass = make();
             if (!Disabled.Contains(pass.Name)) pass.Run(body);
         }
+        if (Backend == AirBackend.Il && ClosureConvert.Current != null)
+            foreach (var make in Il)
+            {
+                var pass = make();
+                if (!Disabled.Contains(pass.Name)) pass.Run(body);
+            }
         MirDump.Captured(body);
     }
 }

@@ -2,7 +2,25 @@
 
 ## Unreleased
 
+- IL backend D1.4 (ADR 0033): `Backend/Il/AirToIl` emits IL + portable PDB from the post-optimizer MIR through `IlBuilder` (declarations as the C# backend makes them, typed expressions, checked arithmetic per node, EH, foreach, interpolation, vectors, sequence points and local names); `alice run --backend il`, `alice emit --il <file>` (writes `<name>.dll`/`.pdb`, prints the IL listing). Unsupported nodes are reported with their kind; differential, ILVerify, decode, allocation and corpus tests in `AirToIlTests`.
+- IL backend dynamic sites (backend plan D1.9, ADR 0033): `Alice.Runtime.Dyn` (`src/Alice.Runtime/Dynamic/`) dispatches
+  `Any` values without the C# runtime binder: one `DynSite` per call site with a monomorphic entry and a 4-entry
+  polymorphic inline cache keyed by receiver and argument runtime types, `MethodInvoker` thunks (allocation-free hit
+  path), overloads by runtime types with numeric widening, nil, Alice operator semantics (checked, floored `/` `%`), `define_method` /
+  `method_missing`, public members only. The IL-only pass `Air/Passes/DynSites.cs` rewrites dynamic operations into
+  `AirDynCall` (`Mir/MExpr.Dyn.cs`) and lists the site fields; AL0232 reports dynamic sites under `native = true` and
+  on wasm; `DynSites.Declaration()` declares the `<>DynSites` holder type (AirDecls). The C# backend is unchanged
+  (its C# `dynamic` still truncates `/` and `%`: docs/production.md).
+- IL closure conversion (backend plan D1.5, ADR 0033 closure ABI): `Air/Passes/ClosureConvert.cs` turns lambdas into static methods with a cached delegate (capture-free), display structs passed by ref (non-escaping: Par kernels, fork branches) or display classes with hoisted written captures (escaping); nodes `AirDelegateCreate`, `AirDisplayNew`, `AirDisplayField` (`Mir/MExpr.Closures.cs`, dump and debug C# forms). Kernels and fork branches use new struct overloads `Par.Range<TKernel>`, `Par.Reduce<T, TKernel>`, `Par.Fork<A, B, TA, TB>` (`IParKernel`, `IParKernel<T>`, `IForkBranch<T>`; reused jobs, 0 B in steady state); `ALICE_CLOSURE_STRUCTS=off` demotes structs to classes. Runs only under `Pipeline.Backend == AirBackend.Il` with a method context, after the IL lowerings; emitted C# is byte-identical.
 - IL backend Synthesize pass (backend plan D1.6, ADR 0032/0033): `Air/Passes/Synthesize.cs` builds, for the IL backend only, explicit declarations with MIR bodies (`Mir/AirDecls.cs`: `AirModuleDecl`/`AirTypeDecl`/`AirMethodDecl`/`AirFieldDecl`/`AirPropertyDecl`, on `TypeSym.Synth`) for what Roslyn synthesizes today: record and record struct members (backing fields, init accessors, primary/copy constructors, EqualityContract, Equals, GetHashCode, ToString/PrintMembers, Deconstruct, ==/!=, `<Clone>$`, `__With`), sum types (abstract base, sealed nested variants, `Tag`, `Is<Variant>`, unit `Value`), derived `!=`/`>`/`>=`, the IEnumerable bridge, auto-properties, field/constant initializers, default and struct constructors, `to_s` as ToString and the module initializer. Emitted C# is byte-identical on the corpus.
+- IL backend FFI (backend plan D1.10, ADR 0018/0033): `Backend/Il/AirToIl.Ffi.cs` emits `lib` funs as blittable P/Invoke
+  rows (ImplMap: EntryPoint, ExactSpelling, WinApi, no CharSet/SetLastError; `[SuppressGCTransition]` for `@[Fast]`)
+  behind inlined wrappers (UTF-8 strings on a `localloc` buffer via `Utf8Arg`, pinned arrays, out/ref byrefs, borrowed
+  string returns, Bool as byte), `[UnmanagedCallersOnly]` callback trampolines passed by `ldftn`, `@[Native]` `calli`
+  with the managed fallback, and pointer load/store/arithmetic/`sizeof`; `IlModule`/`MetadataWriter` gain P/Invoke
+  (`IlMethodDef.PInvoke`, ModuleRef + ImplMap rows). Not wired into AirToIl yet; the FfiTests calls, driven from an IL
+  `Main`, print what the C# backend prints, and NativeAOT publishes the emitted dll.
+- IL backend state machines (backend plan D1.8, ADR 0032/0033): `Air/Passes/StateMachines*.cs` rewrites async methods, iterators and async iterators, for the IL backend only, into C#-shaped state-machine types (`AirTypeDecl`: `<>1__state`, method builder, hoisted locals, awaiter fields, MoveNext with `AwaitUnsafeOnCompleted`, try/finally across awaits, awaits in finally, `await foreach`/`await using`; iterator `Dispose` running pending finally blocks, `GetEnumerator` thread fast path; `AsyncIteratorMethodBuilder` + `ManualResetValueTaskSourceCore<bool>`; awaits and yields inside rescue clauses, yields inside begin/rescue, async lambdas via `StateMachines.AsyncLambdas`) plus a kickoff body, with the jump nodes `AirLabel`/`AirGoto`/`AirGotoTable` (`Mir/MExpr.StateMachines.cs`). The C# backend never runs it: emitted C# is unchanged.
 - AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is

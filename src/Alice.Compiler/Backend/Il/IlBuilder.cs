@@ -136,6 +136,10 @@ public sealed class IlBuilder
     /// so every emitted instruction (and its sequence point) stays.</summary>
     public IlPeephole Peephole { get; set; } = IlPeephole.All;
 
+    /// <summary>Encode every branch in its long form (additive helper, D1.4): the fallback for a body whose
+    /// serialized bytes fail the decode check (short-branch fixup corruption, see Backend/IlSpike/README.md).</summary>
+    public bool LongBranches { get; set; }
+
     public IReadOnlyList<IlLocal> Locals => locals;
 
     /// <summary>Instructions emitted so far (pseudo entries such as labels excluded).</summary>
@@ -261,6 +265,62 @@ public sealed class IlBuilder
     public void Emit(ILOpCode op, string value) { Expect(op, Operand.String); AddObj(op, value); }
 
     public void Emit(ILOpCode op, MethodSig callSite) { Expect(op, Operand.Sig); AddObj(op, callSite); }
+
+    // ---------------------------------------------------------------- listing (additive helper, D1.4)
+
+    /// <summary>A readable listing of the instruction list before encoding (after the peephole passes when
+    /// <paramref name="optimize"/>): labels, locals, instructions, exception regions, sequence points as comments.
+    /// For `alice emit --il`; operands print symbolically (no tokens exist yet).</summary>
+    public string Listing(bool optimize = true)
+    {
+        if (optimize && Peephole != IlPeephole.None && !optimized) { RunPeephole(); optimized = true; }
+        var sb = new System.Text.StringBuilder();
+        if (locals.Count > 0)
+        {
+            sb.Append("    .locals").Append(InitLocals ? " init" : "").Append(" (");
+            sb.Append(string.Join(", ", locals.Select(l => "[" + l.Index + "] " + l.Type + (l.Pinned ? " pinned" : "") + (l.Name != null ? " " + l.Name : ""))));
+            sb.Append(")\n");
+        }
+        foreach (var r in regions)
+            sb.Append("    // .try L").Append(r.TryStart.Id).Append(" to L").Append(r.TryEnd.Id).Append(' ').Append(r.Kind.ToString().ToLowerInvariant())
+              .Append(r.CatchType != null ? " " + r.CatchType : "").Append(" handler L").Append(r.HandlerStart.Id).Append(" to L").Append(r.HandlerEnd.Id).Append('\n');
+        foreach (var c in code)
+        {
+            switch (c.Kind)
+            {
+                case IK.Label: sb.Append("  L").Append(c.I).Append(":\n"); break;
+                case IK.Seq:
+                    {
+                        var sp = (IlSequencePoint)c.Obj!;
+                        if (sp.Document == null) sb.Append("    // hidden\n");
+                        else sb.Append("    // ").Append(System.IO.Path.GetFileName(sp.Document.Path)).Append(':').Append(sp.StartLine).Append(':').Append(sp.StartColumn).Append('\n');
+                        break;
+                    }
+                case IK.ScopeOpen: sb.Append("    // {\n"); break;
+                case IK.ScopeClose: sb.Append("    // }\n"); break;
+                default:
+                    {
+                        sb.Append("    ").Append(c.Op.ToString().ToLowerInvariant().Replace('_', '.'));
+                        var k = OperandOf(c.Op);
+                        string operand = k switch
+                        {
+                            Operand.None => "",
+                            Operand.Local => (int)c.I < locals.Count && locals[(int)c.I].Name is { } ln ? c.I + " // " + ln : c.I.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            Operand.Branch => "L" + c.I,
+                            Operand.Switch => "(" + string.Join(", ", ((IlLabel[])c.Obj!).Select(l => "L" + l.Id)) + ")",
+                            Operand.R4 or Operand.R8 => c.R.ToString("R", System.Globalization.CultureInfo.InvariantCulture),
+                            Operand.String => "\"" + ((string)c.Obj!).Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\"",
+                            _ when c.Obj != null => c.Obj.ToString() ?? "",
+                            _ => c.I.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        };
+                        if (operand.Length > 0) sb.Append(' ').Append(operand);
+                        sb.Append('\n');
+                        break;
+                    }
+            }
+        }
+        return sb.ToString();
+    }
 
     // ---------------------------------------------------------------- typed helpers (AIR surface)
 
@@ -696,6 +756,7 @@ public sealed class IlBuilder
 
         // branch relaxation: start short, widen the ones out of range until nothing changes
         var longBr = new bool[n];
+        if (LongBranches) Array.Fill(longBr, true);
         var off = new int[n + 1];
         for (bool changed = true; changed;)
         {
