@@ -61,9 +61,9 @@ public static class PublishCommands
             {
                 var outcome = UiH.Spin($"{T("publishing")} {Path.GetFileName(nupkg)}…",
                     () => NuGetPush.PushAsync(source, key!, nupkg!, CancellationToken.None).GetAwaiter().GetResult());
-                if (outcome == NuGetPush.Outcome.AlreadyExists) { UiH.Status("Skipped", $"{Path.GetFileName(nupkg)} is already on {source}"); return 0; }
+                if (outcome == NuGetPush.Outcome.AlreadyExists) { UiH.Status(T("skipped"), T("publish.exists", Path.GetFileName(nupkg)!, source)); return 0; }
             }
-            catch (NuGetPush.PushException e) { UiH.Error(e.Message, "--dotnet-push uses `dotnet nuget push` instead"); return 1; }
+            catch (NuGetPush.PushException e) { UiH.Error(e.Message, T("hint.publish.dotnet")); return 1; }
             UiH.Status(T("published"), $"{Path.GetFileName(nupkg)} → {source}");
             return 0;
         }

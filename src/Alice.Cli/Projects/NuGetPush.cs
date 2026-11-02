@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using static Alice.Cli.Localization.Strings;
 
 namespace Alice.Cli.Projects;
 
@@ -37,8 +38,8 @@ public static class NuGetPush
         using var resp = await Send(req, endpoint, ct).ConfigureAwait(false);
         if (resp.StatusCode == HttpStatusCode.Conflict) return Outcome.AlreadyExists;
         if (!resp.IsSuccessStatusCode)
-            throw new PushException($"{endpoint} answered {(int)resp.StatusCode} {resp.ReasonPhrase}" +
-                (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ? " (check the API key and its package scope)" : ""));
+            throw new PushException(T("push.status", endpoint, (int)resp.StatusCode, resp.ReasonPhrase ?? "") +
+                (resp.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ? " (" + T("hint.push.auth") + ")" : ""));
         return Outcome.Published;
     }
 
@@ -47,7 +48,7 @@ public static class NuGetPush
     {
         using var req = new HttpRequestMessage(HttpMethod.Get, index);
         using var resp = await Send(req, index, ct).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode) throw new PushException($"{index} answered {(int)resp.StatusCode} {resp.ReasonPhrase}");
+        if (!resp.IsSuccessStatusCode) throw new PushException(T("push.status", index, (int)resp.StatusCode, resp.ReasonPhrase ?? ""));
         try
         {
             using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
@@ -58,9 +59,9 @@ public static class NuGetPush
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException)
         {
-            throw new PushException($"{index} is not a NuGet v3 service index");
+            throw new PushException(T("push.no.index", index));
         }
-        throw new PushException($"{index} has no PackagePublish resource (the feed does not accept pushes)");
+        throw new PushException(T("push.no.publish", index));
     }
 
     static async Task<HttpResponseMessage> Send(HttpRequestMessage req, string url, CancellationToken ct)
@@ -69,17 +70,17 @@ public static class NuGetPush
         {
             var resp = await Http.SendAsync(req, ct).ConfigureAwait(false);
             // redirects are not followed: the key header would go along to wherever they point
-            if ((int)resp.StatusCode is >= 300 and < 400) { resp.Dispose(); throw new PushException($"{url} redirected; use the final feed URL"); }
+            if ((int)resp.StatusCode is >= 300 and < 400) { resp.Dispose(); throw new PushException(T("push.redirect", url)); }
             return resp;
         }
-        catch (HttpRequestException e) { throw new PushException($"could not reach {url} ({e.Message})"); }
-        catch (TaskCanceledException) when (!ct.IsCancellationRequested) { throw new PushException($"{url} timed out"); }
+        catch (HttpRequestException e) { throw new PushException(T("push.unreachable", url, e.Message)); }
+        catch (TaskCanceledException) when (!ct.IsCancellationRequested) { throw new PushException(T("push.timeout", url)); }
     }
 
     /// <summary>The key travels in a header, so only https (plain http just for a feed on this machine).</summary>
     static void RequireSecure(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || !(u.Scheme == Uri.UriSchemeHttps || (u.Scheme == Uri.UriSchemeHttp && u.IsLoopback)))
-            throw new PushException($"refusing to send the API key to {url}: the feed must use https");
+            throw new PushException(T("push.https", url));
     }
 }
