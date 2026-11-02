@@ -23,7 +23,7 @@ public sealed partial class Binder
         ["String"] = AType.String,
         ["Char"] = AType.Char,
         ["Object"] = AType.Object,
-        ["Any"] = AType.Dynamic,
+        ["Any"] = AType.Any,
         ["Nil"] = AType.Void,
         ["Void"] = AType.Void,
     };
@@ -152,7 +152,7 @@ public sealed partial class Binder
             var pt = t.Sym?.Parent ?? t.Sym;
             if (pr != null && pr == pt && pr.Kind == "adt") { r = pr.Type; continue; }
             if (r.IsNumeric && t.IsNumeric) { r = r.NumericRank >= t.NumericRank ? r : t; continue; }
-            if (r.Kind == "dynamic" || t.Kind == "dynamic") { r = AType.Dynamic; continue; }
+            if (r.Kind == "dynamic" || t.Kind == "dynamic") { r = ReferenceEquals(r, AType.Any) || ReferenceEquals(t, AType.Any) ? AType.Any : AType.Dynamic; continue; }
             r = CommonBase(r, t) ?? AType.Object;
         }
         if (r == null) return sawNull ? AType.Null : AType.Unknown;

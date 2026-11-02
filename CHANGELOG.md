@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- Strict typing mode (AL0220): `[build] strict = true` in `alice.toml`, `--strict` on `alice build/run/check/emit`, or
+  `@[Strict]` on a method, class, struct or module. Any expression, local, parameter or return the compiler cannot
+  type (today it silently becomes `dynamic`) is a compile error at its root cause, naming what could not be typed;
+  `Any` written by the user stays allowed. Groundwork for the IL and wasm backends, which need every expression
+  typed. Without strict mode nothing changes.
+- The binder now types more programs (their C# changes only where a value was untyped before): sum-type and record
+  pattern bindings (`when Shape::Circle(r)`), `.Length` on arrays of Alice types, .NET extension methods with generic
+  arguments inferred from the receiver and arguments (`bytes.Concat(px)`, `counts.GetValueOrDefault(w)`,
+  `db.blogs.Where(...)`, `FindControl<TextBlock>(...)`), `ARGV` and member chains on constants (`ARGV.Length`,
+  `MASK.Length`), block parameters of .NET and runtime delegate parameters (`Par.For(n) { |i| }`,
+  `Par.Map(xs) do |y|`, `m.lock { |l| }`, `Array(T).new(n) { |i| }`), Prelude functions called with implicit self
+  (`describe`, `it`, `expect`, `eq`...), `super` in an override of a .NET virtual, and the `@[Native]` probe
+  `__alice_native_loaded()`. An override of a .NET virtual without `: Type` keeps the base method's return type when
+  that is `void` or the tail is untyped, so a newly typed tail cannot change its signature. On samples/, benchmarks/, examples/ and the compiler test
+  corpus, strict mode rejects 56 of 995 programs (128 of 1003 before these fixes).
+
 ## 0.14.0 - 2026-10-27
 
 - Telemetry ships disabled in this release: `alice` never asks, records or sends, and `alice telemetry` only reports

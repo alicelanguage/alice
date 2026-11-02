@@ -28,6 +28,9 @@ public sealed class AType
     public static readonly AType Void = new("void", "void", typeof(void));
     public static readonly AType Null = new("null", "object");
     public static readonly AType Dynamic = new("dynamic", "dynamic");
+    /// <summary>`Any` written by the user: the same C# type as <see cref="Dynamic"/>, told apart by reference so strict
+    /// mode (AL0220) accepts it. Values computed from an `Any` keep this instance.</summary>
+    public static readonly AType Any = new("dynamic", "dynamic");
     public static readonly AType Object = new("class", "object", typeof(object));
     public static readonly AType Bool = new("prim", "bool", typeof(bool));
     public static readonly AType Char = new("prim", "char", typeof(char));
@@ -49,6 +52,8 @@ public sealed class AType
     public bool IsUnknown => Kind == "unknown";
     public bool IsKnown => Kind != "unknown" && Kind != "dynamic";
     public bool IsVoid => Kind == "void";
+    /// <summary>Unknown, or `dynamic` the user did not ask for with `Any`: an error under strict typing (AL0220).</summary>
+    public bool IsUntyped => Kind is "unknown" or "dynamic" && !ReferenceEquals(this, Any);
     public bool IsString => Cs == "string";
     public bool IsBool => Cs == "bool";
     public bool IsNumeric => NumericRank > 0;

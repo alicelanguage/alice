@@ -87,6 +87,7 @@ public sealed class Emitter
         var main = f.Items.OfType<StmtItem>().Select(s => s.Stmt).ToList();
         if (main.Count > 0)
         {
+            binder.CheckStrictMain(f.Path, main);   // AL0220 (no-op unless strict)
             lowerer.Type = binder.Program;
             lowerer.Method = null;
             var body = lowerer.LowerBody(main, Tail.None, f.HoistedLocals, main[0].Line);
@@ -651,6 +652,7 @@ public sealed class Emitter
         if (d.IsPartial)   // the generator supplies the body; the declaration carries the attributes it reads
             return $"{dir}{Attrs(d.Attrs)}{d.Vis}{(m.IsStatic || owner.Kind is "module" or "program" ? " static" : "")} partial {ret} {m.CsName}{gen}({plist}){where};\n";
 
+        binder.CheckStrict(d, owner, inst, retT);   // AL0220 (no-op unless strict)
         lowerer.Type = owner;
         lowerer.Method = m;
         bool returns = !retT.IsVoid && !m.IsCtor && !m.IsIterator;

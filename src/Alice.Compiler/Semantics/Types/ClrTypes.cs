@@ -393,4 +393,156 @@ public sealed class ClrTypes
             if (i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IEnumerable<>)) return i.GetGenericArguments()[0];
         return null;
     }
+
+    Dictionary<string, List<MethodInfo>>? extensionMethods;
+
+    /// <summary>
+    /// Result type of a .NET extension method call (`bytes.Concat(px)`, `counts.GetValueOrDefault(w)`,
+    /// `db.blogs.Where(...)`, `acc.Allocate1D(xs)`), with generic arguments inferred from the receiver and the
+    /// typed arguments as C# does. Among applicable overloads the one with the most specific receiver wins
+    /// (Queryable over Enumerable for an IQueryable); Unknown when that is ambiguous or a type argument stays open.
+    /// </summary>
+    public AType ExtensionReturn(string name, AType recv, List<AType> args, IReadOnlyList<Type>? typeArgs = null)
+    {
+        var rt = ClrOf(recv);
+        if (rt == null) return AType.Unknown;
+        if (extensionMethods == null)
+        {
+            extensionMethods = new();
+            foreach (var a in asms)
+            {
+                Type?[] types;
+                try { types = a.GetExportedTypes(); }
+                catch (ReflectionTypeLoadException e) { types = e.Types; }
+                catch (Exception) { continue; }
+                foreach (var t in types)
+                {
+                    if (t is not { IsSealed: true, IsAbstract: true } || !t.IsDefined(typeof(ExtensionAttribute), false)) continue;
+                    foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                        if (m.IsDefined(typeof(ExtensionAttribute), false))
+                        {
+                            if (!extensionMethods.TryGetValue(m.Name, out var l)) extensionMethods[m.Name] = l = new();
+                            l.Add(m);
+                        }
+                }
+            }
+        }
+        if (!extensionMethods.TryGetValue(name, out var all)) return AType.Unknown;
+        var fits = new List<(MethodInfo M, Type Recv)>();
+        foreach (var m0 in all)
+        {
+            var ps = m0.GetParameters();
+            int req = ps.Count(p => !p.IsOptional && !p.IsDefined(typeof(ParamArrayAttribute))) - 1;
+            if (args.Count < req || args.Count > ps.Length - 1) continue;
+            var m = m0;
+            if (m.IsGenericMethodDefinition)
+            {
+                var targs = m.GetGenericArguments();
+                Type[] closedArgs;
+                if (typeArgs != null)
+                {
+                    if (typeArgs.Count != targs.Length) continue;
+                    closedArgs = typeArgs.ToArray();
+                }
+                else
+                {
+                    var map = new Dictionary<Type, Type>();
+                    MatchClr(ps[0].ParameterType, rt, map);
+                    for (int i = 0; i < args.Count; i++) Match(Unexpr(ps[i + 1].ParameterType), args[i], map);
+                    if (!targs.All(map.ContainsKey)) continue;
+                    closedArgs = targs.Select(g => map[g]).ToArray();
+                }
+                try { m = m.MakeGenericMethod(closedArgs); }
+                catch (ArgumentException) { continue; }
+            }
+            else if (typeArgs != null) continue;
+            var cps = m.GetParameters();
+            if (!Receives(cps[0].ParameterType, rt)) continue;
+            bool ok = true;
+            for (int i = 0; i < args.Count && ok; i++)
+            {
+                var a = args[i].Kind == "func" ? null : args[i].Clr ?? (args[i].Sym != null ? Proxy(args[i]) : null);
+                var p = cps[i + 1].ParameterType;
+                if (p.IsByRef) p = p.GetElementType()!;
+                if (args[i].Kind == "func") ok = typeof(Delegate).IsAssignableFrom(Unexpr(p));
+                else if (a != null) ok = p.IsAssignableFrom(a) || Array.IndexOf(NumericOrder, a) >= 0 && Array.IndexOf(NumericOrder, p) > Array.IndexOf(NumericOrder, a);
+                else if (args[i].Kind is "unknown" or "dynamic") ok = false;
+            }
+            if (ok) fits.Add((m, cps[0].ParameterType));
+        }
+        // most specific receiver: assignable to every other candidate's receiver parameter
+        var best = fits.Where(f => fits.All(g => g.Recv.IsAssignableFrom(f.Recv) || Receives(g.Recv, f.Recv))).ToList();
+        // no single most specific one (Span and ReadOnlySpan overloads of IndexOf): fine when they all agree
+        var rets = (best.Count > 0 ? best : fits).Select(f => f.M.ReturnType).Distinct().ToList();
+        if (rets.Count != 1 || rets[0].ContainsGenericParameters) return AType.Unknown;
+        return FromClr(rets[0]);
+    }
+
+    /// <summary>
+    /// Parameter types of the block passed as <paramref name="m"/>'s last (delegate) parameter: `Par.For(n) { |i| }`
+    /// gives Int32, `Par.Map(xs) do |y|` the element type of xs. Generic ones come from the other arguments; a type
+    /// that stays open is Unknown, as before.
+    /// </summary>
+    public static List<AType> BlockParamTypes(MethodInfo? m, List<AType>? args)
+    {
+        if (m == null || m.GetParameters() is not { Length: > 0 } ps) return [];
+        var d = ps[^1].ParameterType;
+        if (!d.IsSubclassOf(typeof(Delegate)) || d.GetMethod("Invoke") is not { } invoke) return [];
+        var map = new Dictionary<Type, Type>();
+        if (m.IsGenericMethodDefinition && args != null)
+            for (int i = 0; i < args.Count && i < ps.Length - 1; i++) Match(ps[i].ParameterType, args[i], map);
+        Type? Close(Type t)
+        {
+            if (t.IsGenericParameter) return map.GetValueOrDefault(t);
+            if (!t.ContainsGenericParameters) return t;
+            if (t.IsArray) return Close(t.GetElementType()!) is { } e ? e.MakeArrayType() : null;
+            if (!t.IsGenericType) return null;
+            var targs = t.GetGenericArguments().Select(Close).ToArray();
+            if (targs.Any(a => a == null)) return null;
+            try { return t.GetGenericTypeDefinition().MakeGenericType(targs!); }
+            catch (ArgumentException) { return null; }
+        }
+        return invoke.GetParameters().Select(p => Close(p.ParameterType) is { } c && !c.IsByRef ? FromClr(c) : AType.Unknown).ToList();
+    }
+
+    /// <summary>The CLR type an Alice-typed receiver has at run time (its own, a CLR base class, or a proxy).</summary>
+    static Type? ClrOf(AType t)
+    {
+        if (t.Clr != null) return t.Clr;
+        if (t.Sym?.Bases.Select(b => b.Clr).FirstOrDefault(b => b != null && !b.IsInterface) is { } clrBase) return clrBase;
+        return null;
+    }
+
+    /// <summary>`Expression(Func(T, Bool))` parameters take lambdas like `Func(T, Bool)` does.</summary>
+    static Type Unexpr(Type p) =>
+        p.IsGenericType && !p.IsGenericTypeDefinition && p.GetGenericTypeDefinition() == typeof(System.Linq.Expressions.Expression<>) ? p.GetGenericArguments()[0] : p;
+
+    /// <summary>The receiver converts to the `this` parameter: reference/boxing conversion, or array to span (C# 14).</summary>
+    static bool Receives(Type p, Type a)
+    {
+        if (p.IsAssignableFrom(a)) return true;
+        if (a.IsArray && IsSpan(p) && p.GetGenericArguments()[0] == a.GetElementType()) return true;
+        return false;
+    }
+
+    /// <summary>Binds generic parameters of <paramref name="p"/> from a CLR type (its base classes and interfaces too).</summary>
+    static void MatchClr(Type p, Type a, Dictionary<Type, Type> map)
+    {
+        if (p.IsGenericParameter) { map.TryAdd(p, a); return; }
+        if (p.IsArray && a.IsArray) { MatchClr(p.GetElementType()!, a.GetElementType()!, map); return; }
+        if (!p.IsGenericType) return;
+        var def = p.GetGenericTypeDefinition();
+        if (a.IsArray && IsSpan(p)) { MatchClr(p.GetGenericArguments()[0], a.GetElementType()!, map); return; }
+        for (var b = a; b != null; b = b.BaseType)
+            if (b.IsGenericType && b.GetGenericTypeDefinition() == def) { Pairs(p, b, map); return; }
+        foreach (var i in a.GetInterfaces())
+            if (i.IsGenericType && i.GetGenericTypeDefinition() == def) { Pairs(p, i, map); return; }
+    }
+
+    static void Pairs(Type p, Type a, Dictionary<Type, Type> map)
+    {
+        var pa = p.GetGenericArguments();
+        var aa = a.GetGenericArguments();
+        for (int i = 0; i < pa.Length && i < aa.Length; i++) MatchClr(pa[i], aa[i], map);
+    }
 }

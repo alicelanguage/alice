@@ -70,7 +70,7 @@ method of the same name fits the receiver (`split`, `sum`, `wait`), the Prelude 
 ### Inference
 
 - Locals: from initializer. `s : String? = nil` annotates.
-- Method returns: inferred Crystal-style when `: Type` is omitted, including calls to defs declared later. Unresolvable -> `dynamic`.
+- Method returns: inferred Crystal-style when `: Type` is omitted, including calls to defs declared later. Unresolvable -> `dynamic` (an error under [strict typing](#strict-typing-al0220)).
 - Untyped params are monomorphized per call-site types: `def len(x)` called with `String` and `Array(Int32)` emits `int len(string x)` and `int len(int[] x)`; no `dynamic`.
 - Locals are Ruby function-scoped: a local first assigned inside `if`/loop is hoisted and visible after it.
 
@@ -109,6 +109,27 @@ end
 puts len("abcd")   # 4
 puts len([1, 2])   # 2
 ```
+
+### Strict typing (AL0220)
+
+By default a value the compiler cannot type becomes `dynamic` (see Inference). Strict mode makes that a compile
+error instead, so every expression, local, parameter and return has a static type:
+
+- `[build] strict = true` in `alice.toml`, or `--strict` on `alice build`, `run`, `check` and `emit`: the whole program;
+- `@[Strict]` on a method, or on a class, struct or module (its own methods): just that code.
+
+```crystal
+def len(x : Any)       # Any written on purpose: allowed, and so is what is computed from it
+  x.Length
+end
+v = System.Numerics.Vector2.new(1.0_f32, 2.0_f32)
+w = v * 2.0_f32        # error[AL0220]: strict: `*` on `Vector2` and `Float32` has no static type
+```
+
+Each error points at the root cause (not at the locals and calls typed from it) and names what could not be typed:
+a member on which type, a call to which method, a block parameter, an operator. Fix it by annotating (`w : Vector2 =
+...`, `def f : T`, `|k : Int32|`), casting (`x.as(T)`), or writing `Any` where dynamic dispatch is wanted. The C# of
+a program that already typed is the same with and without strict mode.
 
 ### Immutables
 
