@@ -76,4 +76,12 @@ public class MirDumpParallelTests
         Assert.Contains("(rent global::Alice.Runtime.Own<double>", own);
         Assert.Contains("(release global::Alice.Runtime.Own<double> `t`:double[])", own);
     }
+
+    [Fact]
+    public void Trip_count_parenthesizes_a_compound_range_end()
+    {
+        Assert.Equal("(c ? n : m) - a + 1", Printer.E(new AirTripCount { End = new MCond { C = N("c"), A = N("n"), B = N("m") }, Start = N("a"), Inclusive = true }));
+        var cs = AliceCompiler.Transpile("def f(xs : Array(Float64), c : Bool, n : Int32, m : Int32)\n  for i in 1...(c ? n : m)\n    xs[i] = Math.sqrt(xs[i])\n  end\nend\n");
+        Assert.Matches(@"int __n\d+ = \(c \? n : m\) - __a\d+;", cs);
+    }
 }
