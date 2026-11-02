@@ -12,7 +12,7 @@
 |---|---|
 | 0001 | [.NET platform language, single Roslyn/IL backend](adr/0001-dotnet-platform-language.md) (amended by 0033: single IR, IL-first) |
 | 0002 | [Separate runtime and native kernels](adr/0002-separate-runtime-and-native-kernels.md) (amended: native kernels removed, pure C#) |
-| 0003 | [Self-hosting bootstrap](adr/0003-self-hosting-bootstrap.md) (superseded by 0035; earlier deferred by 0007) |
+| 0003 | [Self-hosting bootstrap](adr/0003-self-hosting-bootstrap.md) (superseded by 0007; 0035 withdrawn) |
 | 0004 | [Safety and typing](adr/0004-safety-and-typing.md) |
 | 0005 | [Concurrency model](adr/0005-concurrency-model.md) (amended by 0028, 0038) |
 | 0006 | [Ownership as a static layer on the .NET GC](adr/0006-ownership-on-dotnet-gc.md) (proposed; arrays implemented by 0016; sum-type arenas planned by 0037) |
@@ -44,7 +44,7 @@
 | 0032 | [AIR, a typed structured IR replacing MIR in place](adr/0032-alice-ir.md) (accepted, planned) |
 | 0033 | [Direct IL backend through System.Reflection.Metadata](adr/0033-il-backend.md) (accepted, planned) |
 | 0034 | [WebAssembly target without the .NET runtime (`runtime = "alice"`)](adr/0034-wasm-target.md) (accepted, planned) |
-| 0035 | [Bootstrap by pinned previous release and component-wise replacement](adr/0035-bootstrap.md) (accepted, planned) |
+| 0035 | [Bootstrap by pinned previous release and component-wise replacement](adr/0035-bootstrap.md) (withdrawn 2026-11-02: compiler stays C#) |
 | 0037 | [Affine arena memory for sum types](adr/0037-affine-arena-sum-types.md) (accepted, planned; amends 0006, extends 0016/0017) |
 | 0038 | [Static dataflow networks over bounded SPSC rings](adr/0038-static-dataflow-networks.md) (accepted, planned; amends 0005) |
 | 0039 | [Connection-Machine data-parallel primitives](adr/0039-connection-machine-primitives.md) (accepted, planned) |

@@ -1,7 +1,12 @@
 # ADR 0035: Bootstrap by pinned previous release and component-wise replacement
 
-Status: Accepted (1.0 direction; not yet implemented). Supersedes ADR 0003 and revives its goal (the compiler written in
-Alice).
+Status: Withdrawn (lead decision 2026-11-02: no self-hosting for 1.0; compiler stays C#). Was: Accepted (1.0
+direction; not yet implemented), superseding ADR 0003.
+
+Why withdrawn: the lead dropped the goal of rewriting the compiler in Alice. A second compiler would split the effort
+that 1.0 needs on the backend: our own .NET IL backend (ADR 0032 AIR, ADR 0033), optimized as far as possible, and the
+wasm target (ADR 0034). The compiler stays C#. Strict mode (AL0220) is kept, not for bootstrapping but because the IL
+backend must never see an `Unknown` type. The text below is kept for history and is not a plan.
 
 ADR 0003 planned a parallel full `selfhost/` compiler and ported every feature twice. That is why it was deferred (ADR
 0007). The language now has what a compiler needs: sum types, patterns, generics, BCL collections, iterators, closures,
