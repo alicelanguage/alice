@@ -31,6 +31,13 @@ public sealed class Emitter
         "#pragma warning disable CS0105, CS0162, CS0164, CS0168, CS0219, CS0618, CS0660, CS0661, CS8618, CS8632, CS1717, CS8981\n" +
         "using System;\nusing System.Collections.Generic;\nusing System.Linq;\nusing System.Text;\nusing System.IO;\nusing System.Threading;\nusing System.Threading.Tasks;\nusing Alice.Runtime;\nusing static Alice.Runtime.Prelude;\nusing static Program;\n";
 
+    /// <summary>`using Alice.Core;` joins the default usings once the runtime defines a type directly in the
+    /// `Alice.Core` namespace (ADR 0036); until then emitted C# stays byte-identical. Lazy holder: computed once.</summary>
+    static class CoreUsing
+    {
+        internal static readonly bool Present = typeof(Alice.Runtime.Names).Assembly.GetExportedTypes().Any(t => t.Namespace == "Alice.Core");
+    }
+
     int classBodyN;
 
     /// <summary>Types with executable class bodies, in declaration order (nested and namespaced included).</summary>
@@ -52,6 +59,7 @@ public sealed class Emitter
         file = f.Path;
         lowerer.File = f.Path;
         var sb = new StringBuilder(Header);
+        if (CoreUsing.Present) sb.Append("using Alice.Core;\n");
         foreach (var it in f.Items)
             if (it is UsingItem u)
             {

@@ -45,12 +45,13 @@
 | 0033 | [Direct IL backend through System.Reflection.Metadata](adr/0033-il-backend.md) (accepted, planned) |
 | 0034 | [WebAssembly target without the .NET runtime (`runtime = "alice"`)](adr/0034-wasm-target.md) (accepted, planned) |
 | 0035 | [Bootstrap by pinned previous release and component-wise replacement](adr/0035-bootstrap.md) (accepted, planned) |
+| 0036 | [Alice Core, the standard library: `Alice.Core.*` in the runtime, .NET names with Ruby spelling, regex tiers, own JSON engine, own HTTP/1.1 + Kestrel adapter](adr/0036-alice-core.md) (accepted; contracts frozen) |
 
 ## Projects
 
 | Project | Role | Note |
 |---|---|---|
-| `src/Alice.Runtime` | Runtime library (SIMD, sparse, Par, math, concurrency, prelude) | `modules/runtime.md` |
+| `src/Alice.Runtime` | Runtime library (SIMD, sparse, Par, math, concurrency, prelude) and the Alice Core standard library (`Alice.Core.*`, ADR 0036) | `modules/runtime.md` |
 | `src/Alice.Compiler` | Compiler: Syntax -> Semantics -> Lowering/MIR -> Backend (Roslyn IL); planned: AIR + direct IL/wasm (ADR 0032-0034) | `modules/compiler.md` |
 | `src/Alice.Cli` | `alice` command | `modules/cli.md` |
 | `src/Alice.Sdk` | MSBuild props/targets for `.alproj` | `docs/tooling.md` |

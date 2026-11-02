@@ -146,13 +146,17 @@ public sealed partial class Binder
             if (owner.Clr != null)
             {
                 var mem = ClrTypes.Lookup(owner.Clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs);
-                // Alice spelling of a .NET static: Math.sqrt / Math.atan2 / Console.write_line -> Sqrt / Atan2 / WriteLine
-                if (mem == null && ClrTypes.Pascal(c.Name) is { } pascal
-                    && ClrTypes.Lookup(owner.Clr, pascal, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs) is { } pm)
-                {
-                    c.Name = pascal;
-                    mem = pm;
-                }
+                // Alice spelling of a .NET static: Math.sqrt / Math.atan2 / Console.write_line -> Sqrt / Atan2 / WriteLine;
+                // on Alice.Core types also `valid?` -> IsValid and `parse!` -> Parse (ADR 0036, Names.Dotnet)
+                if (mem == null)
+                    foreach (var alt in IsCoreType(owner.Clr) ? CoreSpellings(c.Name) : ClrTypes.Pascal(c.Name) is { } pascal ? [pascal] : [])
+                        if (ClrTypes.Lookup(owner.Clr, alt, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs) is { } pm
+                            && (!c.Name.EndsWith('?') || pm.Type == AType.Bool))
+                        {
+                            c.Name = alt;
+                            mem = pm;
+                            break;
+                        }
                 if (mem != null)
                 {
                     c.Res = mem.Kind == "method" ? "clr" : "field";
@@ -248,10 +252,12 @@ public sealed partial class Binder
         {
             var mem = ClrTypes.Lookup(clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, false, argTypes);
             // Alice spelling of a .NET member: sw.elapsed / sb.append_line / d.contains_key?(k) / uri.absolute_uri?.
-            // Prelude names (split, sum, empty?...) keep their Ruby meaning on the types Prelude extends
-            bool preludeOwns = Builtins.ExtNames.Contains(Mangle(c.Name)) && Builtins.ExtAccepts(Mangle(c.Name), clr);
+            // Prelude names (split, sum, empty?...) keep their Ruby meaning on the types Prelude extends; an Alice.Core
+            // type's own members win over Prelude (it is the Ruby surface, written with .NET names, ADR 0036)
+            bool core = IsCoreType(clr);
+            bool preludeOwns = !core && Builtins.ExtNames.Contains(Mangle(c.Name)) && Builtins.ExtAccepts(Mangle(c.Name), clr);
             if (mem == null && !preludeOwns)
-                foreach (var alt in ClrTypes.ClrSpellings(c.Name))
+                foreach (var alt in core ? CoreSpellings(c.Name) : ClrTypes.ClrSpellings(c.Name))
                     if (ClrTypes.Lookup(clr, alt, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, false, argTypes) is { } am
                         && (!c.Name.EndsWith('?') || am.Type == AType.Bool))
                     {
@@ -315,6 +321,23 @@ public sealed partial class Binder
     }
 
     static Type? BaseClrOf(TypeSym t) => BaseClr(t);
+
+    /// <summary>A type of the Alice Core standard library (`Alice.Core` and its sub-namespaces, ADR 0036).</summary>
+    public static bool IsCoreType(Type? t) => t?.Namespace is { } ns && (ns == "Alice.Core" || ns.StartsWith("Alice.Core.", StringComparison.Ordinal));
+
+    /// <summary>
+    /// .NET names tried for an Alice spelling on an Alice.Core member, most specific first: the CLR spellings
+    /// (`read_all` -> ReadAll, `empty?` -> IsEmpty / Empty), then ADR 0019's `Names.Dotnet` (`save!` -> Save,
+    /// `has_key?` -> HasKey). Core is written once with .NET names and read natively from both languages.
+    /// </summary>
+    public static IEnumerable<string> CoreSpellings(string name)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in ClrTypes.ClrSpellings(name))
+            if (seen.Add(s)) yield return s;
+        var dotnet = Alice.Runtime.Names.Dotnet(name);
+        if (dotnet != name && seen.Add(dotnet)) yield return dotnet;
+    }
 
     /// <summary>Constraint types of a type parameter in the current method/type (`where T : IArea`).</summary>
     List<AType> ConstraintTypes(string param)
