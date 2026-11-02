@@ -3,6 +3,13 @@
 ## Unreleased
 
 - IL backend Synthesize pass (backend plan D1.6, ADR 0032/0033): `Air/Passes/Synthesize.cs` builds, for the IL backend only, explicit declarations with MIR bodies (`Mir/AirDecls.cs`: `AirModuleDecl`/`AirTypeDecl`/`AirMethodDecl`/`AirFieldDecl`/`AirPropertyDecl`, on `TypeSym.Synth`) for what Roslyn synthesizes today: record and record struct members (backing fields, init accessors, primary/copy constructors, EqualityContract, Equals, GetHashCode, ToString/PrintMembers, Deconstruct, ==/!=, `<Clone>$`, `__With`), sum types (abstract base, sealed nested variants, `Tag`, `Is<Variant>`, unit `Value`), derived `!=`/`>`/`>=`, the IEnumerable bridge, auto-properties, field/constant initializers, default and struct constructors, `to_s` as ToString and the module initializer. Emitted C# is byte-identical on the corpus.
+- IL backend FFI (backend plan D1.10, ADR 0018/0033): `Backend/Il/AirToIl.Ffi.cs` emits `lib` funs as blittable P/Invoke
+  rows (ImplMap: EntryPoint, ExactSpelling, WinApi, no CharSet/SetLastError; `[SuppressGCTransition]` for `@[Fast]`)
+  behind inlined wrappers (UTF-8 strings on a `localloc` buffer via `Utf8Arg`, pinned arrays, out/ref byrefs, borrowed
+  string returns, Bool as byte), `[UnmanagedCallersOnly]` callback trampolines passed by `ldftn`, `@[Native]` `calli`
+  with the managed fallback, and pointer load/store/arithmetic/`sizeof`; `IlModule`/`MetadataWriter` gain P/Invoke
+  (`IlMethodDef.PInvoke`, ModuleRef + ImplMap rows). Not wired into AirToIl yet; the FfiTests calls, driven from an IL
+  `Main`, print what the C# backend prints, and NativeAOT publishes the emitted dll.
 - AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is
