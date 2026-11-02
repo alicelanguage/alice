@@ -248,7 +248,7 @@ public sealed partial class Lowerer
                 {
                     string? fn = null;
                     List<Syntax.Expr> args;
-                    if (c.Recv is ConstExpr { Ref.Name: "Math" or "MathF" })
+                    if (IsClrMath(c))
                     {
                         fn = c.Name switch { "Abs" => "Abs", "Max" => "Max", "Min" => "Min", "Sqrt" when isFloat => vecNs == null ? "SquareRoot" : "Sqrt", _ => null };
                         args = c.Args.Select(a => a.Value!).ToList();

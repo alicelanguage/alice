@@ -159,7 +159,8 @@ local use. When in doubt it stays a GC value: a missed release costs an allocati
 - `xs << v` returns `xs`: it keeps a list owned only as a whole statement whose value is dropped.
 
 The same rules guard `par for`: a written array handed to a callee, or read whole (`xs.sum`), may be read at any index,
-so the loop stays serial (AL0209 for `par for`) unless the array is a distinct local the runtime alias check covers and
+so the loop stays serial (AL0209 for `par for`) unless the callee provably reads it only at the loop counter
+(`f(a, i)` reading `a[i]`, in every override), or the array is a distinct local the runtime alias check covers and
 the callee reaches arrays only through its array parameters (no fields, no globals). A local passed by `ref`/`out`
 loses its value range, so arithmetic on it stays overflow-checked.
 
@@ -182,7 +183,7 @@ Pointers, `fixed`, raw `stackalloc` to pointer, and `NativeMemory.Alloc/Free` on
 
 `@[Native]` functions compile to C but keep the table above: every array access is bounds-checked against the length
 passed with the pointer, integer `+ - *` use `__builtin_*_overflow`, `/ %` check for zero and MIN / -1, shift counts are
-masked like C#, and range-loop counters increment checked. A violation prints `alice @[Native]: <what>` and aborts the
+masked like C#, and counters of inclusive ranges (or moved by the body) step checked. A violation prints `alice @[Native]: <what>` and aborts the
 process (C has no exception to raise); it never reads or writes out of bounds.
 
 ### 9. Checked arithmetic

@@ -176,11 +176,13 @@ public sealed partial class Lowerer
     {
         LitExpr => true,
         NameExpr { Res: "local" } => true,
-        BinaryExpr b => PureExpr(b.L, locals) && PureExpr(b.R, locals),
+        // `xs << v` appends; a user-defined operator is a method call this static check cannot prove pure
+        BinaryExpr b => b.Res != "append" && b.Res != "usercmp" && (b.Op is "&&" or "||" || b.L.Type.Sym?.FindMethod(b.Op, 1) == null)
+            && PureExpr(b.L, locals) && PureExpr(b.R, locals),
         UnaryExpr { Op: "-" or "!" or "~" } u => PureExpr(u.E, locals),
         TernaryExpr t => PureExpr(t.C, locals) && PureExpr(t.A, locals) && PureExpr(t.B, locals),
         CallExpr { Res: "field" } f => f.Recv != null && PureExpr(f.Recv, locals),
-        CallExpr { Recv: ConstExpr { Ref.Name: "Math" or "MathF" } } m => m.Block == null && m.Args.All(a => a.Mod == "" && PureExpr(a.Value!, locals)),
+        CallExpr m when IsClrMath(m) => m.Block == null && m.Args.All(a => a.Mod == "" && PureExpr(a.Value!, locals)),
         CallExpr { Res: "ext" } x => PureExt.Contains(Binder.Mangle(x.Name)) && x.Block == null && x.Recv != null && PureExpr(x.Recv, locals) && x.Args.All(a => PureExpr(a.Value!, locals)),
         _ => false,
     };

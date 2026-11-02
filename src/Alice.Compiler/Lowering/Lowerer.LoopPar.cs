@@ -207,6 +207,7 @@ public sealed partial class Lowerer
         foreach (var e in WalkReads(body))
             if (e is IndexExpr ix) indexed.Add(ix.Target);
             else if (SizeOf(e) is { } sized) indexed.Add(sized);
+        var atCounter = CounterLocalArgs(body, plan);
         foreach (var e in WalkReads(body))
         {
             // a callee may read arrays this body never names: only those reached through its array parameters are
@@ -215,8 +216,11 @@ public sealed partial class Lowerer
             if (e.Type?.Kind != "array" || indexed.Contains(e) || e is NewExpr or ArrayLit) continue;
             if (e is NameExpr { Sym: LocalSym sa } && stackArrays.ContainsKey(sa)) continue;
             var r = e is NameExpr { Sym: LocalSym rl } && e.Type.Elem is { Kind: "prim" } ? rl : null;
-            foreach (var (w, _) in writes)
+            // `f(a, i)` where f reads only `a[i]`: a read of the cell this iteration owns, like a direct `a[i]`
+            string? shape = r != null && atCounter.Contains(e) ? "i" : null;
+            foreach (var (w, ws) in writes)
             {
+                if (shape == ws) continue;
                 if (r == w) return null;
                 if (e.Type.Elem is { Kind: "prim" } && !MayAlias(w.Type, e.Type)) continue;
                 if (r == null) return null;   // its elements may be the written array, or no local to compare at run time
@@ -224,6 +228,60 @@ public sealed partial class Lowerer
             }
         }
         return guards;
+    }
+
+    /// <summary>
+    /// Array arguments a callee reads only at the loop counter: `f(a, i)` where i is the counter and every override of
+    /// f reads its array parameter only as `p[j]` (j the parameter bound to i), sizes it, or lends it on the same way.
+    /// </summary>
+    HashSet<Syntax.Expr> CounterLocalArgs(List<Stmt> body, LoopPlan plan)
+    {
+        var r = new HashSet<Syntax.Expr>();
+        foreach (var c in WalkReads(body).OfType<CallExpr>())
+        {
+            if (c is not { Res: "alice", Sym: MethodSym m, Block: null }) continue;
+            int j = c.Args.FindIndex(a => a is { Mod: "", Name: null, Value: NameExpr { Sym: LocalSym li } } && li == plan.LoopVar);
+            if (j < 0) continue;
+            for (int k = 0; k < c.Args.Count; k++)
+                if (k != j && c.Args[k] is { Mod: "", Name: null, Value: NameExpr { Sym: LocalSym, Type.Kind: "array" } v }
+                    && Overrides(m).All(o => ReadsOnlyAt(o, k, j, new())))
+                    r.Add(v);
+        }
+        return r;
+    }
+
+    /// <summary>Inside m, array parameter k is read only at the index held by parameter j (neither is reassigned).</summary>
+    bool ReadsOnlyAt(MethodSym m, int k, int j, HashSet<(MethodSym, int, int)> visiting)
+    {
+        if (m.Decl is not { HasBody: true } d || m.IsAsync || m.UsesYield || k >= m.Params.Count || j >= m.Params.Count) return false;
+        if (m.Params[k].Splat || m.Params[k].Block || m.Params[j].Splat || m.Params[j].Block || !m.Params[j].Type.IsInteger) return false;
+        if (!visiting.Add((m, k, j))) return true;
+        string arr = m.Params[k].Name, idx = m.Params[j].Name;
+        bool Is(Syntax.Expr? e, string name) => e is NameExpr { Sym: LocalSym x } && x.Name == name;
+        if (WalkStmts(d.Body).Any(s => s is Assign a && (Is(a.Target, arr) || Is(a.Target, idx)) || s is MultiAssign ma && (ma.Names.Contains(arr) || ma.Names.Contains(idx)))) return false;
+        int mentions = 0, allowed = 0;
+        foreach (var e in Walk(d.Body))
+        {
+            switch (e)
+            {
+                case NameExpr n when Is(n, arr): mentions++; break;
+                case IndexExpr { Args: [{ Mod: "", Value: var iv }] } ix when Is(ix.Target, arr): if (Is(iv, idx)) allowed++; break;
+                case LambdaExpr lam when WalkExpr(lam).Any(x => Is(x, arr)): return false;
+                case CallExpr { Block: { } blk } when Walk(blk.Body).Any(x => Is(x, arr)): return false;
+                case CallExpr { Res: "alice", Sym: MethodSym callee, Block: null } call:
+                    {
+                        int jj = call.Args.FindIndex(a => a is { Mod: "", Name: null } && Is(a.Value, idx));
+                        for (int kk = 0; kk < call.Args.Count; kk++)
+                            if (Is(call.Args[kk].Value, arr) && call.Args[kk] is { Mod: "", Name: null } && jj >= 0
+                                && Overrides(callee).All(o => ReadsOnlyAt(o, kk, jj, visiting))) allowed++;
+                        break;
+                    }
+                default:
+                    if (SizeOf(e) is { } sz && Is(sz, arr)) allowed++;
+                    break;
+            }
+        }
+        return mentions == allowed;
     }
 
     /// <summary>The array whose size `e` reads (`xs.size`, `xs.Length`): no element is read.</summary>
@@ -333,12 +391,12 @@ public sealed partial class Lowerer
         ConstExpr { Res: "type" } => true,   // `Module.f(x)`: naming a type reads no state
         ArrayLit lit => lit.Items.All(x => PureRead(x, plan)),   // a fresh array: allocation is not an effect
         CallExpr { Res: "clr", Block: null, Sym: System.Reflection.MethodInfo mi } rc when PureRuntime(mi) => rc.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
-        BinaryExpr b => PureRead(b.L, plan) && PureRead(b.R, plan),
+        BinaryExpr b => PureOperator(b) && PureRead(b.L, plan) && PureRead(b.R, plan),
         UnaryExpr { Op: "-" or "!" or "~" } u => PureRead(u.E, plan),
         TernaryExpr t => PureRead(t.C, plan) && PureRead(t.A, plan) && PureRead(t.B, plan),
         IndexExpr ix => PureRead(ix.Target, plan) && ix.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         CallExpr { Res: "field" } f => f.Recv != null && PureRead(f.Recv, plan),
-        CallExpr { Recv: ConstExpr { Ref.Name: "Math" or "MathF" } } m => m.Block == null && m.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
+        CallExpr m when IsClrMath(m) => m.Block == null && m.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         CallExpr { Res: "ext" } x => PureExt.Contains(Binder.Mangle(x.Name)) && x.Block == null && x.Recv != null && PureRead(x.Recv, plan) && x.Args.All(a => PureRead(a.Value!, plan)),
         CallExpr { Res: "alice", Sym: MethodSym m, Block: null } c => MarkHeavy(plan) && MethodPure(m) && (c.Recv == null || PureRead(c.Recv, plan)) && c.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         NameExpr { Res: "call", Sym: MethodSym m } => MarkHeavy(plan) && MethodPure(m),
@@ -347,6 +405,24 @@ public sealed partial class Lowerer
         StmtExpr { Stmt: var st } => PureMethodBody([st], plan, false),   // if / case used as a value
         _ => false,
     };
+
+    /// <summary>
+    /// `xs << v` appends (a write); a user-defined operator (`def ==(o)`, `<=>`) runs a method that must be pure
+    /// itself, like any other call.
+    /// </summary>
+    bool PureOperator(BinaryExpr b) => b.Res switch
+    {
+        "append" => false,
+        "usercmp" => b.L.Type.Sym?.FindMethod("<=>", 1) is MethodSym c && MethodPure(c),
+        _ => b.Op is "&&" or "||" || b.L.Type.Sym?.FindMethod(b.Op, 1) is not MethodSym om || MethodPure(om),
+    };
+
+    /// <summary>
+    /// A call of System.Math / System.MathF as resolved by the binder, not by spelling: a user `module Math` is an
+    /// ordinary Alice module whose methods may have effects.
+    /// </summary>
+    internal static bool IsClrMath(CallExpr c) =>
+        c is { Res: "clr", Recv: ConstExpr, Sym: System.Reflection.MethodInfo { DeclaringType.FullName: "System.Math" or "System.MathF" } };
 
     /// <summary>A `when` pattern: type tests and bindings read nothing; compared values (`when lookup(k)`,
     /// `when Shape::Rect(w, limit())`) must be pure reads.</summary>

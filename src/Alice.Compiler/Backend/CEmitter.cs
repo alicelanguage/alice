@@ -274,7 +274,10 @@ public sealed class CEmitter
             case ForStmt f when f.Iter is RangeExpr r && f.Locals.Count == 1:
                 {
                     string v = Name(f.Locals[0]);
-                    string step = IntSuffix(f.Locals[0].Type.Cs) is { } sx ? $"{v} = alice_add_{sx}({v}, 1)" : $"{v}++";   // `0..MAX` traps instead of wrapping
+                    // `a...b`: v < b <= MAX before the step, so `v++` cannot overflow (and stays a plain induction variable the
+                    // optimizer can unroll); `a..MAX` or a body that moves v steps checked and traps instead of wrapping
+                    bool plain = r.Excl && !Lowering.Lowerer.WalkStmts(f.Body).Any(x => x is Assign { Target: NameExpr { Sym: LocalSym c } } && c == f.Locals[0]);
+                    string step = !plain && IntSuffix(f.Locals[0].Type.Cs) is { } sx ? $"{v} = alice_add_{sx}({v}, 1)" : $"{v}++";
                     o.Append(pad).Append($"for ({LocalType(f.Locals[0], f)} {v} = {E(r.A)}; {v} {(r.Excl ? "<" : "<=")} {E(r.B)}; {step})\n").Append(pad).Append("{\n");
                     Block(o, f.Body, ind + 1, false);
                     o.Append(pad).Append("}\n");
@@ -347,7 +350,7 @@ public sealed class CEmitter
                 return $"({u.Op}{E(u.E)})";
             case TernaryExpr t:
                 return $"({E(t.C)} ? {E(t.A)} : {E(t.B)})";
-            case CallExpr { Recv: ConstExpr { Ref.Name: "Math" } } mc:
+            case CallExpr mc when mc is { Res: "clr", Recv: ConstExpr, Sym: System.Reflection.MethodInfo { DeclaringType.FullName: "System.Math" } }:
                 {
                     var args = mc.Args.Select(a => E(a.Value!)).ToList();
                     if (mc.Name == "Abs") return mc.Type.Cs is "double" or "float" ? $"fabs({args[0]})" : $"llabs({args[0]})";
