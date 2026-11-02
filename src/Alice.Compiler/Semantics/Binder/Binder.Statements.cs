@@ -225,6 +225,7 @@ public sealed partial class Binder
                 f.Type = vt0;
                 changed = true;
             }
+            else f.Type = FlagHash(f.Type, ref f.DeclaredHash, ref f.SawDefaultHash, ref f.SawPlainHash, vt0);
         }
         BindExpr(a.Target);
         BindExpr(a.Value);
