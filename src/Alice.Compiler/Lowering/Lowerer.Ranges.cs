@@ -190,11 +190,29 @@ public sealed partial class Lowerer
         return new MCall { Name = "unchecked", Args = { Optimizer.MirFacts.Unchecked(new MBinary { Op = AirOps.ParseBin(b.Op), L = l, R = r }) } };
     }
 
+    /// <summary>The ternary hook of <see cref="Expr(Syntax.Expr)"/>: a sign extension, else a typed integer select.</summary>
+    MExpr? TrySignExtend(TernaryExpr t) => SignExtend(t) ?? TypedSelect(t);
+
+    /// <summary>
+    /// A ternary over Int32/UInt32/Int64/UInt64, lowered exactly as the untyped one but carrying its type, so the
+    /// branchless-select MIR pass can turn it into a jump-free select (MCond is otherwise untyped until AIR types
+    /// every node, ADR 0032).
+    /// </summary>
+    MExpr? TypedSelect(TernaryExpr t)
+    {
+        if (t.Type.Cs is not ("int" or "uint" or "long" or "ulong")) return null;
+        var c = Truthy(t.C, Expr(t.C));
+        noHoist++;
+        var r = new MCond { C = c, A = Expr(t.A), B = Expr(t.B), Type = t.Type.ToAir() };
+        noHoist--;
+        return r;
+    }
+
     /// <summary>
     /// `x >= 2^(k-1) ? x - 2^k : x` (or `x < 2^(k-1) ? x : x - 2^k`) with x proven in [0, 2^k) reinterprets the low
     /// k bits as signed: exactly `(T)(intK)x`, one sign-extending move instead of a data-dependent branch.
     /// </summary>
-    MExpr? TrySignExtend(TernaryExpr t)
+    MExpr? SignExtend(TernaryExpr t)
     {
         if (t.C is not BinaryExpr { Op: ">=" or "<" } c || c.R is not LitExpr cl || IntValue(cl.Text) is not { } half) return null;
         var (neg, pos) = c.Op == ">=" ? (t.A, t.B) : (t.B, t.A);

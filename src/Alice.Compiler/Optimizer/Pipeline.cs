@@ -27,6 +27,8 @@ public static class Pipeline
         () => new InductionVariables(),
         () => new ShiftCounts(),
         () => new OwnedBounds(),
+        () => new LoopUnroll(),
+        () => new BranchlessSelect(),
     ];
 
     static readonly HashSet<string> Disabled = (Environment.GetEnvironmentVariable("ALICE_DISABLE_PASSES") ?? "")

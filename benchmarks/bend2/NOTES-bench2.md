@@ -110,6 +110,47 @@ C on the M4. Treat it as a rough guess: the M4 Max has 16 cores, the box has 32,
    flat trees also use more than C: tree-radix 1131 MB against C's 214 MB, because the fresh arrays of each fork
    level stay garbage until the next GC.
 
+## Codegen work on the README's "Codegen causes" (perf1)
+
+Measured on the shared box with alternating cold runs (`taskset -c 14` or `13`, `DOTNET_PROCESSOR_COUNT=1`; the
+`taskset -c 14,30` + `DOTNET_PROCESSOR_COUNT=2` configuration varied by up to 40% between runs, because 14 and 30
+are hyperthread siblings and other jobs ran on 30). Before = main 3b6c7df.
+
+| workload | before ms | after ms | change | cause fixed |
+|---|---:|---:|---:|---|
+| kmeans (2^17, core 13) | 7151 | 5702 | -20% | `chunk` fully optimized at its first call (it was tier 0, so `dst`/`min2`/`prng` were real calls); branch-free `min2`/`dst` selects (branch misses 1.85G -> 0.06G at full size) |
+| kmeans (full size, core 14) | 42886 | 33105 | -23% | same |
+| merkle (full size, core 14) | 12303 | 10976 | -11% | the 22 Speck rounds fully unrolled, `rk[i]` -> `rk[0]` ... `rk[21]` (hand-unrolled C#: 3743 -> 3318 ms at 2^20; adding a `_ = rk[21]` guard gave nothing more) |
+| bfs (full size, core 14) | 10515 | 9300 | -12% | `maze` (owned arrays) fully optimized at its first call: 31% of its samples were tier-0 and OSR code at 2^17 |
+| mandelbrot | 5368 | 5442 | +1% (noise) | none: see below |
+| lexer | 3321 | 3361 | +1% (noise) | none: see below |
+| hashmap | 1978 | 1983 | 0% | none (`table` was already fully optimized, `has` is `inline def`) |
+| terrain, queens (core 13) | 7236, 7779 | 6720, 7690 | noise | none (their emitted C# gained a few selects) |
+
+The same binaries with `taskset -c 14,30` + `DOTNET_PROCESSOR_COUNT=2` (alternating, median of 3): kmeans 2^17
+13322 -> 10208, merkle 8552 -> 6758, bfs 10656 -> 10339, mandelbrot 4739 -> 4763, lexer 2599 -> 2607,
+hashmap 1591 -> 1623, terrain 8705 -> 8711, queens 11572 -> 11776 (the last five within this configuration's noise).
+
+What the measurements ruled out:
+
+- **mandelbrot's select is not a misprediction problem.** The whole run has 11M branch misses (16.7M pixels x 51
+  iterations x 2 passes). As a branch-free select, `zr = e2 == 0 ? nzr : zr` put the escape test on the
+  loop-carried chain of `zr`: 4.3 s -> 8.9 s. So conditional updates (`x = c ? v : x`) stay branches. clang's lead
+  comes from knowing `tn = 51`: it unrolls `mit` by 3 and turns `it * 8 / tn` into a multiply; in Alice `tn` is a
+  parameter passed down the fork tree.
+- **Bounds checks are not what bfs and lexer lose.** Constant-length spans over the pooled arrays
+  (`new Span<uint>(g, 0, 1024)`, every `g[` -> `gs[`) by hand: bfs 2753 -> 2760 ms (2^17), lexer 1895 -> 1982 ms. Not
+  emitted. bfs is branch-bound (0.8G misses, as in C's BFS); its pooled `Own<T>` slots are `[ThreadStatic]`
+  (`__tls_get_addr` 3.5% of samples).
+- **`AggressiveInlining` on small leaves is not needed**: once the caller is fully optimized, `dst`, `min2` and
+  `prng` are inlined (the kmeans `chunk` listing has no calls but allocation helpers). The frames the profile showed
+  were calls from tier-0 `chunk`.
+
+kmeans is still ~10x C: the rest is SIMD. clang packs the 8 `dst(xx, yy, c_k, k)` calls into one 8-lane vector
+(SLP), takes a horizontal min and keeps the 24 accumulators as three vectors. `Lowerer.Vectorize` only vectorizes
+fused pipelines over a numeric array source (`TryVectorize(src, ..., stages, sink, ...)`), so a `while` loop with
+scalar accumulators and calls to user functions is out of its scope.
+
 ## Notes on fork shape
 
 - Alice infers forks wherever two pure calls are independent and one of them is recursive. So it forks more than
