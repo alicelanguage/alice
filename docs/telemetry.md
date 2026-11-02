@@ -43,7 +43,8 @@ perf = false             # opt-in compile-phase timings
 
 ## Fields
 
-One event per CLI invocation. Nothing else is collected.
+One event per CLI invocation. Nothing else is collected. This table is the contract: a test compares it with the JSON
+the CLI writes (`TelemetryTests.EventJsonHasOnlyDocumentedFields`), so a field cannot be added or dropped silently.
 
 | Field | Example | Notes |
 |---|---|---|
