@@ -20,6 +20,13 @@
   `AirUnOp`, `await` is `AirUnOp.Await`) with a `Checked` flag, cleared inside compiler-made `unchecked(...)`.
   Emitted C# is byte-identical on the corpus (`tools/emit-corpus.sh`, reused by later AIR work). Hidden
   `alice emit --air <file>` prints the MIR text dump (`MirDump`) for tests.
+- AIR typed leaves (backend plan D0.4, batch 1): `Lowerer.Expressions/Statements/Calls` no longer build opaque
+  `MCode` text; they build `AirConst`, `AirNull`, `AirThis`, `AirBase`, `AirLocalRef`, `AirParamRef`, `AirFieldRef`,
+  `AirArrayLength`, `AirTypeRef`, `AirMethodGroup`, `AirDefault`, `AirTypeOf`, `AirSizeOf`, `AirDiscard`,
+  `AirYieldBreak` and `AirName` (`Mir/MExpr.Core.cs`) with the binder's type and source span where the HIR has them.
+  They derive from `MCode` until the passes are ported (D0.9), and `alice emit --air` dumps them by kind; batch 2's
+  stand-in leaves are merged into them. Two
+  `AirRawCs` escape hatches remain (event-adapter lambda, `gpu for` reduction value). Emitted C# is byte-identical.
 - AIR MCode removal batch 2 (backend plan D0.5): the allocation-free iterators, stream fusion and idiom rewrites
   (`Lowerer.Iterators/Fusion/Idioms`) build typed nodes instead of C# text: locals, literals, `default`, static
   receivers, and `AirRangeLength`, `AirRefOrAddDefault`, `AirRefOrNullRef`, `AirAlternateLookup`, `AirSpanSplit`,

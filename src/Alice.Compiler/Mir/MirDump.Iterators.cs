@@ -5,10 +5,6 @@ public sealed partial class MirDump
 {
     string? CoreIterators(MExpr e) => e switch
     {
-        AirLocalRef l => $"(local {l.Name})",
-        AirConst c => $"(const {Lit(c.Value)})",
-        AirTypeRef t => $"(type {t.TypeCs})",
-        AirDefault d => $"(default{(d.Suppress ? "!" : "")}{(d.TypeCs != null ? " " + d.TypeCs : "")})",
         AirRangeLength r => $"(range-length{(r.Exclusive ? " excl" : "")} {E(r.Lo)} {E(r.Hi)})",
         AirRefOrAddDefault a => $"(ref-or-add-default {E(a.Dict)} {E(a.Key)})",
         AirRefOrNullRef n => $"(ref-or-null-ref {E(n.Dict)} {E(n.Key)})",
@@ -16,15 +12,5 @@ public sealed partial class MirDump
         AirSpanSplit sp => $"(span-split {E(sp.Str)} {E(sp.Sep)})",
         AirStackBuffer sb => $"(stack-buffer {sb.ElemCs} {sb.Length})",
         _ => null,
-    };
-
-    static string Lit(object? v) => v switch
-    {
-        null => "nil",
-        bool b => b ? "true" : "false",
-        string s => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\"",
-        char ch => "'" + ch + "'",
-        IFormattable f => f.ToString(null, System.Globalization.CultureInfo.InvariantCulture) + (v is long ? "L" : ""),
-        _ => v.ToString() ?? "",
     };
 }

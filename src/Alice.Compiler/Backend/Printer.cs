@@ -150,7 +150,7 @@ public sealed partial class Printer
     {
         switch (e)
         {
-            case MCode c:
+            case MCode c:   // also every typed leaf (AirConst, AirLocalRef, AirTypeRef...): Text is its C# spelling
                 return c.Text;
             case MCall c:
                 return (c.Target != null ? P(c.Target) + (c.Safe ? "?." : ".") : "") + c.Name + "(" + Join(c.Args) + ")";

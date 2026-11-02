@@ -65,8 +65,8 @@ public class MirDumpParallelTests
     public void Lowered_programs_dump_the_typed_nodes()
     {
         string sum = MirDump.Collect(() => AliceCompiler.Transpile("def f(xs : Array(Float64))\n  xs.sum { |x| Math.Sqrt(x) }\nend\n"));
-        Assert.Contains("(par reduce double (length Length `xs`", sum);
-        Assert.Contains("(par-guard (length Length `xs`", sum);
+        Assert.Contains("(par reduce double (length Length (local xs)", sum);
+        Assert.Contains("(par-guard (length Length (local xs)", sum);
         string fib = MirDump.Collect(() => AliceCompiler.Transpile(
             "def fib(n : Int32) : Int64\n  if n < 2\n    n.to_i64\n  else\n    a = fib(n - 1)\n    b = fib(n - 2)\n    a + b\n  end\nend\n"));
         Assert.Contains("(fork (lambda ()", fib);

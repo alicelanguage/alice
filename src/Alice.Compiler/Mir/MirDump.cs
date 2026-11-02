@@ -128,6 +128,24 @@ public sealed partial class MirDump
     {
         switch (e)
         {
+            // typed leaves (MExpr.Core.cs) before their MCode base
+            case AirConst k: return "(const " + k.Text + ")";
+            case AirNull: return "(null)";
+            case AirThis t: return t.Extension ? "(self)" : "(this)";
+            case AirBase: return "(base)";
+            case AirLocalRef l: return "(local " + l.Name + (l.Narrowed ? " narrowed)" : ")");
+            case AirParamRef p: return "(param " + p.Name + ")";
+            case AirFieldRef f: return "(field " + f.Name + ")";
+            case AirArrayLength al: return "(length " + al.Array + ")";
+            case AirTypeRef tr: return "(type " + tr.Ref.ToCs() + ")";
+            case AirMethodGroup mg: return "(methodgroup " + (mg.Owner?.ToCs() ?? "_") + " " + mg.Name + ")";
+            case AirDefault d: return d.Forgiving ? "(default!)" : "(default)";
+            case AirTypeOf to: return "(typeof " + to.Of.ToCs() + ")";
+            case AirSizeOf so: return "(sizeof " + so.Of.ToCs() + ")";
+            case AirDiscard: return "(discard)";
+            case AirYieldBreak: return "(yieldbreak)";
+            case AirName n: return "(name " + n.Path + ")";
+            case AirRawCs raw: return "(cs `" + raw.Text + "`)";
             case MCode c: return "`" + c.Text + "`";
             case MCall c: return $"(call{(c.Safe ? "?" : "")} {c.Name} {(c.Target != null ? E(c.Target) : "_")}{L(c.Args)})";
             case MMember m: return $"(member{(m.Safe ? "?" : "")} {m.Name} {E(m.Target)})";

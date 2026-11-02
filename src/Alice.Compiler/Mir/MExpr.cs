@@ -10,8 +10,9 @@ public abstract class MExpr
     public Span? Span;
 }
 
-/// <summary>Leaf C# text: literals, names, type names.</summary>
-public sealed class MCode : MExpr
+/// <summary>Leaf C# text: literals, names, type names. The typed leaves in MExpr.Core.cs derive from it while the
+/// passes still read <see cref="Text"/> (ADR 0032 step 2); new code constructs those, not MCode.</summary>
+public class MCode : MExpr
 {
     public string Text;
     public MCode(string text) => Text = text;

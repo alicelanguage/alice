@@ -52,6 +52,11 @@ Also rejected: keeping C# text as the only target, which would tie AIR to printa
 Consequences: the node set grows from 32 kinds to about 45. The binder must supply real types wherever `var`/`dynamic`
 used to hide them. A CI metric counts `Unknown` locals on the corpus and must go to zero. The 209 `Transpile(` tests and
 157 C#-text assertions stay green because the C# printer stays.
+Follow-up from step 2 (D0.4): the value added in a `gpu for` reduction is still printed to C# before the MIR passes
+run on the kernel body (an `AirRawCs` in `Lowerer.Statements`). Making it typed lets StrengthReduction and
+ConstantFolding rewrite it (`floor_div(x, 4)` becomes `x >> 2`), which changes emitted kernels, so it waits for a
+deliberate behaviour change. Until the passes are ported, the typed leaves derive from `MCode` so that the passes'
+leaf-text matching keeps working.
 
 Tests: byte-identical C# against the baseline on the corpus at each migration step; `AirVerifier` on every compiled
 test program; AIR dump tests through `alice emit --air`; the AllocationTests and ADR 0014 pass tests unchanged.

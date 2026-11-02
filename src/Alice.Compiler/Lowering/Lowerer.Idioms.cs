@@ -84,7 +84,7 @@ public sealed partial class Lowerer
         o.Add(new MDecl { Name = slot, TypeCs = "ref " + vt.Cs, Init = new MArg { Prefix = "ref ", E = new AirRefOrNullRef { Dict = dict, Key = Expr(key), Type = refType } } });
         o.Add(new MIf
         {
-            Cond = new MCall { Target = new AirTypeRef("global::System.Runtime.CompilerServices.Unsafe"), Name = "IsNullRef", Args = { new MArg { Prefix = "ref ", E = new AirLocalRef(slot, refType) } }, Type = new AirType.Prim(PrimKind.Bool) },
+            Cond = new MCall { Target = AirTypeRef.Named("global::System.Runtime.CompilerServices.Unsafe"), Name = "IsNullRef", Args = { new MArg { Prefix = "ref ", E = new AirLocalRef(slot, refType) } }, Type = new AirType.Prim(PrimKind.Bool) },
             Then = { new MThrow { Value = new MNew { TypeCs = "global::System.Collections.Generic.KeyNotFoundException" } } },
         });
         o.Add(new MAssign { Target = new AirLocalRef(slot, refType), Op = op, Value = Expr(delta) });
@@ -99,7 +99,7 @@ public sealed partial class Lowerer
         MExpr? sep = c.Args[0].Value switch
         {
             LitExpr { Kind: "char" } l => Expr(l),
-            LitExpr { Kind: "str" } sl when sl.Text.Length == 1 && sl.Text != "\\" => new AirConst(sl.Text[0]),
+            LitExpr { Kind: "str" } sl when sl.Text.Length == 1 && sl.Text != "\\" => AirConst.Of(sl.Text[0]),
             _ => null,
         };
         if (sep == null) return null;

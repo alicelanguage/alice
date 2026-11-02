@@ -3,52 +3,7 @@ namespace Alice.Compiler.Mir;
 // AIR nodes of allocation-free iteration and the idiom rewrites (Lowerer.Iterators/Fusion/Idioms, ADR 0029/0032).
 // C# forms are in Backend/Printer.Iterators.cs, dump forms in Mir/MirDump.Iterators.cs.
 
-// ---- common leaves: TODO merge into MExpr.cs (D0.4 owns them; delete these when it lands) ----
-
-/// <summary>A read (or, as an assignment target, a write) of a local or parameter by its C# name.</summary>
-public sealed class AirLocalRef : MExpr
-{
-    public string Name;
-    public AirLocalRef(string name, AirType? type = null) { Name = name; Type = type; }
-}
-
-/// <summary>
-/// A literal: int, long, bool, char, string or null. <see cref="MExpr.Type"/> defaults to the CLR type of the value.
-/// </summary>
-public sealed class AirConst : MExpr
-{
-    public object? Value;
-
-    public AirConst(object? value, AirType? type = null)
-    {
-        Value = value;
-        Type = type ?? value switch
-        {
-            int => new AirType.Prim(PrimKind.Int),
-            long => new AirType.Prim(PrimKind.Long),
-            bool => new AirType.Prim(PrimKind.Bool),
-            char => new AirType.Prim(PrimKind.Char),
-            string => new AirType.Prim(PrimKind.String),
-            null => new AirType.Prim(PrimKind.Null),
-            _ => null,
-        };
-    }
-}
-
-/// <summary>A type used as the receiver of a static member or call: `global::System.Math`.</summary>
-public sealed class AirTypeRef : MExpr
-{
-    public string TypeCs;
-    public AirTypeRef(string typeCs) => TypeCs = typeCs;
-}
-
-/// <summary>`default(T)`; with no <see cref="TypeCs"/> the target-typed `default` (`default!` when <see cref="Suppress"/>).</summary>
-public sealed class AirDefault : MExpr
-{
-    public string? TypeCs;
-    /// <summary>Null-forgiving: the slot is written before any read (first/min/max accumulators).</summary>
-    public bool Suppress;
-}
+// Common leaves (AirConst, AirLocalRef, AirTypeRef, AirDefault...) are in MExpr.Core.cs.
 
 // ---- iterator / idiom nodes ----
 

@@ -41,17 +41,20 @@ public sealed partial class Lowerer
                             ReleaseOwnedAt(o, es, ref rv, es.Expr);
                             o.Add(new MReturn { Value = rv });
                         }
-                        else o.Add(new MAssign { Target = new MCode(target!), Value = e });
+                        else o.Add(new MAssign { Target = new AirLocalRef(target!), Value = e });
                     }
                     else if (e != MCode.Empty) o.Add(new MExprStmt { E = e });
                     break;
                 }
             case LocalDecl d:
-                o.Add(new MDecl { Name = d.Local!.CsName, TypeCs = d.Type != null || d.Value == null ? TypeCs(d.Local.Type) : null, Init = d.Value != null ? Expr(d.Value) : new MCode("default!") });
+                o.Add(new MDecl { Name = d.Local!.CsName, TypeCs = d.Type != null || d.Value == null ? TypeCs(d.Local.Type) : null, Init = d.Value != null ? Expr(d.Value) : new AirDefault(null, forgiving: true) });
                 break;
             case Assign { Op: "+=", Target: NameExpr { Sym: LocalSym ga } } gr when gpuAcc != null && ga == gpuAcc:
                 // a `gpu for` reduction: each thread adds into its register; the group reduces it after the loop
-                o.Add(new MExprStmt { E = new MCode($"__gr += {Backend.Printer.E(Expr(gr.Value))}") });
+                // AirRawCs: the added value is printed here, before the MIR passes run on the kernel body, as it always
+                // was; a typed value would let StrengthReduction/ConstantFolding rewrite it (floor_div(x, 4) -> x >> 2),
+                // changing the emitted kernel (D0.4 keeps output byte-identical)
+                o.Add(new MAssign { Target = new AirLocalRef("__gr", ga.Type.ToAir()), Op = "+=", Value = new AirRawCs(Backend.Printer.E(Expr(gr.Value))) });
                 break;
             case Assign a:
                 AssignStmt(o, a);
@@ -68,13 +71,14 @@ public sealed partial class Lowerer
                         string a = Temp("dv"), d = Temp("dv");
                         o.Add(new MDecl { Name = a, Init = Expr(dr) });
                         o.Add(new MDecl { Name = d, Init = Expr(dm.Args[0].Value!) });
-                        v = new MTuple { Items = { new MCall { Target = new MCode("Prelude"), Name = "floor_div", Args = { new MCode(a), new MCode(d) } }, new MCall { Target = new MCode("Prelude"), Name = "floor_mod", Args = { new MCode(a), new MCode(d) } } } };
+                        var dt = dr.Type.ToAir();
+                        v = new MTuple { Items = { new MCall { Target = AirTypeRef.Prelude(), Name = "floor_div", Args = { new AirLocalRef(a, dt), new AirLocalRef(d, dt) } }, new MCall { Target = AirTypeRef.Prelude(), Name = "floor_mod", Args = { new AirLocalRef(a, dt), new AirLocalRef(d, dt) } } } };
                     }
                     else if (ma.Values.Count == 1 && ma.Names.Count > 1 && ma.Values[0].Type.Kind != "tuple" && !ma.Values[0].Type.IsString && Builtins.ElemOf(ma.Values[0].Type).IsKnown)
                     {
                         string seq = Temp("m");
                         o.Add(new MDecl { Name = seq, Init = Expr(ma.Values[0]) });
-                        v = new MTuple { Items = Enumerable.Range(0, ma.Names.Count).Select(k => (MExpr)new MIndex { Target = new MCode(seq), Args = { new MCode(k.ToString()) } }).ToList() };
+                        v = new MTuple { Items = Enumerable.Range(0, ma.Names.Count).Select(k => (MExpr)new MIndex { Target = new AirLocalRef(seq, ma.Values[0].Type.ToAir()), Args = { AirConst.Int(k) } }).ToList() };
                     }
                     else v = ma.Values.Count == 1 ? Expr(ma.Values[0]) : new MTuple { Items = ma.Values.Select(Expr).ToList() };
                     o.Add(new MDeconstruct { Names = ma.Locals.Select(l => l.CsName).ToList(), Declare = ma.Declares && !ma.Locals.Any(hoisted.Contains), Value = v });
@@ -107,7 +111,7 @@ public sealed partial class Lowerer
                         t.Catches.Add(new MCatch { TypeCs = r.Resolved.Cs, Name = r.Local?.CsName, Body = Stmts(r.Body, tail, target) });
                     if (b.Ensure != null) t.Finally = Stmts(b.Ensure, Tail.None, null);
                     foreach (var c in t.Catches) c.Body.Add(new MBreak());
-                    o.Add(new MWhile { Cond = new MCode("true"), Body = { t } });
+                    o.Add(new MWhile { Cond = AirConst.Bool(true), Body = { t } });
                     break;
                 }
             case BeginStmt b:
@@ -120,7 +124,7 @@ public sealed partial class Lowerer
                     break;
                 }
             case ReturnStmt { Value: null } when Method is { IsIterator: true } && !InLambda:
-                o.Add(new MExprStmt { E = new MCode("yield break") });
+                o.Add(new MExprStmt { E = new AirYieldBreak() });
                 break;
             case ReturnStmt r:
                 {
@@ -142,7 +146,7 @@ public sealed partial class Lowerer
             case RaiseStmt rs:
                 {
                     var v = Expr(rs.Value);
-                    o.Add(new MThrow { Value = rs.Value is NewExpr ? v : new MCall { Target = new MCode("Prelude"), Name = "raise", Args = { v } } });
+                    o.Add(new MThrow { Value = rs.Value is NewExpr ? v : new MCall { Target = AirTypeRef.Prelude(), Name = "raise", Args = { v } } });
                     break;
                 }
         }
@@ -157,7 +161,7 @@ public sealed partial class Lowerer
         if (a.Declares != null)
         {
             var v = Expr(a.Value);
-            if (hoisted.Contains(a.Declares)) o.Add(new MAssign { Target = new MCode(a.Declares.CsName), Value = v });
+            if (hoisted.Contains(a.Declares)) o.Add(new MAssign { Target = new AirLocalRef(a.Declares.CsName, a.Declares.Type.ToAir()), Value = v });
             // a local widened to its enum (`r = M::Free`, Binder.WidenVariant) is declared with that type, not `var`
             else o.Add(new MDecl { Name = a.Declares.CsName, Init = v, TypeCs = a.Declares.Type.Sym is { Kind: "adt" } && a.Value.Type.Sym is { Kind: "variant" } ? a.Declares.Type.Cs : null });
             return;
@@ -170,8 +174,10 @@ public sealed partial class Lowerer
         {
             string hn = "global::" + (ht.FullName ?? ht.Name).Replace('+', '.');
             var ps = string.Join(", ", inv.GetParameters().Select((_, i) => "__e" + i));
-            var make = new MCode($"static __f => new {hn}(({ps}) => {{ __f.DynamicInvoke({ps}); }})");
-            o.Add(new MAssign { Target = target, Op = a.Op, Value = new MCall { Target = new MCode("global::Alice.Runtime.EventAdapters"), Name = $"Handler<{hn}>", Args = { value, make } } });
+            // AirRawCs: a parenthesis-less static lambda around a one-line block body; MLambda prints `(p) =>` and a
+            // multi-line block, so no typed form spells this text yet (ClosureConvert/DelegateCreate, ADR 0032)
+            var make = new AirRawCs($"static __f => new {hn}(({ps}) => {{ __f.DynamicInvoke({ps}); }})");
+            o.Add(new MAssign { Target = target, Op = a.Op, Value = new MCall { Target = AirTypeRef.Named("global::Alice.Runtime.EventAdapters"), Name = $"Handler<{hn}>", Args = { value, make } } });
             return;
         }
         // x += a*b / x -= a*b on floats -> x = fma(+-a, b, x)
@@ -183,10 +189,10 @@ public sealed partial class Lowerer
         switch (a.Op)
         {
             case "/=" or "%=" when FlooredHelper(a.Op[..1], a.Target.Type) is string fl:
-                o.Add(new MAssign { Target = target, Value = new MCast { TypeCs = a.Target.Type.Cs, E = new MCall { Target = new MCode("Prelude"), Name = fl, Args = { target, value } } } });
+                o.Add(new MAssign { Target = target, Value = new MCast { TypeCs = a.Target.Type.Cs, E = new MCall { Target = AirTypeRef.Prelude(), Name = fl, Args = { target, value } } } });
                 break;
             case "**=":
-                o.Add(new MAssign { Target = target, Value = new MCall { Target = new MCode("Prelude"), Name = "pow", Args = { target, value } } });
+                o.Add(new MAssign { Target = target, Value = new MCall { Target = AirTypeRef.Prelude(), Name = "pow", Args = { target, value } } });
                 break;
             case "||=":
                 o.Add(new MAssign { Target = target, Op = "??=", Value = value });
@@ -206,9 +212,9 @@ public sealed partial class Lowerer
     {
         var t = e.Type;
         if (!t.IsKnown || t.Cs == "bool" || t.Kind == "dynamic") return m;
-        if (t.Cs == "bool?") return new MBinary { Op = AirBinOp.Eq, L = m, R = new MCode("true") };
+        if (t.Cs == "bool?") return new MBinary { Op = AirBinOp.Eq, L = m, R = AirConst.Bool(true) };
         if (t.Cs.EndsWith('?') || t.Clr is { IsValueType: false } || t.Sym is { Kind: "class" or "record" or "interface" })
-            return new MBinary { Op = AirBinOp.Ne, L = m, R = new MCode("null") };
+            return new MBinary { Op = AirBinOp.Ne, L = m, R = new AirNull() };
         return m;
     }
 
@@ -240,7 +246,7 @@ public sealed partial class Lowerer
         if (condPre.Count == 0) return new MWhile { Cond = cond, Body = body };
         condPre.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = cond }, Then = { new MBreak() } });
         condPre.AddRange(body);
-        return new MWhile { Cond = new MCode("true"), Body = condPre };
+        return new MWhile { Cond = AirConst.Bool(true), Body = condPre };
     }
 
     MStmt For(ForStmt f)
@@ -268,7 +274,7 @@ public sealed partial class Lowerer
         MStmt r;
         if (f.Iter is RangeExpr re)
         {
-            var end = re.B is NameExpr { Sym: LocalSym bl } && lengthAlias.TryGetValue(bl, out var len) && re.Excl ? new MCode(len) : Expr(re.B);
+            var end = re.B is NameExpr { Sym: LocalSym bl } && lengthAlias.TryGetValue(bl, out var len) && re.Excl ? AirArrayLength.Of(len) : Expr(re.B);
             // the counter has the unified type of both bounds: `0...m` with m : Int64 is a long loop, not an int one
             var loop = new MFor { Var = f.Locals[0].CsName, VarType = f.Locals[0].Type.IsInteger ? f.Locals[0].Type.Cs : null, Start = Expr(re.A), Cmp = re.Excl ? "<" : "<=", End = end, Body = Stmts(f.Body, Tail.None, null) };
             r = loop;
@@ -293,7 +299,7 @@ public sealed partial class Lowerer
             {
                 string tmp = Temp("case");
                 o.Add(new MDecl { Name = tmp, Init = v });
-                subj = new MCode(tmp);
+                subj = new AirLocalRef(tmp, c.Subject.Type.ToAir());
             }
         }
         var conds = new List<Syntax.Expr>();
@@ -333,14 +339,14 @@ public sealed partial class Lowerer
             MExpr cond = new MIs { E = subj, TypeCs = d.Type.Cs + " " + tmp };
             foreach (var (field, bind, eq) in d.Parts)
             {
-                var fe = new MMember { Target = new MCode(tmp), Name = field };
+                var fe = new MMember { Target = new AirLocalRef(tmp, d.Type.ToAir()), Name = field };
                 // `is var` binds inside the condition, so a guard (`in C(r) if r > 1`) can use the names
                 if (bind != null) cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { E = fe, TypeCs = "var " + bind.CsName } };
                 else if (eq != null) cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MBinary { Op = AirBinOp.Eq, L = fe, R = Expr(eq) } };
             }
             return cond;
         }
-        if (p.Res == "wild") return new MCode("true");
+        if (p.Res == "wild") return AirConst.Bool(true);
         if (p.Res == "bindpat" && p is BindPatternExpr bp) return new MIs { E = subj, TypeCs = "var " + bp.Local!.CsName };
         if (p.Res == "hashpat" && p is HashPatternExpr hp)
         {
@@ -348,24 +354,24 @@ public sealed partial class Lowerer
             for (int k = 0; k < hp.Keys.Count; k++)
             {
                 string slot = hp.Binds[k]?.CsName ?? Temp("hv");
-                MExpr one = new MCall { Target = subj, Name = "TryGetValue", Args = { Expr(hp.Keys[k]), new MArg { Prefix = "out var ", E = new MCode(slot) } } };
+                MExpr one = new MCall { Target = subj, Name = "TryGetValue", Args = { Expr(hp.Keys[k]), new MArg { Prefix = "out var ", E = new AirLocalRef(slot) } } };
                 if (hp.Binds[k] == null && hp.Values[k] is not BindPatternExpr)
-                    one = new MBinary { Op = AirBinOp.And, L = one, R = new MBinary { Op = AirBinOp.Eq, L = new MCode(slot), R = Expr(hp.Values[k]) } };
+                    one = new MBinary { Op = AirBinOp.And, L = one, R = new MBinary { Op = AirBinOp.Eq, L = new AirLocalRef(slot), R = Expr(hp.Values[k]) } };
                 hc = hc == null ? one : new MBinary { Op = AirBinOp.And, L = hc, R = one };
             }
-            return hc ?? new MCode("true");
+            return hc ?? AirConst.Bool(true);
         }
         if (p.Res == "arraypat" && p is ArrayPatternExpr ap)
         {
             string len = ap.Type.Kind == "array" || ap.Type.IsString ? "Length" : "Count";
-            MExpr cond = new MBinary { Op = ap.Rest != null ? AirBinOp.Ge : AirBinOp.Eq, L = new MMember { Target = subj, Name = len }, R = new MCode(ap.Names.Count.ToString()) };
+            MExpr cond = new MBinary { Op = ap.Rest != null ? AirBinOp.Ge : AirBinOp.Eq, L = new MMember { Target = subj, Name = len }, R = AirConst.Int(ap.Names.Count) };
             for (int i = 0; i < ap.Literals.Count; i++)
                 if (ap.Literals[i] is { } lit)
-                    cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MBinary { Op = AirBinOp.Eq, L = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, R = Expr(lit) } };
+                    cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MBinary { Op = AirBinOp.Eq, L = new MIndex { Target = subj, Args = { AirConst.Int(i) } }, R = Expr(lit) } };
             for (int i = 0; i < ap.Binds.Count; i++)
-                if (ap.Binds[i] != null) cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { E = new MIndex { Target = subj, Args = { new MCode(i.ToString()) } }, TypeCs = "var " + ap.Binds[i].CsName } };
+                if (ap.Binds[i] != null) cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { E = new MIndex { Target = subj, Args = { AirConst.Int(i) } }, TypeCs = "var " + ap.Binds[i].CsName } };
             if (ap.RestSym != null)
-                cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { TypeCs = "var " + ap.RestSym.CsName, E = new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "ToArray", Args = { new MCall { Target = new MCode("global::System.Linq.Enumerable"), Name = "Skip", Args = { subj, new MCode(ap.Names.Count.ToString()) } } } } } };
+                cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { TypeCs = "var " + ap.RestSym.CsName, E = new MCall { Target = AirTypeRef.Named("global::System.Linq.Enumerable"), Name = "ToArray", Args = { new MCall { Target = AirTypeRef.Named("global::System.Linq.Enumerable"), Name = "Skip", Args = { subj, AirConst.Int(ap.Names.Count) } } } } } };
             return cond;
         }
         if (p.Res == "type") return new MIs { E = subj, TypeCs = p.Type.Cs };
