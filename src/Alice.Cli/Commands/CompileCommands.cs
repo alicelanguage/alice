@@ -21,6 +21,7 @@ public static class CompileCommands
         public string? AnalyzersFile;   // MSBuild @(Analyzer): source generators run in the type check too
         public string? Project;
         public bool Strict;   // --strict: AL0220 for anything not statically typed
+        public string? Prove;   // --prove / --prove=smt: `alice prove --check` after the build (also `[build] prove`)
         public List<string> Rest = new();
     }
 
@@ -47,6 +48,8 @@ public static class CompileCommands
                 case "--native": o.Native = true; break;
                 case "--r2r": o.ReadyToRun = o.Release = true; break;
                 case "--strict": o.Strict = true; break;
+                case "--prove": o.Prove = "enumerate"; break;
+                case "--prove=smt": o.Prove = "smt"; break;
                 default:
                     if (a[i].EndsWith(".al")) { UsageException.RequireFile(a[i]); o.Files.Add(a[i]); }
                     else if (a[i].EndsWith(".alproj") || Directory.Exists(a[i])) o.Project = a[i];
@@ -178,16 +181,51 @@ public static class CompileCommands
     }
 
     /// <summary>Builds every workspace member, dependencies first.</summary>
-    public static int BuildWorkspace(string root, bool release, bool strict = false)
+    public static int BuildWorkspace(string root, bool release, bool strict = false, string? prove = null)
     {
         var ws = Workspace.Load(root);
         UiH.Status(T("workspace"), $"{ws.Members.Count} member(s): {string.Join(", ", ws.Members.Select(m => m.Name))}", "blue");
         foreach (var m in ws.Members)
         {
             int rc = BuildProject(Manifest.Sync(m.Dir), release, strict: strict);
+            if (rc == 0) rc = ProveAfterBuild(m.Dir, prove);
             if (rc != 0) return rc;
         }
         return 0;
+    }
+
+    /// <summary>
+    /// `alice build --prove` or `[build] prove = true` (`"smt"` for --smt): when the package has a RULES.al, the build
+    /// runs `alice prove --check` in the package directory and fails when a rule fails or PROOF.al is stale, so CI
+    /// gates on the rules with no extra step. Without RULES.al there is nothing to prove.
+    /// </summary>
+    public static int ProveAfterBuild(string dir, string? flag)
+    {
+        string? mode = flag ?? ProveSetting(dir);
+        if (mode == null || !File.Exists(Path.Combine(dir, "RULES.al"))) return 0;
+        string cwd = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(dir);
+        try
+        {
+            UiH.Status("Proving", $"{Path.GetFileName(Path.GetFullPath("."))} (alice prove --check{(mode == "smt" ? " --smt" : "")})");
+            return ProveCmd(mode == "smt" ? ["--check", "--smt"] : ["--check"]);
+        }
+        finally { Directory.SetCurrentDirectory(cwd); }
+    }
+
+    /// <summary>`[build] prove` from the package's alice.toml: true, "smt", or absent/false (null).</summary>
+    public static string? ProveSetting(string dir)
+    {
+        string toml = Path.Combine(dir, Manifest.FileName);
+        if (!File.Exists(toml)) return null;
+        var build = TomlLite.Parse(File.ReadAllText(toml)).GetValueOrDefault("build");
+        return build != null && build.TryGetValue("prove", out var p) ? p switch
+        {
+            true => "enumerate",
+            false => null,
+            "smt" => "smt",
+            _ => throw new UsageException($"[build] prove = {p} is not a prove mode", "use `prove = true` (enumeration) or `prove = \"smt\"`"),
+        } : null;
     }
 
     static int RunProject(Options o)
@@ -219,12 +257,14 @@ public static class CompileCommands
         var o = Parse(a);
         if (o.Files.Count == 0)
         {
-            if (Workspace.IsWorkspaceRoot(o.Project ?? ".")) return BuildWorkspace(o.Project ?? ".", o.Release, o.Strict);
+            if (Workspace.IsWorkspaceRoot(o.Project ?? ".")) return BuildWorkspace(o.Project ?? ".", o.Release, o.Strict, o.Prove);
             var proj = ProjectFiles.Find(o.Project ?? ".") ?? throw UsageException.NoProject();
             if (o.Native && ProjectFiles.Kind(proj) == "wasm")
                 throw new UsageException("--native does not apply to a WebAssembly package", "alice build --release trims it (and compiles it ahead of time with the wasm-tools workload)");
-            return BuildProject(proj, o.Release || o.Native, o.Native, o.ReadyToRun, o.Strict);
+            int rc = BuildProject(proj, o.Release || o.Native, o.Native, o.ReadyToRun, o.Strict);
+            return rc != 0 ? rc : ProveAfterBuild(ProjectFiles.PackageDir(proj), o.Prove);
         }
+        if (o.Prove != null) throw new UsageException("--prove checks a package's RULES.al", "run `alice build --prove` in the package directory, or `alice prove --check` for loose files");
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Output ?? o.Files[0]);
         string dir = Path.GetDirectoryName(Path.GetFullPath(o.Output ?? o.Files[0] + ".dll"))!;
@@ -381,11 +421,19 @@ public static class CompileCommands
         return 0;
     }
 
-    /// <summary>`alice prove [files] [--check]`: every .al file under the current directory by default.</summary>
+    /// <summary>`alice prove [files] [--check] [--smt] [--timeout SECONDS] [--format text|json]`: every .al file under the
+    /// current directory by default.</summary>
     public static int ProveCmd(List<string> a)
     {
+        a = [.. a];
         bool check = a.Remove("--check");
         bool smt = a.Remove("--smt");
+        string format = Flag(a, "--format") ?? "text";
+        if (format is not ("text" or "json")) throw new UsageException($"--format {format} is not a format", "use --format text or --format json");
+        TimeSpan? timeout = null;
+        if (Flag(a, "--timeout") is { } secs)
+            timeout = double.TryParse(secs.TrimEnd('s'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var t) && t > 0
+                ? TimeSpan.FromSeconds(t) : throw new UsageException($"--timeout {secs} is not a number of seconds", "e.g. --timeout 30 (per rule)");
         var o = Parse(a);
         // this package's sources: nested directories with their own alice.toml (examples, workspace members) are other
         // packages, with their own dependencies and their own RULES.al
@@ -398,12 +446,27 @@ public static class CompileCommands
         var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories)
             .Where(f => !f.Contains("/obj/") && !f.Contains("/bin/") && !f.Contains("/.alice/") && Path.GetFileName(f) != Prove.ProofFile && OwnPackage(f)).ToList();
         var files = Read(paths);
-        try { return Prove.Run(files, o.Refs, check, ".", smt); }
+        try { return Prove.Run(files, o.Refs, check, ".", smt, timeout, format == "json"); }
         catch (CompileException e)
         {
             Ui.DiagnosticRenderer.Render(e.Diagnostics, Sources(files));
             return 1;
         }
+    }
+
+    /// <summary>`--name value` or `--name=value`, removed from the arguments.</summary>
+    static string? Flag(List<string> a, string name)
+    {
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i].StartsWith(name + "=", StringComparison.Ordinal)) { var v = a[i][(name.Length + 1)..]; a.RemoveAt(i); return v; }
+            if (a[i] != name) continue;
+            if (i + 1 >= a.Count) throw new UsageException($"{name} needs a value");
+            var value = a[i + 1];
+            a.RemoveRange(i, 2);
+            return value;
+        }
+        return null;
     }
 
     public static int ExplainCmd(List<string> a)

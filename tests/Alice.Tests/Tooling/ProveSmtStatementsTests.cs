@@ -20,7 +20,7 @@ public class ProveSmtStatementsTests
     [Fact]
     public void Smt_agrees_with_enumeration()
     {
-        if (SmtProver.Unavailable() != null) return;   // Z3 not installed
+        if (!ProveZ3.Available()) return;   // Z3 not installed (a failure under ALICE_REQUIRE_Z3=1)
         var o = Assert.Single(SmtProver.Prove([new SourceFile("RULES.al", Rule)], []));
         Assert.False(o.Proved, "a discarded call that divides by zero was proven");
     }

@@ -914,8 +914,16 @@ end
 
 A `rule` is a pure method returning `Bool` over finite domains (`x in lo..hi`, `x in lo...hi`, `b : Bool`; at most
 2^32 cases, AL0214). `alice prove` checks every case and writes `PROOF.al`; `alice prove --smt` proves rules over
-whole `Int32`/`Int64` ranges with Z3. See [guide/PROOFS.md](../guide/PROOFS.md) and
-[tooling.md](tooling.md#rules-and-proofs-alice-prove).
+whole `Int32`/`Int64` ranges with Z3. A rule fails when it returns `false` or raises (overflow, division by zero)
+on some input, and `alice prove` prints the first such input in domain order:
+
+```text
+rule percent_in_range FAILS: part = 0, total = 0 -> raised DivideByZeroException
+```
+
+`alice prove --check` (or `alice build --prove`, or `[build] prove = true`) exits 1 when a rule fails or `PROOF.al`
+is stale, so CI and agents gate on the rules; `--format json` and `--timeout` are for scripts. See
+[guide/PROOFS.md](../guide/PROOFS.md) (a worked example) and [tooling.md](tooling.md#rules-and-proofs-alice-prove).
 
 ## 13. Performance model
 

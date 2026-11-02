@@ -14,8 +14,12 @@ Decision:
   checked conversions fail outside the target range. `if`/`elsif`/`else`, early `return`, ternaries, locals,
   `divmod`, `Math.Min/Max`, `MIN`/`MAX` constants and non-recursive pure Alice methods (inlined) are supported.
 - Anything else (loops, recursion, objects, floats) makes the rule untranslatable, never half-proven: such rules fall
-  back to enumeration, and a rule too large to enumerate is reported as not proven. Each query has a 20 s limit; a
-  timeout is treated the same way.
+  back to enumeration, and a rule too large to enumerate is reported as not proven. Each query has a time limit,
+  20 s by default and `alice prove --timeout s` per rule (amended 0.14: the same flag limits enumeration); a timeout is
+  treated the same way, and a rule that also runs out of time enumerating is `not proven`, which fails `--check`.
+- Amended 0.14: every Z3 counterexample is replayed through the compiled rule before it is reported. If the rule
+  holds there, the two semantics disagree; the rule is reported `not proven` with the disagreement, never as proven or
+  failing. A differential fuzz test (ProveDifferentialTests) keeps the two engines in agreement.
 - Rule parameters gain `x : Int32` and `x : Int64` (whole range). Enumeration rejects domains over 2^32 cases (AL0214)
   with a hint to use `--smt`.
 - Z3 is opt-in and stays out of the compiler and runtime (pure C#). The CLI calls Z3's C API directly

@@ -7,8 +7,12 @@ Before writing Alice:
 
 - Run `alice guide` and read it. Topics: `alice guide performance`, `alice guide proofs`, `alice guide interop`.
 - Check your work with `alice check` (types only) and `alice run file.al`.
-- Run `alice prove --check` before committing when the project has a `RULES.al`. If a rule fails, fix the code;
-  change the rule only if the rule itself is wrong, and say so. Commit the regenerated `PROOF.al`.
+- Run `alice prove --check` before committing when the project has a `RULES.al` (`alice build --prove` does
+  the same after the build). It exits non-zero when a rule fails or `PROOF.al` is stale.
+- A failing rule prints its counterexample: `rule NAME FAILS: x = 7, lo = -3 -> false` (or
+  `-> raised OverflowException`). That exact input breaks the rule. Loop: read the input, fix the code, run
+  `alice prove` again, until every rule is proven. Change the rule only if the rule itself is wrong, and say
+  so. Commit the regenerated `PROOF.al`. `alice prove --check --format json` gives the same as JSON.
 - Run `alice explain file.al` after changing hot code: it lists the optimizations each method got.
 
 ### Not Ruby, not Crystal

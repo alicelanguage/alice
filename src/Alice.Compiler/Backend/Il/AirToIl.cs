@@ -356,6 +356,7 @@ internal sealed partial class IlBody
     {
         MCode => "MCode",
         MCall { Target: null, Name: "unchecked" } => "MCall:unchecked()",
+        MCall { Target: null, Name: "checked" } => "MCall:checked()",
         MLambda => "MLambda",
         _ => e.GetType().Name,
     };

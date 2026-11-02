@@ -25,6 +25,21 @@
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is
   byte-identical on the corpus.
+- Fix (soundness, ADR 0013): a wrapping operator wrapped the checked arithmetic inside its operands too:
+  `1 &* (b * c)` returned 0 for b = c = 65536 instead of raising, `1 &+ (-b)` did not trap on `Int32::MIN`. Operands
+  with trapping arithmetic are now `checked(...)` (MirFacts.KeepChecked), so only the wrapping operator wraps. Found by
+  the prove differential fuzz. Emitted C# changes only where a wrapping operator has such an operand.
+- `alice prove` for CI and agents: `--format json` (machine-readable summary, rules in name order), `--timeout s` (per
+  rule; a rule that runs out is `not proven` and fails the check), failures print one line
+  `rule X FAILS: x = 7, lo = -3 -> false` (or `-> raised OverflowException`), exit 1 on any failing, unproven or stale
+  rule. `alice build --prove` / `[build] prove = true | "smt"` runs `alice prove --check` after the build when the package
+  has a RULES.al. `alice agents` tells agents to gate commits on it and explains the counterexample loop.
+- Fix: `alice prove` crashed on a rule domain ending at `Int32::MAX` (the loop counter overflowed), and treated a domain
+  near `Int64::MAX` as one case (its size went through double). Every variable now counts an exact offset from its Lo.
+- `alice prove --smt` replays every Z3 counterexample through the compiled rule (a disagreement is `not proven`, never a
+  verdict), translates `to_i!`, `to_u16!`, `to_u64!` and hex/binary/octal literals, and a differential fuzz test checks
+  enumeration and Z3 agree on random straight-line rules. CI installs Z3 on Linux, macOS and Windows and sets
+  `ALICE_REQUIRE_Z3=1`, so the SMT tests can no longer pass by skipping.
 - Docs: ADR 0040 (paradigms in IL, accepted as direction): how AirToIl lowers fork/join, affine arenas, CM primitives and dataflow, with the AirVerifier rules they add; IL-lowering paragraphs in ADRs 0015, 0037, 0038, 0039.
 - IL-only lowering passes (backend plan D1.7, ADR 0032/0033) in `Air/Passes/`, entry `IlLowering.Run`, called only by
   the IL backend (C# output unchanged): ForeachLower (arrays, spans, strings as counted loops; struct enumerators kept

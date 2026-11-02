@@ -860,6 +860,14 @@ internal sealed partial class IlBody
             try { return Raw(call.Args[0]); }
             finally { uncheckedDepth--; }
         }
+        if (call.Target == null && call.Name == "checked" && call.Args.Count == 1)
+        {
+            // an operand of a wrapping operator (MirFacts.KeepChecked): checked again, as C# `checked(...)`
+            int saved = uncheckedDepth;
+            uncheckedDepth = 0;
+            try { return Raw(call.Args[0]); }
+            finally { uncheckedDepth = saved; }
+        }
         if (call.Safe && call.Target != null)
             return SafeAccess(call.Target, new MCall { Target = new MCode("__safe_recv"), Name = call.Name, Args = call.Args, Span = call.Span }, call.Name);
         if (call.Args.Any(a => a is MLambda)) throw No("MLambda", call.Name);
