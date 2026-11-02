@@ -8,7 +8,7 @@ Path: `src/Alice.Compiler`. Pure C#. Depends on: Roslyn, `Alice.Runtime` (refere
 | `Lowering/` | `Lowerer*` | MIR (`Mir/`): inlined/fused loops, typed temps |
 | `Backend/` | `Emitter`, `Printer`, `AliceCompiler` | C# with `#line` -> Roslyn Release IL |
 | `Air/` (planned, ADR 0032) | `AirType`, `AirDecls`, `AirDump`, `AirVerifier`, `Passes/` | typed structured AIR; `Mir/` is migrated into it in place (byte-identical C# as acceptance) |
-| `Backend/Il/` (ADR 0033; `AirToIl` planned) | `IlModule` (facade), `IlBuilder`, `Signatures`, `MetadataWriter` (+ `RefPack`), `PdbWriter` | IL + portable PDB via System.Reflection.Metadata |
+| `Backend/Il/` (ADR 0033) | `AirToIl` (emitter), `IlModule` (facade), `IlBuilder`, `Signatures`, `MetadataWriter` (+ `RefPack`), `PdbWriter`, `IlDisassembler` | IL + portable PDB via System.Reflection.Metadata |
 | `Backend/CSharp/` (planned, ADR 0033) | `AirToCSharp` | C# (oracle, generator programs) |
 
 Lowering files (`Lowering/`):
@@ -45,6 +45,42 @@ and encodes with `InstructionEncoder`/`ControlFlowBuilder` (try/catch/filter/fin
 sorted tables are emitted sorted, framework TypeRefs resolve against the ref pack (`RefPack`), and the MVID, PE stamp and
 PDB id are content hashes (byte-identical rebuilds). Tests: `tests/Alice.Tests/Backends/IlBuilderTests` (ILVerify,
 collectible ALC runs, determinism, PDB round-trip).
+
+`Backend/Il/AirToIl` (D1.4, `alice run --backend il`, `alice emit --il <file>` writes `<name>.dll` + `.pdb` and prints
+the `IlDisassembler` listing): binds and lowers exactly as the C# backend (`Lowerer` with `Sequential = true`, so forks
+run serially, ADR 0024; `Optimizer.Pipeline`; then `Air/Passes/IlLowering`), declares what `Emitter.cs` declares
+(static `Program`, Alice classes/structs/records/modules as plain types with `[AliceType]`, auto properties with
+`<x>k__BackingField`, constructors with field initializers and auto `@x` parameters, sum types as an abstract class
+with sealed nested variants, enums with literal fields, operators, `to_s` as `ToString`) and emits each body through
+`IlBuilder` (peepholes on, `.locals` without init as `[SkipLocalsInit]`). MIR is still partly C# text, so `IlBody` types
+every expression itself: `Infer` emits into a scratch builder and memoizes per node; Alice types are reflection
+stand-ins (`IlTypes.MakeProxy`: classes keep the Alice base chain, enums are real enums) so generic instantiations,
+arrays and CLR overload resolution (`IlTypes.Pick`: C# better-conversion scoring, generic inference, `params`,
+optional parameters) work through reflection; `CsText` parses leaf text (`c.Length`, `((byte)105)`,
+`unchecked(i + 1)`) into MIR. Checked arithmetic is per node (`.ovf` unless `MBinary.Checked` is false or inside
+`unchecked`), conversions are C#'s (checked explicit casts, Nullable wrapping, user-defined operators), `c ? 1 : 0` is the
+comparison value, comparisons fuse into branches. The [AggressiveOptimization] policy is the C# backend's own (Emitter
+`Kernel`/`LoopLeaves`/`LoopNest`/`PrimitiveLoop`, called by reflection, `AirToIl.HotPolicyAvailable` is tested).
+After serialization every body is decoded; a body whose bytes do not decode (the short-branch fixup corruption of
+Backend/IlSpike/README.md, seen on kmeans/merkle/tree-matmul) is re-encoded with `IlBuilder.LongBranches`. Unsupported
+nodes raise `IlUnsupportedException(kind, span)`; `IlStats` counts node kinds and blockers per module. Tests:
+`tests/Alice.Tests/Backends/AirToIlTests` (differential C# vs IL stdout, ILVerify, decode check, PDB sequence points and
+local names, 0-byte kernels, IL-shape rules, corpus coverage report).
+
+IL backend vs C# backend, serial (`taskset -c 15,31 env ALICE_PAR=0`, hyperfine 5 runs after 1 warmup, wall ms, bend2
+default sizes, both images with the same runtimeconfig; 2026-11-02, forge 32 cores):
+
+| workload | C# ms | IL ms | IL/C# |
+|---|---|---|---|
+| nbody | 8480 ± 436 | 8898 ± 81 | 1.049 |
+| queens | 9236 ± 279 | 9163 ± 237 | 0.992 |
+| editdist | 13916 ± 286 | 13701 ± 243 | 0.985 |
+| mandelbrot | 6960 ± 262 | 5968 ± 43 | 0.858 |
+| gameoflife | 25901 ± 1493 | 26897 ± 800 | 1.038 |
+| hashmap | 1976 ± 45 | 1822 ± 27 | 0.922 |
+| bfs | 12115 ± 177 | 12145 ± 120 | 1.003 |
+| raytrace | 17822 ± 1333 | 23352 ± 1354 | 1.310 |
+| kmeans | 38001 ± 4278 | 42908 ± 2148 | 1.129 |
 
 `Air/Passes/Synthesize` (D1.6, IL backend only; the C# path never runs it): `Synthesize.Run(binder)` returns an
 `AirModuleDecl` (`Mir/AirDecls.cs`) and sets `TypeSym.Synth`. It declares, with MIR bodies, what Roslyn synthesizes for
