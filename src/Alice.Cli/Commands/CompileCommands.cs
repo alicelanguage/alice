@@ -364,6 +364,8 @@ public static class CompileCommands
 
     public static int Emit(List<string> a)
     {
+        // hidden: D1.1 PersistedAssemblyBuilder spike (throwaway, src/Alice.Compiler/Backend/IlSpike/README.md)
+        if (a.Remove("--il-spike")) return Alice.Compiler.Backend.IlSpike.SpikeCli.Run(a);
         bool air = a.Remove("--air");   // hidden: the MIR/AIR text dump (ADR 0032) instead of C#
         var o = Parse(a);
         if (o.Files.Count == 0) throw UsageException.Usage("alice emit <file.al>");
