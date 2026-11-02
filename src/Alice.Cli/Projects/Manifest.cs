@@ -17,6 +17,9 @@ public static class Manifest
         var toml = TomlLite.Parse(File.ReadAllText(Path.Combine(dir, FileName)));
         var pkg = toml.GetValueOrDefault("package") ?? new Dictionary<string, object>();
         string name = pkg.TryGetValue("name", out var n) ? (string)n : Path.GetFileName(dir);
+        // the name is a file name (.alice/NAME.alproj) and the assembly name: no separators, no `..`, no markup
+        if (!MsBuildText.PackageId.IsMatch(name))
+            throw new InvalidOperationException($"[package] name \"{name}\" is not a valid package name (letters, digits, '.', '-', '_')");
         string kind = pkg.TryGetValue("kind", out var k) ? (string)k : "exe";
         string genDir = Path.Combine(dir, ".alice");
         string proj = Path.Combine(genDir, name + ".alproj");
@@ -28,8 +31,13 @@ public static class Manifest
         props.Append($"    <OutputType>{(kind == "lib" ? "Library" : "Exe")}</OutputType>\n");
         var (pkgProps, pkgItems) = PackageMetadata.Render(dir, name, kind, pkg);
         props.Append(pkgProps);
-        if (pkg.TryGetValue("version", out var v)) props.Append($"    <Version>{v}</Version>\n");
-        if (pkg.TryGetValue("target", out var tf)) props.Append($"    <TargetFramework>{tf}</TargetFramework>\n");
+        if (pkg.TryGetValue("version", out var v)) props.Append($"    <Version>{MsBuildText.Escape(v.ToString()!)}</Version>\n");
+        if (pkg.TryGetValue("target", out var tf))
+        {
+            if (tf is not string tfm || !MsBuildText.TargetFramework.IsMatch(tfm))
+                throw new InvalidOperationException($"[package] target = \"{tf}\" is not a target framework (expected e.g. net10.0)");
+            props.Append($"    <TargetFramework>{tfm}</TargetFramework>\n");
+        }
         var build = toml.GetValueOrDefault("build") ?? new Dictionary<string, object>();
         var runtime = toml.GetValueOrDefault("runtime") ?? new Dictionary<string, object>();
         var (targetProps, releaseProps) = TargetProperties.Render(kind, build, runtime);
@@ -68,7 +76,11 @@ public static class Manifest
         {
             if (spec is string version)
             {
+                if (!MsBuildText.PackageId.IsMatch(dep))
+                    throw new InvalidOperationException($"[dependencies] \"{dep}\" is not a valid NuGet package id (letters, digits, '.', '-', '_')");
                 string pinned = locked.TryGetValue(dep, out var lv) ? $"[{lv}]" : version;
+                if (!MsBuildText.VersionRange.IsMatch(pinned))
+                    throw new InvalidOperationException($"[dependencies] {dep} = \"{pinned}\" is not a valid version (expected e.g. 1.2.3, 3.8.* or [1.0, 2.0))");
                 items.Append($"    <PackageReference Include=\"{dep}\" Version=\"{pinned}\" />\n");
                 continue;
             }
@@ -87,7 +99,7 @@ public static class Manifest
             if (Directory.Exists(target) && File.Exists(Path.Combine(target, FileName))) reference = Sync(target, visiting);
             else if (Directory.Exists(target)) reference = Directory.GetFiles(target, "*.*proj").FirstOrDefault() ?? target;
             else reference = target;
-            items.Append($"    <ProjectReference Include=\"{Path.GetRelativePath(genDir, reference).Replace('\\', '/')}\" />\n");
+            items.Append($"    <ProjectReference Include=\"{MsBuildText.Escape(Path.GetRelativePath(genDir, reference).Replace('\\', '/'), item: true)}\" />\n");
         }
         if (kind == "game" && !items.ToString().Contains("MonoGame"))
             items.Append("    <PackageReference Include=\"MonoGame.Framework.DesktopGL\" Version=\"3.8.*\" />\n");

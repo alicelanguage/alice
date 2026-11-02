@@ -16,8 +16,10 @@ string Env(string k, string d) => Environment.GetEnvironmentVariable(k) is { Len
 var dbPath = Env("ALICE_TELEMETRY_DB", "/data/telemetry.db");
 int retention = int.Parse(Env("ALICE_TELEMETRY_RETENTION_DAYS", "180"));
 int perHour = int.Parse(Env("ALICE_TELEMETRY_RATE_PER_HOUR", "600"));
+// all clients together: install ids are client-chosen, so this is what bounds database growth
+int globalPerHour = int.Parse(Env("ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR", "100000"));
 var store = new EventStore(dbPath);
-var collector = new Collector(store, new RateLimiter(perHour), Environment.GetEnvironmentVariable("ALICE_TELEMETRY_ADMIN_TOKEN"));
+var collector = new Collector(store, new RateLimiter(perHour, globalPerHour), Environment.GetEnvironmentVariable("ALICE_TELEMETRY_ADMIN_TOKEN"));
 
 var app = builder.Build();
 

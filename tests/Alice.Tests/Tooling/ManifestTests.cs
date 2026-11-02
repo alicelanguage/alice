@@ -182,6 +182,36 @@ public class ManifestTests
         Assert.Contains(message, ex.Message);
     }
 
+    [Theory]
+    [InlineData("[package]\nname = \"../../escape\"\nid = \"Ok.Id\"\n", "not a valid package name")]
+    [InlineData("[package]\nname = \"a/b\"\nid = \"Ok.Id\"\n", "not a valid package name")]
+    [InlineData("[package]\nname = \"x</AssemblyName><Foo>\"\nid = \"Ok.Id\"\n", "not a valid package name")]
+    [InlineData("[package]\nname = \"x\"\ntarget = \"net10.0</TargetFramework><X>\"\n", "not a target framework")]
+    [InlineData("[package]\nname = \"x\"\n[dependencies]\n'A\" Foo=\"' = \"1.0\"\n", "not a valid NuGet package id")]
+    [InlineData("[package]\nname = \"x\"\n[dependencies]\nNewtonsoft = '1.0\" /><Import Project=\"x'\n", "not a valid version")]
+    [InlineData("[package]\nname = \"x\"\n[dependencies]\nNewtonsoft = \"$(Foo)\"\n", "not a valid version")]
+    public void Manifest_values_cannot_inject_msbuild_or_escape_the_project(string toml, string message)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "alice-inj-" + Guid.NewGuid().ToString("N"), "p");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), toml);
+        var ex = Assert.Throws<InvalidOperationException>(() => Manifest.Sync(dir));
+        Assert.Contains(message, ex.Message);
+        // nothing was written outside the package's .alice directory
+        Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(dir)!, "*.alproj", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void Free_text_and_paths_are_escaped_for_xml_and_msbuild()
+    {
+        var xml = SyncToml("[package]\nname = \"x\"\nkind = \"lib\"\ndescription = \"costs $(Secret) & 100% @(Items)\"\n" +
+                           "[dependencies]\nNewtonsoft.Json = \"[13.0.1, 14.0)\"\nweird = { path = \"../we$(x)ird\" }\n");
+        Assert.Contains("<Description>costs %24(Secret) &amp; 100%25 %40(Items)</Description>", xml);
+        Assert.Contains("Include=\"Newtonsoft.Json\" Version=\"[13.0.1, 14.0)\"", xml);
+        Assert.DoesNotContain("$(x)", xml);
+        Assert.Contains("we%24(x)ird", xml);
+    }
+
     [Fact]
     public void Default_gc_is_decided_by_the_compiler()
     {

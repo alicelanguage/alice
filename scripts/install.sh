@@ -65,11 +65,20 @@ done
 need() { command -v "$1" >/dev/null 2>&1; }
 
 fetch() { # fetch URL [OUTFILE]
+  case "$1" in https://*) ;; *) die "refusing to download over plain http: $1" ;; esac
   if need curl; then
     if [ $# -ge 2 ]; then curl -fL --proto '=https' --tlsv1.2 --retry 3 --progress-bar -o "$2" "$1"
     else curl -fsSL --proto '=https' --tlsv1.2 --retry 3 ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} "$1"; fi
   elif need wget; then
-    if [ $# -ge 2 ]; then wget -q --show-progress -O "$2" "$1"; else wget -qO- "$1"; fi
+    # --https-only only covers recursive links, so redirects are checked from the response headers (-S)
+    wlog="$(mktemp)"
+    wrc=0
+    if [ $# -ge 2 ]; then wget -q -S --https-only -O "$2" "$1" 2>"$wlog" || wrc=$?
+    else wget -q -S --https-only -O- "$1" 2>"$wlog" || wrc=$?; fi
+    if grep -qiE '^[[:space:]]*location:[[:space:]]*http:' "$wlog"; then
+      rm -f "$wlog"; [ $# -ge 2 ] && rm -f "$2"; die "refusing a redirect to plain http while downloading $1"
+    fi
+    rm -f "$wlog"; return $wrc
   else die "curl or wget is required"; fi
 }
 

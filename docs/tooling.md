@@ -38,6 +38,8 @@ Single files: `alice run main.al` / `alice build main.al` follow `require` trans
 covers every source and `require`d file, the references and the compiler build, so an unchanged program skips
 transpiling and the Roslyn compile: a hello world goes from 1.2 s to 0.13 s on the second run. Programs with
 `@[Native]` functions are not cached. `ALICE_NO_CACHE=1` turns the cache off; deleting the directory clears it.
+The directory is owner-only (0700 on Unix) and every image carries an HMAC with a per-install key (`.key`, 0600);
+a modified image, or one in a directory other users can write to, is a miss and gets recompiled.
 
 ## alice.toml
 
@@ -292,8 +294,11 @@ eval "$(alice completions bash)"   # zsh, fish, pwsh too
 ```
 
 Layout: `~/.alice/toolchains/VERSION/`, `~/.alice/bin/alice` (shim to the default), `~/.alice/settings.json`.
-Selection order: `alice +VERSION`, `ALICE_TOOLCHAIN`, nearest `alice-toolchain` file, default. `ALICE_HOME` moves
-the root; `ALICE_RELEASES_REPO` points at a fork; `GITHUB_TOKEN` raises API limits. Once a day a background
+Selection order: `alice +VERSION`, `ALICE_TOOLCHAIN`, nearest `alice-toolchain` file, default. An `alice-toolchain`
+file holds an exact version (`0.10.1`, `0.11.0-nightly.20261016`) or `stable`/`nightly`; anything else, a path
+included, is an error, and only toolchains under `~/.alice/toolchains` run. `ALICE_HOME` moves
+the root; `ALICE_RELEASES_REPO` points at a fork; `GITHUB_TOKEN` raises API limits and is sent only to
+`api.github.com`. Archives are downloaded only over https from GitHub. Once a day a background
 check caches the newest stable release and the next command prints a one-line notice; `ALICE_NO_UPDATE_CHECK=1`
 or `CI` disables it.
 

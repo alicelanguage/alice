@@ -48,7 +48,7 @@ public static class WasmCommands
     {
         try
         {
-            using var p = Process.Start(new ProcessStartInfo("node", "--version") { UseShellExecute = false, RedirectStandardOutput = true })!;
+            using var p = Process.Start(new ProcessStartInfo(Executables.Resolve("node"), "--version") { UseShellExecute = false, RedirectStandardOutput = true })!;
             p.WaitForExit();
         }
         catch (System.ComponentModel.Win32Exception)
@@ -62,7 +62,7 @@ public static class WasmCommands
     {
         string runner = Path.Combine(ProjectFiles.PackageDir(proj), ".alice", "run.mjs");
         File.WriteAllText(runner, WasmTemplates.NodeRunner(Path.Combine(Dist(proj), "wwwroot", "_framework", "dotnet.js")));
-        var psi = new ProcessStartInfo("node") { UseShellExecute = false };
+        var psi = new ProcessStartInfo(Executables.Resolve("node")) { UseShellExecute = false };
         psi.ArgumentList.Add(runner);
         foreach (var a in rest) psi.ArgumentList.Add(a);
         using var p = Process.Start(psi)!;

@@ -45,3 +45,18 @@ same commit as any change that moves a row.
 | GPU: multiple devices, async overlap | one preferred device per process; a region synchronizes at its end | explicit ILGPU code for multi-device or stream overlap |
 | NativeAOT `alice` compiler binary | the CLI needs the .NET runtime (it hosts Roslyn) | `dotnet tool install -g Alice.Cli` or the release archives |
 | Rules with loops or recursion under `--smt` | `alice prove --smt` (Z3) proves straight-line integer rules over full Int32/Int64 ranges; others fall back to enumeration | keep such rules finite |
+
+## Security limits
+
+Known limits of the toolchain and supply chain; see [SECURITY.md](../SECURITY.md) for reporting and workspace trust.
+
+| Limit | Impact | Workaround |
+|---|---|---|
+| Release archives are checked by SHA-256 from the same release, not signed | integrity against corruption, no authenticity if the release itself is replaced | install a pinned version over https; compare the archive with a checksum obtained separately |
+| `alice publish` passes the API key to `dotnet nuget push` as an argument | other local users can read it from the process list while the push runs | publish from CI or a single-user machine; use a short-lived key scoped to the package |
+| `@[Native]` builds look up `clang`/`cc`/`gcc` by bare name | in an untrusted checkout a compiler planted in the working directory can run | do not build `@[Native]` code from untrusted checkouts |
+| Building runs repo content (MSBuild files, NuGet build targets, analyzers, source generators) | `alice build`/`run`/`test` in an untrusted checkout execute its code, as `dotnet build` does | build untrusted projects in a container or VM |
+| `obj/refs.txt` is read by the LSP to load reference metadata | repo-controlled paths are opened by the editor server (metadata only) | open untrusted checkouts without the Alice extension |
+| The lock file pins NuGet versions, not content hashes | a changed package on the feed is not detected | a private feed, or `packages.lock.json` with `RestoreLockedMode` in CI |
+| The telemetry collector limits per install id and globally, never per IP | one client can use up the global budget; it bounds storage, not fairness | run the collector behind a reverse proxy with per-IP limits |
+| The run cache key and HMAC key live in the same user's cache directory | protects against other users and tampering by other tools, not against code already running as you | `ALICE_NO_CACHE=1` |

@@ -88,9 +88,27 @@ public sealed class GitHubReleaseSource : IReleaseSource
         var h = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         h.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("alice-cli", App.Version));
         h.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        if (Environment.GetEnvironmentVariable("GITHUB_TOKEN") is { Length: > 0 } token)
-            h.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return h;
+    }
+
+    const string ApiHost = "api.github.com";
+
+    /// <summary>GET for the releases API; `GITHUB_TOKEN` is attached only for https://api.github.com, never to download hosts.</summary>
+    public static HttpRequestMessage ApiRequest(string url, string? token)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (token is { Length: > 0 } && Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps
+            && string.Equals(u.Host, ApiHost, StringComparison.OrdinalIgnoreCase) && u.IsDefaultPort)
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return req;
+    }
+
+    /// <summary>Release archives and checksums are only fetched over https from GitHub (github.com or *.githubusercontent.com).</summary>
+    public static bool IsTrustedAssetUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps || !u.IsDefaultPort) return false;
+        string host = u.Host.ToLowerInvariant();
+        return host == "github.com" || host.EndsWith(".githubusercontent.com", StringComparison.Ordinal);
     }
 
     public IReadOnlyList<Release> List()
@@ -98,7 +116,8 @@ public sealed class GitHubReleaseSource : IReleaseSource
         using var cts = new CancellationTokenSource(timeout);
         try
         {
-            using var resp = Http.GetAsync($"https://api.github.com/repos/{repo}/releases?per_page=50", cts.Token).GetAwaiter().GetResult();
+            using var req = ApiRequest($"https://{ApiHost}/repos/{repo}/releases?per_page=50", Environment.GetEnvironmentVariable("GITHUB_TOKEN"));
+            using var resp = Http.SendAsync(req, cts.Token).GetAwaiter().GetResult();
             if (!resp.IsSuccessStatusCode)
                 throw new ToolchainException($"GitHub answered {(int)resp.StatusCode} for {repo} releases",
                     (int)resp.StatusCode == 403 ? "rate limited: set GITHUB_TOKEN or retry later" : "check the network or ALICE_RELEASES_REPO");
@@ -112,6 +131,8 @@ public sealed class GitHubReleaseSource : IReleaseSource
 
     public Stream Open(string url)
     {
+        if (!IsTrustedAssetUrl(url))
+            throw new ToolchainException($"refusing to download {url}: release assets must be https URLs on github.com", "check ALICE_RELEASES_REPO");
         var resp = Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult();
         if (!resp.IsSuccessStatusCode) throw new ToolchainException($"download failed ({(int)resp.StatusCode}): {url}");
         return resp.Content.ReadAsStream();

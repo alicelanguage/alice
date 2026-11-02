@@ -183,7 +183,10 @@ public static class ToolchainCommands
         var (spec, why) = explicitSpec != null ? (explicitSpec, "+" + explicitSpec)
             : home.Resolve(Environment.CurrentDirectory, Environment.GetEnvironmentVariable("ALICE_TOOLCHAIN"));
         if (why is "default" or "running binary") return null;
-        string version = spec is "stable" or "nightly" ? Spec(home, spec) : ToolchainVersion.TryParse(spec)?.ToString() ?? spec;
+        // the spec may come from an untrusted checkout: anything but a channel or an exact version is refused, never used as a path
+        string version = spec is "stable" or "nightly" ? Spec(home, spec)
+            : ToolchainVersion.TryParse(spec)?.ToString()
+              ?? throw new UsageException($"'{(spec.Length > 40 ? spec[..40] + "…" : spec)}' (from {why}) is not a toolchain version", "use a version like 0.10.1, or a channel: stable, nightly");
         if (version == App.Version) return null;
         if (!home.IsInstalled(version))
             throw new UsageException($"toolchain {version} (from {why}) is not installed", $"alice toolchain install {version}");
