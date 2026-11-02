@@ -10,6 +10,12 @@
   `AirUnOp`, `await` is `AirUnOp.Await`) with a `Checked` flag, cleared inside compiler-made `unchecked(...)`.
   Emitted C# is byte-identical on the corpus (`tools/emit-corpus.sh`, reused by later AIR work). Hidden
   `alice emit --air <file>` prints the MIR text dump (`MirDump`) for tests.
+- AIR MCode removal batch 2 (backend plan D0.5): the allocation-free iterators, stream fusion and idiom rewrites
+  (`Lowerer.Iterators/Fusion/Idioms`) build typed nodes instead of C# text: locals, literals, `default`, static
+  receivers, and `AirRangeLength`, `AirRefOrAddDefault`, `AirRefOrNullRef`, `AirAlternateLookup`, `AirSpanSplit`,
+  `AirStackBuffer`, `AirParGate` (Mir/MExpr.Iterators.cs, printed by Printer.Iterators.cs, dumped by
+  MirDump.Iterators.cs). Emitted C# is byte-identical on the corpus; loop starts the optimizer analyses stay its
+  literal form until the optimizer reads AIR leaves.
 - Ruby core behaviour that needed the compiler: `Hash(K, V).new(default)` and `Hash(K, V).new { |h, k| ... }` build an
   `Alice.Runtime.DefaultHash` (missing keys read as the default, `h[k] += 1` counts from it; a block ending in `h[k] = v`
   returns v), `Hash(K, V).new(capacity: n)` is the capacity; `to_i?`/`to_f?` are `Int32?`/`Float64?`, `match` is

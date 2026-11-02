@@ -24,6 +24,8 @@ public sealed partial class Lowerer
 
     SpanKey? spanKey;
 
+    static readonly AirType ReadOnlyCharSpan = new AirType.ClrRef("global::System.ReadOnlySpan", typeof(ReadOnlySpan<char>), [new AirType.Prim(PrimKind.Char)]);
+
     public static bool IsDict(AType t, out AType key, out AType val) => IsDictionary(t, out key, out val);
 
     static bool IsDictionary(AType t, out AType key, out AType val)
@@ -70,16 +72,22 @@ public sealed partial class Lowerer
         if (a.Op == "=")
         {
             // missing key starts at default(V): exactly GetValueOrDefault semantics, one probe
-            string target = spanKey != null && key is NameExpr kn && kn.Sym == spanKey.Word && spanKey.Alt.TryGetValue(dictCs, out var alt)
-                ? $"{CM}.GetValueRefOrAddDefault({alt}, {spanKey.SpanVar}, out _)"
-                : $"{CM}.GetValueRefOrAddDefault({dictCs}, {Backend.Printer.E(Expr(key))}, out _)";
-            o.Add(new MAssign { Target = new MCode(target), Op = op, Value = Expr(delta) });
+            var slotRef = new AirType.ByRef(vt.ToAir(), RefKind.Ref);
+            var target = spanKey != null && key is NameExpr kn && kn.Sym == spanKey.Word && spanKey.Alt.TryGetValue(dictCs, out var alt)
+                ? new AirRefOrAddDefault { Dict = new AirLocalRef(alt), Key = new AirLocalRef(spanKey.SpanVar, ReadOnlyCharSpan), Type = slotRef }
+                : new AirRefOrAddDefault { Dict = dict, Key = Expr(key), Type = slotRef };
+            o.Add(new MAssign { Target = target, Op = op, Value = Expr(delta) });
             return true;
         }
         string slot = Temp("slot");
-        o.Add(new MDecl { Name = slot, TypeCs = "ref " + vt.Cs, Init = new MCode($"ref {CM}.GetValueRefOrNullRef({dictCs}, {Backend.Printer.E(Expr(key))})") });
-        o.Add(new MIf { Cond = new MCode($"global::System.Runtime.CompilerServices.Unsafe.IsNullRef(ref {slot})"), Then = { new MThrow { Value = new MNew { TypeCs = "global::System.Collections.Generic.KeyNotFoundException" } } } });
-        o.Add(new MAssign { Target = new MCode(slot), Op = op, Value = Expr(delta) });
+        var refType = new AirType.ByRef(vt.ToAir(), RefKind.Ref);
+        o.Add(new MDecl { Name = slot, TypeCs = "ref " + vt.Cs, Init = new MArg { Prefix = "ref ", E = new AirRefOrNullRef { Dict = dict, Key = Expr(key), Type = refType } } });
+        o.Add(new MIf
+        {
+            Cond = new MCall { Target = new AirTypeRef("global::System.Runtime.CompilerServices.Unsafe"), Name = "IsNullRef", Args = { new MArg { Prefix = "ref ", E = new AirLocalRef(slot, refType) } }, Type = new AirType.Prim(PrimKind.Bool) },
+            Then = { new MThrow { Value = new MNew { TypeCs = "global::System.Collections.Generic.KeyNotFoundException" } } },
+        });
+        o.Add(new MAssign { Target = new AirLocalRef(slot, refType), Op = op, Value = Expr(delta) });
         return true;
     }
 
@@ -88,24 +96,24 @@ public sealed partial class Lowerer
     {
         if (Method?.IsAsync == true) return null;   // spans cannot live across await
         if (f.Names.Count != 1 || f.Iter is not CallExpr { Name: "Split", Args.Count: 1, Block: null } c || c.Recv == null || !c.Recv.Type.IsString) return null;
-        string? sep = c.Args[0].Value switch
+        MExpr? sep = c.Args[0].Value switch
         {
-            LitExpr { Kind: "char" } l => l.Text,
-            LitExpr { Kind: "str" } sl when sl.Text.Length == 1 && sl.Text != "\\" => "'" + (sl.Text == "'" ? "\\'" : sl.Text) + "'",
+            LitExpr { Kind: "char" } l => Expr(l),
+            LitExpr { Kind: "str" } sl when sl.Text.Length == 1 && sl.Text != "\\" => new AirConst(sl.Text[0]),
             _ => null,
         };
         if (sep == null) return null;
         var w = f.Locals[0];
         var outp = new List<MStmt>();
         var str = Expr(c.Recv);
-        if (str is not MCode sc || !IsSimple(sc.Text))
+        if (!SimpleLeaf(str))
         {
             string tmp = Temp("str");
             pre.Add(new MDecl { Name = tmp, Init = str });
-            str = new MCode(tmp);
+            str = new AirLocalRef(tmp, new AirType.Prim(PrimKind.String));
         }
-        string s = Backend.Printer.E(str);
         string range = Temp("rg");
+        var rangeRef = new AirLocalRef(range, new AirType.ClrRef("global::System.Range", typeof(Range), []));
         var uses = new List<NameExpr>();
         Collect(f.Body, w, uses);
         var counters = new List<Assign>();
@@ -119,23 +127,24 @@ public sealed partial class Lowerer
             var sk = new SpanKey { Word = w, SpanVar = Temp("w") };
             foreach (var a in counters)
             {
-                string d = Backend.Printer.E(Expr(((IndexExpr)a.Target).Target));
+                var dictExpr = Expr(((IndexExpr)a.Target).Target);
+                string d = Backend.Printer.E(dictExpr);
                 if (sk.Alt.ContainsKey(d)) continue;
                 string alt = Temp("alt");
-                pre.Add(new MDecl { Name = alt, Init = new MCode($"{d}.GetAlternateLookup<global::System.ReadOnlySpan<char>>()") });
+                pre.Add(new MDecl { Name = alt, Init = new AirAlternateLookup { Dict = dictExpr } });
                 sk.Alt[d] = alt;
             }
-            body.Add(new MDecl { Name = sk.SpanVar, TypeCs = "global::System.ReadOnlySpan<char>", Init = new MCode($"{s}.AsSpan()[{range}]") });
+            body.Add(new MDecl { Name = sk.SpanVar, TypeCs = "global::System.ReadOnlySpan<char>", Init = new MIndex { Target = new MCall { Target = str, Name = "AsSpan", Type = ReadOnlyCharSpan }, Args = { rangeRef }, Type = ReadOnlyCharSpan } });
             spanKey = sk;
         }
-        else body.Add(new MDecl { Name = w.CsName, Init = new MCode($"{s}[{range}]") });
+        else body.Add(new MDecl { Name = w.CsName, Init = new MIndex { Target = str, Args = { rangeRef }, Type = new AirType.Prim(PrimKind.String) } });
         ctx.Add("loop");
         body.AddRange(Stmts(f.Body, Tail.None, null));
         ctx.RemoveAt(ctx.Count - 1);
         spanKey = saved;
-        MStmt serial = new MForeach { Vars = { range }, Coll = new MCode($"{s}.AsSpan().Split({sep})"), Body = body };
-        if (spanOnly && f.Body.Count == 1 && counters.Count == 1 && ParallelWordCount(counters[0], s, sep) is { } par)
-            return new MIf { Cond = new MCode($"{s}.Length >= {Threshold} && global::Alice.Runtime.Par.Workers > 1"), Then = { par }, Else = new List<MStmt> { serial } };
+        MStmt serial = new MForeach { Vars = { range }, Coll = new AirSpanSplit { Str = str, Sep = sep }, Body = body };
+        if (spanOnly && f.Body.Count == 1 && counters.Count == 1 && ParallelWordCount(counters[0], str, Backend.Printer.E(sep)) is { } par)
+            return new MIf { Cond = new AirParGate { Size = new MMember { Target = str, Name = "Length", Type = new AirType.Prim(PrimKind.Int) }, Min = Threshold, Type = new AirType.Prim(PrimKind.Bool) }, Then = { par }, Else = new List<MStmt> { serial } };
         return serial;
     }
 
@@ -144,7 +153,7 @@ public sealed partial class Lowerer
     /// string), each worker counts into its own dictionary via the span lookup, and partials are merged in chunk
     /// order, which reproduces the serial insertion (and therefore iteration) order.
     /// </summary>
-    MStmt? ParallelWordCount(Assign counter, string s, string sep)
+    MStmt? ParallelWordCount(Assign counter, MExpr str, string sep)
     {
         if (inParallelGen || ctx.Contains("lambda") || Method is { TypeParams.Count: > 0 }) return null;
         var cu = CounterUpdate(counter);
@@ -192,9 +201,9 @@ public sealed partial class Lowerer
                         {{CM}}.GetValueRefOrAddDefault({{d}}, kv.Key, out _) += kv.Value;
             """;
         Extra.Add($"private static void {helper}({string.Join(", ", ps)})\n{{\n{body}\n}}\n");
-        var args = new List<string> { s, dict.CsName };
-        args.AddRange(captured.Select(l => l.CsName));
-        return new MExprStmt { E = new MCode($"{helper}({string.Join(", ", args)})") };
+        var call = new MCall { Name = helper, Args = { str, new AirLocalRef(dict.CsName, dict.Type.ToAir()) }, Type = new AirType.Prim(PrimKind.Void) };
+        call.Args.AddRange(captured.Select(l => (MExpr)new AirLocalRef(l.CsName, l.Type.ToAir())));
+        return new MExprStmt { E = call };
     }
 
     static void Collect(List<Stmt> body, LocalSym w, List<NameExpr> into)

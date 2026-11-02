@@ -86,7 +86,7 @@ public sealed partial class Lowerer
         var loop = new MFor { Var = v, VarType = c.Recv!.Type.IsInteger ? (b.ParamSyms.Count == 1 && b.ParamSyms[0].Type.IsInteger ? b.ParamSyms[0].Type.Cs : c.Recv.Type.Cs) : null };
         switch (name)
         {
-            case "times": loop.Start = new MCode("0"); loop.Cmp = "<"; loop.End = recv; break;
+            case "times": loop.Start = LoopStart0(); loop.Cmp = "<"; loop.End = recv; break;
             case "upto": loop.Start = recv; loop.Cmp = "<="; loop.End = Expr(c.Args[0].Value!); break;
             case "step": loop.Start = recv; loop.Cmp = by > 0 ? "<=" : ">="; loop.End = Expr(c.Args[0].Value!); loop.Step = by > 0 ? $" += {by}" : $" -= {-by}"; break;
             default: loop.Start = recv; loop.Cmp = ">="; loop.End = Expr(c.Args[0].Value!); loop.Step = "--"; break;
@@ -164,33 +164,33 @@ public sealed partial class Lowerer
         else
         {
             srcExpr = Expr(src);
-            if (srcExpr is not MCode sc || !IsSimple(sc.Text))
+            if (!SimpleLeaf(srcExpr))
             {
                 srcTemp = Temp("src");
                 before.Add(new MDecl { Name = srcTemp, Init = srcExpr });
-                srcExpr = new MCode(srcTemp);
+                srcExpr = new AirLocalRef(srcTemp, src.Type.ToAir());
             }
         }
         string curCs = TypeCs(cur);
         // take(n): a limit and a counter per take stage, read once before the loop
         var takeVars = new Dictionary<Stage, (string Limit, string Taken)>();
-        string? size = preallocMap ? KnownLength(src, fromChars)!(srcExpr) : null;
+        MExpr? size = preallocMap ? KnownLength(src, fromChars)!(srcExpr) : null;
         foreach (var s in stages.Where(s => s.Kind == "take"))
         {
             string lim = Temp("lim"), taken = Temp("tk");
             before.Add(new MDecl { Name = lim, TypeCs = "int", Init = Expr(s.Count!) });
-            before.Add(new MDecl { Name = taken, TypeCs = "int", Init = new MCode("0") });
+            before.Add(new MDecl { Name = taken, TypeCs = "int", Init = new AirConst(0) });
             takeVars[s] = (lim, taken);
-            if (size != null) size = $"global::System.Math.Min({size}, global::System.Math.Max({lim}, 0))";
+            if (size != null) size = MathCall("Min", size, MathCall("Max", Int(lim), new AirConst(0)));
         }
         switch (sinkName)
         {
             case "map":
                 if (preallocMap)
                 {
-                    before.Add(new MDecl { Name = res, Init = new MNewArray { ElemCs = TypeCs(sinkVal), Size = new MCode(size!) } });
+                    before.Add(new MDecl { Name = res, Init = new MNewArray { ElemCs = TypeCs(sinkVal), Size = size! } });
                     count = Temp("n");
-                    before.Add(new MDecl { Name = count, TypeCs = "int", Init = new MCode("0") });
+                    before.Add(new MDecl { Name = count, TypeCs = "int", Init = new AirConst(0) });
                 }
                 else before.Add(new MDecl { Name = res, Init = new MNew { TypeCs = $"global::System.Collections.Generic.List<{TypeCs(sinkVal)}>" } });
                 break;
@@ -200,44 +200,44 @@ public sealed partial class Lowerer
                 before.Add(new MDecl { Name = res, Init = new MNew { TypeCs = $"global::System.Collections.Generic.List<{curCs}>" } });
                 break;
             case "sum":
-                before.Add(new MDecl { Name = res, TypeCs = TypeCs(sinkVal), Init = new MCode($"default({TypeCs(sinkVal)})") });
+                before.Add(new MDecl { Name = res, TypeCs = TypeCs(sinkVal), Init = new AirDefault { TypeCs = TypeCs(sinkVal), Type = sinkVal.ToAir() } });
                 break;
             case "count":
             case "size":
             case "length":
-                before.Add(new MDecl { Name = res, TypeCs = "int", Init = new MCode("0") });
+                before.Add(new MDecl { Name = res, TypeCs = "int", Init = new AirConst(0) });
                 break;
             case "any_q":
-                before.Add(new MDecl { Name = res, TypeCs = "bool", Init = new MCode("false") });
+                before.Add(new MDecl { Name = res, TypeCs = "bool", Init = new AirConst(false) });
                 break;
             case "all_q":
-                before.Add(new MDecl { Name = res, TypeCs = "bool", Init = new MCode("true") });
+                before.Add(new MDecl { Name = res, TypeCs = "bool", Init = new AirConst(true) });
                 break;
             case "find":
-                before.Add(new MDecl { Name = res, TypeCs = curCs + (cur.Nullable ? "" : "?"), Init = new MCode("default") });
+                before.Add(new MDecl { Name = res, TypeCs = curCs + (cur.Nullable ? "" : "?"), Init = new AirDefault() });
                 break;
             case "first":
             case "max":
             case "min":
                 count = Temp("has");
-                before.Add(new MDecl { Name = res, TypeCs = curCs, Init = new MCode("default!") });
-                before.Add(new MDecl { Name = count, TypeCs = "bool", Init = new MCode("false") });
-                after.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = new MCode(count) }, Then = { new MThrow { Value = new MNew { TypeCs = "global::System.InvalidOperationException", Args = { new MCode("\"Sequence contains no elements\"") } } } } });
+                before.Add(new MDecl { Name = res, TypeCs = curCs, Init = new AirDefault { Suppress = true } });
+                before.Add(new MDecl { Name = count, TypeCs = "bool", Init = new AirConst(false) });
+                after.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = Bool(count) }, Then = { new MThrow { Value = new MNew { TypeCs = "global::System.InvalidOperationException", Args = { new AirConst("Sequence contains no elements") } } } } });
                 break;
             case "reduce":
                 before.Add(new MDecl { Name = res, TypeCs = TypeCs(sb!.ParamSyms[0].Type.IsKnown ? sb.ParamSyms[0].Type : sink.Args[0].Value!.Type), Init = Expr(sink.Args[0].Value!) });
                 break;
             case "each_with_index":
                 count = Temp("i");
-                before.Add(new MDecl { Name = count, TypeCs = "int", Init = new MCode("-1") });
+                before.Add(new MDecl { Name = count, TypeCs = "int", Init = new AirConst(-1) });
                 break;
         }
 
         // loop body: stages, then sink
         var body = new List<MStmt>();
         string loopVar = Temp("e");
-        MExpr element = new MCode(loopVar);
-        if (sinkName == "each_with_index") body.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(count!), Postfix = true } });
+        MExpr element = new AirLocalRef(loopVar, elem.ToAir());
+        if (sinkName == "each_with_index") body.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = Int(count!), Postfix = true } });
         ctx.Add("loop");
         // Filters nest the rest of the body in `if (cond) { ... }` (not `continue`) so the JIT can if-convert to cmov.
         var target = body;
@@ -246,8 +246,8 @@ public sealed partial class Lowerer
             if (s.Kind == "take")
             {
                 var (lim, taken) = takeVars[s];
-                target.Add(new MIf { Cond = new MCode($"{taken} >= {lim}"), Then = { new MBreak() } });
-                target.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(taken), Postfix = true } });
+                target.Add(new MIf { Cond = new MBinary { Op = AirBinOp.Ge, L = Int(taken), R = Int(lim), Type = BoolType }, Then = { new MBreak() } });
+                target.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = Int(taken), Postfix = true } });
                 continue;
             }
             target.Add(new MDecl { Name = s.Block.ParamSyms[0].CsName, Init = element });
@@ -257,7 +257,7 @@ public sealed partial class Lowerer
             {
                 string m = Temp("m");
                 target.Add(new MDecl { Name = m, Init = v });
-                element = new MCode(m);
+                element = new AirLocalRef(m, s.Block.Result.ToAir());
             }
             else
             {
@@ -282,20 +282,21 @@ public sealed partial class Lowerer
         {
             // the body cannot add/remove/replace the list's storage: iterate its backing span (no version/bounds checks)
             string span = Temp("sp"), idx = Temp("k");
-            before.Add(new MDecl { Name = span, Init = new MCode($"global::System.Runtime.InteropServices.CollectionsMarshal.AsSpan({((MCode)srcExpr).Text})") });
-            body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = new MCode(span), Args = { new MCode(idx) } } });
-            loop = new MFor { VarType = "int", Var = idx, Start = new MCode("0"), Cmp = "<", End = new MCode(span + ".Length"), Body = body };
+            var spanType = new AirType.ClrRef("global::System.Span", null, [elem.ToAir()]);
+            before.Add(new MDecl { Name = span, Init = new MCall { Target = new AirTypeRef(CM), Name = "AsSpan", Args = { srcExpr }, Type = spanType } });
+            body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = new AirLocalRef(span, spanType), Args = { Int(idx) }, Type = elem.ToAir() } });
+            loop = new MFor { VarType = "int", Var = idx, Start = LoopStart0(), Cmp = "<", End = new MMember { Target = new AirLocalRef(span, spanType), Name = "Length", Type = IntType }, Body = body };
         }
         else if (src.Type.Kind == "array" || src.Type.IsString || IsList(src.Type) || ClrTypes.IsSpan(src.Type.Clr))
         {
             string idx = Temp("k");
-            body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = srcExpr, Args = { new MCode(idx) } } });
+            body.Insert(0, new MDecl { Name = loopVar, Init = new MIndex { Target = srcExpr, Args = { Int(idx) }, Type = elem.ToAir() } });
             loop = new MFor
             {
                 Var = idx,
-                Start = new MCode(vec?.Index ?? boundLo ?? "0"),
+                Start = (vec?.Index ?? boundLo) is { } lo ? Int(lo) : LoopStart0(),
                 Cmp = "<",
-                End = boundHi != null ? new MCode(boundHi) : new MMember { Target = srcExpr, Name = src.Type.Kind == "array" || src.Type.IsString || ClrTypes.IsSpan(src.Type.Clr) ? "Length" : "Count" },
+                End = boundHi != null ? Int(boundHi) : new MMember { Target = srcExpr, Name = src.Type.Kind == "array" || src.Type.IsString || ClrTypes.IsSpan(src.Type.Clr) ? "Length" : "Count" },
                 Body = body,
             };
         }
@@ -310,13 +311,13 @@ public sealed partial class Lowerer
             case "each_with_index":
                 return MCode.Empty;
             case "map":
-                return preallocMap ? new MCode(res) : new MCall { Target = new MCode(res), Name = "ToArray" };
+                return preallocMap ? new AirLocalRef(res) : new MCall { Target = new AirLocalRef(res), Name = "ToArray" };
             case "select":
             case "reject":
             case "to_a":
-                return new MCall { Target = new MCode(res), Name = "ToArray" };
+                return new MCall { Target = new AirLocalRef(res), Name = "ToArray" };
         }
-        return new MCode(res);
+        return new AirLocalRef(res);
     }
 
     /// <summary>
@@ -347,16 +348,45 @@ public sealed partial class Lowerer
 
     /// <summary>The source's element count as C#, when it is known before the loop: arrays, a string behind
     /// `chars`, and Int32 ranges with simple bounds.</summary>
-    Func<MExpr, string>? KnownLength(Syntax.Expr src, bool fromChars)
+    Func<MExpr, MExpr>? KnownLength(Syntax.Expr src, bool fromChars)
     {
         if (src is RangeExpr r)
         {
             if (r.A.Type.Cs != "int" || r.B.Type.Cs != "int" || !SimpleRead(r.A) || !SimpleRead(r.B)) return null;
-            return _ => $"global::System.Math.Max(0, ({Backend.Printer.E(Expr(r.B))}) - ({Backend.Printer.E(Expr(r.A))}){(r.Excl ? "" : " + 1")})";
+            return _ =>
+            {
+                var hi = Expr(r.B);   // B before A: the order the bounds were always lowered in
+                return new AirRangeLength { Lo = Expr(r.A), Hi = hi, Exclusive = r.Excl, Type = IntType };
+            };
         }
-        if (src.Type.Kind == "array" || fromChars && src.Type.IsString) return e => Backend.Printer.E(e) + ".Length";
+        if (src.Type.Kind == "array" || fromChars && src.Type.IsString) return e => new MMember { Target = e, Name = "Length", Type = IntType };
         return null;
     }
+
+    static readonly AirType IntType = new AirType.Prim(PrimKind.Int), BoolType = new AirType.Prim(PrimKind.Bool);
+
+    /// <summary>An int temp or counter the lowering declared.</summary>
+    static AirLocalRef Int(string name) => new(name, IntType);
+
+    static AirLocalRef Bool(string name) => new(name, BoolType);
+
+    static MCall MathCall(string fn, MExpr a, MExpr b) => new() { Target = new AirTypeRef("global::System.Math"), Name = fn, Args = { a, b }, Type = IntType };
+
+    /// <summary>
+    /// The literal 0 as a counted loop's start. Kept as the optimizer's literal form (MirFacts.Int, an MCode leaf)
+    /// because InductionVariables (MirFacts.IntLiteral), Dependence.Bound and LoopTiling read loop bounds only as
+    /// MCode: an AirConst here keeps `i - 1` checked in `n.times { |i| .. }` and stops tiling of `times` nests.
+    /// TODO: AirConst once the optimizer port (ADR 0032, D0.9) reads AirConst.
+    /// </summary>
+    static MExpr LoopStart0()
+    {
+        var zero = Optimizer.MirFacts.Int(0, isLong: false);
+        zero.Type = IntType;
+        return zero;
+    }
+
+    /// <summary>A source expression that is cheap and side-effect free to re-read: a local, or a name/member path as text.</summary>
+    static bool SimpleLeaf(MExpr e) => e is AirLocalRef || e is MCode sc && IsSimple(sc.Text);
 
     static bool IsList(AType t) => t.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(List<>);
 
@@ -372,10 +402,10 @@ public sealed partial class Lowerer
     void Sink(List<MStmt> body, string name, LambdaExpr? sb, MExpr el, string res, string? count, bool prealloc)
     {
         if (sb != null && name != "reduce" && sb.ParamSyms.Count >= 1) body.Add(new MDecl { Name = sb.ParamSyms[0].CsName, Init = el });
-        if (name == "each_with_index" && sb != null && sb.ParamSyms.Count == 2) body.Add(new MDecl { Name = sb.ParamSyms[1].CsName, Init = new MCode(count!) });
+        if (name == "each_with_index" && sb != null && sb.ParamSyms.Count == 2) body.Add(new MDecl { Name = sb.ParamSyms[1].CsName, Init = Int(count!) });
         if (name == "reduce")
         {
-            body.Add(new MDecl { Name = sb!.ParamSyms[0].CsName, Init = new MCode(res) });
+            body.Add(new MDecl { Name = sb!.ParamSyms[0].CsName, Init = new AirLocalRef(res) });
             body.Add(new MDecl { Name = sb.ParamSyms[1].CsName, Init = el });
         }
         if (name is "each" or "each_with_index")
@@ -393,51 +423,51 @@ public sealed partial class Lowerer
         switch (name)
         {
             case "map":
-                if (prealloc) body.Add(new MAssign { Target = new MIndex { Target = new MCode(res), Args = { new MUnary { Op = AirUnOp.Inc, E = new MCode(count!), Postfix = true } } }, Value = v });
-                else body.Add(new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { v } } });
+                if (prealloc) body.Add(new MAssign { Target = new MIndex { Target = new AirLocalRef(res), Args = { new MUnary { Op = AirUnOp.Inc, E = Int(count!), Postfix = true } } }, Value = v });
+                else body.Add(new MExprStmt { E = new MCall { Target = new AirLocalRef(res), Name = "Add", Args = { v } } });
                 break;
             case "select":
-                body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { el } } } } });
+                body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MCall { Target = new AirLocalRef(res), Name = "Add", Args = { el } } } } });
                 break;
             case "reject":
-                body.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = v }, Then = { new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { el } } } } });
+                body.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = v }, Then = { new MExprStmt { E = new MCall { Target = new AirLocalRef(res), Name = "Add", Args = { el } } } } });
                 break;
             case "to_a":
-                body.Add(new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { el } } });
+                body.Add(new MExprStmt { E = new MCall { Target = new AirLocalRef(res), Name = "Add", Args = { el } } });
                 break;
             case "sum":
-                body.Add(new MAssign { Target = new MCode(res), Op = "+=", Value = v });
+                body.Add(new MAssign { Target = new AirLocalRef(res), Op = "+=", Value = v });
                 break;
             case "count":
             case "size":
             case "length":
-                if (sb != null) body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(res), Postfix = true } } } });
-                else body.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(res), Postfix = true } });
+                if (sb != null) body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = Int(res), Postfix = true } } } });
+                else body.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = Int(res), Postfix = true } });
                 break;
             case "any_q":
-                body.Add(new MIf { Cond = sb != null ? v : new MCode("true"), Then = { new MAssign { Target = new MCode(res), Value = new MCode("true") }, new MBreak() } });
+                body.Add(new MIf { Cond = sb != null ? v : new AirConst(true), Then = { new MAssign { Target = new AirLocalRef(res), Value = new AirConst(true) }, new MBreak() } });
                 break;
             case "all_q":
-                body.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = v }, Then = { new MAssign { Target = new MCode(res), Value = new MCode("false") }, new MBreak() } });
+                body.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = v }, Then = { new MAssign { Target = new AirLocalRef(res), Value = new AirConst(false) }, new MBreak() } });
                 break;
             case "find":
-                body.Add(new MIf { Cond = v, Then = { new MAssign { Target = new MCode(res), Value = el }, new MBreak() } });
+                body.Add(new MIf { Cond = v, Then = { new MAssign { Target = new AirLocalRef(res), Value = el }, new MBreak() } });
                 break;
             case "first":
-                body.Add(new MAssign { Target = new MCode(res), Value = el });
-                body.Add(new MAssign { Target = new MCode(count!), Value = new MCode("true") });
+                body.Add(new MAssign { Target = new AirLocalRef(res), Value = el });
+                body.Add(new MAssign { Target = Bool(count!), Value = new AirConst(true) });
                 body.Add(new MBreak());
                 break;
             case "max":
             case "min":
                 body.Add(new MIf
                 {
-                    Cond = new MBinary { Op = AirBinOp.Or, L = new MUnary { Op = AirUnOp.Not, E = new MCode(count!) }, R = new MBinary { Op = name == "max" ? AirBinOp.Gt : AirBinOp.Lt, L = el, R = new MCode(res) } },
-                    Then = { new MAssign { Target = new MCode(res), Value = el }, new MAssign { Target = new MCode(count!), Value = new MCode("true") } },
+                    Cond = new MBinary { Op = AirBinOp.Or, L = new MUnary { Op = AirUnOp.Not, E = Bool(count!) }, R = new MBinary { Op = name == "max" ? AirBinOp.Gt : AirBinOp.Lt, L = el, R = new AirLocalRef(res) } },
+                    Then = { new MAssign { Target = new AirLocalRef(res), Value = el }, new MAssign { Target = Bool(count!), Value = new AirConst(true) } },
                 });
                 break;
             case "reduce":
-                body.Add(new MAssign { Target = new MCode(res), Value = v });
+                body.Add(new MAssign { Target = new AirLocalRef(res), Value = v });
                 break;
         }
     }
