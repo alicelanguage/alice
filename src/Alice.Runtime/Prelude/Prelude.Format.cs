@@ -40,6 +40,8 @@ public static partial class Prelude
         double d => str(d),
         float f32 => str(f32),
         IFormattable f => f.ToString(null, Inv),
+        IDictionary d => DictText(d),
+        System.Runtime.CompilerServices.ITuple t => TupleText(t),
         IEnumerable e => "[" + string.Join(", ", Items(e)) + "]",
         _ => v.ToString() ?? "",
     };
@@ -53,9 +55,35 @@ public static partial class Prelude
         null => "nil",
         string s => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\"",
         char c => "'" + c + "'",
+        IDictionary d => DictText(d),
+        System.Runtime.CompilerServices.ITuple t => TupleText(t),
         IEnumerable e => "[" + string.Join(", ", Items(e)) + "]",
         _ => str(v),
     };
+
+    /// <summary>Crystal/Ruby 3.4 hash text: `{"a" => 1}` (keys and values inspected), `{}` when empty.</summary>
+    static string DictText(IDictionary d)
+    {
+        var sb = new StringBuilder("{");
+        foreach (DictionaryEntry kv in d)
+        {
+            if (sb.Length > 1) sb.Append(", ");
+            sb.Append(inspect(kv.Key)).Append(" => ").Append(inspect(kv.Value));
+        }
+        return sb.Append('}').ToString();
+    }
+
+    /// <summary>Crystal tuple text: `{1, "one"}` (elements inspected).</summary>
+    static string TupleText(System.Runtime.CompilerServices.ITuple t)
+    {
+        var sb = new StringBuilder("{");
+        for (int i = 0; i < t.Length; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(inspect(t[i]));
+        }
+        return sb.Append('}').ToString();
+    }
 
     static IEnumerable<string> Items(IEnumerable e) { foreach (var x in e) yield return inspect(x); }
 }

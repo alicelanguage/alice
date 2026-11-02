@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Prelude, Hash: `fetch(k) { }`, `delete`, `each_key`/`each_value`, `dig(a, b[, c])`, `include?`, `member?`,
+  `has_value?`, `key`, `store`, `length`, `update`, `merge` with a block, `filter_map`, `to_h` with a block, `values_at`,
+  `slice`, `except`, `clear`; a pair has `first`/`last`/`key`/`value`/`to_a`; `DefaultHash(K, V).new(default)` (or with
+  a `{ |h, k| }` block) is a Hash whose missing keys read as the default.
+- Prelude, Enum: `to_i`/`value` (was a C# constraint error), `@[Flags]` `includes?`/`has_flag`, and on the type
+  `Color.values`/`names`/`parse`/`parse?`/`from_value`/`from_value?` (C# 14 static extension members).
+- Prelude, String/Char: `lstrip`/`rstrip`, `bytesize`, `codepoints`, `blank?`, `camelcase`/`underscore`, `to_i(base)`,
+  `to_i?`, `each_char` without a block, String pads, `match` returning MatchData, `gsub`/`sub(/re/)` with a block; Char
+  `upcase`, `downcase`, `letter?`, `digit?`, `whitespace?` and the other predicates.
+- Prelude, Range/Array/Tuple: `("a".."e")`, `('a'..'d')`, Ranges of Comparables, `reverse_each`/`step` without a
+  block; `flatten(depth)`, `max(n)`, `slice_when`, `to_set`, `grep(/re/)`, `find_index(v)`, `transpose`, `to_h` on
+  pairs and with a block, `sum(init)`, `filter_map`, `dup`/`clone`; Tuple `size`/`to_a`.
+- Prelude, objects and names: `p a, b`, `p nil`, `pp`, `hash`/`eql?`/`equal?` on every value, `ENV`,
+  `STDOUT`/`STDERR`/`STDIN`, `at_exit`. Hashes print as `{"a" => 1}` (was `[[a, 1]]`), tuples as `{1, "one"}` (was
+  `(1, one)`).
+
 - ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
 
 ## 0.14.0 - 2026-10-27
