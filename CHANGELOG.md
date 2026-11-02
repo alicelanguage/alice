@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Runtime: `Arena/` (ADR 0037, P1.1): `Term`, `Arena<TSlot>` lane-local slabs with Take/Borrow/free list, `ArenaRegion` resets; tree(23) build+sum 145 ms serial (records 522 ms), 15 ms with forks on 32 cores (`benchmarks/arena`).
 - Security: `alice publish` pushes to NuGet feeds itself over https with the API key in a request header instead of
   a `dotnet nuget push` argument; `--dotnet-push` keeps the old path.
 - Telemetry docs: https-only endpoints and `ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`.
