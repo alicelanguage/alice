@@ -121,8 +121,8 @@ public sealed class SwitchLower(IlLowerContext? ctx = null) : IlPass(ctx)
             List<MStmt>? chain = null;
             for (int i = g.Count - 1; i >= 0; i--)
             {
-                var test = Call(new AirTypeRef("string") { Type = IlTypes.Str }, "Equals", IlTypes.Bool, subject(), g[i].Label);
-                chain = [new MIf { Cond = test, Then = [new MAssign { Target = Local(k, IlTypes.Int), Value = new AirConst(g[i].Arm) }], Else = chain }];
+                var test = Call(new AirTypeRef(IlTypes.Str), "Equals", IlTypes.Bool, subject(), g[i].Label);
+                chain = [new MIf { Cond = test, Then = [new MAssign { Target = Local(k, IlTypes.Int), Value = Const(g[i].Arm) }], Else = chain }];
             }
             return chain!;
         }
@@ -142,12 +142,12 @@ public sealed class SwitchLower(IlLowerContext? ctx = null) : IlPass(ctx)
         {
             List<MStmt>? chain = null;
             for (int i = groups.Count - 1; i >= 0; i--)
-                chain = [new MIf { Cond = new MBinary { Op = AirBinOp.Eq, L = Len(), R = new AirConst(groups[i].Key), Type = IlTypes.Bool }, Then = Group(groups[i].Value), Else = chain }];
+                chain = [new MIf { Cond = new MBinary { Op = AirBinOp.Eq, L = Len(), R = Const(groups[i].Key), Type = IlTypes.Bool }, Then = Group(groups[i].Value), Else = chain }];
             dispatch = chain!;
         }
-        var notNull = new MBinary { Op = AirBinOp.Ne, L = subject(), R = new AirConst(null), Type = IlTypes.Bool };
+        var notNull = new MBinary { Op = AirBinOp.Ne, L = subject(), R = Const(null), Type = IlTypes.Bool };
         var sw = new AirSwitch { Value = Local(k, IlTypes.Int), Min = 0, Cases = arms.Select(a => a.Body).ToList(), Default = dflt };
         for (int a = 0; a < arms.Count; a++) sw.Table.Add(a);
-        return [Decl(k, IlTypes.Int, new AirConst(-1)), new MIf { Cond = notNull, Then = dispatch }, sw];
+        return [Decl(k, IlTypes.Int, Const(-1)), new MIf { Cond = notNull, Then = dispatch }, sw];
     }
 }

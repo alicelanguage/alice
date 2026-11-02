@@ -111,7 +111,7 @@ public sealed partial class PatternTemps(IlLowerContext? ctx = null) : IlPass(ct
                 return null;
             }
             string x = vm.Groups[1].Value;
-            var seq = new AirSeq { Pre = [new MAssign { Target = Local(x, i.E.Type), Value = i.E }], Value = new AirConst(true), Type = IlTypes.Bool };
+            var seq = new AirSeq { Pre = [new MAssign { Target = Local(x, i.E.Type), Value = i.E }], Value = Const(true), Type = IlTypes.Bool };
             c.Add(Decl(x, i.E.Type!, null), seq);
             return seq;
         }
@@ -124,13 +124,13 @@ public sealed partial class PatternTemps(IlLowerContext? ctx = null) : IlPass(ct
         {
             // { x = e as T; x } != null
             var seq = new AirSeq { Pre = [new MAssign { Target = Local(name, bound), Value = new AirAs { TypeCs = ty, E = i.E, Type = bound } }], Value = Local(name, bound), Type = bound };
-            result = new MBinary { Op = AirBinOp.Ne, L = seq, R = new AirConst(null), Type = IlTypes.Bool };
+            result = new MBinary { Op = AirBinOp.Ne, L = seq, R = Const(null), Type = IlTypes.Bool };
         }
         else
         {
             // (e is T) && { x = (T)e; true }, e read once
             MExpr subject = i.E;
-            Func<MExpr> again = () => Copy(i.E);
+            Func<MExpr> again = () => Reread(i.E);
             MDecl? temp = null;
             if (!IsSimple(subject))
             {
@@ -141,7 +141,7 @@ public sealed partial class PatternTemps(IlLowerContext? ctx = null) : IlPass(ct
                 again = () => Local(t, tt);
             }
             var test = new MIs { E = subject, TypeCs = ty, Type = IlTypes.Bool };
-            var bind = new AirSeq { Pre = [new MAssign { Target = Local(name, bound), Value = new MCast { TypeCs = ty, E = again(), Type = bound } }], Value = new AirConst(true), Type = IlTypes.Bool };
+            var bind = new AirSeq { Pre = [new MAssign { Target = Local(name, bound), Value = new MCast { TypeCs = ty, E = again(), Type = bound } }], Value = Const(true), Type = IlTypes.Bool };
             result = new MBinary { Op = AirBinOp.And, L = test, R = bind, Type = IlTypes.Bool };
             if (temp != null) c.Add(temp, result);
         }
@@ -149,14 +149,6 @@ public sealed partial class PatternTemps(IlLowerContext? ctx = null) : IlPass(ct
         return result;
     }
 
-    /// <summary>A second read of a simple expression (locals and literals).</summary>
-    static MExpr Copy(MExpr e) => e switch
-    {
-        AirLocalRef l => new AirLocalRef(l.Name, l.Type),
-        AirConst k => new AirConst(k.Value, k.Type),
-        MCode c => new MCode(c.Text) { Type = c.Type },
-        _ => e,
-    };
 
     static bool KnownReference(string ty) => ty is "string" or "object" || ty.EndsWith("[]");
 }

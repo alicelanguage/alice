@@ -38,7 +38,7 @@ public sealed class UsingLockLower(IlLowerContext? ctx = null) : IlPass(ctx)
         }
         var r = Local(u.Name, t);
         MStmt dispose = Do(Call(r, "Dispose", IlTypes.Void));
-        if (!isValue) dispose = new MIf { Cond = new MBinary { Op = AirBinOp.Ne, L = Local(u.Name, t), R = new AirConst(null), Type = IlTypes.Bool }, Then = [dispose] };
+        if (!isValue) dispose = new MIf { Cond = new MBinary { Op = AirBinOp.Ne, L = Local(u.Name, t), R = Const(null), Type = IlTypes.Bool }, Then = [dispose] };
         return [new MBlock { Body = [Decl(u.Name, t!, u.Value), new MTry { Body = u.Body, Finally = [dispose] }] }];
     }
 
@@ -60,13 +60,13 @@ public sealed class UsingLockLower(IlLowerContext? ctx = null) : IlPass(ctx)
         {
             var lt = IlTypes.IsValueType(target.Type) == false ? target.Type! : IlTypes.Obj;
             string o = Ctx.Temp("lock"), taken = Ctx.Temp("taken");
-            var enter = Do(Call(new AirTypeRef(MonitorType.ToCs()) { Type = MonitorType }, "Enter", IlTypes.Void,
+            var enter = Do(Call(new AirTypeRef(MonitorType), "Enter", IlTypes.Void,
                 Local(o, lt), new MArg { Prefix = "ref ", E = Local(taken, IlTypes.Bool) }));
-            var exit = Do(Call(new AirTypeRef(MonitorType.ToCs()) { Type = MonitorType }, "Exit", IlTypes.Void, Local(o, lt)));
+            var exit = Do(Call(new AirTypeRef(MonitorType), "Exit", IlTypes.Void, Local(o, lt)));
             body =
             [
                 Decl(o, lt, target),
-                Decl(taken, IlTypes.Bool, new AirConst(false)),
+                Decl(taken, IlTypes.Bool, Const(false)),
                 new MTry { Body = [enter, .. b.Body], Finally = [new MIf { Cond = Local(taken, IlTypes.Bool), Then = [exit] }] },
             ];
         }

@@ -46,7 +46,7 @@ public sealed class ForeachLower(IlLowerContext? ctx = null) : IlPass(ctx)
         return
         [
             Decl(c, collType, fe.Coll),
-            new MFor { Var = i, VarType = "int", Start = new AirConst(0), Cmp = "<", End = Member(Local(c, collType), length, IlTypes.Int), Step = "++", Body = body },
+            new MFor { Var = i, VarType = "int", Start = Const(0), Cmp = "<", End = Member(Local(c, collType), length, IlTypes.Int), Step = "++", Body = body },
         ];
     }
 
@@ -65,7 +65,7 @@ public sealed class ForeachLower(IlLowerContext? ctx = null) : IlPass(ctx)
             return disposable ? [decl, new MTry { Body = [loop], Finally = [Do(Call(E(), "Dispose", IlTypes.Void))] }] : [decl, loop];
         List<MStmt> fin;
         if (disposable)
-            fin = [new MIf { Cond = new MBinary { Op = AirBinOp.Ne, L = E(), R = new AirConst(null), Type = IlTypes.Bool }, Then = [Do(Call(E(), "Dispose", IlTypes.Void))] }];
+            fin = [new MIf { Cond = new MBinary { Op = AirBinOp.Ne, L = E(), R = Const(null), Type = IlTypes.Bool }, Then = [Do(Call(E(), "Dispose", IlTypes.Void))] }];
         else if (enumClr.IsSealed)
             return [decl, loop];
         else
@@ -76,7 +76,7 @@ public sealed class ForeachLower(IlLowerContext? ctx = null) : IlPass(ctx)
             fin =
             [
                 Decl(d, idisp, new AirAs { TypeCs = idisp.ToCs(), E = E(), Type = idisp }),
-                new MIf { Cond = new MBinary { Op = AirBinOp.Ne, L = Local(d, idisp), R = new AirConst(null), Type = IlTypes.Bool }, Then = [Do(Call(Local(d, idisp), "Dispose", IlTypes.Void))] },
+                new MIf { Cond = new MBinary { Op = AirBinOp.Ne, L = Local(d, idisp), R = Const(null), Type = IlTypes.Bool }, Then = [Do(Call(Local(d, idisp), "Dispose", IlTypes.Void))] },
             ];
         }
         return [decl, new MTry { Body = [loop], Finally = fin }];
