@@ -11,6 +11,7 @@ public sealed partial class Parser
         DeclareLocal("ARGV");
         Items(f.Items, top: true);
         if (t[p].Kind != "eof") throw Err("unexpected 'end'");
+        if (breakValues.Count > 0) throw ErrAt(breakValues.Keys.First(), "unexpected `break` value outside a loop");
         return f;
     }
 
@@ -27,11 +28,14 @@ public sealed partial class Parser
                 into.Add(At(new UsingItem { Name = DottedName() }, tok));
                 EndStmt();
             }
-            else if (IsKw("require"))
+            else if (IsKw("require") || IsKw("require_relative"))
             {
-                Next();
+                bool relative = Next().Text == "require_relative";
                 if (t[p].Kind != "str") throw Err("require expects a string path");
-                into.Add(At(new RequireItem { Path = Next().Text }, tok));
+                string path = Next().Text;
+                // `require_relative "lib/x"` is `require "./lib/x"` (paths are relative to the requiring file)
+                if (relative && !path.StartsWith("./") && !path.StartsWith("../") && !path.StartsWith('/')) path = "./" + path;
+                into.Add(At(new RequireItem { Path = path }, tok));
                 EndStmt();
             }
             else if (IsOp("@[")) Attr();
@@ -292,12 +296,34 @@ public sealed partial class Parser
 
     void Body(TypeDecl d)
     {
+        string savedVis = sectionVis;
+        sectionVis = "public";
+        try { BodyMembers(d); }
+        finally { sectionVis = savedVis; }
+    }
+
+    static readonly HashSet<string> AccessorKeywords = ["getter", "getter?", "getter!", "property", "property?", "property!", "setter",
+        "class_getter", "class_getter?", "class_property", "class_property?", "class_setter"];
+
+    void BodyMembers(TypeDecl d)
+    {
         while (true)
         {
             SkipNl();
             if (IsKw("end") || t[p].Kind == "eof") return;
             Token tok = Cur;
-            if (IsOp("@[")) Attr();
+            if (t[p].Kind == "id" && Cur.Text is "private" or "protected" or "public" && Peek(1).Kind is "nl" or "eof")
+            {
+                // Ruby section form: every later `def` of this body gets the visibility
+                sectionVis = Next().Text;
+                EndStmt();
+            }
+            else if (t[p].Kind == "id" && Cur.Text is "private" or "protected" or "public" or "private_class_method" or "public_class_method" && Peek(1).Kind == "sym")
+                VisibilityOf(d);
+            else if (t[p].Kind == "id" && AccessorKeywords.Contains(Cur.Text) && Cur.Text != "getter" && Cur.Text != "property" && Cur.Text != "setter"
+                || (IsKw("getter") || IsKw("property") || IsKw("setter")) && Peek(1).Kind == "id" && Peek(2).Kind == "op" && Peek(2).Text == ",")
+                CrystalAccessors(d);
+            else if (IsOp("@[")) Attr();
             else if (IsKw("refine") && d.Kind == "module")
             {
                 // Ruby refinement: a monkey patch of a type that only files with `using <module>` see
@@ -384,15 +410,13 @@ public sealed partial class Parser
             {
                 // Ruby: executable class body (macros like `field "name"`, loops calling define_method) —
                 // collected into a static __class_body run when the module loads, in declaration order
-                var cb = d.Members.OfType<MethodDecl>().FirstOrDefault(m => m.Name == "__class_body");
-                if (cb == null)
-                {
-                    cb = At(new MethodDecl { Name = "__class_body", IsStatic = true, Ret = new TypeRef { Name = "Nil" } }, tok);
-                    d.Members.Add(cb);
-                }
+                var cb = ClassBody(d, tok);
                 var saved = locals;
                 locals = cbLocals.TryGetValue(d, out var l) ? l : cbLocals[d] = new List<HashSet<string>> { new() };
-                cb.Body.Add(Statement());
+                var st = Statement();
+                cb.Body.AddRange(spliced);
+                spliced.Clear();
+                cb.Body.Add(st);
                 locals = saved;
             }
             else throw Err("unexpected token in type body");
@@ -400,6 +424,145 @@ public sealed partial class Parser
     }
 
     readonly Dictionary<TypeDecl, List<HashSet<string>>> cbLocals = new();
+
+    /// <summary>The static `__class_body` of `d` (its executable class-body statements), created on first use.</summary>
+    MethodDecl ClassBody(TypeDecl d, Token tok)
+    {
+        var cb = d.Members.OfType<MethodDecl>().FirstOrDefault(m => m.Name == "__class_body");
+        if (cb == null)
+        {
+            cb = At(new MethodDecl { Name = "__class_body", IsStatic = true, Ret = new TypeRef { Name = "Nil" } }, tok);
+            d.Members.Add(cb);
+        }
+        return cb;
+    }
+
+    /// <summary>`private :a, :b` / `private_class_method :s`: sets the visibility of methods defined above.</summary>
+    void VisibilityOf(TypeDecl d)
+    {
+        string kw = Next().Text;
+        bool cls = kw.EndsWith("_class_method");
+        string vis = cls ? kw[..kw.IndexOf('_')] : kw;
+        while (true)
+        {
+            if (t[p].Kind != "sym") throw Err($"expected :name after {kw}");
+            Token st = Next();
+            var ms = d.Members.OfType<MethodDecl>().Where(m => m.Name == st.Text && (cls ? m.IsStatic : !m.SelfDef)).ToList();
+            if (ms.Count == 0) throw ErrAt(At(new NameExpr(), st), $"unexpected `{kw} :{st.Text}`: no {(cls ? "class " : "")}method `{st.Text}` is defined above it in {d.Name}");
+            foreach (var m in ms) m.Vis = vis;
+            if (!IsOp(",")) break;
+            Next();
+        }
+        EndStmt();
+    }
+
+    /// <summary>
+    /// Crystal accessor macros beyond `getter x : T`: `getter a, b : T` (several names), `getter? ok : Bool` (reader `ok?`),
+    /// `getter! v : T` (`v` raises when nil, `v?` may be nil), `property?` / `property!` (plus a writer),
+    /// `class_getter` / `class_property` / `class_setter` (a class variable `@@x` and class methods).
+    /// Lowered to fields, accessors and methods the binder already knows.
+    /// </summary>
+    void CrystalAccessors(TypeDecl d)
+    {
+        Token tok = Next();
+        string kw = tok.Text;
+        var attrsHere = TakeAttrs();
+        var names = new List<Token> { Next() };
+        while (IsOp(",")) { Next(); names.Add(Next()); }
+        TypeRef? type = null;
+        Expr? init = null;
+        if (IsOp(":")) { Next(); type = Type(); }
+        if (IsOp("=")) { Next(); init = FreshExpr(); }
+        EndStmt();
+        bool cls = kw.StartsWith("class_");
+        string basic = cls ? kw[6..] : kw;
+        char suffix = basic[^1] is '?' or '!' ? basic[^1] : ' ';
+        string kind = suffix == ' ' ? basic : basic[..^1];
+        foreach (var nt in names)
+        {
+            string n = nt.Text;
+            if (nt.Kind != "id") throw ErrAt(At(new NameExpr(), nt), $"expected a name after {kw}");
+            IvarExpr Field() => At(new IvarExpr { Name = cls ? "@" + n : n }, nt);
+            if (cls)
+            {
+                // class_getter x : T = v -> `@@x = v` in the class body; def self.x : T; @@x; end (+ def self.x=(v))
+                if (init == null) throw ErrAt(At(new NameExpr(), nt), $"expected a value: {kw} {n}{(type != null ? " : T" : "")} = value (the class variable is typed from it)");
+                ClassBody(d, nt).Body.Add(At(new Assign { Target = Field(), Value = init }, nt));
+                if (kind != "setter") d.Members.Add(Synth(nt, n + (suffix == '?' ? "?" : ""), [], type, Field(), isStatic: true));
+                if (kind is "property" or "setter")
+                {
+                    if (type == null) throw ErrAt(At(new NameExpr(), nt), $"type required for {kw} {n}");
+                    d.Members.Add(SetterMethod(nt, n, type, Field(), isStatic: true));
+                }
+                continue;
+            }
+            if (suffix == '!')
+            {
+                // getter! v : T -> @v : T? ; def v : T = @v.not_nil! ; def v? : T? = @v
+                if (type == null) throw ErrAt(At(new NameExpr(), nt), $"type required for {kw} {n}");
+                var nonNil = new TypeRef { Name = type.Name, Args = type.Args, Special = type.Special, TupleNames = type.TupleNames, Line = type.Line, Col = type.Col };
+                var nil = new TypeRef { Name = type.Name, Args = type.Args, Special = type.Special, TupleNames = type.TupleNames, Nullable = true, Line = type.Line, Col = type.Col };
+                d.Members.Add(At(new FieldDecl { Name = n, Type = nil, Init = init, Attrs = attrsHere }, nt));
+                // `.as(T)` after `not_nil!`: a nilable value type (Int32?) unwraps to T
+                d.Members.Add(Synth(nt, n, [], nonNil, At(new TypeTestExpr { Kind = "as", Ref = nonNil, E = At(new TypeTestExpr { Kind = "not_nil!", E = Field() }, nt) }, nt)));
+                d.Members.Add(Synth(nt, n + "?", [], nil, Field()));
+                if (kind == "property") d.Members.Add(SetterMethod(nt, n, nonNil, Field(), isStatic: false));
+                continue;
+            }
+            if (suffix == '?')
+            {
+                // getter? ok : Bool -> @ok : Bool ; def ok? : Bool = @ok   (property? also gets a writer `ok=`)
+                if (kind == "property") d.Members.Add(At(new AccessorDecl { Kind = "setter", Name = n, Type = type, Init = init, Untyped = type == null && init == null, Attrs = attrsHere }, nt));
+                else if (type != null) d.Members.Add(At(new FieldDecl { Name = n, Type = type, Init = init, Attrs = attrsHere }, nt));
+                else d.Members.Add(At(new AccessorDecl { Kind = "getter", Name = n, Init = init, Untyped = init == null, Attrs = attrsHere }, nt));
+                d.Members.Add(Synth(nt, n + "?", [], type, Field()));
+                continue;
+            }
+            // getter a, b : T -> getter a : T; getter b : T (untyped: inferred from @a / @b, like attr_reader)
+            d.Members.Add(At(new AccessorDecl { Kind = kind, Name = n, Type = type, Init = init, Untyped = type == null && init == null, Attrs = attrsHere }, nt));
+        }
+    }
+
+    /// <summary>A parser-made method `def name(params) : ret; value; end`.</summary>
+    MethodDecl Synth(Token at, string name, List<Param> ps, TypeRef? ret, Expr value, bool isStatic = false)
+    {
+        var m = At(new MethodDecl { Name = name, Params = ps, Ret = ret, IsStatic = isStatic, SelfDef = isStatic, File = file }, at);
+        m.Body = [At(new ExprStmt { Expr = value }, at)];
+        m.SourceText = $"def {(isStatic ? "self." : "")}{name}\n{Show(value)}\nend";
+        return m;
+    }
+
+    /// <summary>`def name=(v : T)`: a writer method (see <see cref="SetterName"/>) assigning `field`.</summary>
+    MethodDecl SetterMethod(Token at, string name, TypeRef type, IvarExpr field, bool isStatic)
+    {
+        var m = At(new MethodDecl { Name = SetterName(name), Params = [At(new Param { Name = "value", Type = type }, at)], IsStatic = isStatic, SelfDef = isStatic, File = file }, at);
+        m.Body = [At(new Assign { Target = field, Value = At(new NameExpr { Name = "value" }, at) }, at)];
+        m.SourceText = $"def {(isStatic ? "self." : "")}{name}=(value{(TypeText(type) is { } tt ? " : " + tt : "")})\n@{field.Name} = value\nend";
+        return m;
+    }
+
+    /// <summary>Source spelling of a plain type reference (`Int32`, `Array(String)`, `T?`), null for tuple/proc types.</summary>
+    static string? TypeText(TypeRef r)
+    {
+        if (r.Special != "" || r.Pointer) return null;
+        var args = r.Args.Select(TypeText).ToList();
+        if (args.Any(a => a == null)) return null;
+        return r.Name + (args.Count > 0 ? "(" + string.Join(", ", args) + ")" : "") + (r.Nullable ? "?" : "");
+    }
+
+    static string Show(Expr e) => e switch
+    {
+        IvarExpr iv => "@" + iv.Name,
+        TypeTestExpr { Kind: "as", Ref: { } r, E: TypeTestExpr { Kind: "not_nil!", E: IvarExpr iv } } => "@" + iv.Name + ".not_nil!" + (TypeText(r) is { } tt ? ".as(" + tt + ")" : ""),
+        _ => "nil",
+    };
+
+    /// <summary>
+    /// `def name=(v)` is the method `__set_name`; `recv.name = v` calls it when the receiver's type has one (the binder
+    /// rewrites the assignment). A C# property cannot be used: `def name` stays a method, and C# forbids a method and a
+    /// property of the same name.
+    /// </summary>
+    public static string SetterName(string name) => "__set_" + name;
 
     Expr FreshExpr()
     {
@@ -492,6 +655,7 @@ public sealed partial class Parser
     {
         var m = At(new MethodDecl(), Cur);
         bool inline = false;
+        bool explicitVis = false;
         while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline"))
         {
             string mod = Next().Text;
@@ -502,7 +666,7 @@ public sealed partial class Parser
             else if (mod == "unsafe") m.IsUnsafe = true;
             else if (mod == "partial") m.IsPartial = true;
             else if (mod == "inline") inline = true;
-            else m.Vis = mod;
+            else { m.Vis = mod; explicitVis = true; }
         }
         ExpectKw("def");
         m.Attrs = TakeAttrs();
@@ -515,8 +679,22 @@ public sealed partial class Parser
             m.IsStatic = true;
             m.SelfDef = true;
         }
+        if (!explicitVis && !m.SelfDef && ownerKind != "program") m.Vis = sectionVis;
         if (IsOp("[") && Peek(1).Text == "]") { Next(); Next(); m.Name = "[]"; }
         else m.Name = Next().Text;
+        // `def -@` / `def +@` are the unary operators (`def -` with no parameters is too)
+        if (m.Name is "-@" or "+@" or "~@" or "!@") m.Name = m.Name[..1];
+        // `def name=(v)`: a writer (a `=` glued to the name, then the parameter list)
+        bool setter = t[p - 1].Kind == "id" && IsOp("=") && !Cur.Space && Peek(1).Kind == "op" && Peek(1).Text == "(";
+        if (setter) { Next(); m.Name = SetterName(m.Name); }
+        string? savedDef = curDef;
+        curDef = setter ? m.Name[6..] + "=" : m.Name;
+        try { return DefRest(m, ownerKind, setter); }
+        finally { curDef = savedDef; }
+    }
+
+    MethodDecl DefRest(MethodDecl m, string ownerKind, bool setter)
+    {
         if (IsOp("<") && !Cur.Space)
         {
             Next();
@@ -573,7 +751,17 @@ public sealed partial class Parser
             if (IsOp("(")) { Next(); m.SuperInit = Args(")"); }
             EndStmt();
         }
-        m.Body = Block(" end ");
+        Token bodyTok = Cur;
+        m.Body = Block(RescueStops + "end ");
+        // def-level `rescue` / `else` / `ensure` (no `begin`): the whole body is the begin block
+        if (IsKw("rescue") || IsKw("else") || IsKw("ensure")) m.Body = [RescueTail(m.Body, bodyTok, false)];
+        // `def name=(@name)`: Crystal's writer shorthand assigns the field
+        if (setter)
+            foreach (var pr in m.Params.Where(x => x.Auto).Reverse())
+            {
+                pr.Auto = false;
+                m.Body.Insert(0, Mk(new Assign { Target = Mk(new IvarExpr { Name = pr.Name }, pr), Value = Mk(new NameExpr { Name = pr.Name }, pr) }, pr));
+            }
         int endLine = Cur.Line;
         ExpectKw("end");
         locals = saved;

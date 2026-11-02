@@ -99,8 +99,9 @@ public sealed partial class Parser
                 if (IsOp(",")) Next();
             }
             Next();
+            return LambdaBody(ps);
         }
-        return LambdaBody(ps);
+        return LambdaBody(ps, implicitParams: true);
     }
 
     /// <summary>
@@ -151,27 +152,43 @@ public sealed partial class Parser
             }
             Next();
         }
-        return LambdaRest(ps, brace, tok);
+        return LambdaRest(ps, brace, tok, implicitParams: ps.Count == 0);
     }
 
-    LambdaExpr LambdaBody(List<Param> ps)
+    LambdaExpr LambdaBody(List<Param> ps, bool implicitParams = false)
     {
         bool brace = IsOp("{");
         if (!brace && !IsKw("do")) throw Err("expected '{' or 'do'");
-        return LambdaRest(ps, brace, Next());
+        return LambdaRest(ps, brace, Next(), implicitParams);
     }
 
-    LambdaExpr LambdaRest(List<Param> ps, bool brace, Token tok)
+    LambdaExpr LambdaRest(List<Param> ps, bool brace, Token tok, bool implicitParams = false)
     {
         PushLocals();
         foreach (var pr in ps) DeclareLocal(pr.Name);
         bool saved = noDo;
         noDo = false;
-        var l = At(new LambdaExpr { Params = ps, Body = Block(brace ? " } " : " end ") }, tok);
+        string savedCtx = rangeCtx;
+        rangeCtx = "";
+        blockDepth++;
+        var body = Block(brace ? " } " : RescueStops + "end ");
+        if (!brace && (IsKw("rescue") || IsKw("else") || IsKw("ensure"))) body = [RescueTail(body, tok, false)];   // do ... rescue ... end
+        blockDepth--;
+        rangeCtx = savedCtx;
+        var l = At(new LambdaExpr { Params = ps, Body = body }, tok);
         noDo = saved;
         if (brace) Expect("}"); else ExpectKw("end");
         PopLocals();
+        BlockBreaks(l.Body);
+        if (implicitParams) ImplicitParams(l);
         return l;
+    }
+
+    /// <summary>The string-token spelling of a char token's text (`'a'` -> `a`, `'"'` -> `\"`).</summary>
+    static string CharBody(string charTok)
+    {
+        string b = charTok[1..^1];
+        return b switch { "\"" => "\\\"", "\\'" => "'", _ => b };
     }
 
     /// <summary>Splits an Alice string into C#-escaped literal chunks and parsed `#{}` holes.</summary>
@@ -187,10 +204,12 @@ public sealed partial class Parser
             if (ch == '\\' && k + 1 < raw.Length)
             {
                 char nx = raw[k + 1];
-                if (nx == '#' || nx == '{' || nx == '}') sb.Append(nx);
-                else if (nx == 'e') sb.Append("\\u001b");
-                else sb.Append('\\').Append(nx);
-                k += 2;
+                if (nx == '#' || nx == '{' || nx == '}') { sb.Append(nx); k += 2; }
+                else
+                {
+                    try { sb.Append(Lexer.CsEscape(raw, ref k)); }
+                    catch (CompileException e) { throw new CompileException($"{file}:{tok.Line}:{tok.Col}: {e.Message}"); }
+                }
                 continue;
             }
             if (ch == '#' && k + 1 < raw.Length && raw[k + 1] == '{')

@@ -435,7 +435,18 @@ public sealed class Emitter
         [">"] = "op_Gt",
         ["<="] = "op_Le",
         [">="] = "op_Ge",
+        ["<<"] = "op_Shl",
+        [">>"] = "op_Shr",
+        ["&"] = "op_BitAnd",
+        ["|"] = "op_BitOr",
+        ["^"] = "op_Xor",
+        ["~"] = "op_Inv",
+        ["==="] = "op_CaseEq",
+        ["[]="] = "op_IndexSet",
     };
+
+    /// <summary>`def -` / `def -@` with no parameters: the unary operator.</summary>
+    static readonly Dictionary<string, string> UnaryOpNames = new() { ["-"] = "op_Neg", ["+"] = "op_Plus", ["~"] = "op_Inv" };
 
     string Method(MethodDecl d, TypeSym owner) => d.RuleName != null ? MethodCore(d, owner) + Prover(d) : MethodCore(d, owner);
 
@@ -678,12 +689,22 @@ public sealed class Emitter
             return $"{attrs}{dir}{d.Vis} {owner.Name}({plist}){baseInit}\n{{\n{autos}{code}}}\n";
         }
         if (d.Name == "to_s" && m.Params.Count == 0) return $"{attrs}{dir}public override string ToString()\n{{\n{code}}}\n";
-        if (d.Name == "[]") return $"{attrs}{dir}public {ret} this[{plist}]\n{{\nget\n{{\n{code}}}\n}}\n";
+        // `def []=(i, v)` (op_IndexSet) is the indexer's setter: `self[i] = v`
+        string IndexSetter(int n) => owner.Methods.TryGetValue("[]=", out var sl) && sl.Any(x => x.Params.Count == n + 1) ? $"set\n{{\nop_IndexSet({string.Join(", ", m.Params.Take(n).Select(p => p.CsName).Append("value"))});\n}}\n" : "";
+        if (d.Name == "[]") return $"{attrs}{dir}public {ret} this[{plist}]\n{{\nget\n{{\n{code}}}\n{IndexSetter(m.Params.Count)}}}\n";
         if (OpNames.TryGetValue(d.Name, out var opName))
         {
             string self = owner.Name + (owner.TypeParams.Count > 0 ? "<" + string.Join(", ", owner.TypeParams) + ">" : "");
             string args = string.Join(", ", m.Params.Select(p => p.CsName));
-            string op = d.Name == "<=>" ? "" : $"public static {ret} operator {d.Name}({self} self, {plist}) => self.{opName}({args});\n";   // C# has no <=> operator
+            string? un = m.Params.Count == 0 ? UnaryOpNames.GetValueOrDefault(d.Name) : null;
+            bool unary = un != null;
+            if (un != null) opName = un;
+            string op = d.Name is "<=>" or "===" or "[]=" ? "" : unary   // C# has no <=> / === operator
+                ? $"public static {ret} operator {d.Name}({self} self) => self.{opName}();\n"
+                : $"public static {ret} operator {d.Name}({self} self, {plist}) => self.{opName}({args});\n";
+            // `[]=` without a `[]` reader: a set-only indexer
+            if (d.Name == "[]=" && m.Params.Count > 0 && !owner.Methods.ContainsKey("[]"))
+                op = $"public {m.Params[^1].Type.Cs} this[{string.Join(", ", ps.Take(ps.Count - 1))}]\n{{\nset\n{{\nop_IndexSet({string.Join(", ", m.Params.Take(m.Params.Count - 1).Select(p => p.CsName).Append("value"))});\n}}\n}}\n";
             return $"{attrs}{dir}public {ret} {opName}({plist})\n{{\n{code}}}\n{op}";
         }
         var (vis, virt) = Virtual(m, owner, d.Vis);
