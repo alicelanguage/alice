@@ -622,6 +622,7 @@ public class IlBuilderTests
         var m = NewModule("Stack");
         var t = m.DefineType("Demo", "S", StaticClass);
         var deep = t.DefineMethod("Deep", PublicStatic, IlType.Int32);
+        deep.Il.Peephole = IlPeephole.None;   // the constants would fold to one ldc
         for (int i = 1; i <= 9; i++) deep.Il.EmitLoadConst(i);
         for (int i = 1; i < 9; i++) deep.Il.EmitBinary(IlBinOp.Add);
         deep.Il.EmitReturn();
@@ -692,6 +693,28 @@ public class IlBuilderTests
         Assert.Equal(4, BodySize(m, "Temp"));
         // ldarg.0 brfalse.s L2 ldc.i4.1 ret L2: ldc.i4.0 ret
         Assert.Equal(1 + 2 + 1 + 1 + 1 + 1, BodySize(m, "Branchy"));
+    }
+
+    [Fact]
+    public void Peephole_is_on_by_default_and_off_for_debug_builds()
+    {
+        var m = NewModule("PeepDefault");
+        var t = m.DefineType("Demo", "P", StaticClass);
+        void Body(IlBuilder il) { il.EmitLoadConst(2); il.EmitLoadConst(3); il.EmitBinary(IlBinOp.Add); il.EmitReturn(); }
+        var release = t.DefineMethod("Release", PublicStatic, IlType.Int32);
+        Assert.Equal(IlPeephole.All, release.Il.Peephole);
+        Body(release.Il);
+        var debug = t.DefineMethod("Debug", PublicStatic, IlType.Int32);
+        debug.Il.Peephole = IlPeephole.None;
+        Body(debug.Il);
+        Run(m, asm =>
+        {
+            Assert.Equal(5, Call(asm, "Demo.P", "Release"));
+            Assert.Equal(5, Call(asm, "Demo.P", "Debug"));
+            return 0;
+        });
+        Assert.Equal(2, BodySize(m, "Release"));   // ldc.i4.5 ret
+        Assert.Equal(4, BodySize(m, "Debug"));     // ldc.i4.2 ldc.i4.3 add ret
     }
 
     [Fact]
