@@ -8,16 +8,16 @@ public sealed partial class Lowerer
 {
     MExpr Call(CallExpr c)
     {
-        if (c.Res == "fused") return new MCode((string)c.Sym!);
+        if (c.Res == "fused") return At(new AirLocalRef((string)c.Sym!), c);   // the fused reduction's result temp
         if (c.Res == "asnew") return Expr((NewExpr)c.Sym!);
         if (c.Res == "asexpr") return Expr((Expr)c.Sym!);   // Binder.RewriteCall: `===`, named-tuple names
         if (c.Res == "inline") return Expr((StmtExpr)c.Sym!);
         if (c.Res == "defmethod")
-            return new MCall { Target = new MCode("global::Alice.Runtime.Prelude"), Name = "define_method", Args = { new MCode($"typeof({Type.Type.Cs})"), Expr(c.Args[0].Value!), new MCast { TypeCs = "global::System.Delegate", E = Expr(c.Block!) } } };
+            return new MCall { Target = AirTypeRef.Named("global::Alice.Runtime.Prelude"), Name = "define_method", Args = { new AirTypeOf(Type.Type.ToAir()), Expr(c.Args[0].Value!), new MCast { TypeCs = "global::System.Delegate", E = Expr(c.Block!) } } };
         if (c.Res == "missing")
         {
             var argv = new MNewArray { ElemCs = "object", Items = Args(c.Args).Select(a => (MExpr)new MCast { TypeCs = "object", E = a }).ToList() };
-            return new MCall { Target = Expr(c.Recv!), Name = "method_missing", Args = { new MCode("\"" + c.Name + "\""), argv } };
+            return new MCall { Target = Expr(c.Recv!), Name = "method_missing", Args = { AirConst.Str(c.Name), argv } };
         }
         if (c.Res == "ext" && c.Block != null && TryInline(c) is MExpr inlined) return inlined;
         if (c.Res == "ext" && c.Block == null && TryFuseSink(c) is MExpr fused) return fused;
@@ -40,26 +40,26 @@ public sealed partial class Lowerer
         switch (c.Res)
         {
             case "classq":   // Controller.subclasses -> ObjectSpace.subclasses(typeof(Controller))
-                return new MCall { Target = new MCode("global::Alice.Runtime.ObjectSpace"), Name = c.Name, Args = { new MCode($"typeof({((AType)c.Sym!).Cs})") } };
+                return new MCall { Target = AirTypeRef.Named("global::Alice.Runtime.ObjectSpace"), Name = c.Name, Args = { new AirTypeOf(((AType)c.Sym!).ToAir()) } };
             case "special":
                 switch (c.Name)
                 {
-                    case "to_s": return new MCall { Target = new MCode("Prelude"), Name = "str", Args = { recv! } };
+                    case "to_s": return new MCall { Target = AirTypeRef.Prelude(), Name = "str", Args = { recv! } };
                     case "class": return new MCall { Target = recv, Name = "GetType" };
-                    case "respond_to?": return new MCall { Target = new MCode("Prelude"), Name = "respond_to_q", Args = args.Prepend(recv!).ToList() };
-                    case "send": return new MCall { Target = new MCode("Prelude"), Name = "send", Args = args.Prepend(recv!).ToList() };
+                    case "respond_to?": return new MCall { Target = AirTypeRef.Prelude(), Name = "respond_to_q", Args = args.Prepend(recv!).ToList() };
+                    case "send": return new MCall { Target = AirTypeRef.Prelude(), Name = "send", Args = args.Prepend(recv!).ToList() };
                 }
                 break;
             case "alice":
                 {
                     var m = (MethodSym)c.Sym!;
-                    if (m.IsStatic && recv == null && m.Owner != Type && m.Owner.Kind != "program") recv = new MCode(m.Owner.Type.Cs);
+                    if (m.IsStatic && recv == null && m.Owner != Type && m.Owner.Kind != "program") recv = new AirTypeRef(m.Owner.Type.ToAir());
                     if (TrySpecialize(c, m, args, recv) is MExpr spec) return spec;   // ADR 0026
                     LiftCallbacks(c, m, args);
                     return new MCall { Target = recv, Name = CallName(m), Args = args, Safe = c.Safe };
                 }
             case "field" when soa != null && c.Recv is NameExpr { Sym: LocalSym ps } && soa.Ps.Contains(ps):
-                return new MIndex { Target = new MMember { Target = new MCode(soa.Store), Name = ((FieldSym)c.Sym!).CsName }, Args = { new MCode(soa.Idx) } };
+                return new MIndex { Target = new MMember { Target = new AirName(soa.Store), Name = ((FieldSym)c.Sym!).CsName }, Args = { new AirLocalRef(soa.Idx, AirInt) } };
             case "field":
                 return new MMember { Target = recv!, Name = c.Sym is FieldSym f ? f.CsName : c.Name, Safe = c.Safe };
             case "clr":
