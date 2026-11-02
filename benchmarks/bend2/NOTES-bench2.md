@@ -159,6 +159,35 @@ Startup (item 6): parallel programs now get at most 8 server GC heaps, which tak
 nothing for hello world (median 20.7 ms IL vs 20.8 ms R2R, plain C# 19.5 ms, 60 runs); release packages are already
 published with `PublishReadyToRun=true` (.github/scripts/package.ps1), so nothing was changed there.
 
+## AggressiveOptimization and the perf1 passes on a core pair (perf2)
+
+perf1 measured partly on one cpu (`DOTNET_PROCESSOR_COUNT=1`, `taskset -c 13`/`14`), where a .NET process never reaches tier 1 (benchmarks/README.md, R0), so fully optimizing a method at its first call looks better there than it is. Re-measured with `ALICE_NO_AO` (compiler switch: `1` = no inferred AO, `loop` = no PrimitiveLoop AO) and `ALICE_DISABLE_PASSES=branchless-select,unroll`, on `taskset -c 11,27` with `ALICE_PAR=0`, interleaved cold runs (5 rounds + warm-up, [ab.py](ab.py), [results/perf2-serial.json](results/perf2-serial.json)). `AO on` is main 432d682; ratios are median / median of `AO on` (above 1 = the switch makes it slower). merkle, queens and the tree-* ports emit no AO.
+
+| workload | AO on ms | all AO off | PrimitiveLoop AO off | passes off | C ms |
+|---|---:|---:|---:|---:|---:|
+| bfs | 9403 | 1.056 | 1.033 | 1.024 | 5754 |
+| editdist | 11367 | 0.983 | - | - | 9034 |
+| gameoflife | 13666 | 1.024 | - | - | 13808 |
+| hashmap | 1394 | 1.035 | - | - | 1210 |
+| kmeans | 21550 | 1.005 | 1.010 | 1.387 | 2719 |
+| lexer | 1929 | 1.069 | - | - | 1393 |
+| mandelbrot | 3688 | 1.025 | 0.971 | - | 2294 |
+| merkle | 8340 | - | - | 1.044 | 6229 |
+| nbody | 7943 | 1.082 | 1.027 | - | 8816 |
+| queens | 6318 | - | - | - | 5455 |
+| raytrace | 9817 | 1.014 | - | - | 7480 |
+| symreg | 6122 | 0.900 | - | - | 4559 |
+| terrain | 5817 | 1.018 | - | - | 2630 |
+| tree-bitonic | 124552 | - | - | - | 11010 |
+| tree-matmul | 16682 | - | - | - | 5438 |
+| tree-radix | 14382 | - | - | - | 6820 |
+
+Decision (keep AO only where it wins > 3%): the PrimitiveLoop trigger 'a loop that calls primitive helpers' is gone (kmeans 1.010, mandelbrot 0.971, nbody 1.027); the trigger 'a loop over an owned array' stays (bfs 1.033 here, 1.081 in a hyperfine run before the pair was shared). The perf1 kmeans -20% was the one-cpu artefact; its real win is the branch-free selects (passes off: 1.387). The other AO rules (self-recursive kernel, primitive loop leaves, loop nests) were not changed; their all-off column mixes them: lexer 1.069, nbody 1.082, hashmap 1.035 favour AO, symreg 0.900 does not (its only AO method is the leaf `word_prng`).
+
+A first hyperfine pass on 15,31 was discarded after bfs: another job pinned to the same pair from ~20:45 made kmeans 46 s instead of 21.6 s and turned the AO ratio into 0.77. Check the pair is free before an A/B run.
+
+Steady state (benchmarks/alice, in-process warm-up >= 50 calls and >= 1 s, median of the timed calls; 3 processes each, same pair, `ALICE_NO_AO=1` vs on; none of them has a PrimitiveLoop method): nbody 42.7 vs 42.8 ms, binarytrees 109 vs 124 ms, mandelbrot 55.0 vs 71.5 ms, matmul 157 vs 217 ms, particles 1.83 vs 7.46 ms, transpose 14.5 vs 33.4 ms (AO on vs off). So with `ALICE_PAR=0` the loop-nest/leaf AO is faster even at steady state on these, unlike il-shapes R10; not investigated further (celeste_update needs its asset directory and was not run).
+
 ## Notes on fork shape
 
 - Alice infers forks wherever two pure calls are independent and one of them is recursive. So it forks more than

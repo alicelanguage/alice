@@ -44,7 +44,7 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | `x >= 2^31 ? x - 2^32 : x` with x proven in [0, 2^32) (and 8/16-bit forms) | `(long)(int)x`: one sign extension, no branch | `Lowerer.Ranges.TrySignExtend` | `RangeTests.Proven_sign_reinterpretation_is_one_sign_extension` |
 | `c ? a : b` on Int32/UInt32/Int64/UInt64, both arms names, literals or wrapping/bitwise arithmetic over them | `Branchless.U32(c, a, b)`: setcc + mask, no jump (RyuJIT makes `cmov` only outside loops); `c ? 1 : 0`, `x = c ? v : x` (conditional update) and arms that can throw stay ternaries | `Lowerer.Ranges.TypedSelect` + `Optimizer/Passes/BranchlessSelect` | `PerfShapeTests.Integer_select_over_names_is_branch_free`, `Other_selects_stay_ternaries`, `Conditional_update_stays_a_branch` |
 | `i = a` / `while i < N` (or `for`) with literal trip count <= 32, straight-line body (no call, break, nested loop), <= 1200 MIR nodes unrolled | N - a blocks with `i` replaced by its literal (`rk[3]`), `i` keeps its final value | `Optimizer/Passes/LoopUnroll` | `PerfShapeTests.Short_literal_loop_is_unrolled_with_constant_indices`, `Other_loops_stay_loops` |
-| primitive loop (locals, array elements, conversions) that calls primitive helpers or works on an owned array | `[MethodImpl(AggressiveOptimization)]`: fully optimized at the first call, helpers inlined (tier 0 does not inline) | `Backend/Emitter.PrimitiveLoop` | `PerfShapeTests.Primitive_loop_calling_leaf_functions_is_hot`, `Loop_over_an_owned_array_is_hot` |
+| primitive loop (locals, array elements, conversions, primitive helpers) over an owned array | `[MethodImpl(AggressiveOptimization)]`: fully optimized at the first call, helpers inlined (tier 0 does not inline); bfs 3-8% faster cold. A loop that only calls helpers keeps tiered PGO (kmeans, mandelbrot, nbody within 3% on a core pair) | `Backend/Emitter.PrimitiveLoop` | `PerfShapeTests.Loop_over_an_owned_array_is_hot`, `Primitive_loop_calling_leaf_functions_keeps_tiered_pgo` |
 | `xs.sum` / `min` / `max` on a large primitive array | fork/join over SIMD chunks | `Runtime/Parallel/ParReduce` | `ParReduceTests` |
 | `2.0 ** n` (integer `n`), `x ** 2` (float `x`) | `Math.ScaleB(1.0, n)`, `x * x`: bit-identical to `Math.Pow` | `Lowerer.Binary` | `PrimitiveTests.Exact_power_forms_match_math_pow` |
 | `x.to_i64` on Int32, any number `.to_f` (widening) | plain cast; narrowing keeps the checked, inlined helper | `Lowerer.Calls.WideningCast` | `PrimitiveTests.Widening_conversions_are_plain_casts` |
@@ -62,6 +62,10 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 - Integer overflow is checked (ADR 0013); passes remove a check only where it is provably dead (ADR 0014).
 - `ALICE_DISABLE_PASSES=const-fold,strength-reduce,literal-minmax,induction` disables MIR passes for A/B runs
   (also `unroll`, `branchless-select`).
+- `ALICE_NO_AO=1` (or `all`) stops the inferred `AggressiveOptimization`; `ALICE_NO_AO=loop` (or `kernel`,
+  `leaves`, `nest`, comma-separated) stops one rule. A written `@[Hot]` is kept. Measure AO on a serial core pair
+  (`taskset -c <pair> env ALICE_PAR=0`), never on one cpu: there tier 1 never arrives and AO looks better than it
+  is (benchmarks/README.md, R0).
 - A branch-free select evaluates both arms, so it is emitted only for arms that cannot throw or have effects. It
   wins when the condition is unpredictable (kmeans: 1.85G -> 0.06G branch misses) and loses when the select sits
   on a loop-carried chain with a predictable condition (mandelbrot's escape freeze: 2x slower), hence the
