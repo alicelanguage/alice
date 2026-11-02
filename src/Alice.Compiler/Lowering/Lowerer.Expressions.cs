@@ -195,7 +195,8 @@ public sealed partial class Lowerer
         if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
         if (b.Res == "shiftcount") return new MBinary { Op = AirOps.ParseBin(b.Op), L = l, R = new MCast { TypeCs = "int", E = r } };
         if (Contract(b, l, r) is MExpr fused) return fused;
-        if (b.Op is "&+" or "&-" or "&*") return new MCall { Name = "unchecked", Args = { Optimizer.MirFacts.Unchecked(new MBinary { Op = AirOps.ParseBin(b.Op[1..]), L = l, R = r }) } };
+        // only the wrapping operator wraps: checked arithmetic inside an operand still traps (ADR 0013)
+        if (b.Op is "&+" or "&-" or "&*") return new MCall { Name = "unchecked", Args = { Optimizer.MirFacts.Unchecked(new MBinary { Op = AirOps.ParseBin(b.Op[1..]), L = Optimizer.MirFacts.KeepChecked(l), R = Optimizer.MirFacts.KeepChecked(r) }) } };
         if (UncheckedIfProven(b, l, r) is MExpr proven) return proven;
         if (FlooredHelper(b.Op, b.Type) is string fl) return At(new MCall { Target = AirTypeRef.Prelude(), Name = fl, Args = { l, r } }, b);
         return At<MExpr>(b.Op switch

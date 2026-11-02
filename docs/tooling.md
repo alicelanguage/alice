@@ -8,7 +8,7 @@ Run from source: `dotnet run --project src/Alice.Cli -- <command>`.
 |---|---|
 | `alice new <name> [--lib\|--tool\|--game\|--wasm]` | create package (exe, library with `naming = "dotnet"`, .NET tool, MonoGame game, or [WebAssembly](#webassembly-kind--wasm) package): `alice.toml`, `src/`, `test/`, `.gitignore`; inside a workspace it is added to `members` |
 | `alice new <name> --workspace` | create workspace root (`[workspace] members = []`) |
-| `alice build [dir\|files] [--release] [--native] [--strict] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT; `--strict` = [strict typing](language.md#strict-typing-al0220) for this build |
+| `alice build [dir\|files] [--release] [--native] [--strict] [--prove\|--prove=smt] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT; `--strict` = [strict typing](language.md#strict-typing-al0220) for this build; `--prove` = then `alice prove --check` when the package has a `RULES.al` ([below](#proving-as-part-of-the-build)) |
 | `alice run [dir\|file.al] [member] [--strict] [-- args]` | build and run; workspace with several exe members: `alice run <member>` |
 | `alice check [--strict]` | type-check, no output; `--strict`: anything not statically typed is AL0220 |
 | `alice test [files]` | build the package, run every `def test_*` in `test/*.al` |
@@ -18,7 +18,7 @@ Run from source: `dotnet run --project src/Alice.Cli -- <command>`.
 | `alice clean [dir]` | remove `bin/` and `obj/` |
 | `alice emit [--strict] file.al` | print lowered C# |
 | `alice explain [files]` | show which optimizations each method received (parallel loops, stack arrays, presized collections, shared immutable objects, ...) |
-| `alice prove [files] [--check] [--smt]` | prove every `rule` (usually in `RULES.al`) and write `PROOF.al`; `--check` verifies only (CI); `--smt` proves rules over whole Int32/Int64 ranges with Z3 ([rules and proofs](#rules-and-proofs-alice-prove)) |
+| `alice prove [files] [--check] [--smt] [--timeout s] [--format text\|json]` | prove every `rule` (usually in `RULES.al`) and write `PROOF.al`; `--check` verifies only (CI); `--smt` proves rules over whole Int32/Int64 ranges with Z3; `--timeout` limits each rule; `--format json` prints a machine-readable summary ([rules and proofs](#rules-and-proofs-alice-prove)) |
 | `alice guide [topic]` | print the Alice guide (`guide/GUIDE.md`); topics: `performance`, `proofs`, `interop` |
 | `alice agents [--write]` | print the Alice block for a project's `AGENTS.md`; `--write` adds it to `./AGENTS.md` |
 | `alice repl` (or plain `alice`) | interactive REPL ([below](#repl)) |
@@ -61,6 +61,7 @@ native = true                # PublishAot (identical method bodies folded, AOT a
 ready_to_run = true          # `alice build --release` also publishes precompiled code to bin/r2r (or: alice build --r2r)
 threads = false              # single-threaded target: parallel loops, pipelines and forks compile to serial code (wasm default)
 strict = true                # strict typing: an inferred `dynamic` (not written as `Any`) is error AL0220 (or: --strict)
+prove = true                 # with a RULES.al, `alice build` also runs `alice prove --check` ("smt" adds --smt; or: --prove)
 
 [runtime]
 gc = "auto"                  # default: server GC if the program runs in parallel, else workstation; or workstation | server | low-memory
@@ -242,13 +243,77 @@ finite domain (at most 2^32 cases, AL0214) in parallel, and writes `PROOF.al`, a
 every source. `alice prove --check` fails when a rule fails or the sources changed since `PROOF.al` was written:
 run it in CI and commit `PROOF.al`.
 
+A failing rule prints one line with the first failing input in domain order and what the rule did on it:
+
+```text
+rule percent_in_range FAILS: part = 0, total = 0 -> raised DivideByZeroException
+```
+
+`-> false` means the rule returned false; `-> raised X` that it threw. The same input fails on every run and machine.
+
+| Flag | Effect |
+|---|---|
+| `--check` | prove again, compare with `PROOF.al`, write nothing: exit 1 when a rule fails, is not proven, or `PROOF.al` is missing or stale |
+| `--smt` | Z3 instead of enumeration where the rule translates ([below](#whole-ranges-with-z3---smt)) |
+| `--timeout s` | time limit per rule, in seconds (`--timeout 30`, `--timeout=0.5`). A rule that runs out is `not proven` (exit 1), never proven; with `--smt` it is also Z3's limit per query (default 20 s) |
+| `--format json` | only a JSON summary on stdout, rules in name order, for CI and agents (shape below) |
+
+Exit code: 0 when every rule is proven (and, with `--check`, `PROOF.al` is current), 1 otherwise, 2 for a usage
+error. Rules are always listed in ordinal name order, in the table, the JSON and `PROOF.al`.
+
+```json
+{
+  "ok": false,
+  "proof": "current",
+  "rules": [
+    {
+      "rule": "percent_in_range",
+      "status": "fails",
+      "engine": "enumeration",
+      "cases": 1002001,
+      "ms": 6.3,
+      "counterexample": { "part": 0, "total": 0 },
+      "result": "raised DivideByZeroException",
+      "message": "rule percent_in_range FAILS: part = 0, total = 0 -> raised DivideByZeroException"
+    }
+  ]
+}
+```
+
+`proof` is `current` or `stale` with `--check`, `written` without it. `status` is `proven`, `fails` or `unknown`
+(`reason` says why: a time limit, or a rule `--smt` cannot translate that is too large to enumerate); `engine` is
+`enumeration` or `smt` (`cases` is then null: every input of the domain).
+
+### Proving as part of the build
+
+`alice build --prove`, or `prove = true` under `[build]` in `alice.toml`, runs `alice prove --check` in the package
+directory after a successful build when the package has a `RULES.al`, and the build fails when a rule fails or
+`PROOF.al` is stale. CI then gates on the rules with no extra step. `--prove=smt` / `prove = "smt"` adds `--smt`.
+In a workspace each member with a `RULES.al` is proven after it builds. A package without `RULES.al` builds as usual.
+
+### Whole ranges with Z3 (`--smt`)
+
 `alice prove --smt` (ADR [0022](../archicture/adr/0022-smt-proofs.md)) translates each rule to bit-vector formulas and
 asks Z3 for a counterexample, so a rule may take whole ranges (`x : Int32`, `x : Int64`). It covers integer
-arithmetic with Alice's semantics (checked overflow, floored `/` and `%`, wrapping `&+ &- &*`), `if`/ternaries, early
-`return`, locals, `divmod`, `Math.Min/Max` and inlined non-recursive pure methods. Rules with loops, recursion,
-objects or floats fall back to enumeration. Z3 is opt-in: install the system `libz3` (`pacman -S z3`,
-`apt install libz3-4`, `brew install z3`) or set `ALICE_Z3=path`; without it `--smt` is a usage error.
-Guide: [guide/PROOFS.md](../guide/PROOFS.md).
+arithmetic with Alice's semantics (checked overflow, floored `/` and `%`, wrapping `&+ &- &*`, checked `to_X` and
+wrapping `to_X!` conversions), `if`/ternaries, early `return`, locals, `divmod`, `Math.Min/Max` and inlined
+non-recursive pure methods. Rules with loops, recursion, objects or floats fall back to enumeration. Every Z3
+counterexample is run again through the compiled rule before it is printed: it must return false or raise there,
+otherwise the rule is reported `not proven` with the disagreement (a bug to report), never as a failure or a proof.
+
+How `alice prove --smt` finds Z3: it loads Z3's C library at run time (no NuGet package, any CPU architecture), and
+tries in order:
+
+1. `ALICE_Z3`, a full path to the library (`ALICE_Z3=/opt/z3/bin/libz3.so`, `ALICE_Z3=C:\z3\bin\libz3.dll`);
+2. the system library by name: `libz3.so`, then `libz3.so.4` on Linux; `libz3.dylib`, `/opt/homebrew/lib/libz3.dylib`,
+   `/usr/local/lib/libz3.dylib` on macOS; `libz3.dll`, then `z3.dll` on Windows (the usual DLL search: the
+   application directory, then `PATH`).
+
+Install it with `pacman -S z3`, `apt install libz3-4`, `brew install z3`, or on Windows unzip a release from
+[github.com/Z3Prover/z3/releases](https://github.com/Z3Prover/z3/releases) and point `ALICE_Z3` at `bin\libz3.dll`
+(CI does that, checksum-pinned, in `.github/workflows/ci.yml`). Without Z3, `--smt` is a usage error and plain
+`alice prove` is unaffected. The SMT tests return early without Z3; `ALICE_REQUIRE_Z3=1` (set in CI) makes a missing
+Z3 a test failure. Guide: [guide/PROOFS.md](../guide/PROOFS.md).
 
 ## REPL
 

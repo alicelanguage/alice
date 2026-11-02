@@ -4,11 +4,11 @@ using Alice.Compiler;
 
 namespace Alice.Tests.Tooling;
 
-/// <summary>`alice prove --smt` (ADR 0022). Skipped where Z3 is not installed.</summary>
+/// <summary>`alice prove --smt` (ADR 0022). Return early where Z3 is not installed, fail then under ALICE_REQUIRE_Z3=1.</summary>
 [Collection("console")]
 public class SmtProveTests
 {
-    static bool HasZ3 => SmtProver.Unavailable() == null;
+    static bool HasZ3 => ProveZ3.Available();
 
     static SmtProver.Outcome One(string rules, string app = "")
     {
