@@ -16,6 +16,30 @@ public sealed partial class Lowerer
 {
     readonly Dictionary<MethodSym, string?> unsafeWhy = new();
 
+    /// <summary>A literal constant of a .NET type (`Int32::MAX`, `Float64::INFINITY`, `Math::PI`): reads no state.</summary>
+    static bool LiteralConst(ConstExpr ce) =>
+        ce is { Res: "path", Sym: ConstPath { OwnerText: null, Members: [(var n, false)] } cp }
+        && cp.Owner.Clr?.GetField(n, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static) is { IsLiteral: true };
+
+    /// <summary>A Prelude extension call (`s.upcase`) is pure when it is on the numeric list or every Prelude overload of
+    /// that name for the receiver is marked [Pure] by the runtime.</summary>
+    static bool PureExtCall(CallExpr x)
+    {
+        string name = Binder.Mangle(x.Name);
+        if (PureExt.Contains(name)) return true;
+        if (x.Recv?.Type.Clr is not { } rt) return false;
+        lock (pureExts)
+        {
+            if (pureExts.TryGetValue((name, rt), out bool known)) return known;
+            var ms = typeof(Alice.Runtime.Prelude).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                .Where(m => m.Name == name && m.IsDefined(typeof(System.Runtime.CompilerServices.ExtensionAttribute), false)
+                    && m.GetParameters()[0].ParameterType is { IsGenericParameter: false } p0 && p0.IsAssignableFrom(rt)).ToList();
+            return pureExts[(name, rt)] = ms.Count > 0 && ms.All(m => m.CustomAttributes.Any(a => a.AttributeType.FullName == "Alice.Runtime.PureAttribute"));
+        }
+    }
+
+    static readonly Dictionary<(string, Type), bool> pureExts = new();
+
     void CheckDeclaredEffects(int line)
     {
         if (Method?.Decl is not { } d) return;

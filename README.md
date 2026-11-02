@@ -22,7 +22,7 @@ record struct Vec(x : Float64, y : Float64)
   def +(o : Vec) : Vec = Vec.new(x + o.x, y + o.y)
 end
 
-total = (1..1_000_000).map { |i| i.to_i64 * i }.select { |x| x % 2 == 0 }.sum   # one fused, parallel loop
+total = (1..1_000_000).map { |i| i.to_i64 * i }.select { |x| x % 2 == 0 }.sum   # one fused loop, no intermediate arrays
 puts "total=#{total}"
 ```
 

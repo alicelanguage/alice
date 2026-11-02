@@ -31,7 +31,7 @@ Inferred (silent) shapes over a counted `for i in 0...n`, tried after `TryParall
 Explicit (ADR 0017 pattern):
 
 ```crystal
-cm for i in 0...n                 # the body must be CM-admissible, or AL0227
+cm for i in 0...n                 # the body must be CM-admissible, or AL0247
   acc += xs[i]
   pre[i] = acc
 end
@@ -43,9 +43,9 @@ end
 
 | Error | Meaning |
 |---|---|
-| AL0227 | `cm for` body is not one of the admissible shapes (names the offending statement) |
-| AL0228 | combine or scan with a non-associative operator, or a float combine without `ordered` |
-| AL0229 | `permute`/`scatter` target index not provably in range and distinct (under inference the runtime checks and raises; under `cm` the compiler demands a proof: `perm` from `sort_by_key`/`compact`, or an `@[Permutation]` contract) |
+| AL0247 | `cm for` body is not one of the admissible shapes (names the offending statement) |
+| AL0248 | combine or scan with a non-associative operator, or a float combine without `ordered` |
+| AL0249 | `permute`/`scatter` target index not provably in range and distinct (under inference the runtime checks and raises; under `cm` the compiler demands a proof: `perm` from `sort_by_key`/`compact`, or an `@[Permutation]` contract) |
 
 **Float contract.** Float scans and reductions use a chunking fixed by `n` (chunk size `max(4096, n / 1024)` rounded
 to a vector multiple, independent of `Par.Workers` and of the core count). Results are bit-identical across core
@@ -59,13 +59,13 @@ CPU scans what ADR 0021 accepted for GPU float sums, with a stronger guarantee (
    of `Optimizer/Analysis/Affine.cs` for `k(i)` and `seg[i]`. One dispatch line in `Lowerer.Statements.cs` `For`, after
    `TryParallelFor` and before the serial path (so proven-independent loops keep today's lowering). `PureExpr`
    (`Lowerer.Parallel.cs`) gates every `e(i)`, `k(i)`, `c(i)`. The matcher must classify every statement of the body,
-   as `LoopBody` does, or it declines (AL0227 under `cm for`).
+   as `LoopBody` does, or it declines (AL0247 under `cm for`).
 2. AIR nodes added to the ADR 0032 set: `AirScan(op, inclusive, src, dst, seg?)`, `AirCombine(op, target, idx, vals)`,
    `AirCompact(pred, src, dst, count)`, `AirPermute(src, perm, dst)`; each carries `Ordered` and the element
    `AirType`. Both printers emit runtime calls (library kernels, not inline code).
 3. GPU (ADR 0021): `AirScan` / `AirCombine` inside `gpu for` lower to ILGPU kernels in `Lowerer.Gpu.cs`'s style:
    group scan with `Warp.ShuffleUp` + shared memory and a second launch for the grid fix-up; combine through
-   shared-memory histograms + `Atomic.Add`. Integers exact; float scans require `ordered` (one-group) or AL0228.
+   shared-memory histograms + `Atomic.Add`. Integers exact; float scans require `ordered` (one-group) or AL0248.
 
 ## Runtime
 
@@ -106,7 +106,7 @@ algorithm".
   `alice explain` for each float scan.
 - Large-`k` combines fall back to atomics and may lose to serial; `alice explain` shows the chosen path and threshold.
 - A loop that looks like a scan but has another side effect is declined, because every statement must be classified.
-- Permute without a proof races on duplicate targets: runtime duplicate check under inference, AL0229 under `cm for`.
+- Permute without a proof races on duplicate targets: runtime duplicate check under inference, AL0249 under `cm for`.
 - Order: runtime kernels and Prelude first (Wave 2), inferred shapes next, `cm for` once the shapes are stable.
 - Rejected: doing nothing (`par for` + vectorize cover the `batch_run` family, not scan/combine/compaction/permute);
   a full CM dialect (xapping types, router semantics) up front; `ordered` required for every float scan (equal to
@@ -115,7 +115,7 @@ algorithm".
 Tests: `tests/Alice.Tests/Runtime/CmTests.cs` (each kernel against a serial reference; bit patterns identical across
 `DOTNET_PROCESSOR_COUNT=1` and 32 for Int32/Int64/Float32/Float64; float results documented as differing from the
 serial fold; 0 allocations; prefix_sum of 2^26 Int32 >= 8 GB/s on the forge); `tests/Alice.Tests/Compiler/CmTests.cs`
-(the four inferred shapes, AL0227-AL0229, declined look-alike loops); `GpuLoopTests` exact Int32 scan and histogram on
+(the four inferred shapes, AL0247-AL0249, declined look-alike loops); `GpuLoopTests` exact Int32 scan and histogram on
 the CPU accelerator; histogram port above Bend PAR-CPU, kmeans within 1.3x of C serial.
 
 IL lowering (ADR 0040, section 3): library shapes are direct calls into `Alice.Runtime.Cm`; fused shapes get a static

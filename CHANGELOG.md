@@ -7,13 +7,85 @@
   helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays
   keep it (bfs 3-8% faster). New `ALICE_NO_AO=1|kernel,leaves,nest,loop` switch for A/B runs. bend2 serial
   table re-measured (benchmarks/bend2/results/summary.md).
+- Book compiler issues (/work/reports/book-compiler-issues.md), tests in `tests/Alice.Tests/Compiler/BookIssuesTests.cs`:
+  - Syntax: `puts await f(x)` (`await` starts a command argument); `^name` pins inside array patterns, also of a name
+    bound earlier in the pattern (`in [a, ^a]`); `rescue A, B => e` no longer emits `--1` in the second catch (a
+    negative literal merged into its token is not merged again when the clause body is re-parsed per type).
+  - Semantics: `Counter.total += 1` on a `class_property`; `raise ... unless n` narrows `n` like `return unless n`;
+    a generic .NET method with an Alice type argument returns that type, nil-able when declared `T?`
+    (`JsonSerializer.Deserialize<Array(Tea)>(s)`: `if loaded`, `loaded || d`); `xs << v` on `List(T)` of a type
+    parameter; `format`/`puts` and the other Kernel functions inside a reopened .NET type call the Prelude function;
+    `sort_by_key` returns a named tuple, and `s.keys`/`s.values` read its elements (element names win over the
+    named-tuple helpers).
+  - Slices and negative indexes: `xs[a..b]`, `xs[a...b]`, `xs[a..]`, `xs[..b]`, `s[start, n]` on Array, List and
+    String (Prelude `slice_range`/`slice_len`, negative bounds from the end, a start past the end gives an empty
+    slice); a literal negative index `xs[-1]` reads `xs[xs.Length - 1]` (computed negative indexes still raise).
+  - Purity: `Int32::MAX`/`MIN` and other literal .NET constants are pure (in `pure def` and rules); a Prelude
+    extension call is pure when every overload for its receiver is `[Pure]`; `upcase`, `downcase`, `capitalize`,
+    `strip`, `reverse`, `includes?`, `starts_with?`, `ends_with?`, `ljust`, `rjust`, `center`, `chomp`, `chop`,
+    `squeeze`, `swapcase` on String are marked `[Pure]`.
+  - Diagnostics: `@[Strict]` is compiler-only (no `StrictAttribute` in the C#); a lowering error that names its code
+    keeps it (AL0215 was reported as AL0001).
+  - Tooling/docs: `alice explain` counts the `__par_` helper of a parallel pipeline for its method (and top-level
+    helpers for `Main`); `alice guide` prints the installed version in its header; guide/AGENTS.md: the rescue
+    modifier exists, `Hash(K, V).new(0)` for counters; docs/errors.md: one row per code (duplicate AL0230 removed,
+    live AL0220/AL0221 before the planned AL0240-AL0249); docs/language.md: slices, negative indexes, pins in
+    patterns, `class_property` writes, nil-able generic .NET results; README: the range pipeline is "one fused
+    loop" (it is serial; the parallel reduce applies to array sources of 65,536+ elements).
+- IL backend D1.4 (ADR 0033): `Backend/Il/AirToIl` emits IL + portable PDB from the post-optimizer MIR through `IlBuilder` (declarations as the C# backend makes them, typed expressions, checked arithmetic per node, EH, foreach, interpolation, vectors, sequence points and local names); `alice run --backend il`, `alice emit --il <file>` (writes `<name>.dll`/`.pdb`, prints the IL listing). Unsupported nodes are reported with their kind; differential, ILVerify, decode, allocation and corpus tests in `AirToIlTests`.
+- IL backend dynamic sites (backend plan D1.9, ADR 0033): `Alice.Runtime.Dyn` (`src/Alice.Runtime/Dynamic/`) dispatches
+  `Any` values without the C# runtime binder: one `DynSite` per call site with a monomorphic entry and a 4-entry
+  polymorphic inline cache keyed by receiver and argument runtime types, `MethodInvoker` thunks (allocation-free hit
+  path), overloads by runtime types with numeric widening, nil, Alice operator semantics (checked, floored `/` `%`), `define_method` /
+  `method_missing`, public members only. The IL-only pass `Air/Passes/DynSites.cs` rewrites dynamic operations into
+  `AirDynCall` (`Mir/MExpr.Dyn.cs`) and lists the site fields; AL0232 reports dynamic sites under `native = true` and
+  on wasm; `DynSites.Declaration()` declares the `<>DynSites` holder type (AirDecls). The C# backend is unchanged
+  (its C# `dynamic` still truncates `/` and `%`: docs/production.md).
+- IL closure conversion (backend plan D1.5, ADR 0033 closure ABI): `Air/Passes/ClosureConvert.cs` turns lambdas into static methods with a cached delegate (capture-free), display structs passed by ref (non-escaping: Par kernels, fork branches) or display classes with hoisted written captures (escaping); nodes `AirDelegateCreate`, `AirDisplayNew`, `AirDisplayField` (`Mir/MExpr.Closures.cs`, dump and debug C# forms). Kernels and fork branches use new struct overloads `Par.Range<TKernel>`, `Par.Reduce<T, TKernel>`, `Par.Fork<A, B, TA, TB>` (`IParKernel`, `IParKernel<T>`, `IForkBranch<T>`; reused jobs, 0 B in steady state); `ALICE_CLOSURE_STRUCTS=off` demotes structs to classes. Runs only under `Pipeline.Backend == AirBackend.Il` with a method context, after the IL lowerings; emitted C# is byte-identical.
 - IL backend Synthesize pass (backend plan D1.6, ADR 0032/0033): `Air/Passes/Synthesize.cs` builds, for the IL backend only, explicit declarations with MIR bodies (`Mir/AirDecls.cs`: `AirModuleDecl`/`AirTypeDecl`/`AirMethodDecl`/`AirFieldDecl`/`AirPropertyDecl`, on `TypeSym.Synth`) for what Roslyn synthesizes today: record and record struct members (backing fields, init accessors, primary/copy constructors, EqualityContract, Equals, GetHashCode, ToString/PrintMembers, Deconstruct, ==/!=, `<Clone>$`, `__With`), sum types (abstract base, sealed nested variants, `Tag`, `Is<Variant>`, unit `Value`), derived `!=`/`>`/`>=`, the IEnumerable bridge, auto-properties, field/constant initializers, default and struct constructors, `to_s` as ToString and the module initializer. Emitted C# is byte-identical on the corpus.
+- IL backend FFI (backend plan D1.10, ADR 0018/0033): `Backend/Il/AirToIl.Ffi.cs` emits `lib` funs as blittable P/Invoke
+  rows (ImplMap: EntryPoint, ExactSpelling, WinApi, no CharSet/SetLastError; `[SuppressGCTransition]` for `@[Fast]`)
+  behind inlined wrappers (UTF-8 strings on a `localloc` buffer via `Utf8Arg`, pinned arrays, out/ref byrefs, borrowed
+  string returns, Bool as byte), `[UnmanagedCallersOnly]` callback trampolines passed by `ldftn`, `@[Native]` `calli`
+  with the managed fallback, and pointer load/store/arithmetic/`sizeof`; `IlModule`/`MetadataWriter` gain P/Invoke
+  (`IlMethodDef.PInvoke`, ModuleRef + ImplMap rows). Not wired into AirToIl yet; the FfiTests calls, driven from an IL
+  `Main`, print what the C# backend prints, and NativeAOT publishes the emitted dll.
+- IL backend state machines (backend plan D1.8, ADR 0032/0033): `Air/Passes/StateMachines*.cs` rewrites async methods, iterators and async iterators, for the IL backend only, into C#-shaped state-machine types (`AirTypeDecl`: `<>1__state`, method builder, hoisted locals, awaiter fields, MoveNext with `AwaitUnsafeOnCompleted`, try/finally across awaits, awaits in finally, `await foreach`/`await using`; iterator `Dispose` running pending finally blocks, `GetEnumerator` thread fast path; `AsyncIteratorMethodBuilder` + `ManualResetValueTaskSourceCore<bool>`; awaits and yields inside rescue clauses, yields inside begin/rescue, async lambdas via `StateMachines.AsyncLambdas`) plus a kickoff body, with the jump nodes `AirLabel`/`AirGoto`/`AirGotoTable` (`Mir/MExpr.StateMachines.cs`). The C# backend never runs it: emitted C# is unchanged.
 - AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is
   byte-identical on the corpus.
+- Fix (soundness, ADR 0013): a wrapping operator wrapped the checked arithmetic inside its operands too:
+  `1 &* (b * c)` returned 0 for b = c = 65536 instead of raising, `1 &+ (-b)` did not trap on `Int32::MIN`. Operands
+  with trapping arithmetic are now `checked(...)` (MirFacts.KeepChecked), so only the wrapping operator wraps. Found by
+  the prove differential fuzz. Emitted C# changes only where a wrapping operator has such an operand.
+- `alice prove` for CI and agents: `--format json` (machine-readable summary, rules in name order), `--timeout s` (per
+  rule; a rule that runs out is `not proven` and fails the check), failures print one line
+  `rule X FAILS: x = 7, lo = -3 -> false` (or `-> raised OverflowException`), exit 1 on any failing, unproven or stale
+  rule. `alice build --prove` / `[build] prove = true | "smt"` runs `alice prove --check` after the build when the package
+  has a RULES.al. `alice agents` tells agents to gate commits on it and explains the counterexample loop.
+- Fix: `alice prove` crashed on a rule domain ending at `Int32::MAX` (the loop counter overflowed), and treated a domain
+  near `Int64::MAX` as one case (its size went through double). Every variable now counts an exact offset from its Lo.
+- `alice prove --smt` replays every Z3 counterexample through the compiled rule (a disagreement is `not proven`, never a
+  verdict), translates `to_i!`, `to_u16!`, `to_u64!` and hex/binary/octal literals, and a differential fuzz test checks
+  enumeration and Z3 agree on random straight-line rules. CI installs Z3 on Linux, macOS and Windows and sets
+  `ALICE_REQUIRE_Z3=1`, so the SMT tests can no longer pass by skipping.
 - Docs: ADR 0040 (paradigms in IL, accepted as direction): how AirToIl lowers fork/join, affine arenas, CM primitives and dataflow, with the AirVerifier rules they add; IL-lowering paragraphs in ADRs 0015, 0037, 0038, 0039.
+- IL-only lowering passes (backend plan D1.7, ADR 0032/0033) in `Air/Passes/`, entry `IlLowering.Run`, called only by
+  the IL backend (C# output unchanged): ForeachLower (arrays, spans, strings as counted loops; struct enumerators kept
+  in a typed local, never boxed; other enumerables in try/finally with a null-checked Dispose), InterpLower
+  (`string.Concat` for up to 4 string parts, else an invariant-culture `DefaultInterpolatedStringHandler`),
+  PatternTemps (declaration and `var` patterns as explicit isinst into typed locals, with C# scopes), UsingLockLower
+  (try/finally Dispose, `Monitor.Enter(o, ref taken)`, `Lock.EnterScope()`), SwitchLower (dense int/char jump tables,
+  string cases as a length switch plus an ordinal `string.Equals` chain, no hashing), TupleLower (ValueTuple
+  construction, ItemN/Rest access, deconstruction, element names recorded for TupleElementNames) and NullableLift
+  (C# lifted-operator semantics with HasValue/GetValueOrDefault). Helper nodes `AirSeq`, `AirAs`, `AirSwitch` live in
+  `Mir/MExpr.Lower.cs`; what a pass cannot lower (`await foreach`/`await using`, untyped operands, `bool?` logic) is
+  left as is and listed in `IlLowerContext.Unsupported`.
 - Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
+- AIR helper declarations (backend plan D0.7c): the `__par_*`, `__parfor_*` and `__fork_*` helper methods and the
+  `__shared_*` constant fields are typed declarations (`AirHelperDecl` over `AirMethodDecl`/`AirFieldDecl`, MIR bodies) in
+  `Lowerer.TypedExtra`; their C# in `Lowerer.Extra` is printed from them (`Printer.Helper`), byte-identical on the corpus.
 - AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
   build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,
   `AirForkable`, `AirRent`, `AirRelease`, `AirLength`, `AirTripCount`, `AirOffset`, `AirPresizeCount` in

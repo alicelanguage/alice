@@ -366,10 +366,12 @@ public sealed partial class Lowerer
             string len = ap.Type.Kind == "array" || ap.Type.IsString ? "Length" : "Count";
             MExpr cond = new MBinary { Op = ap.Rest != null ? AirBinOp.Ge : AirBinOp.Eq, L = new MMember { Target = subj, Name = len }, R = AirConst.Int(ap.Names.Count) };
             for (int i = 0; i < ap.Literals.Count; i++)
-                if (ap.Literals[i] is { } lit)
+                if (ap.Literals[i] is { } lit && !ap.Late.Contains(i))
                     cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MBinary { Op = AirBinOp.Eq, L = new MIndex { Target = subj, Args = { AirConst.Int(i) } }, R = Expr(lit) } };
             for (int i = 0; i < ap.Binds.Count; i++)
                 if (ap.Binds[i] != null) cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { E = new MIndex { Target = subj, Args = { AirConst.Int(i) } }, TypeCs = "var " + ap.Binds[i].CsName } };
+            foreach (int i in ap.Late.Order())   // `[a, ^a]`: compared after `a` is bound
+                cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MBinary { Op = AirBinOp.Eq, L = new MIndex { Target = subj, Args = { AirConst.Int(i) } }, R = Expr(ap.Literals[i]!) } };
             if (ap.RestSym != null)
                 cond = new MBinary { Op = AirBinOp.And, L = cond, R = new MIs { TypeCs = "var " + ap.RestSym.CsName, E = new MCall { Target = AirTypeRef.Named("global::System.Linq.Enumerable"), Name = "ToArray", Args = { new MCall { Target = AirTypeRef.Named("global::System.Linq.Enumerable"), Name = "Skip", Args = { subj, AirConst.Int(ap.Names.Count) } } } } } };
             return cond;

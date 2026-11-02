@@ -174,7 +174,7 @@ public sealed class Emitter
         var sb = new StringBuilder();
         foreach (var a in attrs)
         {
-            if (a is "Stack" or "Open" or "SoA" or "StrictMath" or "Native" || a.StartsWith("Native(") || a.StartsWith("__enumerable:")) continue;
+            if (a is "Stack" or "Open" or "SoA" or "StrictMath" or "Strict" or "Native" || a.StartsWith("Native(") || a.StartsWith("__enumerable:")) continue;
             if (a == "Inline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             else if (a == "NoInline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]\n");
             else if (a == "Hot") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n");
@@ -466,9 +466,12 @@ public sealed class Emitter
     const long MaxRuleCases = 1L << 32;
 
     /// <summary>
-    /// `__prove_rule()`: every case of the rule's domain, outer variable in parallel. Returns the case count and the
+    /// `__prove_rule()` / `__provect_rule(ct)`: every case of the rule's domain, outer variable in parallel. Returns the case count and the
     /// first counterexample in domain order (a `false` result or an exception), or null when the rule holds on every
-    /// case. The first, not any: PROOF.al must not depend on thread timing.
+    /// case. The first, not any: PROOF.al must not depend on thread timing. Each variable counts an offset 0..size-1
+    /// from its Lo, so a range ending at Int32::MAX or Int64::MAX never steps a counter past Hi (that checked overflow
+    /// escaped the per-case try and crashed `alice prove`). `ct` is `alice prove --timeout`: once cancelled, the method
+    /// throws OperationCanceledException instead of returning a partial verdict.
     /// </summary>
     string Prover(MethodDecl d)
     {
@@ -479,9 +482,9 @@ public sealed class Emitter
             throw new CompileException($"{file}:{d.Line}:{Math.Max(1, d.Col)}: rule domain of `{d.RuleName}` has {cases:0} cases, more than the {MaxRuleCases} `alice prove` checks exhaustively; narrow the ranges, or prove it for every input with `alice prove --smt`");
         string Var(int i) => m.Params[i].CsName;
         string Ty(RuleDomain x) => x.IsBool ? "bool" : x.Lo < int.MinValue || x.Hi > int.MaxValue ? "long" : "int";
-        string Loop(RuleDomain x, int i) => x.IsBool
-            ? $"foreach (var {Var(i)} in new[] {{ false, true }})"
-            : $"for ({Ty(x)} {Var(i)} = {x.Lo}; {Var(i)} <= {x.Hi}; {Var(i)}++)";
+        string Lit(long v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L";
+        string Bind(RuleDomain x, int i, string k) => x.IsBool ? $"bool {Var(i)} = {k} == 1;" : $"{Ty(x)} {Var(i)} = ({Ty(x)})({Lit(x.Lo)} + {k});";
+        string Loop(RuleDomain x, int i) => $"for (long __k{i} = 0; __k{i} < {Lit(x.Size)}; __k{i}++)\n{{\nif (__ct.IsCancellationRequested) return;\n{Bind(x, i, "__k" + i)}";
         string args = string.Join(", ", d.Domains.Select((_, i) => Var(i)));
         string show = string.Join(", ", d.Domains.Select((x, i) => $"{x.Name} = {{{Var(i)}}}"));
         // the first failure in domain order: inner variables run in order within one outer value, and Break() lets every
@@ -489,19 +492,19 @@ public sealed class Emitter
         string fail(string msg) => $"lock (__gate) {{ if (__k < __first) {{ __first = __k; __cex = {msg}; }} }} __st.Break(); return;";
         string check = $"bool __ok; try {{ __ok = {m.CsName}({args}); }} catch (global::System.Exception __e) {{ {fail($"$\"{show}: raised {{__e.GetType().Name}}\"")} }}\nif (!__ok) {{ {fail($"$\"{show}\"")} }}";
         string body = check;
-        for (int i = d.Domains.Count - 1; i >= 1; i--) body = Loop(d.Domains[i], i) + "\n{\n" + body + "\n}";
+        for (int i = d.Domains.Count - 1; i >= 1; i--) body = Loop(d.Domains[i], i) + "\n" + body + "\n}";
         var sb = new StringBuilder();
-        sb.Append($"public static (long, string?) __prove_{d.RuleName}()\n{{\n    string? __cex = null;\n    long __first = long.MaxValue;\n    var __gate = new object();\n");
+        sb.Append($"public static (long, string?) __provect_{d.RuleName}(global::System.Threading.CancellationToken __ct)\n{{\n    string? __cex = null;\n    long __first = long.MaxValue;\n    var __gate = new object();\n");
         if (d.Domains.Count == 0)
             sb.Append($"    try {{ if (!{m.CsName}()) __cex = \"(no variables)\"; }} catch (global::System.Exception __e) {{ __cex = \"raised \" + __e.GetType().Name; }}\n");
         else
         {
             var outer = d.Domains[0];
-            string range = outer.IsBool ? "0, 2" : $"{outer.Lo}L, {outer.Hi}L + 1";
-            string bind = outer.IsBool ? $"bool {Var(0)} = __k == 1;" : $"{Ty(outer)} {Var(0)} = ({Ty(outer)})__k;";
-            sb.Append($"    global::System.Threading.Tasks.Parallel.For({range}, (__k, __st) =>\n    {{\n        {bind}\n{body}\n    }});\n");
+            sb.Append($"    global::System.Threading.Tasks.Parallel.For(0L, {Lit(outer.Size)}, new global::System.Threading.Tasks.ParallelOptions {{ CancellationToken = __ct }}, (__k, __st) =>\n    {{\n        {Bind(outer, 0, "__k")}\n{body}\n    }});\n");
+            sb.Append("    __ct.ThrowIfCancellationRequested();\n");
         }
         sb.Append($"    return ({(long)cases}L, __cex);\n}}\n");
+        sb.Append($"public static (long, string?) __prove_{d.RuleName}() => __provect_{d.RuleName}(default);\n");
         return sb.ToString();
     }
 
@@ -626,7 +629,7 @@ public sealed class Emitter
                 case MCode { Text: var t }: return !t.Contains('(') && !t.Contains("new ");   // a name or literal, not opaque code with a call
                 case MCast { TypeCs: "int" or "long" or "double" or "float" or "short" or "sbyte" or "byte" or "ushort" or "uint" or "ulong" } c: return Expr(c.E);
                 case MBinary or MUnary or MCond or MIndex: return MirFacts.Children(e).All(Expr);
-                case MCall { Name: "unchecked", Target: null, Args: [var x] }: return Expr(x);
+                case MCall { Name: "unchecked" or "checked", Target: null, Args: [var x] }: return Expr(x);
                 case MCall { Target: null } c when leaves.Contains(c.Name): return c.Args.All(Expr);
                 case MCall { Target: MCode { Text: "global::Alice.Runtime.Branchless" or "global::System.Math" or "Math" or "MathF" } } c: return c.Args.All(Expr);
                 case MCall { Args.Count: 0, Target: { } t } c when Conversions.Contains(c.Name): return Expr(t);

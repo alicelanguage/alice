@@ -501,7 +501,14 @@ public sealed partial class Parser
             else
             {
                 if (ap.Rest != null) throw Err("the *rest element must be last");
-                if (t[p].Kind == "id" && !IsKeyword(Cur.Text))
+                if (IsOp("^") && Peek(1).Kind == "id")   // `^name` pins: compare with the value (also one bound earlier in this pattern)
+                {
+                    Next();
+                    ap.Pins.Add(ap.Literals.Count);
+                    ap.Literals.Add(Binary(5));
+                    ap.Names.Add("_");
+                }
+                else if (t[p].Kind == "id" && !IsKeyword(Cur.Text))
                 {
                     string n = Next().Text;
                     ap.Names.Add(n);

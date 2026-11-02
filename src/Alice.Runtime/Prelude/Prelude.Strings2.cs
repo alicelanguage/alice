@@ -7,18 +7,18 @@ namespace Alice.Runtime;
 /// <summary>Ruby String methods beyond the basics.</summary>
 public static partial class Prelude
 {
-    public static string center(this string s, int n, char pad = ' ')
+    [Pure] public static string center(this string s, int n, char pad = ' ')
     {
         if (n <= s.Length) return s;
         int left = (n - s.Length) / 2;
         return new string(pad, left) + s + new string(pad, n - s.Length - left);
     }
 
-    public static string chomp(this string s) =>
+    [Pure] public static string chomp(this string s) =>
         s.EndsWith("\r\n", StringComparison.Ordinal) ? s[..^2] : s.EndsWith('\n') || s.EndsWith('\r') ? s[..^1] : s;
-    public static string chop(this string s) => s.Length == 0 ? s : s[..^1];
+    [Pure] public static string chop(this string s) => s.Length == 0 ? s : s[..^1];
 
-    public static string squeeze(this string s)
+    [Pure] public static string squeeze(this string s)
     {
         var sb = new StringBuilder(s.Length);
         foreach (var c in s) if (sb.Length == 0 || sb[^1] != c) sb.Append(c);
@@ -101,7 +101,7 @@ public static partial class Prelude
         }
     }
 
-    public static string swapcase(this string s) =>
+    [Pure] public static string swapcase(this string s) =>
         string.Concat(s.Select(c => char.IsUpper(c) ? char.ToLowerInvariant(c) : char.ToUpperInvariant(c)));
     public static string title(this string s) =>
         string.Join(' ', s.Split(' ').Select(w => w.capitalize()));

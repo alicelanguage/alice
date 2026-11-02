@@ -64,6 +64,8 @@ public sealed class NewExpr : Expr
 public sealed class IndexExpr : Expr
 {
     public string? TupleElement;   // `t[:a]` on a named tuple: the element name
+    public string? Slice;          // "range" (`xs[1..]`, `s[1..3]`) or "len" (`s[1, 3]`): a Ruby slice (Prelude.slice_range / slice_len)
+    public int FromEnd;            // `xs[-k]` on an array/list/string: k (read as `xs[xs.Length - k]`)
     public Expr Target = null!;
     public List<Arg> Args = new();
 }
@@ -148,6 +150,8 @@ public sealed class ArrayPatternExpr : Expr
 {
     public List<string> Names = new();
     public List<Expr?> Literals = new();   // per element: a value to compare (`["go", dir]`), null for a binding / `_`
+    public HashSet<int> Pins = new();      // elements written `^name`
+    public HashSet<int> Late = new();      // pins of a name bound earlier in this pattern (`[a, ^a]`): compared after the binds
     public string? Rest;
     public List<Semantics.LocalSym> Binds = new();
     public Semantics.LocalSym? RestSym;

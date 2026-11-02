@@ -215,6 +215,14 @@ internal sealed class MetadataWriter : IIlTokens
             if (t.PackingSize != null || t.ClassSize != null) md.AddTypeLayout(TypeDef(t), t.PackingSize ?? 0, t.ClassSize ?? 0);
         foreach (var t in types)
             foreach (var (body, decl) in t.MethodOverrides) md.AddMethodImplementation(TypeDef(t), MethodDef(body), Method(decl));
+        // ImplMap (sorted by MemberForwarded: methods in row order), one ModuleRef per distinct library
+        var moduleRefs = new Dictionary<string, ModuleReferenceHandle>(StringComparer.Ordinal);
+        foreach (var m in methods)
+        {
+            if (m.PInvoke is not { } pi) continue;
+            if (!moduleRefs.TryGetValue(pi.Module, out var mr)) moduleRefs[pi.Module] = mr = md.AddModuleReference(md.GetOrAddString(pi.Module));
+            md.AddMethodImport(MethodDef(m), pi.Flags, md.GetOrAddString(pi.EntryPoint), mr);
+        }
 
         var gps = new List<(EntityHandle Owner, IlGenericParam Param)>();
         foreach (var t in types)
