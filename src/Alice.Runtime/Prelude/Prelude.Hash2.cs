@@ -157,6 +157,14 @@ public static partial class Prelude
 /// </summary>
 public static class HashValues
 {
+    /// <summary>`filter_map { |x| ... }` whose block returns a nilable value type (`x.odd? ? x * 10 : nil`).</summary>
+    public static R[] filter_map<T, R>(this IEnumerable<T> a, Func<T, R?> f) where R : struct
+    {
+        var r = new List<R>();
+        foreach (var x in a) if (f(x) is R y) r.Add(y);
+        return r.ToArray();
+    }
+
     public static V? delete<K, V>(this Dictionary<K, V> d, K k) where K : notnull where V : struct => d.Remove(k, out var v) ? v : null;
     public static V? dig<K, V>(this Dictionary<K, V> d, K k) where K : notnull where V : struct => d.TryGetValue(k, out var v) ? v : null;
     public static V? dig<K1, K2, V>(this Dictionary<K1, Dictionary<K2, V>> d, K1 a, K2 b) where K1 : notnull where K2 : notnull where V : struct =>

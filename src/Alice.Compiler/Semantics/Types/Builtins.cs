@@ -50,6 +50,23 @@ public static class Builtins
         || p.IsArray && recv.IsArray
         || p == typeof(object));
 
+    /// <summary>
+    /// Whether some Prelude extension <paramref name="cs"/> can take <paramref name="recv"/> as its receiver, generic
+    /// constraints included (`to_u32&lt;T&gt;` needs `T : INumber&lt;T&gt;`, so not a String). Unknown shapes count as fitting.
+    /// </summary>
+    public static bool ExtFits(string cs, Type recv) => ExtReceivers[cs].Any(p =>
+        !p.IsGenericParameter ? ExtAccepts(cs, recv) : p.GetGenericParameterConstraints().All(c => Satisfies(c, p, recv)));
+
+    static bool Satisfies(Type constraint, Type param, Type recv)
+    {
+        if (!constraint.ContainsGenericParameters) return constraint.IsAssignableFrom(recv);
+        if (!constraint.IsGenericType) return true;
+        var args = constraint.GetGenericArguments().Select(a => a == param ? recv : a).ToArray();
+        if (args.Any(a => a.ContainsGenericParameters)) return true;
+        try { return constraint.GetGenericTypeDefinition().MakeGenericType(args).IsAssignableFrom(recv); }
+        catch (ArgumentException) { return false; }
+    }
+
     /// <summary>Iteration methods whose literal blocks the lowerer may inline into loops.</summary>
     public static readonly HashSet<string> Iterators = new() { "each", "each_with_index", "map", "select", "reject", "sum", "count", "any_q", "all_q", "find", "reduce", "times", "upto", "downto", "each_char", "each_char_with_index", "max_by", "min_by" };
 
@@ -149,6 +166,7 @@ public static class Builtins
             case "each_cons":
                 return e.IsKnown ? new() { AType.Array(e) } : new() { AType.Unknown };
             case "chunk_while":
+            case "slice_when":
             case "sort":
                 return new() { e, e };
             case "inject":
@@ -178,7 +196,7 @@ public static class Builtins
         t.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(Dictionary<,>) && t.Args.Count == 2;
 
     /// <summary>Hash (Dictionary) methods whose result differs from the Enumerable version; null falls through.</summary>
-    static AType? DictReturn(string name, AType d, AType br)
+    static AType? DictReturn(string name, AType d, AType br, List<AType> args)
     {
         AType k = d.Args[0], v = d.Args[1];
         AType kv = Generic(typeof(KeyValuePair<,>), k, v);
@@ -187,7 +205,9 @@ public static class Builtins
             "select" or "reject" or "merge" => d,
             "map" => br.IsKnown && !br.IsVoid ? AType.Array(br) : AType.Unknown,
             "fetch" => v,
-            "dig" => v.AsNullable(),
+            "dig" => DigLeaf(d, args.Count).AsNullable(),   // `h.dig(a, b)`: the value two levels down
+            "delete" => br.IsKnown ? v : v.AsNullable(),       // nil when the key is absent (the block's value otherwise)
+            "dup" or "clone" => d,
             "invert" => Generic(typeof(Dictionary<,>), v, k),
             "to_a" => AType.Array(Generic(typeof(ValueTuple<,>), k, v)),
             "max_by" or "min_by" => kv,
@@ -201,21 +221,51 @@ public static class Builtins
         };
     }
 
+    static AType DigLeaf(AType d, int depth)
+    {
+        for (int i = 0; i < depth; i++)
+        {
+            if (!IsDict(d)) return AType.Unknown;
+            if (i == depth - 1) return d.Args[1];
+            d = d.Args[1];
+        }
+        return AType.Unknown;
+    }
+
     public static AType? ExtReturn(string name, AType recv, List<AType> args, AType? blockRet)
     {
         if (!ExtNames.Contains(name)) return null;
         AType e = ElemOf(recv);
         AType br = blockRet ?? AType.Unknown;
-        if (IsDict(recv) && DictReturn(name, recv, br) is AType dr) return dr;
+        if (IsDict(recv) && DictReturn(name, recv, br, args) is AType dr) return dr;
         AType arr = e.IsKnown ? AType.Array(e) : AType.Unknown;
         AType arr2 = e.IsKnown ? AType.Array(AType.Array(e)) : AType.Unknown;
         switch (name)
         {
             case "tap": return recv;
             case "then": return br;
+            case "to_i_q" when recv.IsString:
+                return AType.Int.AsNullable();
+            case "to_f_q" when recv.IsString:
+                return AType.Double.AsNullable();
+            case "match" when recv.IsString || recv.Clr == typeof(System.Text.RegularExpressions.Regex):
+                return ClrTypes.FromClr(typeof(Alice.Runtime.MatchData)).AsNullable();
+            case "dup" or "clone" when recv.Kind == "array" || recv.Clr is { IsGenericType: true }:
+                return recv;
+            case "max" when args.Count == 1 && args[0].IsInteger:
+            case "min" when args.Count == 1 && args[0].IsInteger:
+                return arr;
+            // without a block these return a lazy sequence
+            case "each_char" when blockRet == null:
+                return Generic(typeof(IEnumerable<>), AType.Char);
+            case "reverse_each" when blockRet == null && e.IsKnown:
+                return Generic(typeof(IEnumerable<>), e);
+            case "step" when blockRet == null && recv.Cs is "int" or "double":
+                return Generic(typeof(IEnumerable<>), recv);
             case "each_slice" when blockRet == null:
             case "each_cons" when blockRet == null:
             case "chunk_while":
+            case "slice_when":
             case "partition":
             case "product":
             case "combination":

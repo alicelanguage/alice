@@ -60,6 +60,19 @@ public sealed partial class Binder
                     if (IsConcurrentType(t)) MarkConcurrentArgs(ne.Args);
                     CheckActorNew(ne, t);
                     BindArgs(ne.Args);
+                    if (ne.TypeRef.Name == "Hash" && t.Args.Count == 2 && t.Clr is { IsGenericType: true } ht && ht.GetGenericTypeDefinition() == typeof(Dictionary<,>)
+                        && (ne.Block == null && ne.Args is [{ Name: null, Value: { } dv }] && !dv.Type.IsUnknown && dv.Type.Clr is not { IsGenericType: true }
+                            || ne.Block != null && ne.Args.Count == 0))
+                    {
+                        // Ruby `Hash.new(0)` / `Hash.new { |h, k| ... }`: missing keys read as the default (ADR: CTO decision)
+                        if (ne.Block != null)
+                        {
+                            // `{ |h, k| h[k] = v }`: the assignment's value is the block's (Ruby), read back from h
+                            if (ne.Block.Body is [.., Assign { Op: "=", Target: IndexExpr st }]) ne.Block.Body.Add(new ExprStmt { Expr = st, Line = st.Line });
+                            BindLambda(ne.Block, [t, t.Args[0]]);
+                        }
+                        return DefaultHashOf(t);
+                    }
                     if (ne.Block != null) BindLambda(ne.Block, t.Kind == "array" ? [AType.Int] : new List<AType>());
                     return t;
                 }
@@ -341,6 +354,19 @@ public sealed partial class Binder
             ix.TupleElement = Mangle(tn[at]);
             return t.Args[at];
         }
+        if (ix.Args is [{ Value: LitExpr { Kind: "int" } at0 }] && int.TryParse(at0.Text, out int pos))
+        {
+            if (t.Kind == "tuple" && pos >= 0 && pos < t.Args.Count && pos < 7)
+            {
+                ix.TupleElement = t.TupleNames is { } names ? Mangle(names[pos]) : "Item" + (pos + 1);
+                return t.Args[pos];
+            }
+            if (t.Clr is { IsGenericType: true } kvt && kvt.GetGenericTypeDefinition() == typeof(KeyValuePair<,>) && pos is 0 or 1 && t.Args.Count == 2)
+            {
+                ix.TupleElement = pos == 0 ? "Key" : "Value";
+                return t.Args[pos];
+            }
+        }
         if (t.Kind == "array" && t.Elem != null) return t.Elem;
         if (t.IsString) return AType.Char;
         if (t.Sym != null)
@@ -355,6 +381,11 @@ public sealed partial class Binder
         }
         return t.Kind == "dynamic" ? t : AType.Unknown;
     }
+
+    /// <summary>`Alice.Runtime.DefaultHash(K, V)`: a Dictionary subclass whose indexer reads the default. The binder sees
+    /// a Dictionary (Clr), the C# declarations spell DefaultHash so `h[k]` and `h[k] += 1` go through its indexer.</summary>
+    static AType DefaultHashOf(AType dict) =>
+        new("class", $"global::Alice.Runtime.DefaultHash<{dict.Args[0].Cs}, {dict.Args[1].Cs}>", dict.Clr) { Args = dict.Args, Sym = dict.Sym };
 
     AType BindBinary(BinaryExpr b)
     {
@@ -383,6 +414,9 @@ public sealed partial class Binder
                 NoteSelfWrite(b.L);
                 if (IsShared(b.L) && !ThreadSafe(l)) throw Race(b, $"`<<` appends to a shared {l.Cs}");
                 return l;
+            case "*" when listy(l) && (r.IsInteger || r.IsString):
+                b.Res = "arrmul";
+                return r.IsString ? AType.String : Builtins.ElemOf(l) is { IsKnown: true } me ? AType.Array(me) : AType.Unknown;
             case "+" or "-" or "&" or "|" when listy(l) && listy(r):
                 b.Res = "set" + b.Op;
                 var el = Builtins.ElemOf(l);
@@ -400,6 +434,9 @@ public sealed partial class Binder
             case "<=>":
                 if (l.Sym?.FindMethod("<=>", 1) is MethodSym cmp) { b.Res = "usercmp"; return cmp.Ret; }
                 return AType.Int;
+            case "<<" or ">>" when l.IsInteger && r.IsInteger && r.Cs != "int":
+                b.Res = "shiftcount";   // the count is converted to Int32 (C# defines shifts for an int count only)
+                return l.NumericRank < AType.Int.NumericRank ? AType.Int : l;
             case "**":
                 if (l.IsInteger && r.IsInteger) return l.Cs == "long" ? AType.Long : AType.Int;
                 return AType.Double;

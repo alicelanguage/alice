@@ -237,12 +237,23 @@ public sealed partial class Parser
             return m;
         }
         Expr ex = Expression();
+        // `nil = 3`: a reserved word, not a variable (C# would report a non-variable assignment)
+        if (ex is LitExpr { Kind: "nil" or "bool" } rw && IsOp("="))
+            throw Err($"unexpected `{(rw.Kind == "nil" ? "nil" : rw.Text)}` before `=`: it is a reserved word and cannot be a variable name");
         if (IsOp("="))
         {
             Next();
             SkipNl();
             if (LoopAhead()) return LoopValue(ex, false);
             return At(new Assign { Target = ex, Value = Expression() }, tok);
+        }
+        // `x &+= y` is `x = x &+ y` (wrapping arithmetic has no C# compound form)
+        if (IsOp("&+=") || IsOp("&-=") || IsOp("&*="))
+        {
+            var wt = Next();
+            SkipNl();
+            var rhs = Expression();
+            return At(new Assign { Target = ex, Value = At(new BinaryExpr { Op = wt.Text[..2], L = ex, R = rhs }, wt) }, tok);
         }
         if (t[p].Kind == "op" && " += -= *= /= %= |= &= ^= <<= >>= **= ||= &&= ".Contains(" " + Cur.Text + " "))
         {

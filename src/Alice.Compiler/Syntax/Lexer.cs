@@ -17,10 +17,10 @@ public sealed class Lexer
     bool space;
     readonly List<Token> toks = new();
 
-    static readonly string[] Ops3 = { "**=", "<=>", "===", "...", "||=", "&&=", "<<=", ">>=" };
+    static readonly string[] Ops3 = { "**=", "<=>", "===", "...", "||=", "&&=", "<<=", ">>=", "&+=", "&-=", "&*=" };
     static readonly string[] Ops2 = { "..", "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "|=", "&=", "^=", "<<", ">>", "**", "&.", "@[", "=~", "!~" };
     const string Ops1 = "+-*/%=<>!&|^~.,:;?()[]{}";
-    const string Cont = " , . :: + - * / % &+ &- &* ** = == != < > <= >= && || -> => += -= *= /= %= |= &= ^= ||= &&= **= & ^ << >> ? : ";
+    const string Cont = " , . :: + - * / % &+ &- &* ** = == != < > <= >= && || -> => += -= *= /= %= |= &= ^= ||= &&= **= &+= &-= &*= & ^ << >> ? : ";
 
     public Lexer(string src, string file, int line)
     {

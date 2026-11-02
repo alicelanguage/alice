@@ -52,6 +52,7 @@ public sealed partial class Parser
             else if (top && IsKw("rule") && Peek(1).Kind == "id" && Peek(2).Kind == "op" && Peek(2).Text == "(") into.Add(Rule());
             else if (IsStructNew()) into.Add(StructNew());
             else if (IsConstDecl()) into.Add(Const());
+            else if (IsValConst()) { Next(); into.Add(Const()); }   // `val CUT = 3`: a constant is immutable already
             else
             {
                 if (!top) throw Err("statements are not allowed inside a namespace");
@@ -190,6 +191,8 @@ public sealed partial class Parser
         EndStmt();
         return d;
     }
+
+    bool IsValConst() => IsKw("val") && Peek(1).Kind == "const" && Peek(2).Kind == "op" && (Peek(2).Text == "=" || (Peek(2).Text == ":" && Peek(2).Space));
 
     bool IsConstDecl() => t[p].Kind == "const" && Peek(1).Kind == "op" && (Peek(1).Text == "=" || (Peek(1).Text == ":" && Peek(1).Space));
 
@@ -404,6 +407,7 @@ public sealed partial class Parser
                 EndStmt();
             }
             else if (IsConstDecl()) d.Members.Add(Const());
+            else if (IsValConst()) { Next(); d.Members.Add(Const()); }
             else if (IsTypeStart()) d.Members.Add(TypeItem());
             else if (IsDefStart()) d.Members.Add(Def(d.Kind));
             else if (d.Kind is "class" or "module" or "struct")

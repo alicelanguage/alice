@@ -68,7 +68,8 @@ public sealed partial class Parser
         {
             string op = Next().Text;
             SkipNl();
-            l = At(new BinaryExpr { Op = op == "===" ? "==" : op, L = l, R = Binary(level + 1) }, tok);
+            if (op == "===") { l = At(new CallExpr { Recv = l, Name = "===", Args = [new Arg { Value = Binary(level + 1) }], Parens = true }, tok); continue; }
+            l = At(new BinaryExpr { Op = op, L = l, R = Binary(level + 1) }, tok);
         }
         return l;
     }
@@ -186,7 +187,7 @@ public sealed partial class Parser
                 if (e is ConstExpr ce)
                 {
                     ce.Ref.Name += "." + seg;
-                    if (IsCtorCall()) e = CtorCall(ce.Ref, tok);
+                    if (IsCtorCall(qualified: true)) e = CtorCall(ce.Ref, tok);
                     else if (IsOp("(") && !Cur.Space) ce.Ref = TypeFromName(ce.Ref.Name, tok);
                 }
                 else throw Err("'::' needs a type on the left");
@@ -533,12 +534,27 @@ public sealed partial class Parser
     }
 
     /// <summary>`Name(expr, ...)` constructs (Rust tuple-struct style) unless the parens hold type arguments.</summary>
-    bool IsCtorCall()
+    bool IsCtorCall(bool qualified = false)
     {
         if (!IsOp("(") || Cur.Space) return false;
         var n = Peek(1);
         if (n.Kind == "op" && n.Text == ")") return true;
-        if (n.Kind == "const") return Peek(2).Kind == "op" && (Peek(2).Text == "." || Peek(2).Text == "::") && Peek(3).Kind != "const";
+        if (n.Kind == "const")
+        {
+            // type arguments hold only (qualified) names: `Array(M::T)`, `Proc(Int32 -> Int32)`, `Hash(String, Int32?)`.
+            // Anything else inside (`T::L(a)`, a literal, a member call) makes it a constructor call
+            int k = p + 1, d = 1;
+            for (; k < t.Count && d > 0; k++)
+            {
+                var x = t[k];
+                if (x.Kind == "op" && x.Text == "(") d++;
+                else if (x.Kind == "op" && x.Text == ")") d--;
+                else if (x.Kind == "op" && x.Text == "." && k + 1 < t.Count && t[k + 1].Kind == "const") { }   // System.Text.StringBuilder
+                else if (!(x.Kind is "const" or "nl" || x.Kind == "op" && x.Text is "," or "::" or "?" or "->" or "*")) return true;
+            }
+            // only names: a qualified callee is a variant constructor (`M::Node(M::Free, M::Free)`) unless `.new` follows
+            return qualified && !(k + 1 < t.Count && t[k].Kind == "op" && t[k].Text == "." && t[k + 1].Text == "new");
+        }
         return !(n.Kind == "op" && n.Text == "{");
     }
 

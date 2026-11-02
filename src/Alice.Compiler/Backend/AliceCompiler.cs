@@ -99,9 +99,10 @@ public static class AliceCompiler
         return new NativeBuild(image, dir);
     }
 
-    static readonly System.Text.RegularExpressions.Regex RequireLine = new(@"^\s*require\s+""(?<p>[^""]+)""", System.Text.RegularExpressions.RegexOptions.Multiline);
+    static readonly System.Text.RegularExpressions.Regex RequireLine = new(@"^\s*require(?:_relative)?\s+""(?<p>[^""]+)""", System.Text.RegularExpressions.RegexOptions.Multiline);
 
-    /// <summary>Loads entry files plus everything they `require` (relative paths, `.al` optional), transitively.</summary>
+    /// <summary>Loads entry files plus everything they `require` or `require_relative` (paths relative to the requiring
+    /// file, `.al` optional), transitively.</summary>
     public static List<SourceFile> LoadWithRequires(IEnumerable<string> entries)
     {
         var result = new List<SourceFile>();
