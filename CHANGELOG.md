@@ -26,6 +26,15 @@
 - Ownership: borrows and owned results through virtual calls must hold for every override (audit F18, partial).
   `docs/production.md`.
 - ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
+- Tests: the telemetry field test now checks the emitted JSON field names against the `## Fields` table in
+  docs/telemetry.md (including `crash` and `phases_ms`). It used to search the whole JSON for the user name, so it
+  failed for a user named `arch` (the `arch` field, documented in ADR 0031). No change to what telemetry sends.
+- Tests: the steady-state allocation tests for actors, channels and tensor kernels run alone (a collection with
+  parallelization disabled) and take the least of up to 3 windows (`AllocationProbe`). Under load the per-thread
+  counter moved without any allocation by the code under test: a background GC started by another thread can count
+  the unused tail of this thread's allocation context (about 8 KB), the thread pool's shared queue can grow once on
+  the sending thread, and other tests' pool work ran between actor turns. Runtime code is unchanged; the measured
+  paths allocate 0 B.
 
 ## 0.14.0 - 2026-10-27
 
