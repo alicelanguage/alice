@@ -82,6 +82,22 @@ New folder `src/Alice.Runtime/Dataflow/`:
 Backpressure is the full ring; acyclic plus SPSC is deadlock-free. Stages are pool items, so the .NET pool balances
 them; no custom scheduler (ADR 0005 kept).
 
+### Memory model
+
+Publishing a batch and releasing input slots are plain release stores (`Volatile.Write` of the tail or head), with
+no fence and no interlocked operation in the steady state. The waker then reads the other node's `scheduled` or
+`blocked` flag without a fence, so a wake can be missed while the store is still buffered. Repair on idle covers
+this: a node going idle does `Interlocked.Exchange(ref scheduled, 0)` (a full fence) and then `Nudge`. That wakes
+the consumer of a non-empty output ring and a producer that is `blocked` on our input ring
+(`src/Alice.Runtime/Dataflow/Stage.cs`). One side always reaches that fence: an idle consumer, a blocked or idle
+producer, or `Complete` (interlocked). So a missed wake costs latency, not a deadlock. Each node re-checks its rings
+after its own fence before it gives its thread back.
+
+This is verified on x64 only (`DataflowTests`). On weak memory models (arm64) the argument rests only on the
+release/acquire semantics of `Volatile` and on the full fence of `Interlocked`. CI must therefore run the dataflow
+stress tests (`[Trait("Category", "Stress")]` in `tests/Alice.Tests/Runtime/DataflowTests.cs`) on the macos arm64
+runners, for example `dotnet test --filter "Category=Stress"`.
+
 ## Targets
 
 Not the 16 Bend workloads (lexer, editdist and symreg are fork + stack arrays / owned rows / ADR 0037 arenas; a
