@@ -49,6 +49,7 @@
 - Runtime: `Alice.Runtime` dataflow networks (`Dataflow/`, ADR 0038 P3.1): bounded SPSC `Ring<T>`, `Graph` with
   `Source`/`Stage`/`Replicate`/`Sink` on the thread pool (backpressure, completion, first exception rethrown at `Run`),
   ordered or unordered replicated stages, 0 bytes per item; `benchmarks/dataflow` compares it with Task.Run + Channels.
+- Runtime: `Cm` data-parallel primitives (ADR 0039, P2.1/P2.2): inclusive/exclusive scan and reduce for 32/64-bit integers and floats with `+ * & | ^ min max` (AVX-512/AVX2/Vector128 lane-shift tiers), segmented scan/reduce, histogram and scatter-add (private tables merged in fixed order, `Interlocked` for large integer tables), compaction, checked permutation and a stable radix `SortByKey`. Chunking depends on the length only, so float results are bit-identical for any `DOTNET_PROCESSOR_COUNT`. Prelude: `prefix_sum`, `scan { }`, `segmented_sum`, `segmented_prefix_sum`, `histogram`, `compact { }`, `scatter_add`, `permute`, `sort_by_key`. `benchmarks/cm`: prefix_sum of 2^26 Int32 16 GB/s, 64K-bin histogram 6x a serial loop on 32 cores.
 - Security: `alice publish` pushes to NuGet feeds itself over https with the API key in a request header instead of
   a `dotnet nuget push` argument; `--dotnet-push` keeps the old path.
 - Telemetry docs: https-only endpoints and `ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`.
