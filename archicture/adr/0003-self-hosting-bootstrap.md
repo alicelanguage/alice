@@ -1,5 +1,5 @@
 # 0003 - Self-hosting bootstrap
-Status: superseded by 0007 (self-hosting deferred; compiler stays C#)
+Status: superseded by 0035 (pinned previous release + component-wise replacement); earlier deferred by 0007
 Context: The compiler must be written in Alice eventually, without losing a trusted build path.
 Decision:
 - Stage0: C# compiler in `src/Alice.Compiler`.

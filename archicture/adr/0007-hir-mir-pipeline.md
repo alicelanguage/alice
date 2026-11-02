@@ -1,5 +1,5 @@
 # 0007 - HIR/MIR pipeline for allocation-free IL
-Status: accepted
+Status: accepted; amended by 0032 (MIR becomes the typed AIR) and 0033 (single IR, IL-first instead of a single Roslyn backend)
 Context: The single-pass string translator could not type expressions, infer returns, or remove the closures/arrays that Ruby-style blocks imply. Goal: the best IL .NET can run.
 Decision:
 | Stage | Folder | Output |

@@ -7,6 +7,8 @@ Path: `src/Alice.Compiler`. Pure C#. Depends on: Roslyn, `Alice.Runtime` (refere
 | `Semantics/` | `Binder/`, `Symbols/`, `Types/` | HIR: types, symbols, inferred returns, hoisted locals |
 | `Lowering/` | `Lowerer*` | MIR (`Mir/`): inlined/fused loops, typed temps |
 | `Backend/` | `Emitter`, `Printer`, `AliceCompiler` | C# with `#line` -> Roslyn Release IL |
+| `Air/` (planned, ADR 0032) | `AirType`, `AirDecls`, `AirDump`, `AirVerifier`, `Passes/` | typed structured AIR; `Mir/` is migrated into it in place (byte-identical C# as acceptance) |
+| `Backend/CSharp/`, `Backend/Il/` (planned, ADR 0033) | `AirToCSharp`; `IlBuilder`, `MetadataWriter`, `PdbWriter`, `AirToIl` | C# (oracle, generator programs); IL + portable PDB via System.Reflection.Metadata |
 
 Lowering files (`Lowering/`):
 
@@ -37,7 +39,7 @@ Lowering files (`Lowering/`):
 `Semantics/Binder/Binder.Races`: AL0202 race check (ADR 0008). `Semantics/Binder/Binder.Mixins`: `include`/`extend` (module `def x` = template, re-bound per class). `AliceCompiler.LoadWithRequires`: transitive `require`. `Syntax/Formatter`: `alice fmt`.
 
 Invariants:
-- Single IL backend (ADR 0001, 0007).
+- Single IL backend (ADR 0001, 0007); planned: single IR (AIR), IL-first, C# kept as supported target and oracle (ADR 0032, 0033).
 - Literal-block iterator kernels allocate 0 bytes (`AllocationTests`).
 - Null-safety diagnostics are errors; `val` reassignment and data races in concurrent contexts are errors (ADR 0004, 0008).
 - Parallelization only for code proven pure; serial otherwise.

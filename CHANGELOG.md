@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
+
 ## 0.14.0 - 2026-10-27
 
 - Telemetry ships disabled in this release: `alice` never asks, records or sends, and `alice telemetry` only reports
