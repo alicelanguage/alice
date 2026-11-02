@@ -39,10 +39,10 @@ public sealed class InterpLower(IlLowerContext? ctx = null) : IlPass(ctx)
             return Concat(parts);
         string h = Ctx.Temp("h");
         int literal = ip.Chunks.Sum(c => c.Length);
-        var invariant = Member(new AirTypeRef(Culture.ToCs()) { Type = Culture }, "InvariantCulture", Culture);
+        var invariant = Member(new AirTypeRef(Culture), "InvariantCulture", Culture);
         var pre = new List<MStmt>
         {
-            Decl(h, Handler, new MNew { TypeCs = Handler.ToCs(), Args = [new AirConst(literal), new AirConst(ip.Holes.Count), invariant], Type = Handler }),
+            Decl(h, Handler, new MNew { TypeCs = Handler.ToCs(), Args = [Const(literal), Const(ip.Holes.Count), invariant], Type = Handler }),
         };
         foreach (var (chunk, hole) in parts)
             pre.Add(Do(chunk != null
@@ -56,9 +56,9 @@ public sealed class InterpLower(IlLowerContext? ctx = null) : IlPass(ctx)
     static MExpr Concat(List<(string? Chunk, MExpr? Hole)> parts)
     {
         var xs = parts.Select(p => p.Hole ?? Lit(p.Chunk!)).ToList();
-        if (xs.Count == 0) return new AirConst("");
+        if (xs.Count == 0) return Const("");
         if (xs.Count == 1)
-            return parts[0].Hole == null ? xs[0] : new MBinary { Op = AirBinOp.Coalesce, L = xs[0], R = new AirConst(""), Type = IlTypes.Str };
-        return Call(new AirTypeRef("string") { Type = IlTypes.Str }, "Concat", IlTypes.Str, [.. xs]);
+            return parts[0].Hole == null ? xs[0] : new MBinary { Op = AirBinOp.Coalesce, L = xs[0], R = Const(""), Type = IlTypes.Str };
+        return Call(new AirTypeRef(IlTypes.Str), "Concat", IlTypes.Str, [.. xs]);
     }
 }

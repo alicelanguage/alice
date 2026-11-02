@@ -14,7 +14,7 @@ public class DataflowTests(ITestOutputHelper output)
     static readonly TimeSpan T = TimeSpan.FromSeconds(30);
 
     /// <summary>Runs the graph on another thread so a hang fails the test instead of the run.</summary>
-    static void RunWithin(Graph g)
+    internal static void RunWithin(Graph g)
     {
         System.Runtime.ExceptionServices.ExceptionDispatchInfo? error = null;
         var t = new Thread(() =>
@@ -103,23 +103,6 @@ public class DataflowTests(ITestOutputHelper output)
         }
         producer.Join();
         Assert.Equal(N, expect);
-    }
-
-    [Fact]
-    public void Ring_read_write_allocates_nothing()
-    {
-        var r = new Ring<long>(64);
-        Span<long> buf = stackalloc long[16];
-        r.TryWrite(1); r.TryRead(out _); r.TryWrite(buf); r.TryRead(buf);   // JIT
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100_000; i++)
-        {
-            r.TryWrite(i);
-            r.TryWrite(buf[..7]);
-            r.TryRead(out _);
-            r.TryRead(buf[..7]);
-        }
-        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
 
     // ---- graphs ----
@@ -384,7 +367,52 @@ public class DataflowTests(ITestOutputHelper output)
         Assert.True(peak is > 1 and <= 4, $"peak {peak}");
     }
 
-    // ---- allocation ----
+    [Fact]
+    public void Throughput_microbenchmark()
+    {
+        const long N = 20_000_000;
+        var sw = Stopwatch.StartNew();
+        var g = new Graph();
+        var sink = g.Source(0L, static (ref long i, ref RingWriter<long> w) =>
+            {
+                long end = Math.Min(i + 4096, N);
+                while (i < end) w.Write(i++);
+                return i < N;
+            })
+            .Stage(0, static (ref int _, ReadOnlySpan<long> xs, ref RingWriter<long> w) => { foreach (var x in xs) w.Write(x ^ 1); })
+            .Sink(0L, static (ref long s, ReadOnlySpan<long> xs) => { foreach (var x in xs) s += x; });
+        RunWithin(g);
+        sw.Stop();
+        Assert.Equal((N - 1) * N / 2, sink.State);
+        output.WriteLine($"3-stage long pipeline: {N / sw.Elapsed.TotalSeconds / 1e6:F1} M items/s");
+    }
+}
+
+/// <summary>
+/// The zero-allocation dataflow tests, run alone (<see cref="IsolatedAllocationCollection"/>) so no other test's
+/// allocations or GCs show up in the per-thread counters.
+/// </summary>
+[Collection(IsolatedAllocationCollection.Name)]
+public class DataflowAllocationTests(ITestOutputHelper output)
+{
+    [Fact]
+    public void Ring_read_write_allocates_nothing()
+    {
+        var r = new Ring<long>(64);
+        var buf = new long[16];
+        r.TryWrite(1); r.TryRead(out _); r.TryWrite(buf); r.TryRead(buf);   // JIT
+        long bytes = AllocationProbe.Least(() =>
+        {
+            for (int i = 0; i < 100_000; i++)
+            {
+                r.TryWrite(i);
+                r.TryWrite(buf.AsSpan(0, 7));
+                r.TryRead(out _);
+                r.TryRead(buf.AsSpan(0, 7));
+            }
+        }, output.WriteLine);
+        Assert.Equal(0, bytes);
+    }
 
     /// <summary>Per body thread: bytes allocated between two consecutive calls on the same thread.</summary>
     struct AllocProbe
@@ -440,7 +468,7 @@ public class DataflowTests(ITestOutputHelper output)
                     s.probe.Step();
                     s.seen += xs.Length;
                 });
-            RunWithin(g);
+            DataflowTests.RunWithin(g);
             Assert.Equal(2 * N, sink.State.seen);
             var probes = new[] { ("source", src.value.probe), ("stage", mid.value.probe), ("sink", sink.State.probe) };
             bool clean = true;
@@ -452,25 +480,5 @@ public class DataflowTests(ITestOutputHelper output)
             if (clean) return;
             Assert.True(attempt < 2, "steady-state dataflow allocated per batch");
         }
-    }
-
-    [Fact]
-    public void Throughput_microbenchmark()
-    {
-        const long N = 20_000_000;
-        var sw = Stopwatch.StartNew();
-        var g = new Graph();
-        var sink = g.Source(0L, static (ref long i, ref RingWriter<long> w) =>
-            {
-                long end = Math.Min(i + 4096, N);
-                while (i < end) w.Write(i++);
-                return i < N;
-            })
-            .Stage(0, static (ref int _, ReadOnlySpan<long> xs, ref RingWriter<long> w) => { foreach (var x in xs) w.Write(x ^ 1); })
-            .Sink(0L, static (ref long s, ReadOnlySpan<long> xs) => { foreach (var x in xs) s += x; });
-        RunWithin(g);
-        sw.Stop();
-        Assert.Equal((N - 1) * N / 2, sink.State);
-        output.WriteLine($"3-stage long pipeline: {N / sw.Elapsed.TotalSeconds / 1e6:F1} M items/s");
     }
 }
