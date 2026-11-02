@@ -149,7 +149,15 @@ What the measurements ruled out:
 kmeans is still ~10x C: the rest is SIMD. clang packs the 8 `dst(xx, yy, c_k, k)` calls into one 8-lane vector
 (SLP), takes a horizontal min and keeps the 24 accumulators as three vectors. `Lowerer.Vectorize` only vectorizes
 fused pipelines over a numeric array source (`TryVectorize(src, ..., stages, sink, ...)`), so a `while` loop with
-scalar accumulators and calls to user functions is out of its scope.
+scalar accumulators and calls to user functions is out of its scope. Queued for a later vectorize worker: SLP
+packing of the 8 isomorphic `dst(xx, yy, c_k, k)` calls (`Vector256.Create(c0..c7)`, `|a - b|` as
+`Max(a, b) - Min(a, b)`, `((dx*dx + dy*dy) << 3) | iota`, horizontal min, the 24 accumulators as three
+`Vector256<uint>` updated through `Equals(Create(bk), iota)` masks).
+
+Startup (item 6): parallel programs now get at most 8 server GC heaps, which takes `bfs 0` on 32 cores from 38 to
+29 ms with no throughput loss ([docs/heap-gc.md](../../docs/heap-gc.md)). ReadyToRun for Alice.Runtime.dll did
+nothing for hello world (median 20.7 ms IL vs 20.8 ms R2R, plain C# 19.5 ms, 60 runs); release packages are already
+published with `PublishReadyToRun=true` (.github/scripts/package.ps1), so nothing was changed there.
 
 ## Notes on fork shape
 
