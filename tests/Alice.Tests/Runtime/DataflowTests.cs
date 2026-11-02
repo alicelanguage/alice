@@ -83,6 +83,7 @@ public class DataflowTests(ITestOutputHelper output)
     }
 
     [Fact]
+    [Trait("Category", "Stress")]
     public void Ring_spsc_across_threads_keeps_order()
     {
         const int N = 2_000_000;
@@ -218,6 +219,7 @@ public class DataflowTests(ITestOutputHelper output)
     }
 
     [Fact]
+    [Trait("Category", "Stress")]
     public void Slow_sink_applies_backpressure()
     {
         const int N = 20_000, Cap = 16, Batch = 4;
@@ -289,6 +291,7 @@ public class DataflowTests(ITestOutputHelper output)
     }
 
     [Theory]
+    [Trait("Category", "Stress")]
     [InlineData(2, 1)]
     [InlineData(4, 3)]
     [InlineData(64, 16)]
@@ -336,6 +339,7 @@ public class DataflowTests(ITestOutputHelper output)
     }
 
     [Fact]
+    [Trait("Category", "Stress")]
     public void Replicated_ordered_output_is_identical_for_every_worker_count()
     {
         const int N = 100_000;
