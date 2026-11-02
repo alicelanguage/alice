@@ -18,8 +18,8 @@ public sealed class StrengthReduction : MirRewriter, IMirPass
         {
             bool isLong = d is MCode { Text: var t } && t.EndsWith('L');
             return c.Name == "floor_div"
-                ? new MBinary { Op = ">>", L = x, R = new MCode(k.ToString()) }
-                : new MBinary { Op = "&", L = x, R = MirFacts.Int(v - 1, isLong) };
+                ? new MBinary { Op = AirBinOp.Shr, L = x, R = new MCode(k.ToString()) }
+                : new MBinary { Op = AirBinOp.BitAnd, L = x, R = MirFacts.Int(v - 1, isLong) };
         }
         if (e is MCall { Target: MCode { Text: "Prelude" }, Name: "floor_div" or "floor_mod", Args: [_, var d2] } c2 && MirFacts.IntLiteral(d2, out long v2) && v2 > 0)
             c2.Name += "_pos";   // positive divisor: branch-free floored form

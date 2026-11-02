@@ -52,7 +52,7 @@ public sealed partial class Lowerer
             var (stmts, v) = BlockValue(sb);
             body.AddRange(stmts);
             if (sinkName == "sum") body.Add(new MAssign { Target = new MCode(res), Op = "+=", Value = v });
-            else body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MUnary { Op = "++", E = new MCode(res), Postfix = true } } } });
+            else body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(res), Postfix = true } } } });
         }
         ctx.RemoveAt(ctx.Count - 1);
         soa = saved;

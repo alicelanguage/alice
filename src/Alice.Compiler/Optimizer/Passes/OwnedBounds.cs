@@ -85,7 +85,7 @@ public sealed class OwnedBounds : MirRewriter, IMirPass
     static bool Writes(MExpr e, string name) => e switch
     {
         MCode c => MirFacts.WriteForm(c.Text, name),
-        MUnary { Op: "++" or "--", E: MCode { Text: var t } } when t == name => true,
+        MUnary { Op: AirUnOp.Inc or AirUnOp.Dec, E: MCode { Text: var t } } when t == name => true,
         MArg a when (a.Prefix.StartsWith("ref") || a.Prefix.StartsWith("out")) && a.E is MCode { Text: var t } && t == name => true,
         MLambda l => MirFacts.Writes(l.Body, name) || (l.ExprBody != null && Writes(l.ExprBody, name)),
         _ => MirFacts.Children(e).Any(x => Writes(x, name)),

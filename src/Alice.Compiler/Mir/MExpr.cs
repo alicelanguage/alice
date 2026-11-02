@@ -1,6 +1,14 @@
 namespace Alice.Compiler.Mir;
 
-public abstract class MExpr { }
+/// <summary>
+/// MIR/AIR expression. <see cref="Type"/> and <see cref="Span"/> are optional while lowering migrates to typed
+/// nodes (ADR 0032); the C# printer ignores both.
+/// </summary>
+public abstract class MExpr
+{
+    public AirType? Type;
+    public Span? Span;
+}
 
 /// <summary>Leaf C# text: literals, names, type names.</summary>
 public sealed class MCode : MExpr
@@ -53,14 +61,19 @@ public sealed class MIndex : MExpr
 
 public sealed class MBinary : MExpr
 {
-    public string Op = "";
+    public AirBinOp Op;
+    /// <summary>Evaluated in a checked context (integer + - * trap on overflow, ADR 0013); false where the C# form
+    /// is wrapped in `unchecked(...)`. Nodes inside an `MBlock { Unchecked: true }` keep the default.</summary>
+    public bool Checked = true;
     public MExpr L = null!;
     public MExpr R = null!;
 }
 
 public sealed class MUnary : MExpr
 {
-    public string Op = "";
+    public AirUnOp Op;
+    /// <summary>Checked context for Neg/Inc/Dec, as <see cref="MBinary.Checked"/>.</summary>
+    public bool Checked = true;
     public MExpr E = null!;
     public bool Postfix;
 }

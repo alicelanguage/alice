@@ -29,7 +29,7 @@ public class OptimizerTests
     [InlineData("*", "2147483647", "2", "2147483647 * 2")]   // would overflow Int32: left for Roslyn to report
     [InlineData("+", "x", "1", "x + 1")]
     public void Constant_folding(string op, string l, string r, string expected)
-        => Assert.Equal(expected, After(new ConstantFolding(), new MBinary { Op = op, L = new MCode(l), R = new MCode(r) }));
+        => Assert.Equal(expected, After(new ConstantFolding(), new MBinary { Op = AirOps.ParseBin(op), L = new MCode(l), R = new MCode(r) }));
 
     [Theory]
     [InlineData("floor_div", "-7", "2", "-4")]
@@ -64,7 +64,7 @@ public class OptimizerTests
     public void Induction_step_is_unchecked_only_when_provable(string? type, string cmp, bool bodyWrites, string step)
     {
         var f = new MFor { Var = "i", VarType = type, Start = new MCode("0"), Cmp = cmp, End = new MCode("n") };
-        if (bodyWrites) f.Body.Add(new MExprStmt { E = new MUnary { Op = "++", E = new MCode("i"), Postfix = true } });
+        if (bodyWrites) f.Body.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode("i"), Postfix = true } });
         new InductionVariables().Run([f]);
         Assert.Equal(step, f.Step);
     }
@@ -93,7 +93,7 @@ public class OptimizerTests
         return f;
     }
 
-    static MStmt Use(string op, string k) => new MExprStmt { E = new MCall { Name = "use", Args = { new MBinary { Op = op, L = new MCode("j"), R = new MCode(k) } } } };
+    static MStmt Use(string op, string k) => new MExprStmt { E = new MCall { Name = "use", Args = { new MBinary { Op = AirOps.ParseBin(op), L = new MCode("j"), R = new MCode(k) } } } };
 
     static MExpr Length => new MMember { Target = new MCode("b"), Name = "Length" };
 
@@ -147,7 +147,7 @@ public class OptimizerTests
     [Fact]
     public void Offsets_of_a_written_counter_stay_checked()
     {
-        var f = Loop("1", "<=", Length, Use("-", "1"), new MExprStmt { E = new MUnary { Op = "++", E = new MCode("j"), Postfix = true } });
+        var f = Loop("1", "<=", Length, Use("-", "1"), new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode("j"), Postfix = true } });
         new InductionVariables().Run([f]);
         Assert.DoesNotContain("unchecked", Printer.E(((MExprStmt)f.Body[0]).E));
     }

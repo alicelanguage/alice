@@ -51,7 +51,7 @@ public sealed partial class Binder
             case "Array" when args.Count == 1: return AType.Array(args[0]);
             case "Pointer" when args.Count == 1: return new AType("prim", args[0].Cs + "*", args[0].Clr?.MakePointerType());
             // C function pointer (`lib` `fun` parameters): arguments then return type; a capture-free lambda is lifted to it
-            case "Callback" when args.Count >= 1: return new AType("prim", $"delegate* unmanaged[Cdecl]<{string.Join(", ", args.Select(a => a.IsVoid ? "void" : a.Cs))}>");
+            case "Callback" when args.Count >= 1: return new AType("prim", $"delegate* unmanaged[Cdecl]<{string.Join(", ", args.Select(a => a.IsVoid ? "void" : a.Cs))}>") { Args = args };
             case "Tuple": return Tuple(args);
             case "Proc" when args.Count >= 1: return Func(args.Take(args.Count - 1).ToList(), args[^1]);
             case "Hash" when args.Count == 2:

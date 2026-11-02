@@ -19,14 +19,14 @@ public sealed class ConstantFolding : MirRewriter, IMirPass
                     bool isLong = IsLong(b.L) || IsLong(b.R);
                     long? v = b.Op switch
                     {
-                        "+" => Checked(() => l + r),
-                        "-" => Checked(() => l - r),
-                        "*" => Checked(() => l * r),
-                        "&" => l & r,
-                        "|" => l | r,
-                        "^" => l ^ r,
-                        "<<" when r is >= 0 and < 31 && !isLong => Checked(() => l << (int)r),
-                        ">>" when r >= 0 => l >> (int)Math.Min(r, isLong ? 63 : 31),
+                        AirBinOp.Add => Checked(() => l + r),
+                        AirBinOp.Sub => Checked(() => l - r),
+                        AirBinOp.Mul => Checked(() => l * r),
+                        AirBinOp.BitAnd => l & r,
+                        AirBinOp.BitOr => l | r,
+                        AirBinOp.BitXor => l ^ r,
+                        AirBinOp.Shl when r is >= 0 and < 31 && !isLong => Checked(() => l << (int)r),
+                        AirBinOp.Shr when r >= 0 => l >> (int)Math.Min(r, isLong ? 63 : 31),
                         _ => null,
                     };
                     return v is long x && Fits(x, isLong) ? MirFacts.Int(x, isLong) : e;

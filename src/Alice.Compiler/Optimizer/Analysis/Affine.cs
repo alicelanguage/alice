@@ -70,11 +70,11 @@ public sealed class Affine
                 return l;
             case MCall { Target: null, Name: "unchecked", Args: [var inner] }:
                 return P(inner, vars);   // the runtime guard proves the exact value fits, so wrapping equals exact
-            case MUnary { Op: "-", Postfix: false, E: var x }:
+            case MUnary { Op: AirUnOp.Neg, Postfix: false, E: var x }:
                 return P(x, vars) is { } n ? Sum(Const(0), n, -1) : null;
-            case MBinary { Op: "+" or "-" or "*" } b:
+            case MBinary { Op: AirBinOp.Add or AirBinOp.Sub or AirBinOp.Mul } b:
                 if (P(b.L, vars) is not { } L || P(b.R, vars) is not { } R) return null;
-                return b.Op == "*" ? Product(L, R) : Sum(L, R, b.Op == "+" ? 1 : -1);
+                return b.Op == AirBinOp.Mul ? Product(L, R) : Sum(L, R, b.Op == AirBinOp.Add ? 1 : -1);
         }
         return null;
     }
@@ -136,7 +136,7 @@ public sealed class Affine
         if (la && lb) return LongLit(checked(x * y));
         if (la && x == 1 || lb && y == 0) return b;
         if (lb && y == 1 || la && x == 0) return a;
-        return new MBinary { Op = "*", L = a, R = b };
+        return new MBinary { Op = AirBinOp.Mul, L = a, R = b };
     }
 
     static MExpr Add(MExpr a, MExpr b)
@@ -145,6 +145,6 @@ public sealed class Affine
         if (la && lb) return LongLit(checked(x + y));
         if (la && x == 0) return b;
         if (lb && y == 0) return a;
-        return new MBinary { Op = "+", L = a, R = b };
+        return new MBinary { Op = AirBinOp.Add, L = a, R = b };
     }
 }

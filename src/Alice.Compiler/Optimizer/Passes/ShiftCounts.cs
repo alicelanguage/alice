@@ -14,13 +14,13 @@ public sealed class ShiftCounts : MirRewriter, IMirPass
 
     protected override MExpr Rewrite(MExpr e)
     {
-        if (e is MBinary { Op: "<<" or ">>" or ">>>" } s && Arithmetic(s.R))
-            s.R = new MCall { Name = "unchecked", Args = { s.R } };
+        if (e is MBinary { Op: AirBinOp.Shl or AirBinOp.Shr or AirBinOp.UShr } s && Arithmetic(s.R))
+            s.R = new MCall { Name = "unchecked", Args = { MirFacts.Unchecked(s.R) } };
         return e;
     }
 
     /// <summary>True when the count is an integer + - * tree over leaves (the only operators that can overflow).</summary>
-    static bool Arithmetic(MExpr e) => e is MBinary { Op: "+" or "-" or "*" } b && Leaf(b.L) && Leaf(b.R);
+    static bool Arithmetic(MExpr e) => e is MBinary { Op: AirBinOp.Add or AirBinOp.Sub or AirBinOp.Mul } b && Leaf(b.L) && Leaf(b.R);
 
     /// <summary>A name or literal: opaque code could hide an index whose arithmetic must keep trapping.</summary>
     static bool Leaf(MExpr e) => e is MCode { Text: var t } && t.Length > 0 && t.All(c => char.IsLetterOrDigit(c) || c == '_')

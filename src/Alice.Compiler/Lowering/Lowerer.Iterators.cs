@@ -222,7 +222,7 @@ public sealed partial class Lowerer
                 count = Temp("has");
                 before.Add(new MDecl { Name = res, TypeCs = curCs, Init = new MCode("default!") });
                 before.Add(new MDecl { Name = count, TypeCs = "bool", Init = new MCode("false") });
-                after.Add(new MIf { Cond = new MUnary { Op = "!", E = new MCode(count) }, Then = { new MThrow { Value = new MNew { TypeCs = "global::System.InvalidOperationException", Args = { new MCode("\"Sequence contains no elements\"") } } } } });
+                after.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = new MCode(count) }, Then = { new MThrow { Value = new MNew { TypeCs = "global::System.InvalidOperationException", Args = { new MCode("\"Sequence contains no elements\"") } } } } });
                 break;
             case "reduce":
                 before.Add(new MDecl { Name = res, TypeCs = TypeCs(sb!.ParamSyms[0].Type.IsKnown ? sb.ParamSyms[0].Type : sink.Args[0].Value!.Type), Init = Expr(sink.Args[0].Value!) });
@@ -237,7 +237,7 @@ public sealed partial class Lowerer
         var body = new List<MStmt>();
         string loopVar = Temp("e");
         MExpr element = new MCode(loopVar);
-        if (sinkName == "each_with_index") body.Add(new MExprStmt { E = new MUnary { Op = "++", E = new MCode(count!), Postfix = true } });
+        if (sinkName == "each_with_index") body.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(count!), Postfix = true } });
         ctx.Add("loop");
         // Filters nest the rest of the body in `if (cond) { ... }` (not `continue`) so the JIT can if-convert to cmov.
         var target = body;
@@ -247,7 +247,7 @@ public sealed partial class Lowerer
             {
                 var (lim, taken) = takeVars[s];
                 target.Add(new MIf { Cond = new MCode($"{taken} >= {lim}"), Then = { new MBreak() } });
-                target.Add(new MExprStmt { E = new MUnary { Op = "++", E = new MCode(taken), Postfix = true } });
+                target.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(taken), Postfix = true } });
                 continue;
             }
             target.Add(new MDecl { Name = s.Block.ParamSyms[0].CsName, Init = element });
@@ -261,7 +261,7 @@ public sealed partial class Lowerer
             }
             else
             {
-                var gate = new MIf { Cond = s.Kind == "select" ? v : new MUnary { Op = "!", E = v } };
+                var gate = new MIf { Cond = s.Kind == "select" ? v : new MUnary { Op = AirUnOp.Not, E = v } };
                 target.Add(gate);
                 target = gate.Then;
             }
@@ -393,14 +393,14 @@ public sealed partial class Lowerer
         switch (name)
         {
             case "map":
-                if (prealloc) body.Add(new MAssign { Target = new MIndex { Target = new MCode(res), Args = { new MUnary { Op = "++", E = new MCode(count!), Postfix = true } } }, Value = v });
+                if (prealloc) body.Add(new MAssign { Target = new MIndex { Target = new MCode(res), Args = { new MUnary { Op = AirUnOp.Inc, E = new MCode(count!), Postfix = true } } }, Value = v });
                 else body.Add(new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { v } } });
                 break;
             case "select":
                 body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { el } } } } });
                 break;
             case "reject":
-                body.Add(new MIf { Cond = new MUnary { Op = "!", E = v }, Then = { new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { el } } } } });
+                body.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = v }, Then = { new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { el } } } } });
                 break;
             case "to_a":
                 body.Add(new MExprStmt { E = new MCall { Target = new MCode(res), Name = "Add", Args = { el } } });
@@ -411,14 +411,14 @@ public sealed partial class Lowerer
             case "count":
             case "size":
             case "length":
-                if (sb != null) body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MUnary { Op = "++", E = new MCode(res), Postfix = true } } } });
-                else body.Add(new MExprStmt { E = new MUnary { Op = "++", E = new MCode(res), Postfix = true } });
+                if (sb != null) body.Add(new MIf { Cond = v, Then = { new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(res), Postfix = true } } } });
+                else body.Add(new MExprStmt { E = new MUnary { Op = AirUnOp.Inc, E = new MCode(res), Postfix = true } });
                 break;
             case "any_q":
                 body.Add(new MIf { Cond = sb != null ? v : new MCode("true"), Then = { new MAssign { Target = new MCode(res), Value = new MCode("true") }, new MBreak() } });
                 break;
             case "all_q":
-                body.Add(new MIf { Cond = new MUnary { Op = "!", E = v }, Then = { new MAssign { Target = new MCode(res), Value = new MCode("false") }, new MBreak() } });
+                body.Add(new MIf { Cond = new MUnary { Op = AirUnOp.Not, E = v }, Then = { new MAssign { Target = new MCode(res), Value = new MCode("false") }, new MBreak() } });
                 break;
             case "find":
                 body.Add(new MIf { Cond = v, Then = { new MAssign { Target = new MCode(res), Value = el }, new MBreak() } });
@@ -432,7 +432,7 @@ public sealed partial class Lowerer
             case "min":
                 body.Add(new MIf
                 {
-                    Cond = new MBinary { Op = "||", L = new MUnary { Op = "!", E = new MCode(count!) }, R = new MBinary { Op = name == "max" ? ">" : "<", L = el, R = new MCode(res) } },
+                    Cond = new MBinary { Op = AirBinOp.Or, L = new MUnary { Op = AirUnOp.Not, E = new MCode(count!) }, R = new MBinary { Op = name == "max" ? AirBinOp.Gt : AirBinOp.Lt, L = el, R = new MCode(res) } },
                     Then = { new MAssign { Target = new MCode(res), Value = el }, new MAssign { Target = new MCode(count!), Value = new MCode("true") } },
                 });
                 break;

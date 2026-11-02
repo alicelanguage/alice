@@ -61,9 +61,9 @@ public sealed partial class Lowerer
             case BinaryExpr b:
                 return Binary(b);
             case UnaryExpr { Op: "!" } nu when Truthy(nu.E, new MCode("x")) is MBinary tb:
-                return new MBinary { Op = tb.Op == "!=" ? "==" : "!=", L = Expr(nu.E), R = tb.R };   // `!s`: s is nil (Bool?: not true)
+                return new MBinary { Op = tb.Op == AirBinOp.Ne ? AirBinOp.Eq : AirBinOp.Ne, L = Expr(nu.E), R = tb.R };   // `!s`: s is nil (Bool?: not true)
             case UnaryExpr u:
-                return new MUnary { Op = u.Op, E = Expr(u.E) };
+                return new MUnary { Op = AirOps.ParseUn(u.Op), E = Expr(u.E) };
             case TernaryExpr t when TrySignExtend(t) is MExpr signExtended:
                 return signExtended;
             case TernaryExpr t:
@@ -104,7 +104,7 @@ public sealed partial class Lowerer
             case RegexExpr rx:
                 return new MCall { Target = new MCode("Prelude"), Name = "regex", Args = { new MCode("\"" + rx.Pattern + "\""), new MCode("\"" + rx.Flags + "\"") } };
             case AwaitExpr aw:
-                return new MUnary { Op = "await ", E = Expr(aw.E) };
+                return new MUnary { Op = AirUnOp.Await, E = Expr(aw.E) };
             case SpawnExpr sp:
                 return new MCall { Target = new MCode("Prelude"), Name = "spawn", Args = { Lambda(sp.Body) } };
             case YieldExpr { Sym: null } yi:   // iterator method
@@ -187,10 +187,10 @@ public sealed partial class Lowerer
             _ => null,
         };
         if (helper != null) return new MCall { Target = new MCode("Prelude"), Name = helper, Args = { l, r } };
-        if (b.Res == "coalesce") return new MBinary { Op = "??", L = l, R = r };
+        if (b.Res == "coalesce") return new MBinary { Op = AirBinOp.Coalesce, L = l, R = r };
         if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
         if (Contract(b, l, r) is MExpr fused) return fused;
-        if (b.Op is "&+" or "&-" or "&*") return new MCall { Name = "unchecked", Args = { new MBinary { Op = b.Op[1..], L = l, R = r } } };
+        if (b.Op is "&+" or "&-" or "&*") return new MCall { Name = "unchecked", Args = { Optimizer.MirFacts.Unchecked(new MBinary { Op = AirOps.ParseBin(b.Op[1..]), L = l, R = r }) } };
         if (UncheckedIfProven(b, l, r) is MExpr proven) return proven;
         if (FlooredHelper(b.Op, b.Type) is string fl) return new MCall { Target = new MCode("Prelude"), Name = fl, Args = { l, r } };
         return b.Op switch
@@ -199,10 +199,10 @@ public sealed partial class Lowerer
             "**" when b.L is LitExpr { Kind: "float", Text: "2.0" } && b.R.Type.Cs is "int" or "short" or "sbyte" or "byte" or "ushort"
                 => new MCall { Target = new MCode("global::System.Math"), Name = "ScaleB", Args = { new MCode("1.0"), r } },
             "**" when b.R is LitExpr { Kind: "int", Text: "2" } && IsFloat(b.L.Type) && l is MCode
-                => new MBinary { Op = "*", L = l, R = l },
+                => new MBinary { Op = AirBinOp.Mul, L = l, R = l },
             "**" => new MCall { Target = new MCode("Prelude"), Name = "pow", Args = { l, r } },
             "<=>" => new MCall { Target = l, Name = "CompareTo", Args = { r } },
-            _ => new MBinary { Op = b.Op, L = l, R = r },
+            _ => new MBinary { Op = AirOps.ParseBin(b.Op), L = l, R = r },
         };
     }
 
@@ -233,10 +233,10 @@ public sealed partial class Lowerer
         // in a GPU kernel the device compiler contracts a*b+c itself (OpenCL mad, CUDA fmad); an explicit
         // FusedMultiplyAdd was rejected by an OpenCL driver, and Prelude.fma's CPU feature test cannot compile there
         if (StrictMath || inGpuKernel || b.Op is not ("+" or "-") || !IsFloat(b.Type) || !IsFloat(b.L.Type) || !IsFloat(b.R.Type)) return null;
-        if (l is MBinary { Op: "*" } ml && b.L is BinaryExpr { Op: "*" } bl && IsFloat(bl.L.Type) && IsFloat(bl.R.Type))
-            return Fma(ml.L, ml.R, b.Op == "+" ? r : new MUnary { Op = "-", E = r }, b.Type);
-        if (r is MBinary { Op: "*" } mr && b.R is BinaryExpr { Op: "*" } br && IsFloat(br.L.Type) && IsFloat(br.R.Type))
-            return Fma(b.Op == "+" ? mr.L : new MUnary { Op = "-", E = mr.L }, mr.R, l, b.Type);
+        if (l is MBinary { Op: AirBinOp.Mul } ml && b.L is BinaryExpr { Op: "*" } bl && IsFloat(bl.L.Type) && IsFloat(bl.R.Type))
+            return Fma(ml.L, ml.R, b.Op == "+" ? r : new MUnary { Op = AirUnOp.Neg, E = r }, b.Type);
+        if (r is MBinary { Op: AirBinOp.Mul } mr && b.R is BinaryExpr { Op: "*" } br && IsFloat(br.L.Type) && IsFloat(br.R.Type))
+            return Fma(b.Op == "+" ? mr.L : new MUnary { Op = AirUnOp.Neg, E = mr.L }, mr.R, l, b.Type);
         return null;
     }
 
@@ -249,7 +249,7 @@ public sealed partial class Lowerer
             case "nil?" when tt.E!.Type is { IsKnown: true, Nullable: false } vt && vt.Kind is "prim" or "struct" or "enum":
                 return new MCode("false");   // a non-nullable value is never nil
             case "nil?": return new MIs { E = Expr(tt.E!), TypeCs = "null" };
-            case "not_nil!": return new MUnary { Op = "!", E = Expr(tt.E!), Postfix = true };
+            case "not_nil!": return new MUnary { Op = AirUnOp.NotNull, E = Expr(tt.E!), Postfix = true };
             case "default": return new MCode($"default({tt.Type.Cs})");
             default: return new MCode($"{tt.Kind}({((AType)tt.Sym!).Cs})");
         }

@@ -364,12 +364,15 @@ public static class CompileCommands
 
     public static int Emit(List<string> a)
     {
+        bool air = a.Remove("--air");   // hidden: the MIR/AIR text dump (ADR 0032) instead of C#
         var o = Parse(a);
         if (o.Files.Count == 0) throw UsageException.Usage("alice emit <file.al>");
         var files = Read(o.Files);
         try
         {
-            foreach (var cs in AliceCompiler.TranspileFull(files, o.Refs, "alice_native", strict: o.Strict).CSharp) Console.WriteLine(cs);
+            var units = () => AliceCompiler.TranspileFull(files, o.Refs, "alice_native", strict: o.Strict).CSharp;
+            if (air) Console.Write(Alice.Compiler.Mir.MirDump.Collect(() => units()));
+            else foreach (var cs in units()) Console.WriteLine(cs);
         }
         catch (CompileException e) when (o.Strict)
         {

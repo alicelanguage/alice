@@ -134,7 +134,7 @@ public sealed class LoopTiling : IMirPass
         {
             conds.AddAll(InRange(Affine.Long(Clone(l.Start)), -Limit, Limit));
             conds.AddAll(InRange(Affine.Long(Clone(l.End)), -Limit, Limit));
-            conds.Add(Bin("<", Affine.Long(Clone(l.Start)), Affine.Long(Clone(l.End))));
+            conds.Add(Bin(AirBinOp.Lt, Affine.Long(Clone(l.Start)), Affine.Long(Clone(l.End))));
         }
         var seen = new HashSet<string>();
         foreach (var a in nest.Accesses)
@@ -144,22 +144,22 @@ public sealed class LoopTiling : IMirPass
             foreach (var corner in Corners(nest.Loops))
             {
                 var at = a.Index.ToLong(v => Clone(corner[v]));
-                conds.Add(Bin("<=", new MCode("0L"), at));
-                conds.Add(Bin("<", Clone(at), Affine.Long(new MCode(a.Array + ".Length"))));
+                conds.Add(Bin(AirBinOp.Le, new MCode("0L"), at));
+                conds.Add(Bin(AirBinOp.Lt, Clone(at), Affine.Long(new MCode(a.Array + ".Length"))));
                 if (a.Sym != null && a.Dims is [_, var low])
                 {
                     var col = low.ToLong(v => Clone(corner[v]));
-                    conds.Add(Bin("<=", new MCode("0L"), col));
-                    conds.Add(Bin("<", Clone(col), Affine.Long(new MCode(a.Sym))));
+                    conds.Add(Bin(AirBinOp.Le, new MCode("0L"), col));
+                    conds.Add(Bin(AirBinOp.Lt, Clone(col), Affine.Long(new MCode(a.Sym))));
                 }
             }
         }
         var arrays = nest.Accesses.Select(a => a.Array).Distinct().ToList();
         foreach (var w in nest.Accesses.Where(a => a.Write).Select(a => a.Array).Distinct())
             foreach (var x in arrays.Where(x => x != w))
-                conds.Add(new MUnary { Op = "!", E = new MCall { Target = new MCode("global::System.Object"), Name = "ReferenceEquals", Args = { new MCode(w), new MCode(x) } } });
+                conds.Add(new MUnary { Op = AirUnOp.Not, E = new MCall { Target = new MCode("global::System.Object"), Name = "ReferenceEquals", Args = { new MCode(w), new MCode(x) } } });
         if (conds.False) return null;
-        return conds.List.Count == 0 ? new MCode("true") : conds.List.Aggregate((l, r) => Bin("&&", l, r));
+        return conds.List.Count == 0 ? new MCode("true") : conds.List.Aggregate((l, r) => Bin(AirBinOp.And, l, r));
     }
 
     /// <summary>Guard conditions, deduplicated; comparisons of two literals are decided now.</summary>
@@ -173,9 +173,9 @@ public sealed class LoopTiling : IMirPass
 
         public void Add(MExpr c)
         {
-            if (c is MBinary { Op: "<" or "<=" } b && Affine.LongLiteral(b.L, out long l) && Affine.LongLiteral(b.R, out long r))
+            if (c is MBinary { Op: AirBinOp.Lt or AirBinOp.Le } b && Affine.LongLiteral(b.L, out long l) && Affine.LongLiteral(b.R, out long r))
             {
-                if (!(b.Op == "<" ? l < r : l <= r)) False = true;
+                if (!(b.Op == AirBinOp.Lt ? l < r : l <= r)) False = true;
                 return;
             }
             if (seen.Add(Alice.Compiler.Backend.Printer.E(c))) List.Add(c);
@@ -183,7 +183,7 @@ public sealed class LoopTiling : IMirPass
     }
 
     static IEnumerable<MExpr> InRange(MExpr e, long lo, long hi) =>
-        [Bin("<", new MCode(lo.ToString(CultureInfo.InvariantCulture) + "L"), e), Bin("<", Clone(e), new MCode(hi.ToString(CultureInfo.InvariantCulture) + "L"))];
+        [Bin(AirBinOp.Lt, new MCode(lo.ToString(CultureInfo.InvariantCulture) + "L"), e), Bin(AirBinOp.Lt, Clone(e), new MCode(hi.ToString(CultureInfo.InvariantCulture) + "L"))];
 
     /// <summary>Every corner of the iteration box: each counter at its first or last value.</summary>
     static IEnumerable<Dictionary<string, MExpr>> Corners(List<MFor> loops)
@@ -193,12 +193,12 @@ public sealed class LoopTiling : IMirPass
             acc = acc.SelectMany(c => new[]
             {
                 new Dictionary<string, MExpr>(c) { [l.Var] = Clone(l.Start) },
-                new Dictionary<string, MExpr>(c) { [l.Var] = Bin("-", Clone(l.End), new MCode("1")) },
+                new Dictionary<string, MExpr>(c) { [l.Var] = Bin(AirBinOp.Sub, Clone(l.End), new MCode("1")) },
             });
         return acc.Select(c => c.ToDictionary(kv => kv.Key, kv => kv.Value));
     }
 
-    static MBinary Bin(string op, MExpr l, MExpr r) => new() { Op = op, L = l, R = r };
+    static MBinary Bin(AirBinOp op, MExpr l, MExpr r) => new() { Op = op, L = l, R = r };
 
     // ---- the new nest ----
 
@@ -220,7 +220,7 @@ public sealed class LoopTiling : IMirPass
                 Line = line, Var = l.Var, VarType = "int",
                 Start = tile > 0 ? new MCode(l.Var + "_t") : Clone(l.Start),
                 End = tile > 0
-                    ? new MCall { Target = new MCode("global::System.Math"), Name = "Min", Args = { Unchecked(Bin("+", new MCode(l.Var + "_t"), Lit(tile))), Clone(l.End) } }
+                    ? new MCall { Target = new MCode("global::System.Math"), Name = "Min", Args = { Unchecked(Bin(AirBinOp.Add, new MCode(l.Var + "_t"), Lit(tile))), Clone(l.End) } }
                     : Clone(l.End),
                 Step = $" = unchecked({l.Var} + 1)",
                 Body = body,
@@ -242,7 +242,7 @@ public sealed class LoopTiling : IMirPass
 
     static MCode Lit(int v) => new(v.ToString(CultureInfo.InvariantCulture));
 
-    static MCall Unchecked(MExpr e) => new() { Name = "unchecked", Args = { e } };
+    static MCall Unchecked(MExpr e) => new() { Name = "unchecked", Args = { MirFacts.Unchecked(e) } };
 
     /// <summary>The guard proved every subscript's exact value is a valid index, so its arithmetic cannot overflow.</summary>
     static MExpr Subscripts(MExpr e)
@@ -259,8 +259,8 @@ public sealed class LoopTiling : IMirPass
     {
         MCode c => new MCode(c.Text),
         MIndex ix => new MIndex { Target = Clone(ix.Target), Args = ix.Args.Select(Clone).ToList() },
-        MBinary b => new MBinary { Op = b.Op, L = Clone(b.L), R = Clone(b.R) },
-        MUnary u => new MUnary { Op = u.Op, Postfix = u.Postfix, E = Clone(u.E) },
+        MBinary b => new MBinary { Op = b.Op, Checked = b.Checked, Type = b.Type, Span = b.Span, L = Clone(b.L), R = Clone(b.R) },
+        MUnary u => new MUnary { Op = u.Op, Checked = u.Checked, Postfix = u.Postfix, Type = u.Type, Span = u.Span, E = Clone(u.E) },
         MCall c => new MCall { Target = c.Target == null ? null : Clone(c.Target), Name = c.Name, Safe = c.Safe, Args = c.Args.Select(Clone).ToList() },
         MMember m => new MMember { Target = Clone(m.Target), Name = m.Name, Safe = m.Safe },
         MCast c => new MCast { TypeCs = c.TypeCs, E = Clone(c.E) },

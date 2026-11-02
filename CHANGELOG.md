@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- AIR foundation (backend plan D0.2/D0.3): MIR nodes gain an optional typed `AirType Type` and source `Span`
+  (`MStmt.Line` reads the span's line when one is set). `AirType` is a closed sum (Prim, ClrRef, AliceType,
+  TypeParam, Array, ByRef, Pointer, FnPtr, Tuple, Unknown, plus a nullable bit) whose `ToCs()` spells exactly what
+  `AType.Cs` spells; `AType.ToAir()` is the one conversion. `MBinary.Op`/`MUnary.Op` are enums (`AirBinOp`,
+  `AirUnOp`, `await` is `AirUnOp.Await`) with a `Checked` flag, cleared inside compiler-made `unchecked(...)`.
+  Emitted C# is byte-identical on the corpus (`tools/emit-corpus.sh`, reused by later AIR work). Hidden
+  `alice emit --air <file>` prints the MIR text dump (`MirDump`) for tests.
 - Runtime: `Arena/` (ADR 0037, P1.1): `Term`, `Arena<TSlot>` lane-local slabs with Take/Borrow/free list, `ArenaRegion` resets; tree(23) build+sum 145 ms serial (records 522 ms), 15 ms with forks on 32 cores (`benchmarks/arena`).
 - Runtime: `Alice.Runtime` dataflow networks (`Dataflow/`, ADR 0038 P3.1): bounded SPSC `Ring<T>`, `Graph` with
   `Source`/`Stage`/`Replicate`/`Sink` on the thread pool (backpressure, completion, first exception rethrown at `Run`),
