@@ -8,7 +8,8 @@ Path: `src/Alice.Compiler`. Pure C#. Depends on: Roslyn, `Alice.Runtime` (refere
 | `Lowering/` | `Lowerer*` | MIR (`Mir/`): inlined/fused loops, typed temps |
 | `Backend/` | `Emitter`, `Printer`, `AliceCompiler` | C# with `#line` -> Roslyn Release IL |
 | `Air/` (planned, ADR 0032) | `AirType`, `AirDecls`, `AirDump`, `AirVerifier`, `Passes/` | typed structured AIR; `Mir/` is migrated into it in place (byte-identical C# as acceptance) |
-| `Backend/CSharp/`, `Backend/Il/` (planned, ADR 0033) | `AirToCSharp`; `IlBuilder`, `MetadataWriter`, `PdbWriter`, `AirToIl` | C# (oracle, generator programs); IL + portable PDB via System.Reflection.Metadata |
+| `Backend/Il/` (ADR 0033; `AirToIl` planned) | `IlModule` (facade), `IlBuilder`, `Signatures`, `MetadataWriter` (+ `RefPack`), `PdbWriter` | IL + portable PDB via System.Reflection.Metadata |
+| `Backend/CSharp/` (planned, ADR 0033) | `AirToCSharp` | C# (oracle, generator programs) |
 
 Lowering files (`Lowering/`):
 
@@ -35,6 +36,15 @@ Lowering files (`Lowering/`):
 | `Lowerer.Affine` (planned, ADR 0037) | arena sum types: term packing, `case` Take/Borrow, slab alloc, `scope` regions, lane-local frees |
 | `Lowerer.Dataflow` (planned, ADR 0038) | `dataflow do` / `stream def` / proven `Channel`+`spawn` networks -> fused batch stages over SPSC rings |
 | `Lowerer.Cm` (planned, ADR 0039) | scan, combine, compaction, permute shapes and `cm for` (AL0227-AL0229) -> `Cm/` kernels |
+
+`Backend/Il/` (D1.2): `new IlModule(name)` -> `DefineType` -> `DefineMethod` -> `IlBuilder` -> `Write(pe, pdb)`. `IlBuilder` is a
+stack-oriented instruction list with symbolic operands (`IlType`, `IlMethod`, `IlField`, `IlLabel`, `IlLocal`) and typed
+helpers for the AIR emitter (`EmitLoadLocal`, `EmitCall`, `EmitBranch(label, IlCond)`, `EmitBinary(op, checked, unsigned)`,
+`EmitConvert`); at write time it runs opt-in peepholes (`IlPeephole`), computes max-stack, relaxes branches to short forms
+and encodes with `InstructionEncoder`/`ControlFlowBuilder` (try/catch/filter/finally/fault). Rows follow definition order,
+sorted tables are emitted sorted, framework TypeRefs resolve against the ref pack (`RefPack`), and the MVID, PE stamp and
+PDB id are content hashes (byte-identical rebuilds). Tests: `tests/Alice.Tests/Backends/IlBuilderTests` (ILVerify,
+collectible ALC runs, determinism, PDB round-trip).
 
 `Optimizer/` (ADR 0014): `Pipeline` runs `Passes/` over MIR with `MirRewriter`/`MirFacts`. `Backend/CEmitter`:
 `@[Native]` functions -> C for clang. `Backend/Emitter` also lowers `rule` declarations for `alice prove` (AL0214).

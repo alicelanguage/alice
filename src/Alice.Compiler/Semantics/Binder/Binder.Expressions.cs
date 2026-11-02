@@ -387,6 +387,29 @@ public sealed partial class Binder
     static AType DefaultHashOf(AType dict) =>
         new("class", $"global::Alice.Runtime.DefaultHash<{dict.Args[0].Cs}, {dict.Args[1].Cs}>", dict.Clr) { Args = dict.Args, Sym = dict.Sym };
 
+    static bool IsDefaultHash(AType t) => t.Cs.StartsWith("global::Alice.Runtime.DefaultHash<");
+
+    static bool IsPlainHash(AType t) =>
+        !IsDefaultHash(t) && t.Args.Count == 2 && t.Clr is { IsGenericType: true } g && g.GetGenericTypeDefinition() == typeof(Dictionary<,>);
+
+    /// <summary>
+    /// A field or parameter declared `Hash(K, V)` that is only ever given DefaultHash values (`Hash.new(0)`) takes the
+    /// DefaultHash type, so its reads honor the default; one plain Dictionary value anywhere keeps it a Dictionary.
+    /// Returns the slot's type for this binding pass (the flags only grow, so the fixpoint settles).
+    /// </summary>
+    AType FlagHash(AType slot, ref AType? declared, ref bool sawDefault, ref bool sawPlain, AType value)
+    {
+        var decl = declared ?? slot;
+        if (!IsPlainHash(decl) || value.Clr != decl.Clr) return slot;
+        if (IsDefaultHash(value)) sawDefault = true;
+        else if (IsPlainHash(value)) sawPlain = true;
+        else return slot;
+        declared = decl;
+        var want = sawDefault && !sawPlain ? DefaultHashOf(decl) : decl;
+        if (!want.Same(slot)) changed = true;
+        return want;
+    }
+
     AType BindBinary(BinaryExpr b)
     {
         var l = BindExpr(b.L);

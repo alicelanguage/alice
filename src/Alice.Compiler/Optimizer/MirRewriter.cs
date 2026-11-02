@@ -64,6 +64,7 @@ public abstract class MirRewriter
             case MTuple t: List(t.Items); break;
             case MPair p: p.K = Expr(p.K); p.V = Expr(p.V); break;
             case MArg a: a.E = Expr(a.E); break;
+            case AirParExpr p: p.Map(Expr); break;
         }
         return Rewrite(e);
     }

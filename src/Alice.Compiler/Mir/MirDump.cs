@@ -8,7 +8,7 @@ namespace Alice.Compiler.Mir;
 /// `@file:line:col+len` with a <see cref="MStmt.Span"/>) after a statement. Bodies appear in emission order.
 /// Tests assert this form instead of C# text.
 /// </summary>
-public sealed class MirDump
+public sealed partial class MirDump
 {
     [ThreadStatic] static MirDump? active;
 
@@ -180,6 +180,8 @@ public sealed class MirDump
                     return head + "\n" + inner.sb + new string(' ', ind * 2) + ")";
                 }
         }
+        if (CoreIterators(e) is { } iter) return iter;
+        if (CoreParallel(e) is { } par) return par;
         return "(" + e.GetType().Name + ")";
     }
 }

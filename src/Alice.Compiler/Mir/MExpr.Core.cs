@@ -7,6 +7,12 @@ namespace Alice.Compiler.Mir;
 // spelling is derived from the typed fields once, in the constructor, and the passes and the C# printer keep
 // reading Text unchanged (byte-identical output). The fields are get-only so Text cannot drift from them. D0.9 ports
 // the passes to the fields and drops the MCode base.
+//
+// Binder gaps (count toward the "MCode deleted" gate like AirRawCs; the fix is binder resolution, not a node):
+//   AirName sites: Lowerer.Calls.cs `"field" when soa` (SoA store path), Lowerer.Expressions.cs Name() SoA store path,
+//   Name() fallback for an unresolved name, Const() ConstPath.OwnerText, Const() unresolved constant path.
+//   AirRawCs sites: Lowerer.Statements.cs event-adapter lambda, `gpu for` reduction value (printed before the passes
+//   so the kernel stays byte-identical; making it typed is an ADR 0032 follow-up).
 
 /// <summary>Literal kinds of <see cref="AirConst"/>; `nil` is <see cref="AirNull"/>.</summary>
 public enum AirConstKind { Int, Float, Char, String, Bool }
@@ -16,6 +22,8 @@ public sealed class AirConst : MCode
 {
     public AirConstKind Kind { get; }
     public string Literal { get; }
+    /// <summary>The CLR value when the constant was built from one (<see cref="Of"/>), else null.</summary>
+    public object? Value { get; private init; }
 
     public AirConst(AirConstKind kind, string literal, AirType? type = null) : base(kind == AirConstKind.String ? "\"" + literal + "\"" : literal)
     {
@@ -30,6 +38,38 @@ public sealed class AirConst : MCode
 
     /// <summary>A string literal from an already C#-escaped body.</summary>
     public static AirConst Str(string escaped) => new(AirConstKind.String, escaped, new AirType.Prim(PrimKind.String));
+
+    /// <summary>
+    /// A constant from a CLR value (int, long, bool, char, string), spelled as C# source: `5`, `5L`, `'\''`,
+    /// `"a\"b\n"`. Its type is the value's.
+    /// </summary>
+    public static AirConst Of(object value, AirType? type = null) => value switch
+    {
+        int i => new(AirConstKind.Int, i.ToString(CultureInfo.InvariantCulture), type ?? new AirType.Prim(PrimKind.Int)) { Value = value },
+        long l => new(AirConstKind.Int, l.ToString(CultureInfo.InvariantCulture) + "L", type ?? new AirType.Prim(PrimKind.Long)) { Value = value },
+        bool b => new(AirConstKind.Bool, b ? "true" : "false", type ?? new AirType.Prim(PrimKind.Bool)) { Value = value },
+        char ch => new(AirConstKind.Char, "'" + Escape(ch.ToString(), '\'') + "'", type ?? new AirType.Prim(PrimKind.Char)) { Value = value },
+        string s => new(AirConstKind.String, Escape(s, '"'), type ?? new AirType.Prim(PrimKind.String)) { Value = value },
+        _ => throw new ArgumentException("no AIR constant for " + value.GetType().Name),
+    };
+
+    /// <summary>C# escapes for a char or string literal body.</summary>
+    public static string Escape(string s, char quote)
+    {
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (char ch in s)
+            sb.Append(ch switch
+            {
+                '\\' => "\\\\",
+                '\n' => "\\n",
+                '\r' => "\\r",
+                '\t' => "\\t",
+                '\0' => "\\0",
+                _ when ch == quote => "\\" + quote,
+                _ => ch.ToString(),
+            });
+        return sb.ToString();
+    }
 
     /// <summary>The kinds of <see cref="Syntax.LitExpr.Kind"/> except `nil`.</summary>
     public static AirConstKind KindOf(string litKind) => litKind switch

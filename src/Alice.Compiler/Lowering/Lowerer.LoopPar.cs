@@ -80,7 +80,7 @@ public sealed partial class Lowerer
         string start = Temp("a"), count = Temp("n");
         pre.Add(new MDecl { Name = start, TypeCs = "int", Init = Expr(r.A) });
         var end = Expr(r.B);
-        pre.Add(new MDecl { Name = count, TypeCs = "int", Init = new MCode($"{Backend.Printer.E(end)} - {start}{(r.Excl ? "" : " + 1")}") });
+        pre.Add(new MDecl { Name = count, TypeCs = "int", Init = new AirTripCount { End = end, Start = AirLeaf.Name(start, AirLeaf.Int), Inclusive = !r.Excl, Type = AirLeaf.Int } });
 
         // serial path: the ordinary loop
         var serial = new List<MStmt> { SerialFor(f) };
@@ -99,45 +99,59 @@ public sealed partial class Lowerer
         inParallelGen = saved;
         var chunk = new List<MStmt>();
         string? accT = plan.Acc != null ? TypeCs(plan.Acc.Type) : null;
-        if (plan.Acc != null) chunk.Add(new MDecl { Name = plan.Acc.CsName, TypeCs = accT, Init = new MCode("default") });
+        var accA = plan.Acc?.Type.ToAir();
+        if (plan.Acc != null) chunk.Add(new MDecl { Name = plan.Acc.CsName, TypeCs = accT, Init = AirLeaf.Default(accA) });
         chunk.AddRange(bodyPre);
         // chunk bounds lie in [0, count]: a literal range start bounds the counter from below
         long? minStart = r.A is LitExpr { Kind: "int" } ls && long.TryParse(ls.Text.Replace("_", ""), out long sv) ? sv : null;
-        chunk.Add(new MFor { VarType = "int", Var = i, Start = new MCode($"{start} + {lo}"), Cmp = "<", End = new MCode($"{start} + {hi}"), Body = body, MinStart = minStart });
-        string grain = plan.Heavy ? "1" : "8192";
+        chunk.Add(new MFor { VarType = "int", Var = i, Start = Offset(start, lo), Cmp = "<", End = Offset(start, hi), Body = body, MinStart = minStart });
+        int grain = plan.Heavy ? 1 : 8192;
         string helper = $"__parfor_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
         var ps = captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}").Append($"int {start}").Append($"int {count}");
         var args = captured.Select(l => l.CsName).Append(start).Append(count);
         var hp = new Backend.Printer("", 1);
         if (plan.Acc != null)
         {
-            chunk.Add(new MReturn { Value = new MCode(plan.Acc.CsName) });
+            chunk.Add(new MReturn { Value = AirLeaf.Name(plan.Acc.CsName, accA) });
             hp.Root(new MReturn
             {
-                Value = new MCall
+                Value = new AirPar
                 {
-                    Target = new MCode("global::Alice.Runtime.Par"),
-                    Name = $"Reduce<{accT}>",
-                    Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk, Hot = true }, new MCode("static (x, y) => x + y"), new MCode(grain) },
+                    Kind = AirParKind.Reduce,
+                    ResultCs = accT,
+                    Count = AirLeaf.Name(count, AirLeaf.Int),
+                    Kernel = new MLambda { Params = { lo, hi }, Body = chunk, Hot = true },
+                    Combine = Combine("+", "x", "y"),
+                    Grain = grain,
+                    Type = accA,
                 },
             });
             Extra.Add($"private {HelperStatic}{accT} {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
         }
         else
         {
-            hp.Root(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(count), new MLambda { Params = { lo, hi }, Body = chunk, Hot = true }, new MCode(grain) } } });
+            hp.Root(new MExprStmt { E = new AirPar { Kind = AirParKind.Range, Count = AirLeaf.Name(count, AirLeaf.Int), Kernel = new MLambda { Params = { lo, hi }, Body = chunk, Hot = true }, Grain = grain, Type = AirLeaf.Void } });
             Extra.Add($"private {HelperStatic}void {helper}({string.Join(", ", ps)})\n{{\n{hp}}}\n");
         }
-        MStmt Dispatch(string from, string n)
+        MStmt Dispatch(string from, MExpr n)
         {
-            string call = $"{helper}({string.Join(", ", captured.Select(l => l.CsName).Append(from).Append(n))})";
+            var call = new MCall
+            {
+                Name = helper,
+                Args = captured.Select(l => (MExpr)AirLeaf.Name(l.CsName, l.Type.ToAir())).Append(AirLeaf.Name(from, AirLeaf.Int)).Append(n).ToList(),
+                Type = accA ?? AirLeaf.Void,
+            };
             return plan.Acc != null
-                ? new MAssign { Target = new MCode(plan.Acc.CsName), Op = "+=", Value = new MCode(call) }
-                : new MExprStmt { E = new MCode(call) };
+                ? new MAssign { Target = AirLeaf.Name(plan.Acc.CsName, accA), Op = "+=", Value = call }
+                : new MExprStmt { E = call };
         }
-        string min = plan.Heavy || f.Par ? "2" : Threshold.ToString();
-        string distinct = string.Concat(aliasGuards.Select(g => $" && !global::System.Object.ReferenceEquals({g.W.CsName}, {g.R.CsName})"));
-        var cond = new MCode($"{count} >= {min} && global::Alice.Runtime.Par.Workers > 1{distinct}");
+        var cond = new AirParGuard
+        {
+            Count = AirLeaf.Name(count, AirLeaf.Int),
+            Min = plan.Heavy || f.Par ? 2 : Threshold,
+            Distinct = aliasGuards.Select(g => new AirReferenceEqualsGuard { W = AirLeaf.Name(g.W.CsName, g.W.Type.ToAir()), R = AirLeaf.Name(g.R.CsName, g.R.Type.ToAir()), Type = AirLeaf.Bool }).ToList(),
+            Type = AirLeaf.Bool,
+        };
         // probe: run the first two iterations here and time the second (the first runs cold: cache misses, first-touch
         // page faults); at the top of iteration 2, 4, 8, ..., offload the rest only when the projected work pays for a dispatch
         // (Par.Offload). Short loops never JIT or wake the parallel machinery.
@@ -146,20 +160,39 @@ public sealed partial class Lowerer
             string t0 = Temp("t0");
             probe.Body.Insert(0, new MIf
             {
-                Cond = new MCode($"{i} == {start} + 1"),
-                Then = { new MAssign { Target = new MCode(t0), Value = new MCode("global::System.Diagnostics.Stopwatch.GetTimestamp()") } },
+                Cond = new AirParProbe { Kind = AirProbeKind.Second, I = AirLeaf.Name(i, AirLeaf.Int), Start = AirLeaf.Name(start, AirLeaf.Int), Type = AirLeaf.Bool },
+                Then = { new MAssign { Target = AirLeaf.Name(t0, AirLeaf.Long), Value = new AirParProbe { Kind = AirProbeKind.Timestamp, Type = AirLeaf.Long } } },
                 Else = [new MIf
                 {
                     // retried at k = 2, 4, 8, ... iterations: leading iterations can be far cheaper than the rest
                     // (mandelbrot's edge rows escape at once), and one sample would pin the whole loop serial
-                    Cond = new MCode($"{i} - {start} >= 2 && (({i} - {start}) & ({i} - {start} - 1)) == 0 && global::Alice.Runtime.Par.Offload({t0}, {i} - {start} - 1, {count} - ({i} - {start}))"),
-                    Then = { Dispatch(i, $"{count} - ({i} - {start})"), new MBreak() },
+                    Cond = new AirParProbe
+                    {
+                        Kind = AirProbeKind.Offload,
+                        I = AirLeaf.Name(i, AirLeaf.Int),
+                        Start = AirLeaf.Name(start, AirLeaf.Int),
+                        T0 = AirLeaf.Name(t0, AirLeaf.Long),
+                        Count = AirLeaf.Name(count, AirLeaf.Int),
+                        Type = AirLeaf.Bool,
+                    },
+                    // the iterations left: count - (i - start)
+                    Then = { Dispatch(i, Remaining()), new MBreak() },
                 }],
             });
-            return new MIf { Cond = cond, Then = { new MDecl { Name = t0, TypeCs = "long", Init = new MCode("0") }, probe }, Else = serial };
+            return new MIf { Cond = cond, Then = { new MDecl { Name = t0, TypeCs = "long", Init = AirLeaf.Lit("0", AirLeaf.Long) }, probe }, Else = serial };
         }
-        return new MIf { Cond = cond, Then = { Dispatch(start, count) }, Else = serial };
+        return new MIf { Cond = cond, Then = { Dispatch(start, AirLeaf.Name(count, AirLeaf.Int)) }, Else = serial };
+
+        MExpr Remaining() => new MBinary
+        {
+            Op = AirBinOp.Sub, Type = AirLeaf.Int, L = AirLeaf.Name(count, AirLeaf.Int),
+            R = new MBinary { Op = AirBinOp.Sub, Type = AirLeaf.Int, L = AirLeaf.Name(i, AirLeaf.Int), R = AirLeaf.Name(start, AirLeaf.Int) },
+        };
     }
+
+    /// <summary>`start + lo`: a chunk bound of the parallel helper's loop.</summary>
+    static AirOffset Offset(string start, string bound) =>
+        new() { Base = AirLeaf.Name(start, AirLeaf.Int), Offset = AirLeaf.Name(bound, AirLeaf.Int), Type = AirLeaf.Int };
 
     /// <summary>
     /// Cross-iteration dependencies through arrays. A written array may be read only at the loop index (`a[i] = a[i - 1]`

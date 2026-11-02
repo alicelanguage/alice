@@ -54,33 +54,50 @@ public sealed partial class Lowerer
         if (captured == null) { pre.AddRange(serial); return rSerial; }
         string helper = $"__par_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
         string ps = string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
-        string args = string.Join(", ", captured.Select(l => l.CsName));
-        var big = new MCode($"{n} >= {Threshold} && global::Alice.Runtime.Par.Workers > 1");
+        MCall HelperCall(AirType? t) => new() { Name = helper, Args = captured.Select(l => (MExpr)AirLeaf.Name(l.CsName, l.Type.ToAir())).ToList(), Type = t };
+        var big = new AirParGuard { Count = n(), Min = Threshold, Type = AirLeaf.Bool };
         var hp = new Backend.Printer("", 1);
         if (resultType == null)
         {
-            var range = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel } } };
+            var range = new AirPar { Kind = AirParKind.Range, Count = n(), Kernel = new MLambda { Params = { lo, hi }, Body = kernel }, Type = AirLeaf.Void };
             hp.Root(new MExprStmt { E = range });
             Extra.Add($"private static void {helper}({ps})\n{{\n{hp}}}\n");
-            pre.Add(new MIf { Cond = big, Then = { new MExprStmt { E = new MCode($"{helper}({args})") } }, Else = serial });
+            pre.Add(new MIf { Cond = big, Then = { new MExprStmt { E = HelperCall(AirLeaf.Void) } }, Else = serial });
             return MCode.Empty;
         }
         string res = Temp("pr");
         string T = TypeCs(resultType);
+        var rt = resultType.ToAir();
         kernel.Add(new MReturn { Value = rPar });
-        var reduce = new MCall
+        var reduce = new AirPar
         {
-            Target = new MCode("global::Alice.Runtime.Par"),
-            Name = $"Reduce<{T}>",
-            Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode(combine!) },
+            Kind = AirParKind.Reduce,
+            ResultCs = T,
+            Count = n(),
+            Kernel = new MLambda { Params = { lo, hi }, Body = kernel },
+            Combine = Combine(combine!, "a", "b"),
+            Type = rt,
         };
         hp.Root(new MReturn { Value = reduce });
         Extra.Add($"private static {T} {helper}({ps})\n{{\n{hp}}}\n");
-        pre.Add(new MDecl { Name = res, TypeCs = T, Init = new MCode("default") });
-        serial.Add(new MAssign { Target = new MCode(res), Value = rSerial });
-        pre.Add(new MIf { Cond = big, Then = { new MAssign { Target = new MCode(res), Value = new MCode($"{helper}({args})") } }, Else = serial });
-        return new MCode(res);
+        pre.Add(new MDecl { Name = res, TypeCs = T, Init = AirLeaf.Default(rt) });
+        serial.Add(new MAssign { Target = AirLeaf.Name(res, rt), Value = rSerial });
+        pre.Add(new MIf { Cond = big, Then = { new MAssign { Target = AirLeaf.Name(res, rt), Value = HelperCall(rt) } }, Else = serial });
+        return AirLeaf.Name(res, rt);
     }
+
+    /// <summary>
+    /// The combine lambda of a parallel reduction: `static (a, b) => a + b` for "+", `static (a, b) =>
+    /// global::System.Math.Max(a, b)` for "Max"/"Min".
+    /// </summary>
+    static MLambda Combine(string op, string x, string y) => new()
+    {
+        Static = true,
+        Params = { x, y },
+        ExprBody = op == "+"
+            ? new MBinary { Op = AirBinOp.Add, L = AirLeaf.Name(x), R = AirLeaf.Name(y) }
+            : new MCall { Target = AirLeaf.TypeName("global::System.Math"), Name = op, Args = { AirLeaf.Name(x), AirLeaf.Name(y) } },
+    };
 
     /// <summary>Locals the kernel reads from the enclosing method (passed by value to the helper); null if unsupported.</summary>
     List<LocalSym>? Captured(CallExpr sink)
@@ -107,8 +124,11 @@ public sealed partial class Lowerer
         return outside.All(l => l.Type.IsKnown) ? outside : null;
     }
 
-    /// <summary>(element count expr, combine lambda, result type) when the call can run in parallel; null otherwise.</summary>
-    (string N, string? Combine, AType? Result)? ParallelPlan(CallExpr sink, string name)
+    /// <summary>
+    /// (element count, combine operator for <see cref="Combine"/>, result type) when the call can run in parallel; null
+    /// otherwise. The count is a factory: every use gets its own node.
+    /// </summary>
+    (Func<MExpr> N, string? Combine, AType? Result)? ParallelPlan(CallExpr sink, string name)
     {
         var stages = new List<Stage>();
         Syntax.Expr src = sink.Recv!;
@@ -121,8 +141,8 @@ public sealed partial class Lowerer
         if (src is not (NameExpr { Res: "local" } or IvarExpr)) return null;
         bool soaSrc = src.Type.Sym?.SoaOf != null;
         if (src.Type.Kind != "array" && !soaSrc) return null;
-        string s = Backend.Printer.E(Expr(src));
-        string n = soaSrc ? s + ".Count" : s + ".Length";
+        var s = Expr(src);
+        Func<MExpr> n = () => new AirLength { Target = s, Member = soaSrc ? "Count" : "Length", Type = AirLeaf.Int };
         var sb = sink.Block;
         if (sb != null && (sb.ParamSyms.Count != 1 || !PureBlock(sb, soaSrc && name == "each" ? sb.ParamSyms[0] : null))) return null;
         if (soaSrc && stages.Count > 0) return null;
@@ -135,12 +155,12 @@ public sealed partial class Lowerer
             case "sum":
                 {
                     var t = sb != null ? sb.Result : elem;
-                    return t.IsNumeric ? (n, "static (a, b) => a + b", t) : null;
+                    return t.IsNumeric ? (n, "+", t) : null;
                 }
             case "count" when sb != null || stages.Any(x => x.Kind != "map"):
-                return (n, "static (a, b) => a + b", AType.Int);
+                return (n, "+", AType.Int);
             case "max" or "min" when sb == null && elem.IsNumeric && !soaSrc:
-                return (n, $"static (a, b) => global::System.Math.{(name == "max" ? "Max" : "Min")}(a, b)", elem);
+                return (n, name == "max" ? "Max" : "Min", elem);
         }
         return null;
     }

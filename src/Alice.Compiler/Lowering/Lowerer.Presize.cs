@@ -29,8 +29,9 @@ public sealed partial class Lowerer
         int adds = f.Body.Count(s => IsAdd(s, l));
         int mentions = Walk(f.Body).Count(e => e is NameExpr { Sym: LocalSym x } && x == l);
         if (adds != 1 || mentions != 1) return null;
-        var count = $"global::System.Math.Max(0, ({Print(Expr(r.B))}) - ({Print(Expr(r.A))}){(r.Excl ? "" : " + 1")})";
-        return new MExprStmt { E = new MCall { Target = new MCode(l.CsName), Name = method, Args = { new MCode(count) } } };
+        var to = Optimized(Expr(r.B));
+        var count = new AirPresizeCount { To = to, From = Optimized(Expr(r.A)), Inclusive = !r.Excl, Type = AirLeaf.Int };
+        return new MExprStmt { E = new MCall { Target = AirLeaf.Name(l.CsName, l.Type.ToAir()), Name = method, Args = { count }, Type = AirLeaf.Void } };
     }
 
     static bool IsAdd(Stmt s, LocalSym l) => s switch
@@ -40,10 +41,11 @@ public sealed partial class Lowerer
         _ => false,
     };
 
-    static string Print(MExpr e)
+    /// <summary>A bound run through the MIR passes on its own (the presize count is frozen in the method body).</summary>
+    static MExpr Optimized(MExpr e)
     {
-        var p = new Backend.Printer("", 0);
-        p.Root(new MExprStmt { E = e });
-        return p.ToString().Trim().TrimEnd(';');
+        var s = new MExprStmt { E = e };
+        Optimizer.Pipeline.Run([s]);
+        return s.E;
     }
 }
