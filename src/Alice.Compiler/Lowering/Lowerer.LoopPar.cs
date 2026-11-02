@@ -201,7 +201,73 @@ public sealed partial class Lowerer
                 Guard(w, r);
             }
         }
+        if (writes.Count == 0) return guards;
+        // an array read whole (handed to a callee, `xs.sum`) may be read at any index, also another iteration's cell
+        var indexed = new HashSet<Syntax.Expr>();
+        foreach (var e in WalkReads(body))
+            if (e is IndexExpr ix) indexed.Add(ix.Target);
+            else if (SizeOf(e) is { } sized) indexed.Add(sized);
+        foreach (var e in WalkReads(body))
+        {
+            // a callee may read arrays this body never names: only those reached through its array parameters are
+            // checked here (as the arguments of the call); fields, globals and anything else keep the loop serial
+            if (Callee(e) is { } m && !Overrides(m).All(o => ArraysOnlyThroughParams(o, new()))) return null;
+            if (e.Type?.Kind != "array" || indexed.Contains(e) || e is NewExpr or ArrayLit) continue;
+            if (e is NameExpr { Sym: LocalSym sa } && stackArrays.ContainsKey(sa)) continue;
+            var r = e is NameExpr { Sym: LocalSym rl } && e.Type.Elem is { Kind: "prim" } ? rl : null;
+            foreach (var (w, _) in writes)
+            {
+                if (r == w) return null;
+                if (e.Type.Elem is { Kind: "prim" } && !MayAlias(w.Type, e.Type)) continue;
+                if (r == null) return null;   // its elements may be the written array, or no local to compare at run time
+                Guard(w, r);
+            }
+        }
         return guards;
+    }
+
+    /// <summary>The array whose size `e` reads (`xs.size`, `xs.Length`): no element is read.</summary>
+    static Syntax.Expr? SizeOf(Syntax.Expr e) => e switch
+    {
+        CallExpr { Res: "ext", Args.Count: 0, Block: null, Recv: { } r } c when Binder.Mangle(c.Name) is "size" or "length" => r,
+        CallExpr { Name: "Length", Args.Count: 0, Recv: { } r } => r,
+        _ => null,
+    };
+
+    /// <summary>The Alice method (or constructor) an expression runs, if any.</summary>
+    static MethodSym? Callee(Syntax.Expr e) => e switch
+    {
+        CallExpr { Res: "alice", Sym: MethodSym m } => m,
+        NameExpr { Res: "call", Sym: MethodSym m } => m,
+        NewExpr { AsCall: null, Type.Sym: { } ts } n => ts.Methods.TryGetValue("initialize", out var list) ? list.FirstOrDefault(c => c.Accepts(n.Args.Count)) : null,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Every array m reads is reached through one of its array parameters (or is allocated inside it): no field,
+    /// global or other object leads it to an array, so the caller's arguments name everything it can read.
+    /// </summary>
+    bool ArraysOnlyThroughParams(MethodSym m, HashSet<MethodSym> visiting)
+    {
+        if (m.Decl is not { HasBody: true } d) return false;
+        if (!visiting.Add(m)) return true;
+        var assigned = WalkStmts(d.Body).OfType<Assign>().Select(Assigned).OfType<LocalSym>().ToHashSet();
+        var parms = m.Params.Where(p => p.Type.Kind == "array").Select(p => p.Name).ToHashSet();
+        var fresh = FreshArrays(d.Body);
+        var targets = WalkStmts(d.Body).OfType<Assign>().Select(a => a.Target).Where(t => t is NameExpr or IvarExpr).ToHashSet();
+        bool Rooted(Syntax.Expr x) => x switch
+        {
+            NameExpr { Sym: LocalSym l } => fresh.Contains(l) || parms.Contains(l.Name) && !assigned.Contains(l),
+            IndexExpr ix => ix.Target.Type?.Kind == "array" && Rooted(ix.Target),
+            NewExpr or ArrayLit => true,
+            _ => false,
+        };
+        foreach (var e in Walk(d.Body))
+        {
+            if (Callee(e) is { } c && !Overrides(c).All(o => ArraysOnlyThroughParams(o, visiting))) return false;
+            if (e.Type?.Kind == "array" && !targets.Contains(e) && !Rooted(e)) return false;
+        }
+        return true;
     }
 
     /// <summary>Arrays of distinct primitive element types are distinct objects; anything else may share storage.</summary>

@@ -206,6 +206,11 @@ public sealed partial class Lowerer
             if (s is Assign a && a.Op == "=" && CounterUpdate(a) is { } cu && cu.Ix.Args[0].Value is NameExpr k && k.Sym == w) into.Add(a);
     }
 
+    /// <summary>
+    /// Every statement reachable from `body`: nested blocks, `using` bodies, and the statements of if/case/begin used
+    /// as a value (StmtExpr, also an inlined `instance_eval` body). Not the bodies of blocks, lambdas or `spawn`: those
+    /// run later or elsewhere and are separate scopes (Walk reaches their expressions).
+    /// </summary>
     internal static IEnumerable<Stmt> WalkStmts(List<Stmt> body)
     {
         foreach (var s in body)
@@ -218,66 +223,102 @@ public sealed partial class Lowerer
                 ForStmt fr => [fr.Body],
                 CaseStmt cs => cs.Whens.Select(x => x.Body).Concat(cs.Else != null ? [cs.Else] : []),
                 BeginStmt b => new[] { b.Body }.Concat(b.Rescues.Select(r => r.Body)).Concat(b.Ensure != null ? [b.Ensure] : []),
+                UsingStmt u => [u.Body],
                 _ => [],
             };
             foreach (var k in kids)
                 foreach (var x in WalkStmts(k)) yield return x;
+            foreach (var r in Roots(s))
+                if (r != null)
+                    foreach (var se in StmtValues(r))
+                        foreach (var x in WalkStmts([se.Stmt])) yield return x;
         }
     }
+
+    /// <summary>The expressions a statement evaluates itself (not those of its nested statement lists).</summary>
+    static IEnumerable<Syntax.Expr?> Roots(Stmt s) => s switch
+    {
+        ExprStmt es => [es.Expr],
+        Assign a => [a.Target, a.Value],
+        LocalDecl d => [d.Value],
+        MultiAssign m => m.Values,
+        IfStmt i => i.Conds,
+        WhileStmt wl => [wl.Cond],
+        ForStmt fr => [fr.Iter],
+        CaseStmt cs => cs.Whens.SelectMany(x => x.Patterns.Append(x.Guard)).Prepend(cs.Subject),
+        ReturnStmt r => [r.Value],
+        NextStmt n => [n.Value],
+        RaiseStmt rs => [rs.Value],
+        UsingStmt u => [u.Value],
+        BeginStmt b => [b.Lock],
+        _ => [],
+    };
+
+    /// <summary>if/case/begin used as a value directly inside e (not inside blocks, lambdas or spawn, nor nested ones).</summary>
+    static IEnumerable<StmtExpr> StmtValues(Syntax.Expr e)
+    {
+        if (StmtValue(e) is { } se) { yield return se; yield break; }
+        if (e is LambdaExpr) yield break;
+        foreach (var k in Kids(e))
+            if (k != null)
+                foreach (var x in StmtValues(k)) yield return x;
+    }
+
+    static StmtExpr? StmtValue(Syntax.Expr e) => e as StmtExpr ?? (e is CallExpr { Res: "inline", Sym: StmtExpr inl } ? inl : null);
 
     /// <summary>All expression nodes reachable from statements (used for simple use-analysis).</summary>
     internal static IEnumerable<Syntax.Expr> Walk(List<Stmt> body)
     {
+        // WalkStmts already reaches the statements of if/case/begin values: their expressions are walked once, there
         foreach (var s in WalkStmts(body))
-        {
-            IEnumerable<Syntax.Expr?> roots = s switch
-            {
-                ExprStmt es => [es.Expr],
-                Assign a => [a.Target, a.Value],
-                LocalDecl d => [d.Value],
-                MultiAssign m => m.Values,
-                IfStmt i => i.Conds,
-                WhileStmt wl => [wl.Cond],
-                ForStmt fr => [fr.Iter],
-                CaseStmt cs => cs.Whens.SelectMany(x => x.Patterns).Prepend(cs.Subject),
-                ReturnStmt r => [r.Value],
-                NextStmt n => [n.Value],
-                RaiseStmt rs => [rs.Value],
-                _ => [],
-            };
-            foreach (var r in roots)
+            foreach (var r in Roots(s))
                 if (r != null)
-                    foreach (var e in WalkExpr(r)) yield return e;
-        }
+                    foreach (var e in WalkExpr(r, stmtValues: false)) yield return e;
     }
 
-    static IEnumerable<Syntax.Expr> WalkExpr(Syntax.Expr e)
+    /// <summary>
+    /// Every expression node under e, including the bodies of blocks, lambdas and `spawn` and the statements of
+    /// if/case/begin used as a value. A use analysis must see all of them: a mention it skips is a use it never checks.
+    /// </summary>
+    static IEnumerable<Syntax.Expr> WalkExpr(Syntax.Expr e) => WalkExpr(e, stmtValues: true);
+
+    static IEnumerable<Syntax.Expr> WalkExpr(Syntax.Expr e, bool stmtValues)
     {
         yield return e;
-        IEnumerable<Syntax.Expr?> kids = e switch
-        {
-            CallExpr c => c.Args.Select(a => a.Value).Prepend(c.Recv),
-            NewExpr n => n.Args.Select(a => a.Value),
-            IndexExpr ix => ix.Args.Select(a => a.Value).Prepend(ix.Target),
-            BinaryExpr b => [b.L, b.R],
-            UnaryExpr u => [u.E],
-            TernaryExpr t => [t.C, t.A, t.B],
-            RangeExpr r => [r.A, r.B],
-            ArrayLit a => a.Items,
-            HashLit h => h.Keys.Concat(h.Values),
-            TupleLit tl => tl.Items,
-            InterpExpr ie => ie.Holes,
-            TypeTestExpr tt => [tt.E],
-            InvokeExpr inv => inv.Args.Select(a => a.Value).Prepend(inv.Target),
-            YieldExpr y => y.Args.Select(a => a.Value),
-            _ => [],
-        };
-        foreach (var k in kids)
+        foreach (var k in Kids(e))
             if (k != null)
-                foreach (var x in WalkExpr(k)) yield return x;
+                foreach (var x in WalkExpr(k, stmtValues)) yield return x;
         if (e is LambdaExpr lam)
             foreach (var x in Walk(lam.Body)) yield return x;
         if (e is CallExpr { Block: { } blk })
             foreach (var x in Walk(blk.Body)) yield return x;
+        if (e is NewExpr { AsCall: null, Block: { } nblk })
+            foreach (var x in Walk(nblk.Body)) yield return x;
+        if (stmtValues && StmtValue(e) is { } se)
+            foreach (var x in Walk([se.Stmt])) yield return x;
     }
+
+    /// <summary>Direct sub-expressions (block, lambda and statement bodies excluded).</summary>
+    static IEnumerable<Syntax.Expr?> Kids(Syntax.Expr e) => e switch
+    {
+        CallExpr c => c.Args.Select(a => a.Value).Prepend(c.Recv),
+        NewExpr { AsCall: { } ac } => [ac],   // `Add(5)`: the call shares the arguments
+        NewExpr n => n.Args.Select(a => a.Value),
+        IndexExpr ix => ix.Args.Select(a => a.Value).Prepend(ix.Target),
+        BinaryExpr b => [b.L, b.R],
+        UnaryExpr u => [u.E],
+        TernaryExpr t => [t.C, t.A, t.B],
+        RangeExpr r => [r.A, r.B],
+        ArrayLit a => a.Items,
+        HashLit h => h.Keys.Concat(h.Values),
+        TupleLit tl => tl.Items,
+        InterpExpr ie => ie.Holes,
+        TypeTestExpr tt => [tt.E],
+        InvokeExpr inv => inv.Args.Select(a => a.Value).Prepend(inv.Target),
+        YieldExpr y => y.Args.Select(a => a.Value),
+        SuperExpr { Args: { } sa } => sa.Select(a => a.Value),
+        AwaitExpr aw => [aw.E],
+        SpawnExpr sp => [sp.Body],   // the task body is a lambda: every mention inside is a capture
+        _ => [],
+    };
 }
