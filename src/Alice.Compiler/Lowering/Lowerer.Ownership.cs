@@ -158,10 +158,11 @@ public sealed partial class Lowerer
         if (InPlaceMap(a, l) is not { } blk) return false;
         string i = Temp("i");
         var p = blk.ParamSyms[0];
-        var body = new List<MStmt> { new MDecl { Name = p.CsName, Init = new MIndex { Target = new MCode(l.CsName), Args = { new MCode(i) } } } };
+        var lt = l.Type.ToAir();
+        var body = new List<MStmt> { new MDecl { Name = p.CsName, Init = new MIndex { Target = AirLeaf.Name(l.CsName, lt), Args = { AirLeaf.Name(i, AirLeaf.Int) } } } };
         var value = Isolated(((ExprStmt)blk.Body[0]).Expr, body);
-        body.Add(new MAssign { Target = new MIndex { Target = new MCode(l.CsName), Args = { new MCode(i) } }, Value = value });
-        o.Add(new MFor { Var = i, VarType = "int", Start = new MCode("0"), End = new MCode(l.CsName + ".Length"), Body = body });
+        body.Add(new MAssign { Target = new MIndex { Target = AirLeaf.Name(l.CsName, lt), Args = { AirLeaf.Name(i, AirLeaf.Int) } }, Value = value });
+        o.Add(new MFor { Var = i, VarType = "int", Start = AirLeaf.Lit("0", AirLeaf.Int), End = new AirLength { Target = AirLeaf.Name(l.CsName, lt), Type = AirLeaf.Int }, Body = body });
         return true;
     }
 
@@ -450,7 +451,7 @@ public sealed partial class Lowerer
         if (a.Declares == null && TryInPlaceMap(o, a, l)) return true;
         bool list = el.StartsWith(ListPrefix) || el.StartsWith(DictPrefix);   // not an array: no RentLength
         MExpr value = Fresh(a.Value) && Unwrap(a.Value) is NewExpr ne
-            ? new MCall { Target = new MCode(OwnPool(el)), Name = "Rent", Args = ne.Args.Select(x => Expr(x.Value!)).ToList() }
+            ? new AirRent { PoolCs = OwnPool(el), Args = ne.Args.Select(x => Expr(x.Value!)).ToList(), Type = l.Type.ToAir() }
             : Expr(a.Value);
         if (releaseBefore.Contains(a))
         {
@@ -458,7 +459,7 @@ public sealed partial class Lowerer
             {
                 string tmp = Temp("own");
                 o.Add(new MDecl { Name = tmp, Init = value });
-                value = new MCode(tmp);
+                value = AirLeaf.Name(tmp, l.Type.ToAir());
             }
             o.Add(Release(l, el));
         }
@@ -466,17 +467,16 @@ public sealed partial class Lowerer
             o.Add(new MDecl
             {
                 Name = l.CsName, Init = value,
-                RentLength = !list && Unwrap(a.Value) is NewExpr { Args: [{ Value: NameExpr { Sym: LocalSym n } }] } && value is MCall { Name: "Rent" } ? n.CsName : null,
+                RentLength = !list && Unwrap(a.Value) is NewExpr { Args: [{ Value: NameExpr { Sym: LocalSym n } }] } && value is AirRent ? n.CsName : null,
             });
-        else o.Add(new MAssign { Target = new MCode(l.CsName), Value = value });
+        else o.Add(new MAssign { Target = AirLeaf.Name(l.CsName, l.Type.ToAir()), Value = value });
         return true;
     }
 
-    static MStmt Release(LocalSym l, string el) => new MExprStmt { E = new MCall
+    static MStmt Release(LocalSym l, string el) => new MExprStmt
     {
-        Target = new MCode(OwnPool(el)),
-        Name = "Release", Args = { new MCode(l.CsName) },
-    } };
+        E = new AirRelease { PoolCs = OwnPool(el), Target = AirLeaf.Name(l.CsName, l.Type.ToAir()), Type = AirLeaf.Void },
+    };
 
     /// <summary>Before an exit: release every owned local live there except the one being returned.</summary>
     void ReleaseOwnedAt(List<MStmt> o, Stmt exit, ref MExpr? value, Syntax.Expr? returned)
@@ -489,7 +489,7 @@ public sealed partial class Lowerer
         {
             string tmp = Temp("ret");
             o.Add(new MDecl { Name = tmp, Init = value });
-            value = new MCode(tmp);
+            value = AirLeaf.Name(tmp, value.Type);
         }
         foreach (var l in drop) o.Add(Release(l, owned[l]));
     }

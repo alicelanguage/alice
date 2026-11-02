@@ -4,7 +4,7 @@ using Alice.Compiler.Mir;
 namespace Alice.Compiler.Backend;
 
 /// <summary>Prints MIR as C#. Every statement carries a #line directive back to the Alice source.</summary>
-public sealed class Printer
+public sealed partial class Printer
 {
     readonly StringBuilder sb = new();
     readonly string file;
@@ -142,7 +142,7 @@ public sealed class Printer
     }
 
     // a negative literal (`-5`) is not atomic: `-5.abs()` in C# is `-(5.abs())`
-    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp;
+    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr;
 
     static string P(MExpr e) => Atomic(e) ? E(e) : "(" + E(e) + ")";
 
@@ -209,6 +209,7 @@ public sealed class Printer
             case MArg a:
                 return a.Prefix + E(a.E);
         }
+        if (EParallel(e) is { } par) return par;
         throw new InvalidOperationException(e.GetType().Name);
     }
 

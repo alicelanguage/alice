@@ -120,6 +120,7 @@ public static class MirFacts
         MTuple t => t.Items,
         MPair p => [p.K, p.V],
         MArg a => [a.E],
+        AirParExpr p => p.Children(),
         _ => [],
     };
 
