@@ -163,6 +163,7 @@ public sealed partial class MirDump
                 }
         }
         if (CoreIterators(e) is { } iter) return iter;
+        if (CoreParallel(e) is { } par) return par;
         return "(" + e.GetType().Name + ")";
     }
 }

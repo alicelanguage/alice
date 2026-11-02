@@ -97,10 +97,3 @@ public sealed class AirStackBuffer : MExpr
     public string ElemCs = "";
     public int Length;
 }
-
-/// <summary>The parallel gate: `Size >= Min` and more than one worker. Shared shape with the Parallel lowerings.</summary>
-public sealed class AirParGate : MExpr
-{
-    public MExpr Size = null!;
-    public long Min;
-}

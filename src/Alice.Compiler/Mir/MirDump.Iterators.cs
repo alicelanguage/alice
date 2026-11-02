@@ -15,7 +15,6 @@ public sealed partial class MirDump
         AirAlternateLookup al => $"(alternate-lookup {al.KeyTypeCs} {E(al.Dict)})",
         AirSpanSplit sp => $"(span-split {E(sp.Str)} {E(sp.Sep)})",
         AirStackBuffer sb => $"(stack-buffer {sb.ElemCs} {sb.Length})",
-        AirParGate g => $"(par-gate {E(g.Size)} {g.Min})",
         _ => null,
     };
 

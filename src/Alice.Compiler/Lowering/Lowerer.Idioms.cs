@@ -144,7 +144,7 @@ public sealed partial class Lowerer
         spanKey = saved;
         MStmt serial = new MForeach { Vars = { range }, Coll = new AirSpanSplit { Str = str, Sep = sep }, Body = body };
         if (spanOnly && f.Body.Count == 1 && counters.Count == 1 && ParallelWordCount(counters[0], str, Backend.Printer.E(sep)) is { } par)
-            return new MIf { Cond = new AirParGate { Size = new MMember { Target = str, Name = "Length", Type = new AirType.Prim(PrimKind.Int) }, Min = Threshold, Type = new AirType.Prim(PrimKind.Bool) }, Then = { par }, Else = new List<MStmt> { serial } };
+            return new MIf { Cond = new AirParGuard { Count = new MMember { Target = str, Name = "Length", Type = new AirType.Prim(PrimKind.Int) }, Min = Threshold, Type = new AirType.Prim(PrimKind.Bool) }, Then = { par }, Else = new List<MStmt> { serial } };
         return serial;
     }
 

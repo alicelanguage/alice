@@ -136,13 +136,13 @@ Tick an item when a compiler or runtime change fixes it and the workload is re-m
 
 Language and compiler issues (repros in the next section):
 
-- [ ] 1. compound wrapping assignment `x &+= y` (AL0101)
-- [ ] 2. a UInt32 literal first assigned inside an `if` body is typed Int32 (AL0304)
-- [ ] 3. an enum constructor call as the argument of another does not parse (AL0101 "expected type")
-- [ ] 4. a top-level `[..._u32]` constant is emitted as `int[]`; errors land in the generated `.g.cs`
+- [x] 1. compound wrapping assignment `x &+= y` (AL0101) (fixed, not re-measured)
+- [x] 2. a UInt32 literal first assigned inside an `if` body is typed Int32 (AL0304) (fixed, not re-measured)
+- [x] 3. an enum constructor call as the argument of another does not parse (AL0101 "expected type") (fixed, not re-measured)
+- [x] 4. a top-level `[..._u32]` constant is emitted as `int[]`; errors land in the generated `.g.cs` (fixed, not re-measured)
 - [ ] 5. swapping two fresh array locals makes a fork leaf impure, so the caller's fork disappears
-- [ ] 6. `String#to_u32` reports a leaked .NET constraint error (AL0300) instead of "no such method"
-- [ ] 7. `UInt32 >> UInt32` is undefined (AL0301); shift counts must be Int32
+- [x] 6. `String#to_u32` reports a leaked .NET constraint error (AL0300) instead of "no such method" (fixed, not re-measured)
+- [x] 7. `UInt32 >> UInt32` is undefined (AL0301); shift counts must be Int32 (fixed, not re-measured)
 - [ ] 8. a sum-type constructor whose first argument is a qualified path (`T::N(T::L(2), a)`, `M::Node(M::Free, r)`) does not parse (AL0101; same root as 3)
 - [ ] 9. a local initialised with a nullary variant (`r = M::Free`) is typed as the variant, so `r = M::Node(..)` fails (AL0304)
 - [ ] 10. reading a top-level constant (`CUT = 3`, or `val cut = 3`) in a recursive method silently turns off fork/join

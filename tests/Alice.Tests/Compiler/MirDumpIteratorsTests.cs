@@ -31,7 +31,7 @@ public class MirDumpIteratorsTests
         Assert.Contains("(span-split `text` (const ' '):char)", dump);
         Assert.Contains("(alternate-lookup global::System.ReadOnlySpan<char> `counts`)", dump);
         Assert.Contains("assign (ref-or-add-default (local __alt", dump);
-        Assert.Contains("(par-gate (member Length `text`):int 65536):bool", dump);
+        Assert.Contains("(par-guard (member Length `text`):int 65536):bool", dump);
     }
 
     [Fact]

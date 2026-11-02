@@ -28,7 +28,6 @@ public sealed partial class Printer
         AirAlternateLookup al => $"{P(al.Dict)}.GetAlternateLookup<{al.KeyTypeCs}>()",
         AirSpanSplit sp => $"{P(sp.Str)}.AsSpan().Split({E(sp.Sep)})",
         AirStackBuffer sb => $"stackalloc {sb.ElemCs}[{sb.Length.ToString(CultureInfo.InvariantCulture)}]",
-        AirParGate g => $"{E(g.Size)} >= {g.Min.ToString(CultureInfo.InvariantCulture)} && global::Alice.Runtime.Par.Workers > 1",
         _ => null,
     };
 

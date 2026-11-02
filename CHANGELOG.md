@@ -3,6 +3,11 @@
 ## Unreleased
 
 - Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
+- AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
+  build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,
+  `AirForkable`, `AirRent`, `AirRelease`, `AirLength`, `AirTripCount`, `AirOffset`, `AirPresizeCount` in
+  `Mir/MExpr.Parallel.cs`; leaves via `AirLeaf`), with C# printing and `--air` dump forms. Emitted C# is byte-identical
+  on the corpus.
 - AIR foundation (backend plan D0.2/D0.3): MIR nodes gain an optional typed `AirType Type` and source `Span`
   (`MStmt.Line` reads the span's line when one is set). `AirType` is a closed sum (Prim, ClrRef, AliceType,
   TypeParam, Array, ByRef, Pointer, FnPtr, Tuple, Unknown, plus a nullable bit) whose `ToCs()` spells exactly what
@@ -13,12 +18,13 @@
 - AIR MCode removal batch 2 (backend plan D0.5): the allocation-free iterators, stream fusion and idiom rewrites
   (`Lowerer.Iterators/Fusion/Idioms`) build typed nodes instead of C# text: locals, literals, `default`, static
   receivers, and `AirRangeLength`, `AirRefOrAddDefault`, `AirRefOrNullRef`, `AirAlternateLookup`, `AirSpanSplit`,
-  `AirStackBuffer`, `AirParGate` (Mir/MExpr.Iterators.cs, printed by Printer.Iterators.cs, dumped by
+  `AirStackBuffer`, with air-b4's `AirParGuard` for the parallel gate (Mir/MExpr.Iterators.cs, printed by Printer.Iterators.cs, dumped by
   MirDump.Iterators.cs). Emitted C# is byte-identical on the corpus; loop starts the optimizer analyses stay its
   literal form until the optimizer reads AIR leaves.
 - Ruby core behaviour that needed the compiler: `Hash(K, V).new(default)` and `Hash(K, V).new { |h, k| ... }` build an
   `Alice.Runtime.DefaultHash` (missing keys read as the default, `h[k] += 1` counts from it; a block ending in `h[k] = v`
-  returns v), `Hash(K, V).new(capacity: n)` is the capacity; `to_i?`/`to_f?` are `Int32?`/`Float64?`, `match` is
+  returns v; a field or parameter declared `Hash(K, V)` that is only ever given such hashes is typed DefaultHash too),
+  `Hash(K, V).new(capacity: n)` is the capacity; `to_i?`/`to_f?` are `Int32?`/`Float64?`, `match` is
   `MatchData?`, `Hash#delete` is `V?`, `dup`/`clone` keep the receiver's type, multi-key `dig` is the leaf `V?`,
   `max(n)`/`min(n)` are arrays, `each_char`/`reverse_each`/`step` without a block are sequences; `slice_when` blocks
   get two elements; `filter_map` with a nilable value-type result compiles; `t[0]` on tuples and `kv[0]`/`kv[1]` on
