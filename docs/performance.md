@@ -42,6 +42,9 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | `a, b = f(x), g(y)` (pure, independent, recursive) | `Par.Fork` like the two-declaration form | `Lowerer.Fork` | `LoopParallelizeTests.Parallel_multi_assign_forks_like_bends_parallel_call` |
 | integer `+ - *` with operand ranges proven in-type (masks, shifts, widened Int32, literals) | unchecked (no `add.ovf`/`mul.ovf`, no throw path) | `Lowerer.Ranges` | `RangeTests.Masked_hash_arithmetic_is_unchecked`, `Possibly_overflowing_arithmetic_stays_checked` |
 | `x >= 2^31 ? x - 2^32 : x` with x proven in [0, 2^32) (and 8/16-bit forms) | `(long)(int)x`: one sign extension, no branch | `Lowerer.Ranges.TrySignExtend` | `RangeTests.Proven_sign_reinterpretation_is_one_sign_extension` |
+| `c ? a : b` on Int32/UInt32/Int64/UInt64, both arms names, literals or wrapping/bitwise arithmetic over them | `Branchless.U32(c, a, b)`: setcc + mask, no jump (RyuJIT makes `cmov` only outside loops); `c ? 1 : 0`, `x = c ? v : x` (conditional update) and arms that can throw stay ternaries | `Lowerer.Ranges.TypedSelect` + `Optimizer/Passes/BranchlessSelect` | `PerfShapeTests.Integer_select_over_names_is_branch_free`, `Other_selects_stay_ternaries`, `Conditional_update_stays_a_branch` |
+| `i = a` / `while i < N` (or `for`) with literal trip count <= 32, straight-line body (no call, break, nested loop), <= 1200 MIR nodes unrolled | N - a blocks with `i` replaced by its literal (`rk[3]`), `i` keeps its final value | `Optimizer/Passes/LoopUnroll` | `PerfShapeTests.Short_literal_loop_is_unrolled_with_constant_indices`, `Other_loops_stay_loops` |
+| primitive loop (locals, array elements, conversions) that calls primitive helpers or works on an owned array | `[MethodImpl(AggressiveOptimization)]`: fully optimized at the first call, helpers inlined (tier 0 does not inline) | `Backend/Emitter.PrimitiveLoop` | `PerfShapeTests.Primitive_loop_calling_leaf_functions_is_hot`, `Loop_over_an_owned_array_is_hot` |
 | `xs.sum` / `min` / `max` on a large primitive array | fork/join over SIMD chunks | `Runtime/Parallel/ParReduce` | `ParReduceTests` |
 | `2.0 ** n` (integer `n`), `x ** 2` (float `x`) | `Math.ScaleB(1.0, n)`, `x * x`: bit-identical to `Math.Pow` | `Lowerer.Binary` | `PrimitiveTests.Exact_power_forms_match_math_pow` |
 | `x.to_i64` on Int32, any number `.to_f` (widening) | plain cast; narrowing keeps the checked, inlined helper | `Lowerer.Calls.WideningCast` | `PrimitiveTests.Widening_conversions_are_plain_casts` |
@@ -57,7 +60,12 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 - Parallel floating-point sums reassociate: results may differ from serial in the last bits. Integer results are exact.
 - Allocation tests must stay at 0 bytes.
 - Integer overflow is checked (ADR 0013); passes remove a check only where it is provably dead (ADR 0014).
-- `ALICE_DISABLE_PASSES=const-fold,strength-reduce,literal-minmax,induction` disables MIR passes for A/B runs.
+- `ALICE_DISABLE_PASSES=const-fold,strength-reduce,literal-minmax,induction` disables MIR passes for A/B runs
+  (also `unroll`, `branchless-select`).
+- A branch-free select evaluates both arms, so it is emitted only for arms that cannot throw or have effects. It
+  wins when the condition is unpredictable (kmeans: 1.85G -> 0.06G branch misses) and loses when the select sits
+  on a loop-carried chain with a predictable condition (mandelbrot's escape freeze: 2x slower), hence the
+  conditional-update exception. In tier-0 code `Branchless.*` is a real call until the method is promoted.
 
 ## Results
 
