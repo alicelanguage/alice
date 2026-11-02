@@ -9,6 +9,7 @@ public sealed partial class Binder
         var guarded = new List<LocalSym>();
         for (int i = 0; i < body.Count; i++)
         {
+            body[i] = Writer(body[i], tail: i == body.Count - 1);
             BindStmt(body[i]);
             // guard clause: `return unless n` / `break unless n` / `next unless n` / `raise ... unless n` narrows n
             // for the rest of the block (when the rest never reassigns it)
@@ -22,6 +23,36 @@ public sealed partial class Binder
         }
         foreach (var g in guarded) Unnarrow(g);
     }
+
+    /// <summary>
+    /// `recv.name = v` (and `recv.name += v` on a plain receiver) where the receiver's type has `def name=(v)`
+    /// (<see cref="Parser.SetterName"/>): a call of the writer. `a << b` as a statement (not a block's tail value) on a
+    /// user operator: kept in a temporary (C# allows no operator expression as a statement).
+    /// </summary>
+    Stmt Writer(Stmt s, bool tail = false)
+    {
+        if (s is Assign { Target: CallExpr { Recv: { } wr, Args.Count: 0, Block: null, Parens: false } wc } wa && wa.Op is "=" or "+=" or "-=" or "*=" or "/=" or "%=" or "<<=" or "|=" or "&="
+            && (wa.Op == "=" || wr is NameExpr or SelfExpr or IvarExpr)
+            && BindExpr(wr).Sym?.FindMethod(Parser.SetterName(wc.Name), 1) != null)
+        {
+            Expr v = wa.Value;
+            if (wa.Op != "=")
+            {
+                Expr again = wr switch { NameExpr n => new NameExpr { Name = n.Name, Line = n.Line, Col = n.Col }, IvarExpr i => new IvarExpr { Name = i.Name, Line = i.Line, Col = i.Col }, _ => new SelfExpr { Line = wr.Line, Col = wr.Col } };
+                v = new BinaryExpr { Op = wa.Op[..^1], L = new CallExpr { Recv = again, Name = wc.Name, Line = wc.Line, Col = wc.Col }, R = wa.Value, Line = wa.Line, Col = wa.Col };
+            }
+            return new ExprStmt { Line = wa.Line, Col = wa.Col, Expr = new CallExpr { Line = wc.Line, Col = wc.Col, Recv = wr, Name = Parser.SetterName(wc.Name), Parens = true, Args = [new Arg { Line = wa.Line, Value = v }] } };
+        }
+        if (!tail && s is ExprStmt { Expr: BinaryExpr { Op: "<<" or ">>" or "+" or "-" or "*" or "/" or "%" or "&" or "|" or "^" } ob } es
+            && OperandType(ob.L).Sym?.FindMethod(ob.Op, 1) != null)
+            return new Assign { Line = es.Line, Col = es.Col, Target = new NameExpr { Name = "__op" + ++opTemps, Line = es.Line, Col = es.Col }, Value = ob };
+        return s;
+    }
+
+    int opTemps;
+
+    /// <summary>The type of the leftmost operand of an operator chain (`l << a << b` -> l).</summary>
+    AType OperandType(Expr e) => e is BinaryExpr { Op: "<<" } b ? OperandType(b.L) : BindExpr(e);
 
     /// <summary>Locals known non-nil in the current region (flow typing for nullable value types; C# narrows
     /// nullable references itself).</summary>
@@ -67,6 +98,7 @@ public sealed partial class Binder
                     AType vt = d.Value != null ? BindExpr(d.Value) : AType.Unknown;
                     AType t = d.Type != null ? ResolveType(d.Type) : vt;
                     d.Local = Declare(d, d.Name, t, d.IsVal);
+                    NoteAlias(d.Local, d.Value);
                     break;
                 }
             case Assign a:
@@ -150,6 +182,7 @@ public sealed partial class Binder
             {
                 AType vt = BindExpr(a.Value);
                 a.Declares = Declare(a, n.Name, vt);
+                NoteAlias(a.Declares, a.Value);
                 n.Sym = a.Declares;
                 n.Res = "local";
                 n.Type = vt;
@@ -169,6 +202,7 @@ public sealed partial class Binder
             UseLocal(l);
             AType v = BindExpr(a.Value);
             if (!l.Type.IsKnown && v.IsKnown && a.Op == "=") l.Type = v;
+            if (a.Op == "=") NoteAlias(l, a.Value);
             return;
         }
         if (a.Target is IvarExpr iv && curType.Kind is "class" or "struct" or "record" && a.Op == "=")
@@ -178,7 +212,7 @@ public sealed partial class Binder
             var f = curType.FindField(iv.Name);
             if (f == null)
             {
-                curType.Fields[iv.Name] = new FieldSym { Name = iv.Name, CsName = Mangle(iv.Name), Type = vt0.IsKnown ? vt0 : AType.Dynamic, Kind = "inferred", Owner = curType };
+                curType.Fields[iv.Name] = new FieldSym { Name = iv.Name, CsName = Mangle(iv.Name), Type = vt0.IsKnown || ReferenceEquals(vt0, AType.Any) ? vt0 : AType.Dynamic, Kind = "inferred", Owner = curType };
                 changed = true;
             }
             else if (!f.Type.IsKnown && vt0.IsKnown)
@@ -189,7 +223,7 @@ public sealed partial class Binder
         }
         BindExpr(a.Target);
         BindExpr(a.Value);
-        if (curMethod != null && a.Target is IvarExpr or NameExpr { Res: "field" } or CallExpr { Res: "field", Recv: SelfExpr }) curMethod.Mutates = true;
+        NoteSelfWrite(a.Target);   // `@x = v`, `@items[i] = v`, `@pos.x = v` (F9)
         CheckSharedTargetWrite(a.Target);
     }
 
@@ -278,12 +312,14 @@ public sealed partial class Binder
             foreach (var l in existing) { CheckWrite(ma, l!); UseLocal(l!); }
             for (int i = 0; i < existing.Count && i < vts.Count; i++) if (!existing[i]!.Type.IsKnown && vts[i].IsKnown) existing[i]!.Type = vts[i];
             ma.Locals = existing.Select(e => e!).ToList();
+            foreach (var v in ma.Values) foreach (var l in ma.Locals) NoteAlias(l, v);
             return;
         }
         if (existing.Any(e => e != null)) throw Err(ma, "mixing new and existing variables in multiple assignment");
         ma.Declares = true;
         for (int i = 0; i < ma.Names.Count; i++)
             ma.Locals.Add(Declare(ma, ma.Names[i], i < vts.Count ? vts[i] : AType.Unknown));
+        foreach (var v in ma.Values) foreach (var l in ma.Locals) NoteAlias(l, v);   // conservative: any part may alias
     }
 
     void BindFor(ForStmt f)
@@ -314,6 +350,9 @@ public sealed partial class Binder
             var parts = elem.Args.Count == f.Names.Count ? elem.Args : null;
             for (int i = 0; i < f.Names.Count; i++) f.Locals.Add(Declare(f, f.Names[i], parts?[i] ?? AType.Unknown));
         }
+        // `for row in grid` over a shared collection: a reference element is shared too
+        if (f.Iter is not RangeExpr && AliasesShared(f.Iter))
+            foreach (var l in f.Locals) if (!ValueLike(l.Type)) l.SharedAlias = true;
         BindBlock(f.Body);
         PopScope();
     }
@@ -371,8 +410,9 @@ public sealed partial class Binder
                     {
                         var field = ds.Fields[ds.FieldOrder[i]];
                         var arg = ne.Args[i].Value!;
-                        if (arg is NameExpr n && n.Name == "_") d.Parts.Add((field.CsName, null, null));
-                        else if (arg is NameExpr bn && FindLocal(bn.Name) == null) d.Parts.Add((field.CsName, Declare(arg, bn.Name, field.Type), null));
+                        // the binding names are typed nodes too (strict mode, AL0220): `when Shape::Circle(r)` binds r : Float64
+                        if (arg is NameExpr n && n.Name == "_") { d.Parts.Add((field.CsName, null, null)); n.Type = field.Type; }
+                        else if (arg is NameExpr bn && FindLocal(bn.Name) == null) { d.Parts.Add((field.CsName, Declare(arg, bn.Name, field.Type), null)); bn.Type = field.Type; }
                         else
                         {
                             BindExpr(arg);

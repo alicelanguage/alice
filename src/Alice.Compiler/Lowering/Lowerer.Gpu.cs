@@ -34,7 +34,7 @@ public sealed partial class Lowerer
         foreach (var e in WalkReads(f.Body))
             switch (e)
             {
-                case CallExpr { Recv: ConstExpr { Ref.Name: "Math" or "MathF" } }: break;
+                case CallExpr cm when IsClrMath(cm): break;
                 case CallExpr { Res: "ext", Args.Count: 0, Block: null } cv when GpuSafeExt.Contains(Binder.Mangle(cv.Name)): break;   // conversions, abs...
                 case CallExpr { Res: "field" }: throw No($"`{((CallExpr)e).Name}` reads an object member; pass the value in a local");
                 case CallExpr ce: throw No($"`{ce.Name}` is a call; GPU code may use arithmetic, indexing and Math.* only");

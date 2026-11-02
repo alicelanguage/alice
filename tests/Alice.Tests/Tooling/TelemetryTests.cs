@@ -153,17 +153,53 @@ public class TelemetryTests : IDisposable
         Assert.Equal(2, counts.Count);
     }
 
+    /// <summary>Top-level field names from the table under `## Fields` in docs/telemetry.md (`crash.type` -> `crash`).</summary>
+    static HashSet<string> DocumentedFields()
+    {
+        var d = new DirectoryInfo(AppContext.BaseDirectory);
+        while (d != null && !File.Exists(Path.Combine(d.FullName, "Alice.sln"))) d = d.Parent;
+        var lines = File.ReadAllLines(Path.Combine(d!.FullName, "docs", "telemetry.md"));
+        return lines.SkipWhile(l => l != "## Fields").Skip(1).TakeWhile(l => !l.StartsWith("## "))
+            .Select(l => System.Text.RegularExpressions.Regex.Match(l, @"^\| `([a-z_]+)(\.[a-z_]+)?` \|"))
+            .Where(m => m.Success).Select(m => m.Groups[1].Value).ToHashSet();
+    }
+
     [Fact]
     public void EventJsonHasOnlyDocumentedFields()
     {
+        var documented = DocumentedFields();
+        string[] expected = ["schema", "install_id", "command", "alice_version", "os", "arch", "dotnet", "exit_code", "duration_ms",
+                             "crash", "error_codes", "phases_ms"];
+        Assert.Equal(expected.Order(StringComparer.Ordinal), documented.Order(StringComparer.Ordinal));
         var e = TelemetryEvent.Create("build", "0.13.2", "abc", 1, TimeSpan.FromMilliseconds(12),
-            crash: null, codes: new() { ["AL0202"] = 1 }, phases: null);
+            crash: new InvalidOperationException("secret"), codes: new() { ["AL0202"] = 1 }, phases: new() { ["emit"] = 3 });
         var json = e.ToJson();
-        Assert.Contains("\"command\":\"build\"", json);
-        Assert.Contains("\"exit_code\":1", json);
-        Assert.Contains("\"AL0202\":1", json);
-        Assert.DoesNotContain(Environment.UserName, json.Replace("\"install_id\":\"abc\"", ""));
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        // every field the event can carry (crash and phases_ms included) is documented, and nothing else is present
+        Assert.Equal(documented.Order(StringComparer.Ordinal), root.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(["type", "stack"], root.GetProperty("crash").EnumerateObject().Select(p => p.Name));
+        Assert.Equal("build", root.GetProperty("command").GetString());
+        Assert.Equal(1, root.GetProperty("exit_code").GetInt32());
+        Assert.Equal(1, root.GetProperty("error_codes").GetProperty("AL0202").GetInt32());
+        Assert.Matches("^[a-z0-9]{1,16}$", root.GetProperty("arch").GetString());
+        Assert.DoesNotContain("secret", json);
+        // the user name must not leak into any value (field names are fixed; a user named `arch` is not a leak)
+        Assert.DoesNotContain(StringValues(root), v => v.Contains(Environment.UserName, StringComparison.Ordinal));
+        // without a crash or perf timings, those optional fields are omitted
+        var plain = System.Text.Json.JsonDocument.Parse(TelemetryEvent.Create("run", "0.13.2", "abc", 0, TimeSpan.Zero,
+            crash: null, codes: new(), phases: null).ToJson()).RootElement;
+        Assert.Equal(documented.Except(["crash", "phases_ms"]).Order(StringComparer.Ordinal),
+            plain.EnumerateObject().Select(p => p.Name).Order(StringComparer.Ordinal));
     }
+
+    static IEnumerable<string> StringValues(System.Text.Json.JsonElement e) => e.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.Object => e.EnumerateObject().SelectMany(p => StringValues(p.Value)),
+        System.Text.Json.JsonValueKind.Array => e.EnumerateArray().SelectMany(StringValues),
+        System.Text.Json.JsonValueKind.String => [e.GetString()!],
+        _ => [],
+    };
 
     [Fact]
     public void CommandNameIsWhitelisted()
@@ -184,5 +220,18 @@ public class TelemetryTests : IDisposable
         Assert.False(TelemetrySender.ServerLive);
         Assert.Equal("https://x", TelemetrySender.ResolveEndpoint(new Consent(ConsentState.Granted, 1, "a", "https://x"), Env()));
         Assert.Equal("https://y", TelemetrySender.ResolveEndpoint(new Consent(ConsentState.Granted, 1, "a", null), Env(("ALICE_TELEMETRY_ENDPOINT", "https://y"))));
+    }
+
+    [Theory]
+    [InlineData("http://telemetry.example/v1/events", false)]
+    [InlineData("ftp://telemetry.example/v1/events", false)]
+    [InlineData("http://127.0.0.1:8080/v1/events", true)]
+    [InlineData("http://localhost:8080/v1/events", true)]
+    [InlineData("http://[::1]:8080/v1/events", true)]
+    [InlineData("https://telemetry.example/v1/events", true)]
+    public void EndpointMustBeHttpsExceptLoopback(string endpoint, bool accepted)
+    {
+        var c = new Consent(ConsentState.Granted, 1, "a", null);
+        Assert.Equal(accepted ? endpoint : null, TelemetrySender.ResolveEndpoint(c, Env(("ALICE_TELEMETRY_ENDPOINT", endpoint))));
     }
 }

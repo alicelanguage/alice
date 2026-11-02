@@ -121,6 +121,59 @@ public class ToolchainTests : IDisposable
         static (string, string) Strip((string Version, string Source) r) => (r.Version, r.Source.Split(' ')[0] == "alice-toolchain" ? "alice-toolchain file" : r.Source);
     }
 
+    [Theory]
+    [InlineData("../../evil")]
+    [InlineData("/tmp/evil")]
+    [InlineData("0.10.1-../../../evil")]
+    [InlineData("0.10.1-a/b")]
+    [InlineData("0.10.1-a\\b")]
+    [InlineData("0.10.1-a..b")]
+    [InlineData("+1.0.0")]
+    public void Version_parsing_rejects_path_like_text(string text)
+    {
+        Assert.Null(ToolchainVersion.TryParse(text));
+    }
+
+    [Fact]
+    public void Toolchain_paths_only_accept_versions_and_stay_under_the_toolchains_dir()
+    {
+        var home = new ToolchainHome(Path.Combine(root, "home"));
+        // a binary planted next to ALICE_HOME, reachable only through `..`
+        var planted = Path.Combine(root, "evil");
+        Directory.CreateDirectory(planted);
+        File.WriteAllText(Path.Combine(planted, Platform.ExeName), "");
+
+        Assert.False(home.IsInstalled("../../evil"));
+        Assert.False(home.IsInstalled(planted));
+        Assert.Throws<ToolchainException>(() => home.ExePath("../../evil"));
+        Assert.Throws<ToolchainException>(() => home.ToolchainDir(planted));
+        Assert.Equal(Path.Combine(home.ToolchainsDir, "0.10.1"), home.ToolchainDir("0.10.1"));
+    }
+
+    [Fact]
+    public void Github_token_goes_only_to_the_api_host()
+    {
+        using var api = GitHubReleaseSource.ApiRequest("https://api.github.com/repos/a/b/releases", "tok");
+        Assert.Equal("Bearer", api.Headers.Authorization?.Scheme);
+        using var other = GitHubReleaseSource.ApiRequest("https://evil.example/repos/a/b/releases", "tok");
+        Assert.Null(other.Headers.Authorization);
+        using var none = GitHubReleaseSource.ApiRequest("https://api.github.com/repos/a/b/releases", null);
+        Assert.Null(none.Headers.Authorization);
+    }
+
+    [Theory]
+    [InlineData("https://github.com/alicelanguage/alice/releases/download/v0.10.1/a.tgz", true)]
+    [InlineData("https://objects.githubusercontent.com/x/a.tgz", true)]
+    [InlineData("http://github.com/alicelanguage/alice/releases/download/v0.10.1/a.tgz", false)]
+    [InlineData("https://evil.example/a.tgz", false)]
+    [InlineData("https://github.com.evil.example/a.tgz", false)]
+    [InlineData("file:///etc/passwd", false)]
+    [InlineData("not a url", false)]
+    public void Release_assets_must_come_from_github_over_https(string url, bool ok)
+    {
+        Assert.Equal(ok, GitHubReleaseSource.IsTrustedAssetUrl(url));
+    }
+
     [Fact]
     public void Uninstall_removes_the_toolchain_and_clears_a_dangling_default()
     {

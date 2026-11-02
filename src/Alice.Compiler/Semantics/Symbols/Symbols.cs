@@ -130,4 +130,5 @@ public sealed class LocalSym
     public bool IsVal;
     public int LambdaDepth;           // nesting of lambdas at declaration
     public int SpawnDepth;            // nesting of spawn bodies at declaration
+    public bool SharedAlias;          // assigned a reference shared with other threads, inside a concurrent body (AL0202)
 }

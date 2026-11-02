@@ -22,7 +22,7 @@ public sealed partial class Binder
             typeParams = new List<string>();
             scopes[0]["ARGV"] = new LocalSym { Name = "ARGV", CsName = "ARGV", Type = AType.Array(AType.String) };
             foreach (var it in f.Items)
-                if (it is StmtItem s) BindStmt(s.Stmt);
+                if (it is StmtItem s) BindStmt(s.Stmt = Writer(s.Stmt));
             f.HoistedLocals = hoisted;
         }
     }
@@ -107,17 +107,42 @@ public sealed partial class Binder
         {
             var r = m.RetDeclared ? m.Ret : InferRet(d.Body);
             if (!r.Same(inst.Ret)) { inst.Ret = r; changed = true; }
+            else if (r.Kind == "dynamic") inst.Ret = r;   // Any vs inferred dynamic: same C#, matters to strict mode
             return;
         }
         if (!m.RetDeclared)
         {
+            // an override of a .NET virtual returns what the base declares (`def on_configuring(options)` whose tail is
+            // `options.UseSqlite(...)` still overrides `void OnConfiguring`): a typed tail must not change the signature
+            // (covariant returns stay: a typed tail of a non-void override keeps its own type)
             var inferred = InferRet(d.Body);
+            if (ClrOverride(m, owner) is { } baseM && (baseM.ReturnType == typeof(void) || inferred.Kind is "unknown" or "dynamic"))
+                inferred = ClrTypes.FromClr(baseM.ReturnType);
             if (!inferred.Same(m.Ret))
             {
                 m.Ret = inferred;
                 changed = true;
             }
+            else if (inferred.Kind == "dynamic") m.Ret = inferred;   // Any vs inferred dynamic: same C#, matters to strict mode
         }
+    }
+
+    /// <summary>The .NET virtual method <paramref name="m"/> overrides (same rule as the emitter's `override`), or null.</summary>
+    static System.Reflection.MethodInfo? ClrOverride(MethodSym m, TypeSym owner)
+    {
+        if (m.IsStatic || m.IsCtor || owner.Kind != "class") return null;
+        for (var b = owner.BaseClass; b != null; b = b.BaseClass)
+            if (b.Methods.ContainsKey(m.Name)) return null;   // overrides an Alice method: inferred as usual
+        for (var s = owner; s != null; s = s.BaseClass)
+            foreach (var b in s.Bases)
+            {
+                if (b.Clr == null || b.Clr.IsInterface) continue;
+                foreach (var bm in b.Clr.GetMethods(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic))
+                    if (bm.Name == m.CsName && bm.IsVirtual && !bm.IsFinal && bm.GetParameters().Length == m.Params.Count && !bm.IsPrivate && !bm.IsAssembly
+                        && !bm.ReturnType.ContainsGenericParameters)
+                        return bm;
+            }
+        return null;
     }
 
     AType InferRet(List<Stmt> body)

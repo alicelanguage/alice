@@ -105,8 +105,7 @@ public static class AirTypes
 
     /// <summary>
     /// The AIR form of a binder type; <c>t.ToAir().ToCs() == t.Cs</c> always holds. A spelling the structure does
-    /// not reproduce (today: `Callback` function pointers, whose AType keeps no arguments) stays a by-name
-    /// <see cref="AirType.ClrRef"/> without arguments.
+    /// not reproduce stays a by-name <see cref="AirType.ClrRef"/> without arguments.
     /// </summary>
     public static AirType ToAir(this AType t)
     {
@@ -136,6 +135,8 @@ public static class AirTypes
                 }
         }
         if (Keywords.TryGetValue(bare, out var k)) return new AirType.Prim(k);
+        if (bare.StartsWith("delegate* unmanaged[Cdecl]<") && t.Args.Count >= 1)
+            return new AirType.FnPtr(Args(t.Args.Take(t.Args.Count - 1)), t.Args[^1].ToAir(), "unmanaged[Cdecl]");
         if (bare.EndsWith('*') && !bare.StartsWith("delegate*"))
             return new AirType.Pointer(t.Clr is { IsPointer: true } p ? ClrTypes.FromClr(p.GetElementType()!).ToAir() : new AirType.ClrRef(bare[..^1], null, []));
         if (t.Sym != null) return new AirType.AliceType(t.Sym, Args(t.Args));

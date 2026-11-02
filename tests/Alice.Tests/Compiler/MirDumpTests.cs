@@ -74,6 +74,8 @@ public class MirDumpTests
         Assert.Equal("global::System.Collections.Generic.List", list.Name);
         Assert.Equal("string?", list.Args[0].ToCs());
         Assert.Equal("var", AType.Unknown.ToAir().ToCs());
+        var fp = Assert.IsType<AirType.FnPtr>(TypeOf("Callback(Int32, Nil)").ToAir());
+        Assert.Equal("delegate* unmanaged[Cdecl]<int, void>", fp.ToCs());
     }
 
     /// <summary>Every type the binder gives a declared field, parameter or return in the samples spells the same.</summary>

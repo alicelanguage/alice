@@ -14,6 +14,20 @@ public static class Builtins
         .Where(m => !m.IsDefined(typeof(ExtensionAttribute)) && !m.IsGenericMethodDefinition && m.GetParameters().All(p => p.IsOptional) && m.ReturnType != typeof(void))
         .GroupBy(m => m.Name).ToDictionary(g => g.Key, g => g.First().ReturnType);
 
+    /// <summary>
+    /// Return type of a Prelude function called with implicit self (`describe`, `it`, `expect`, `eq`, `have_size`...),
+    /// when every overload taking <paramref name="argc"/> arguments (a block counts as one) agrees on it; else null.
+    /// </summary>
+    public static AType? PreludeReturn(string name, int argc)
+    {
+        var rets = typeof(Alice.Runtime.Prelude).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.Name == name && !m.IsDefined(typeof(ExtensionAttribute)) && !m.IsGenericMethodDefinition)
+            .Where(m => m.GetParameters() is var ps && ps.Count(p => !p.IsOptional && !p.IsDefined(typeof(ParamArrayAttribute))) <= argc
+                && (argc <= ps.Length || ps.Length > 0 && ps[^1].IsDefined(typeof(ParamArrayAttribute))))
+            .Select(m => m.ReturnType).Distinct().ToList();
+        return rets.Count == 1 && !rets[0].ContainsGenericParameters && ClrTypes.FromClr(rets[0]) is { } t && !t.IsUnknown ? t : null;
+    }
+
     /// <summary>Extension method names exposed by the Prelude (discovered by reflection, so the runtime is the source of truth).</summary>
     public static readonly HashSet<string> ExtNames = typeof(Alice.Runtime.Prelude)
         .GetMethods(BindingFlags.Public | BindingFlags.Static)

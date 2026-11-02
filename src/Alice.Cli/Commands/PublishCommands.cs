@@ -13,12 +13,12 @@ public static class PublishCommands
 {
     const string NuGetOrg = "https://api.nuget.org/v3/index.json";
 
-    sealed record Options(string Dir, string? Out, string? Source, string? ApiKey, bool DryRun);
+    sealed record Options(string Dir, string? Out, string? Source, string? ApiKey, bool DryRun, bool DotNetPush);
 
     static Options Parse(List<string> a, string usage)
     {
         string? dir = null, outDir = null, source = null, key = null;
-        bool dry = false;
+        bool dry = false, dotnetPush = false;
         for (int i = 0; i < a.Count; i++)
         {
             string Next() => i + 1 < a.Count ? a[++i] : throw UsageException.Usage(usage);
@@ -28,13 +28,14 @@ public static class PublishCommands
                 case "--source" or "-s": source = Next(); break;
                 case "--api-key" or "-k": key = Next(); break;
                 case "--dry-run": dry = true; break;
+                case "--dotnet-push": dotnetPush = true; break;
                 case var x when x.StartsWith('-'): throw UsageException.Usage(usage);
                 default: dir = a[i]; break;
             }
         }
         dir ??= ".";
         if (!File.Exists(Path.Combine(dir, Manifest.FileName))) throw UsageException.NoProject();
-        return new Options(Path.GetFullPath(dir), outDir, source, key, dry);
+        return new Options(Path.GetFullPath(dir), outDir, source, key, dry, dotnetPush);
     }
 
     public static int Pack(List<string> a)
@@ -45,7 +46,7 @@ public static class PublishCommands
 
     public static int Publish(List<string> a)
     {
-        var o = Parse(a, "alice publish [dir] [--source url|dir] [--api-key key] [--dry-run]");
+        var o = Parse(a, "alice publish [dir] [--source url|dir] [--api-key key] [--dry-run] [--dotnet-push]");
         string source = o.Source ?? NuGetOrg;
         bool local = !source.StartsWith("http://") && !source.StartsWith("https://");
         string? key = o.ApiKey ?? Environment.GetEnvironmentVariable("NUGET_API_KEY");
@@ -53,8 +54,22 @@ public static class PublishCommands
             throw new UsageException(T("publish.no.key", source), T("hint.publish.key"));
         int rc = PackTo(o, o.Out ?? Path.Combine(o.Dir, "bin", "package"), out var nupkg);
         if (rc != 0 || o.DryRun) return rc;
+        if (!local && !o.DotNetPush)
+        {
+            // pushed by alice itself: the key goes in a request header, not on a command line other users can list
+            try
+            {
+                var outcome = UiH.Spin($"{T("publishing")} {Path.GetFileName(nupkg)}…",
+                    () => NuGetPush.PushAsync(source, key!, nupkg!, CancellationToken.None).GetAwaiter().GetResult());
+                if (outcome == NuGetPush.Outcome.AlreadyExists) { UiH.Status(T("skipped"), T("publish.exists", Path.GetFileName(nupkg)!, source)); return 0; }
+            }
+            catch (NuGetPush.PushException e) { UiH.Error(e.Message, T("hint.publish.dotnet")); return 1; }
+            UiH.Status(T("published"), $"{Path.GetFileName(nupkg)} → {source}");
+            return 0;
+        }
         if (local) Directory.CreateDirectory(source);
         var args = new List<string> { "nuget", "push", nupkg!, "--source", local ? Path.GetFullPath(source) : source, "--skip-duplicate" };
+        // --dotnet-push only: the key is a process argument for the duration of the push
         if (!local) args.AddRange(["--api-key", key!]);
         var r = UiH.Spin($"{T("publishing")} {Path.GetFileName(nupkg)}…", () => DotNet.Run(args));
         if (r.ExitCode != 0)

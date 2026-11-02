@@ -5,14 +5,31 @@ using Alice.Telemetry.Wire;
 
 namespace Alice.TelemetryServer;
 
-/// <summary>Fixed-window rate limit keyed by install id (never by IP).</summary>
-public sealed class RateLimiter(int perHour)
+/// <summary>
+/// Fixed-window rate limits, never keyed by IP: per install id, plus one global window for all clients, because install
+/// ids are chosen by the client and fresh ids would otherwise bypass the per-id limit and flood the database.
+/// </summary>
+public sealed class RateLimiter(int perHour, int globalPerHour = int.MaxValue)
 {
     readonly ConcurrentDictionary<string, (long Hour, int Count)> windows = new();
+    readonly object globalLock = new();
+    (long Hour, int Count) global;
 
     public bool Allow(string installId, int events, DateTime nowUtc)
     {
         long hour = nowUtc.Ticks / TimeSpan.TicksPerHour;
+        lock (globalLock)
+        {
+            if (global.Hour != hour) global = (hour, 0);
+            if ((long)global.Count + events > globalPerHour) return false;
+            if (!AllowInstall(installId, events, hour)) return false;
+            global.Count += events;
+            return true;
+        }
+    }
+
+    bool AllowInstall(string installId, int events, long hour)
+    {
         bool ok = false;
         windows.AddOrUpdate(installId,
             _ => { ok = events <= perHour; return (hour, ok ? events : 0); },

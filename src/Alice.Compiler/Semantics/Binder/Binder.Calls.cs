@@ -89,8 +89,8 @@ public sealed partial class Binder
                     && m.GetGenericArguments().Length == targs.Count && m.GetParameters().Count(p => !p.IsOptional) <= c.Args.Count && m.GetParameters().Length >= c.Args.Count);
                 c.Res = "clr";
                 if (gm != null) return ClrTypes.FromClr(gm.MakeGenericMethod(targs.ToArray()!).ReturnType);
-                // a generic extension method of a referenced library (ILGPU's LoadAutoGroupedStreamKernel<...>): C# resolves it
-                if (Clr.IsExtensionName(c.Name) || Builtins.IsClrExtension(c.Name)) return AType.Unknown;
+                // a generic extension method of a referenced library (ILGPU's LoadAutoGroupedStreamKernel<...>, FindControl<T>)
+                if (Clr.IsExtensionName(c.Name) || Builtins.IsClrExtension(c.Name)) return Clr.ExtensionReturn(c.Name, recv, c.Args.Select(a => a.Value?.Type ?? AType.Unknown).ToList(), targs!);
                 throw Err(c, $"{rc.Name} has no generic method {c.Name}<{targs.Count}> taking {c.Args.Count} argument(s)");
             }
         }
@@ -146,20 +146,25 @@ public sealed partial class Binder
             if (owner.Clr != null)
             {
                 var mem = ClrTypes.Lookup(owner.Clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs);
-                // Alice spelling of a .NET static: Math.sqrt / Math.atan2 / Console.write_line -> Sqrt / Atan2 / WriteLine
-                if (mem == null && ClrTypes.Pascal(c.Name) is { } pascal
-                    && ClrTypes.Lookup(owner.Clr, pascal, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs) is { } pm)
-                {
-                    c.Name = pascal;
-                    mem = pm;
-                }
+                // Alice spelling of a .NET static: Math.sqrt / Math.atan2 / Console.write_line -> Sqrt / Atan2 / WriteLine;
+                // on Alice.Core types also `valid?` -> IsValid and `parse!` -> Parse (ADR 0036, Names.Dotnet)
+                if (mem == null)
+                    foreach (var alt in IsCoreType(owner.Clr) ? CoreSpellings(c.Name) : ClrTypes.Pascal(c.Name) is { } pascal ? [pascal] : [])
+                        if (ClrTypes.Lookup(owner.Clr, alt, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, true, staticArgs) is { } pm
+                            && (!c.Name.EndsWith('?') || pm.Type == AType.Bool))
+                        {
+                            c.Name = alt;
+                            mem = pm;
+                            break;
+                        }
                 if (mem != null)
                 {
                     c.Res = mem.Kind == "method" ? "clr" : "field";
                     c.Sym = mem.Method;   // the purity gate checks [Pure] on Alice.Runtime methods
                     pendingConcurrent = conc && c.Block != null;
-                    if (c.Block != null) BindLambda(c.Block, new List<AType>());
-                    return mem.Type;
+                    // the block's parameters take the delegate parameter's types (generic ones inferred from the arguments)
+                    if (c.Block != null) BindLambda(c.Block, ClrTypes.BlockParamTypes(mem.Method, staticArgs));
+                    return WithBlockResult(mem, c, staticArgs, t => ClrTypes.Lookup(owner.Clr, c.Name, argc + 1, true, true, t));
                 }
             }
             if (c.Block != null) BindLambda(c.Block, new List<AType>());
@@ -239,19 +244,27 @@ public sealed partial class Binder
         {
             if (c.Block != null) BindLambda(c.Block, new List<AType>());
             c.Res = hasArgs ? "dyncall" : "field";
-            return AType.Dynamic;
+            return recv;   // AType.Any when the receiver was declared `Any` (strict mode accepts it)
         }
 
         // .NET members (also inherited by Alice classes from CLR bases)
         Type? clr = recv.Clr ?? recv.Sym?.Bases.Select(b => b.Clr).FirstOrDefault(b => b != null && !b.IsInterface);
+        // an array of an Alice type has no CLR type at bind time; its System.Array members (`bricks.Length`) still bind
+        if (clr == null && recv.Kind == "array" && !hasArgs && c.Block == null && ClrTypes.Lookup(typeof(Array), c.Name, 0, false, false) is { Kind: not "method" } am0)
+        {
+            c.Res = "field";
+            return am0.Type;
+        }
         if (clr != null)
         {
             var mem = ClrTypes.Lookup(clr, c.Name, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, false, argTypes);
             // Alice spelling of a .NET member: sw.elapsed / sb.append_line / d.contains_key?(k) / uri.absolute_uri?.
-            // Prelude names (split, sum, empty?...) keep their Ruby meaning on the types Prelude extends
-            bool preludeOwns = Builtins.ExtNames.Contains(Mangle(c.Name)) && Builtins.ExtAccepts(Mangle(c.Name), clr);
+            // Prelude names (split, sum, empty?...) keep their Ruby meaning on the types Prelude extends; an Alice.Core
+            // type's own members win over Prelude (it is the Ruby surface, written with .NET names, ADR 0036)
+            bool core = IsCoreType(clr);
+            bool preludeOwns = !core && Builtins.ExtNames.Contains(Mangle(c.Name)) && Builtins.ExtAccepts(Mangle(c.Name), clr);
             if (mem == null && !preludeOwns)
-                foreach (var alt in ClrTypes.ClrSpellings(c.Name))
+                foreach (var alt in core ? CoreSpellings(c.Name) : ClrTypes.ClrSpellings(c.Name))
                     if (ClrTypes.Lookup(clr, alt, argc + (c.Block != null ? 1 : 0), hasArgs || c.Block != null, false, argTypes) is { } am
                         && (!c.Name.EndsWith('?') || am.Type == AType.Bool))
                     {
@@ -264,8 +277,8 @@ public sealed partial class Binder
                 c.Res = mem.Kind == "method" ? "clr" : "field";
                 if (mem.Kind == "method") CheckMutatingCall(c, recv, null);
                 pendingConcurrent = conc && c.Block != null;
-                if (c.Block != null) BindLambda(c.Block, new List<AType>());
-                return mem.Type;
+                if (c.Block != null) BindLambda(c.Block, ClrTypes.BlockParamTypes(mem.Method, argTypes));
+                return WithBlockResult(mem, c, argTypes, t => ClrTypes.Lookup(clr, c.Name, argc + 1, true, false, t));
             }
         }
 
@@ -274,7 +287,13 @@ public sealed partial class Binder
         {
             if (c.Block != null) BindLambda(c.Block, new List<AType>());
             c.Res = "clr";
-            return Builtins.ClrExtReturn(c.Name, recv);
+            var known = Builtins.ClrExtReturn(c.Name, recv);
+            // otherwise from the extension method's signature (generic arguments inferred as C# does)
+            if (!known.IsUnknown || c.Block != null) return known;
+            // explicit type arguments (`FindControl<TextBlock>("x")`) close the method; otherwise they are inferred
+            var explicitArgs = c.TypeArgTypes.Select(t => t.Clr ?? ClrTypes.Proxy(t)).ToList();
+            if (explicitArgs.Any(t => t == null)) return known;
+            return Clr.ExtensionReturn(c.Name, recv, argTypes, explicitArgs.Count > 0 ? explicitArgs.OfType<Type>().ToList() : null);
         }
 
         // Prelude extension methods (Ruby names)
@@ -316,6 +335,23 @@ public sealed partial class Binder
 
     static Type? BaseClrOf(TypeSym t) => BaseClr(t);
 
+    /// <summary>A type of the Alice Core standard library (`Alice.Core` and its sub-namespaces, ADR 0036).</summary>
+    public static bool IsCoreType(Type? t) => t?.Namespace is { } ns && (ns == "Alice.Core" || ns.StartsWith("Alice.Core.", StringComparison.Ordinal));
+
+    /// <summary>
+    /// .NET names tried for an Alice spelling on an Alice.Core member, most specific first: the CLR spellings
+    /// (`read_all` -> ReadAll, `empty?` -> IsEmpty / Empty), then ADR 0019's `Names.Dotnet` (`save!` -> Save,
+    /// `has_key?` -> HasKey). Core is written once with .NET names and read natively from both languages.
+    /// </summary>
+    public static IEnumerable<string> CoreSpellings(string name)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in ClrTypes.ClrSpellings(name))
+            if (seen.Add(s)) yield return s;
+        var dotnet = Alice.Runtime.Names.Dotnet(name);
+        if (dotnet != name && seen.Add(dotnet)) yield return dotnet;
+    }
+
     /// <summary>Constraint types of a type parameter in the current method/type (`where T : IArea`).</summary>
     List<AType> ConstraintTypes(string param)
     {
@@ -326,6 +362,15 @@ public sealed partial class Binder
         foreach (var c in cs.Where(c => c.Param == param))
             foreach (var t in c.Types) r.Add(ResolveType(t));
         return r;
+    }
+
+    /// <summary>A generic .NET method whose result depends on its block's (`Par.Map(xs) do |y| ... end`): looked up
+    /// again with the bound block as a Func argument. Otherwise the type found first.</summary>
+    AType WithBlockResult(ClrTypes.Member mem, CallExpr c, List<AType> args, Func<List<AType>, ClrTypes.Member?> again)
+    {
+        if (!mem.Type.IsUnknown || c.Block is not { ReturnsValue: true } b || mem.Method is not { IsGenericMethodDefinition: true }
+            || !b.Result.IsKnown || !b.ParamSyms.All(p => p.Type.IsKnown)) return mem.Type;
+        return again([.. args, Func(b.ParamSyms.Select(p => p.Type).ToList(), b.Result)])?.Type ?? mem.Type;
     }
 
     static bool HasMember(AType recv, string name, int argc)
@@ -396,6 +441,9 @@ public sealed partial class Binder
             return Builtins.FreeReturn(c.Name, argTypes);
         }
         c.Res = "call";
+        if (Builtins.PreludeReturn(c.Name, c.Args.Count + (c.Block != null ? 1 : 0)) is { } pr) return pr;
+        // the program's @[Native] probe, emitted by the backend (Emitter: `bool __alice_native_loaded()`)
+        if (c.Name == "__alice_native_loaded" && c.Args.Count == 0) return AType.Bool;
         return AType.Unknown;
     }
 

@@ -17,6 +17,8 @@ public static class TargetProperties
         // no threads (the browser runs .NET on one): `alice gen --sequential` lowers parallel code to serial loops
         bool threads = build.TryGetValue("threads", out var th) ? th is true : !wasm;
         if (!threads) props.Append("    <AliceSequential>true</AliceSequential>\n");
+        // `strict = true`: anything not statically typed (inferred `dynamic`) is AL0220; `Any` stays allowed
+        if (build.TryGetValue("strict", out var st) && st is true) props.Append("    <AliceStrict>true</AliceStrict>\n");
         if (build.TryGetValue("native", out var nat) && nat is true)
             // fold identical bodies: generic instantiations and the serial clones of forks often compile to the same code
             props.Append("    <PublishAot>true</PublishAot>\n    <OptimizationPreference>Speed</OptimizationPreference>\n" +

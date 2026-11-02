@@ -46,9 +46,15 @@ public sealed partial class Parser
     Expr RangeExpr()
     {
         Token tok = Cur;
+        if (IsOp("..") || IsOp("..."))   // beginless `..b`
+        {
+            bool bexcl = Next().Text == "...";
+            return OpenRange(tok, null, Binary(0), bexcl);
+        }
         Expr a = Binary(0);
         if (!IsOp("..") && !IsOp("...")) return a;
         bool excl = Next().Text == "...";
+        if (RangeEndHere()) return OpenRange(tok, a, null, excl);   // endless `a..`
         return At(new RangeExpr { A = a, B = Binary(0), Excl = excl }, tok);
     }
 
@@ -170,7 +176,7 @@ public sealed partial class Parser
                     ExpectCloseAngle();
                 }
                 call.Parens = IsOp("(") && !Cur.Space;
-                CallTail(call.Args, out call.Block);
+                CallTail(call.Args, out call.Block, name);
                 e = call;
             }
             else if (IsOp("::"))
@@ -188,14 +194,17 @@ public sealed partial class Parser
             else if (IsOp("[") && !Cur.Space)
             {
                 Next();
+                string savedCtx = rangeCtx;
+                rangeCtx = "index";   // `xs[1..]`, `xs[..2]`
                 e = At(new IndexExpr { Target = e, Args = Args("]") }, tok);
+                rangeCtx = savedCtx;
             }
             else return e;
         }
     }
 
     /// <summary>Arguments after a callee: `(a, b)`, command args `a, b`, then an optional block.</summary>
-    void CallTail(List<Arg> args, out LambdaExpr? block)
+    void CallTail(List<Arg> args, out LambdaExpr? block, string name = "")
     {
         if (IsOp("(") && !Cur.Space)
         {
@@ -212,6 +221,15 @@ public sealed partial class Parser
             block = (LambdaExpr)args[bp].Value!;
             args.RemoveAt(bp);
         }
+        // `inject(:+)` / `reduce(1, :*)`: an operator symbol is the block `{ |a, b| a + b }`
+        int op = args.FindIndex(a => a.Mod == "opsym");
+        if (op >= 0 && op == args.Count - 1 && block == null && name is "inject" or "reduce" && args.Count <= 2)
+        {
+            var a = args[op];
+            args.RemoveAt(op);
+            block = OpBlock(((LitExpr)a.Value!).Text, a);
+        }
+        foreach (var a in args) if (a.Mod == "opsym") a.Mod = "";
         int sp = args.FindIndex(a => a.Mod == "&sym");
         if (sp >= 0)
         {
@@ -220,6 +238,13 @@ public sealed partial class Parser
             var prm = new Param { Name = "__it", Line = a.Line };
             block = new LambdaExpr { Line = a.Line, Params = { prm }, Body = { new ExprStmt { Line = a.Line, Expr = new CallExpr { Line = a.Line, Recv = new NameExpr { Name = "__it", Line = a.Line }, Name = ((LitExpr)a.Value!).Text } } } };
         }
+    }
+
+    static LambdaExpr OpBlock(string op, Node at)
+    {
+        NameExpr N(string n) => Mk(new NameExpr { Name = n }, at);
+        var body = Mk(new BinaryExpr { Op = op, L = N("__a"), R = N("__b") }, at);
+        return Mk(new LambdaExpr { Params = [Mk(new Param { Name = "__a" }, at), Mk(new Param { Name = "__b" }, at)], Body = [Mk(new ExprStmt { Expr = body }, at)] }, at);
     }
 
     bool CanStartArg()
@@ -266,6 +291,8 @@ public sealed partial class Parser
     {
         bool saved = noDo;
         noDo = false;
+        string savedCtx = rangeCtx;
+        if (close != "]") rangeCtx = "";
         var parts = new List<Arg>();
         SkipNl();
         while (!IsOp(close))
@@ -277,6 +304,7 @@ public sealed partial class Parser
         }
         Next();
         noDo = saved;
+        rangeCtx = savedCtx;
         return parts;
     }
 
@@ -299,6 +327,12 @@ public sealed partial class Parser
             a.Mod = "&blk";
             a.Value = At(new LambdaExpr { Params = { At(new Param { Name = "__it" }, v) },
                 Body = { At(new ExprStmt { Expr = At(new InvokeExpr { Target = At(new NameExpr { Name = v.Text }, v), Args = { new Arg { Value = At(new NameExpr { Name = "__it" }, v) } } }, v) }, v) } }, v);
+            return a;
+        }
+        if (t[p].Kind == "sym" && Cur.Text is "+" or "-" or "*" or "/" or "%" or "**" or "&" or "|" or "^" or "<<" or ">>" or "<=>" && Peek(1).Kind == "op" && Peek(1).Text is ")" or ",")
+        {
+            a.Mod = "opsym";
+            a.Value = At(new LitExpr { Kind = "str", Text = Next().Text }, t[p - 1]);
             return a;
         }
         if (IsOp("&") && Peek(1).Kind == "sym")
@@ -347,6 +381,17 @@ public sealed partial class Parser
                 }
             case "str":
                 Next();
+                if (t[p].Kind is "str" or "char")
+                {
+                    // adjacent literals `"a" "b"` (also across a `\` line continuation) are one string
+                    var raw = new System.Text.StringBuilder(c.Text);
+                    while (t[p].Kind is "str" or "char")
+                    {
+                        Token n = Next();
+                        raw.Append(n.Kind == "str" ? n.Text : CharBody(n.Text));
+                    }
+                    return StringLit(new Token { Kind = "str", Text = raw.ToString(), Line = c.Line, Col = c.Col, Space = c.Space });
+                }
                 return StringLit(c);
             case "ivar":
                 Next();
@@ -374,7 +419,17 @@ public sealed partial class Parser
                 {
                     Next();
                     SkipNl();
-                    Expr e = ExprList();
+                    // `(raise "x" rescue v)` / `(expr rescue v)`: the rescue modifier as a value
+                    Stmt? inner = IsKw("raise") ? Simple() : null;
+                    Expr e = inner == null ? ExprList() : At(new LitExpr { Kind = "nil", Text = "null" }, c);
+                    if (IsKw("rescue"))
+                    {
+                        Token rt = Next();
+                        var b = At(new BeginStmt { Body = [inner ?? At(new ExprStmt { Expr = e }, c)] }, c);
+                        b.Rescues.Add(At(new Rescue { Body = [At(new ExprStmt { Expr = Expression() }, rt)] }, rt));
+                        e = At(new StmtExpr { Stmt = b }, c);
+                    }
+                    else if (inner != null) throw Err("expected `rescue` after `(raise ...`");
                     SkipNl();
                     Expect(")");
                     return e;
@@ -408,7 +463,7 @@ public sealed partial class Parser
             case "case":
             case "begin":
                 {
-                    Stmt s = n == "case" ? Case() : n == "begin" ? Begin() : If();
+                    Stmt s = n == "case" ? Case() : n == "begin" ? Begin(asValue: true) : If();
                     s.Line = c.Line;
                     return At(new StmtExpr { Stmt = s }, c);
                 }
@@ -447,7 +502,10 @@ public sealed partial class Parser
                     return y;
                 }
         }
+        if (n == "loop" && Peek(1).Text is "do" or "{") throw Err("unexpected `loop` used as a value: assign it, `x = loop do ... break v ... end`");
         if (IsKeyword(n)) throw Err("unexpected keyword");
+        if (MagicName(c) is { } magic) { Next(); return magic; }
+        if (IsNumbered(n) && blockDepth == 0 && !IsLocal(n)) throw Err($"unexpected numbered parameter `{n}` outside a block");
         Next();
         if (IsLocal(n))
         {
@@ -467,7 +525,7 @@ public sealed partial class Parser
             ExpectCloseAngle();
         }
         call.Parens = IsOp("(") && !Cur.Space;
-        CallTail(call.Args, out call.Block);
+        CallTail(call.Args, out call.Block, n);
         if (call.Name == "expect" && call.Args.Count == 0 && call.Block != null) call.Name = "expect_block";
         if (!call.Parens && call.Args.Count == 0 && call.Block == null && call.TypeArgs.Count == 0)
             return At(new NameExpr { Name = n }, c);

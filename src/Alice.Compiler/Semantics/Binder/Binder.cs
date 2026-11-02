@@ -31,6 +31,7 @@ public sealed partial class Binder
     List<AType> returns = new();
     List<string> typeParams = new();
     bool changed;
+    bool finalPass;
     string file = "";
 
     public Binder(List<FileNode> files, ClrTypes clr)
@@ -51,8 +52,10 @@ public sealed partial class Binder
             BindAll();
             if (!changed && pass >= 1) break;
         }
+        finalPass = true;   // types are settled: checks that must not guess (AL0230 on unknown types) decide now
         BindAll();
         CheckBorrowsAndLifetimes();
+        CheckFieldInitialization();
     }
 
     CompileException Err(Node n, string msg) => new($"{file}:{n.Line}:{Math.Max(1, n.Col)}: {msg}");

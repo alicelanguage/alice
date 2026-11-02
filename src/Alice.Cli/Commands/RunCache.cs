@@ -31,12 +31,26 @@ public static class RunCache
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
     }
 
+    const int TagBytes = 32;
+    const UnixFileMode OwnerOnlyDir = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    const UnixFileMode OwnerOnlyFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    const UnixFileMode SharedWrite = UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
+
+    /// <summary>
+    /// The image is loaded and run, so an entry is only used when it carries this install's HMAC (key in `.key`, 0600)
+    /// and, on Unix, neither the directory nor the file is writable by other users. Anything else is a miss.
+    /// </summary>
     public static byte[]? TryGet(string key, string? dir = null)
     {
         try
         {
-            var path = Path.Combine(dir ?? DefaultDir, key + ".dll");
-            return File.Exists(path) ? File.ReadAllBytes(path) : null;
+            dir ??= DefaultDir;
+            var path = Path.Combine(dir, key + ".dll");
+            if (!File.Exists(path) || !Trusted(dir) || !Trusted(path)) return null;
+            var stored = File.ReadAllBytes(path);
+            if (stored.Length < TagBytes || ReadKey(dir) is not { } mac) return null;
+            var image = stored[TagBytes..];
+            return CryptographicOperations.FixedTimeEquals(stored.AsSpan(0, TagBytes), HMACSHA256.HashData(mac, image)) ? image : null;
         }
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
@@ -48,12 +62,47 @@ public static class RunCache
         try
         {
             dir ??= DefaultDir;
-            Directory.CreateDirectory(dir);
+            if (OperatingSystem.IsWindows()) Directory.CreateDirectory(dir);
+            else
+            {
+                Directory.CreateDirectory(dir, OwnerOnlyDir);
+                if (File.GetUnixFileMode(dir) != OwnerOnlyDir) File.SetUnixFileMode(dir, OwnerOnlyDir);   // caches from older versions were 0755
+            }
+            var mac = ReadKey(dir) ?? CreateKey(dir);
             var tmp = Path.Combine(dir, key + "." + Guid.NewGuid().ToString("N") + ".tmp");
-            File.WriteAllBytes(tmp, image);
+            using (var f = Create(tmp))
+            {
+                f.Write(HMACSHA256.HashData(mac, image));
+                f.Write(image);
+            }
             File.Move(tmp, Path.Combine(dir, key + ".dll"), overwrite: true);
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
+
+    static bool Trusted(string path) => OperatingSystem.IsWindows() || (File.GetUnixFileMode(path) & SharedWrite) == 0;
+
+    static byte[]? ReadKey(string dir)
+    {
+        var f = Path.Combine(dir, ".key");
+        if (!File.Exists(f) || !Trusted(f)) return null;
+        var k = File.ReadAllBytes(f);
+        return k.Length == 32 ? k : null;
+    }
+
+    static byte[] CreateKey(string dir)
+    {
+        var k = RandomNumberGenerator.GetBytes(32);
+        var tmp = Path.Combine(dir, ".key." + Guid.NewGuid().ToString("N") + ".tmp");
+        using (var f = Create(tmp)) f.Write(k);
+        // two first runs may race: the first key wins, the loser's images are simply misses later
+        try { File.Move(tmp, Path.Combine(dir, ".key"), overwrite: false); }
+        catch (IOException) { File.Delete(tmp); return ReadKey(dir) ?? k; }
+        return k;
+    }
+
+    static FileStream Create(string path) => new(path, OperatingSystem.IsWindows()
+        ? new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write }
+        : new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, UnixCreateMode = OwnerOnlyFile });
 }

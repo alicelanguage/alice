@@ -68,7 +68,16 @@ public sealed partial class Binder
     bool Sendable(AType t, HashSet<object> seen, out string why)
     {
         why = "";
-        if (t.Kind is "unknown" or "dynamic" or "param" or "null") return true;
+        if (t.Kind == "null") return true;
+        // not known yet: decided in the final pass, where an unknown type is one the compiler cannot vouch for
+        if (t.Kind is "unknown" or "dynamic")
+        {
+            if (!finalPass) return true;
+            why = $"its type is not known at compile time";
+            return false;
+        }
+        if (t.Kind == "param") { why = $"type parameter `{t.Cs}` may stand for a mutable type"; return false; }
+        if (t.Clr is { IsPointer: true } || t.Cs.EndsWith('*')) { why = "a pointer aliases raw memory"; return false; }
         if (t.Kind == "func") { why = "a block can capture mutable state"; return false; }
         if (t.Kind == "array") { why = "arrays are mutable"; return false; }
         if (ActorThreadSafe(t) || ThreadSafe(t)) return true;
@@ -77,7 +86,7 @@ public sealed partial class Binder
             foreach (var a in t.Args) if (!Sendable(a, seen, out why)) return false;
             return true;
         }
-        if (t.Sym is TypeSym s) return SymSendable(s, seen, out why);
+        if (t.Sym is TypeSym s) return SymSendable(s, Bindings(s, t.Args), seen, out why);
         if (t.Clr is Type c) return ClrSendable(c, seen, out why);
         why = $"`{t.Cs}` may be mutable";
         return false;
@@ -85,13 +94,41 @@ public sealed partial class Binder
 
     static bool IsImmutableCollection(Type? c) => c?.Namespace == "System.Collections.Immutable";
 
-    bool SymSendable(TypeSym s, HashSet<object> seen, out string why)
+    /// <summary>`Box(T)` used as `Box(Array(Int32))`: T -> Array(Int32). Missing arguments stay parameters (audit F11).</summary>
+    static Dictionary<string, AType> Bindings(TypeSym s, List<AType> args)
+    {
+        var map = new Dictionary<string, AType>();
+        for (int i = 0; i < s.TypeParams.Count && i < args.Count; i++) map[s.TypeParams[i]] = args[i];
+        return map;
+    }
+
+    /// <summary>The type with its type parameters replaced by the arguments they are bound to.</summary>
+    static AType Subst(AType t, Dictionary<string, AType> map)
+    {
+        if (map.Count == 0) return t;
+        if (t.Kind == "param") return map.TryGetValue(t.Cs.TrimEnd('?'), out var r) ? r : t;
+        if (t.Args.Count == 0 && t.Elem == null) return t;
+        return new AType(t.Kind, t.Cs, t.Clr)
+        {
+            Sym = t.Sym, Args = t.Args.Select(a => Subst(a, map)).ToList(), Elem = t.Elem != null ? Subst(t.Elem, map) : null,
+            OpenClr = t.OpenClr, Nullable = t.Nullable, TupleNames = t.TupleNames,
+        };
+    }
+
+    /// <summary>The bindings of a base class's parameters, seen from a subclass whose own parameters map by `map`.</summary>
+    static Dictionary<string, AType> BaseBindings(TypeSym s, TypeSym b, Dictionary<string, AType> map)
+    {
+        var bt = s.Bases.FirstOrDefault(x => x.Sym == b);
+        return bt == null ? new() : Bindings(b, bt.Args.Select(a => Subst(a, map)).ToList());
+    }
+
+    bool SymSendable(TypeSym s, Dictionary<string, AType> map, HashSet<object> seen, out string why)
     {
         why = "";
-        if (!seen.Add(s)) return true;
+        if (!seen.Add(s.Name + "<" + string.Join(",", s.TypeParams.Select(p => map.TryGetValue(p, out var a) ? a.Cs : p)) + ">")) return true;
         if (s.Kind == "enum")
         {
-            foreach (var v in s.Variants) if (!SymSendable(v, seen, out why)) return false;
+            foreach (var v in s.Variants) if (!SymSendable(v, map, seen, out why)) return false;
             return true;
         }
         if (s.Kind is not ("struct" or "class" or "record"))
@@ -113,17 +150,18 @@ public sealed partial class Binder
                 return false;
             }
         }
-        return FieldsSendable(s, seen, out why);
+        return FieldsSendable(s, map, seen, out why);
     }
 
-    bool FieldsSendable(TypeSym s, HashSet<object> seen, out string why)
+    bool FieldsSendable(TypeSym s, Dictionary<string, AType> map, HashSet<object> seen, out string why)
     {
         why = "";
-        for (var b = s; b != null; b = b.BaseClass)
+        var m = map;
+        for (var b = s; b != null; m = b.BaseClass != null ? BaseBindings(b, b.BaseClass, m) : m, b = b.BaseClass)
             foreach (var f in b.Fields.Values)
             {
                 if (f.IsStatic || f.Kind is "const" or "enum-member") continue;
-                if (!Sendable(f.Type, seen, out why))
+                if (!Sendable(Subst(f.Type, m), seen, out why))
                 {
                     why = $"field `{f.Name}` of `{s.Name}`: {why}";
                     return false;
@@ -135,7 +173,8 @@ public sealed partial class Binder
     static bool ClrSendable(Type c, HashSet<object> seen, out string why)
     {
         why = "";
-        if (c.IsPrimitive || c.IsEnum || SendableClr.Contains(c) || c.IsPointer) return true;
+        if (c.IsPointer) { why = "a pointer aliases raw memory"; return false; }
+        if (c.IsPrimitive || c.IsEnum || SendableClr.Contains(c)) return true;
         if (c.IsArray) { why = "arrays are mutable"; return false; }
         if (!seen.Add(c)) return true;
         if (IsImmutableCollection(c))

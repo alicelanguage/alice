@@ -109,7 +109,7 @@ public sealed partial class Parser
             if (s is not MultiAssign pm) throw Err("expected `par a, b = f(x), g(y)`");
             pm.Par = true;
         }
-        else if (IsKw("loop") && (Peek(1).Text == "do" || Peek(1).Text == "{")) s = Loop();
+        else if (LoopAhead()) s = Loop(null);
         else if (IsKw("using") && Peek(1).Kind == "id" && Peek(2).Text == "=") s = UsingResource();
         else if (IsKw("await") && Peek(1).Kind == "id" && Peek(1).Text == "using" && Peek(2).Kind == "id" && Peek(3).Text == "=")
         {
@@ -120,8 +120,17 @@ public sealed partial class Parser
         }
         else s = Simple();
         s.Line = tok.Line;
-        while (IsKw("if") || IsKw("unless"))
+        if (IsKw("rescue") && s is ExprStmt or Assign or LocalDecl) s = RescueModifier(s, tok);
+        bool fromBegin = tok.Kind == "id" && tok.Text == "begin" && s is BeginStmt;
+        while (IsKw("if") || IsKw("unless") || IsKw("while") || IsKw("until"))
         {
+            if (IsKw("while") || IsKw("until"))
+            {
+                s = ModifierLoop(s, tok, fromBegin);
+                fromBegin = false;
+                continue;
+            }
+            fromBegin = false;
             bool neg = Next().Text == "unless";
             Expr c = Expression();
             if (neg) c = At(new UnaryExpr { Op = "!", E = c }, tok);
@@ -142,14 +151,34 @@ public sealed partial class Parser
             Next();
             return At(new ReturnStmt { Value = AtStmtEnd() ? null : ExprList() }, tok);
         }
-        if (IsKw("break")) { Next(); return At(new BreakStmt(), tok); }
+        if (IsKw("break"))
+        {
+            Next();
+            var br = At(new BreakStmt(), tok);
+            if (!AtStmtEnd()) breakValues[br] = ExprList();
+            return br;
+        }
         if (IsKw("retry")) { Next(); return At(new RetryStmt(), tok); }
         if (IsKw("next"))
         {
             Next();
             return At(new NextStmt { Value = AtStmtEnd() ? null : Expression() }, tok);
         }
-        if (IsKw("raise")) { Next(); return At(new RaiseStmt { Value = Expression() }, tok); }
+        if (IsKw("raise"))
+        {
+            Next();
+            if (AtStmtEnd()) return Reraise(tok);
+            Expr rv = Expression();
+            if (IsOp(","))
+            {
+                // `raise Klass, "message"` is `raise Klass.new("message")`
+                if (rv is not ConstExpr ce) throw Err("expected an exception class before ',' (raise Klass, \"message\")");
+                Next();
+                SkipNl();
+                rv = At(new NewExpr { TypeRef = ce.Ref, Args = [At(new Arg { Value = Expression() }, tok)] }, tok);
+            }
+            return At(new RaiseStmt { Value = rv }, tok);
+        }
         if (IsKw("own") && Peek(1).Kind == "id" && !IsKeyword(Peek(1).Text) && Peek(2).Kind == "op" && Peek(2).Text == "=")
         {
             Next();
@@ -186,6 +215,12 @@ public sealed partial class Parser
             string name = Next().Text;
             Next();
             SkipNl();
+            if (LoopAhead())
+            {
+                bool fresh = !IsLocal(name);
+                DeclareLocal(name);
+                return LoopValue(At(new NameExpr { Name = name }, tok), fresh);
+            }
             Expr v = Expression();
             DeclareLocal(name);
             return At(new Assign { Target = At(new NameExpr { Name = name }, tok), Value = v }, tok);
@@ -206,6 +241,7 @@ public sealed partial class Parser
         {
             Next();
             SkipNl();
+            if (LoopAhead()) return LoopValue(ex, false);
             return At(new Assign { Target = ex, Value = Expression() }, tok);
         }
         if (t[p].Kind == "op" && " += -= *= /= %= |= &= ^= <<= >>= **= ||= &&= ".Contains(" " + Cur.Text + " "))
@@ -289,6 +325,7 @@ public sealed partial class Parser
             var name = ((NameExpr)wa.Target).Name;
             var exit = At(new IfStmt { Conds = { At(new UnaryExpr { Op = "!", E = At(new NameExpr { Name = name }, tok) }, tok) }, Bodies = { new List<Stmt> { At(new BreakStmt(), tok) } } }, tok);
             var body = Block(" end ");
+            LoopBreaks(body);
             body.InsertRange(0, [wa, exit]);
             var lw = At(new WhileStmt { Cond = At(new LitExpr { Kind = "bool", Text = "true" }, tok), Body = body }, tok);
             ExpectKw("end");
@@ -298,16 +335,19 @@ public sealed partial class Parser
         if (neg) c = At(new UnaryExpr { Op = "!", E = c }, tok);
         if (IsKw("do")) Next();
         var w = At(new WhileStmt { Cond = c, Body = Block(" end ") }, tok);
+        LoopBreaks(w.Body);
         ExpectKw("end");
         return w;
     }
 
-    WhileStmt Loop()
+    /// <summary>`loop do ... end`: `onBreak` rewrites its `break value`s (`x = loop do`), else they must be side-effect free.</summary>
+    WhileStmt Loop(Func<BreakStmt, Expr, List<Stmt>?>? onBreak)
     {
         Token tok = Next();
         bool brace = IsOp("{");
         Next();
         var w = At(new WhileStmt { Cond = At(new LitExpr { Kind = "bool", Text = "true" }, tok), Body = Block(brace ? " } " : " end ") }, tok);
+        if (onBreak != null) OwnBreaks(w.Body, onBreak); else LoopBreaks(w.Body);
         if (brace) Expect("}"); else ExpectKw("end");
         return w;
     }
@@ -324,6 +364,7 @@ public sealed partial class Parser
         if (IsKw("do")) Next();
         foreach (var n in f.Names) DeclareLocal(n);
         f.Body = Block(" end ");
+        LoopBreaks(f.Body);
         ExpectKw("end");
         return f;
     }
@@ -345,7 +386,13 @@ public sealed partial class Parser
                     w.Patterns.Add(InPattern());
                     while (IsOp("|")) { Next(); w.Patterns.Add(InPattern()); }   // alternatives
                 }
-                else w.Patterns.Add(Expression());
+                else
+                {
+                    string savedCtx = rangeCtx;
+                    rangeCtx = "pattern";
+                    w.Patterns.Add(Expression());
+                    rangeCtx = savedCtx;
+                }
                 if (!IsOp(",")) break;
                 Next();
                 SkipNl();
@@ -378,13 +425,25 @@ public sealed partial class Parser
             if (n != "_") DeclareLocal(n);
             return At(new BindPatternExpr { Name = n }, tok);
         }
-        Expr e = Binary(5);   // above `|`, so `1 | 2` is an alternative, not a bitwise or
-        if (IsOp("..") || IsOp("..."))
+        string savedCtx = rangeCtx;
+        rangeCtx = "pattern";
+        try
         {
-            bool excl = Next().Text == "...";
-            return At(new RangeExpr { A = e, B = Binary(5), Excl = excl }, tok);
+            if (IsOp("..") || IsOp("..."))   // `in ..5`
+            {
+                bool bexcl = Next().Text == "...";
+                return OpenRange(tok, null, Binary(5), bexcl);
+            }
+            Expr e = Binary(5);   // above `|`, so `1 | 2` is an alternative, not a bitwise or
+            if (IsOp("..") || IsOp("..."))
+            {
+                bool excl = Next().Text == "...";
+                if (RangeEndHere()) return OpenRange(tok, e, null, excl);   // `in 4..`
+                return At(new RangeExpr { A = e, B = Binary(5), Excl = excl }, tok);
+            }
+            return e;
         }
-        return e;
+        finally { rangeCtx = savedCtx; }
     }
 
     HashPatternExpr HashPattern()
@@ -451,28 +510,10 @@ public sealed partial class Parser
         return ap;
     }
 
-    BeginStmt Begin()
+    BeginStmt Begin(bool asValue = false)
     {
         Token tok = Next();
-        var b = At(new BeginStmt { Body = Block(" rescue ensure end ") }, tok);
-        while (IsKw("rescue"))
-        {
-            var r = At(new Rescue(), Next());
-            if (t[p].Kind == "id")
-            {
-                r.Name = Next().Text;
-                DeclareLocal(r.Name);
-                if (IsOp(":")) { Next(); r.Type = Type(); }
-            }
-            else if (t[p].Kind == "const") r.Type = Type();
-            r.Body = Block(" rescue ensure end ");
-            b.Rescues.Add(r);
-        }
-        if (IsKw("ensure"))
-        {
-            Next();
-            b.Ensure = Block(" end ");
-        }
+        var b = RescueTail(Block(RescueStops + "end "), tok, asValue);
         ExpectKw("end");
         return b;
     }

@@ -372,4 +372,87 @@ public class LoopParallelizeTests
         const string src = "def f(xs : Array(Float64)) : Array(Int32)\n  out = Array(Int32).new(xs.size)\n  for i in 0...xs.size\n    out[i] = xs[i].log2.floor.to_i32.clamp(0, 99) + xs[i].sign\n  end\n  out\nend\n";
         Assert.Contains("Par.Range", AliceCompiler.Transpile(src));
     }
+
+    // a pure callee that reads a written array at another index is a hidden cross-iteration dependency
+    const string HiddenScan = "def left(a : Array(Int32), i : Int32) : Int32\n  i > 0 ? a[i - 1] : 0\nend\n";
+
+    [Fact]
+    public void Par_for_rejects_a_written_array_read_through_a_pure_callee()
+    {
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(HiddenScan + "def f(n : Int32) : Array(Int32)\n  a = Array(Int32).new(n, 1)\n  par for i in 0...n\n    a[i] = left(a, i) + 1\n  end\n  a\nend\n"));
+        Assert.Equal("AL0209", ex.Diagnostics[0].Code);
+    }
+
+    [Fact]
+    public void A_written_array_read_through_a_callee_stays_serial()
+    {
+        var src = HiddenScan + "def f(n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  for i in 0...n\n    a[i] = left(a, i) + 1\n  end\n  a[n - 1]\nend\n";
+        Assert.DoesNotContain("__parfor", AliceCompiler.Transpile(src));
+        Assert.Equal(100_000, Compile(src).Invoke(null, [100_000]));
+    }
+
+    [Fact]
+    public void A_callee_reading_a_field_array_keeps_the_loop_serial()
+    {
+        var src = "class Grid\n  def initialize(@cells : Array(Int32))\n  end\n  def left(i : Int32) : Int32\n    i > 0 ? @cells[i - 1] : 0\n  end\nend\ndef f(n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  g = Grid.new(a)\n  for i in 0...n\n    a[i] = g.left(i) + 1\n  end\n  a[n - 1]\nend\n";
+        Assert.DoesNotContain("__parfor", AliceCompiler.Transpile(src));
+    }
+
+    [Fact]
+    public void A_callee_reading_a_different_array_still_parallelizes()
+    {
+        // b is only read and is a distinct local: the runtime alias guard decides
+        var src = HiddenScan + "def f(n : Int32) : Int32\n  a = Array(Int32).new(n)\n  b = Array(Int32).new(n, 1)\n  par for i in 0...n\n    a[i] = left(b, i) + 1\n  end\n  a[n - 1]\nend\n";
+        var cs = AliceCompiler.Transpile(src);
+        Assert.Contains("__parfor", cs);
+        Assert.Contains("ReferenceEquals(a, b)", cs);
+        Assert.Equal(2, Compile(src).Invoke(null, [10]));
+    }
+
+    // a callee that reads the written array only at the loop counter reads the cell this iteration owns
+    const string AtI = "def twice(a : Array(Int32), i : Int32) : Int32\n  a[i] * 2 + a.size\nend\ndef lend(a : Array(Int32), i : Int32) : Int32\n  twice(a, i) + 1\nend\n";
+
+    [Theory]
+    [InlineData("twice")]
+    [InlineData("lend")]   // lent on to another index-local callee
+    public void A_callee_reading_only_the_counter_cell_parallelizes(string callee)
+    {
+        var src = AtI + $"def f(n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  par for i in 0...n\n    a[i] = {callee}(a, i)\n  end\n  a[n - 1]\nend\n";
+        Assert.Contains("__parfor", AliceCompiler.Transpile(src));
+        Assert.Equal(callee == "twice" ? 2 + 1000 : 3 + 1000, Compile(src).Invoke(null, [1000]));
+    }
+
+    [Theory]
+    [InlineData("def g(a : Array(Int32), i : Int32) : Int32\n  i + 1 < a.size ? a[i + 1] : 0\nend\n", "g(a, i)")]   // another iteration's cell
+    [InlineData("def g(a : Array(Int32), i : Int32, k : Int32) : Int32\n  a[k]\nend\n", "g(a, i, 0)")]           // not indexed by the counter
+    [InlineData("def g(a : Array(Int32), i : Int32) : Int32\n  b = a\n  b[i]\nend\n", "g(a, i)")]                // aliased inside the callee
+    [InlineData("def g(a : Array(Int32), i : Int32) : Int32\n  i = i + 1\n  a[i]\nend\n", "g(a, i)")]           // the index is moved
+    public void A_callee_reading_other_cells_is_rejected(string def, string call)
+    {
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(def + $"def f(n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  par for i in 0...n\n    a[i] = {call} + 1\n  end\n  a[n - 1]\nend\n"));
+        Assert.Equal("AL0209", ex.Diagnostics[0].Code);
+    }
+
+    [Fact]
+    public void An_override_reading_other_cells_keeps_the_loop_serial()
+    {
+        var src = "class R\n  def at(a : Array(Int32), i : Int32) : Int32\n    a[i]\n  end\nend\nclass S < R\n  def at(a : Array(Int32), i : Int32) : Int32\n    i > 0 ? a[i - 1] : 0\n  end\nend\ndef f(r : R, n : Int32) : Int32\n  a = Array(Int32).new(n, 1)\n  for i in 0...n\n    a[i] = r.at(a, i) + 1\n  end\n  a[n - 1]\nend\n";
+        Assert.DoesNotContain("__parfor", AliceCompiler.Transpile(src));
+    }
+
+    // purity is decided by what runs, not by spelling: an append writes, a user operator or `module Math` is a call
+    [Theory]
+    [InlineData("def push(xs : List(Int32), v : Int32) : Int32\n  xs << v\n  v\nend\n", "push(xs, i)")]
+    [InlineData("module Math\n  def self.twice(v : Int32) : Int32\n    puts v\n    v * 2\n  end\nend\n", "Math.twice(i)")]
+    [InlineData("class P\n  def initialize(@n : Int32)\n  end\n  def ==(o : P) : Bool\n    @n += 1\n    true\n  end\nend\n", "(P.new(i) == P.new(1) ? 1 : 0)")]
+    public void Effects_hidden_behind_appends_operators_or_a_user_math_module_are_rejected(string defs, string call)
+    {
+        var src = defs + $"def f(xs : List(Int32), n : Int32) : Int32\n  a = Array(Int32).new(n)\n  par for i in 0...n\n    a[i] = {call}\n  end\n  a[n - 1]\nend\n";
+        var ex = Assert.Throws<CompileException>(() => AliceCompiler.Transpile(src));
+        Assert.Equal("AL0209", ex.Diagnostics[0].Code);
+    }
+
+    [Fact]
+    public void System_math_stays_pure()
+        => Assert.Contains("__parfor", AliceCompiler.Transpile("def f(n : Int32) : Float64\n  a = Array(Float64).new(n)\n  par for i in 0...n\n    a[i] = Math.Sqrt(i.to_f)\n  end\n  a[n - 1]\nend\n"));
 }

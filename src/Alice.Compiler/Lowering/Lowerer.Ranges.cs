@@ -59,8 +59,13 @@ public sealed partial class Lowerer
                 case ForStmt f: opaque.UnionWith(f.Locals); break;
             }
         }
+        // `out x` / `ref x`: the callee writes any value (also through a pointer it keeps, Interlocked.Add)
         foreach (var e in Walk(body))
-            if (e is CallExpr c) foreach (var arg in c.Args) if (arg.OutLocal != null) opaque.Add(arg.OutLocal);
+            foreach (var arg in e switch { CallExpr c => c.Args, NewExpr n => n.Args, InvokeExpr inv => inv.Args, SuperExpr { Args: { } sa } => sa, YieldExpr y => y.Args, _ => [] })
+            {
+                if (arg.OutLocal != null) opaque.Add(arg.OutLocal);
+                if (arg.Mod is "ref" or "out" && arg.Value is NameExpr { Sym: LocalSym rl }) opaque.Add(rl);
+            }
         void Add(LocalSym l, Syntax.Expr v) { if (!assigned.TryGetValue(l, out var list)) assigned[l] = list = new(); list.Add(v); }
 
         var candidates = assigned.Keys.Where(l => !opaque.Contains(l) && l.Type.Cs is "int" or "long").ToList();

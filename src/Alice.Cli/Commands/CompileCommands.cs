@@ -20,6 +20,7 @@ public static class CompileCommands
         public string? RefsFile;
         public string? AnalyzersFile;   // MSBuild @(Analyzer): source generators run in the type check too
         public string? Project;
+        public bool Strict;   // --strict: AL0220 for anything not statically typed
         public List<string> Rest = new();
     }
 
@@ -38,6 +39,7 @@ public static class CompileCommands
                 case "--release": o.Release = true; break;
                 case "--native": o.Native = true; break;
                 case "--r2r": o.ReadyToRun = o.Release = true; break;
+                case "--strict": o.Strict = true; break;
                 default:
                     if (a[i].EndsWith(".al")) { UsageException.RequireFile(a[i]); o.Files.Add(a[i]); }
                     else if (a[i].EndsWith(".alproj") || Directory.Exists(a[i])) o.Project = a[i];
@@ -58,7 +60,7 @@ public static class CompileCommands
     static Dictionary<string, string> Sources(List<SourceFile> files) => files.ToDictionary(f => f.Path, f => f.Text);
 
     /// <summary>Compile Alice sources to an in-memory IL image, rendering diagnostics on failure.</summary>
-    static byte[]? CompileFiles(List<SourceFile> files, string name, bool exe, List<string> refs, string? nativeDir = null, Action? onNative = null)
+    static byte[]? CompileFiles(List<SourceFile> files, string name, bool exe, List<string> refs, string? nativeDir = null, Action? onNative = null, bool strict = false)
     {
         try
         {
@@ -66,7 +68,7 @@ public static class CompileCommands
             var image = UiH.Spin($"{T("compiling")} {name}…", () =>
             {
                 var ph = Stopwatch.StartNew();
-                var (cs, c) = AliceCompiler.TranspileFull(files, refs, name + "_native");
+                var (cs, c) = AliceCompiler.TranspileFull(files, refs, name + "_native", strict: strict);
                 Alice.Cli.Telemetry.TelemetrySession.Phase("transpile", ph.ElapsedMilliseconds);
                 // @[Native] functions: clang -O3 -march=native; without a C compiler the managed bodies run instead
                 if (c != null)
@@ -97,12 +99,12 @@ public static class CompileCommands
         if (o.Files.Count == 0) return RunProject(o);
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Files[0]);
-        string? key = RunCache.Enabled ? RunCache.Key(files, name, o.Refs) : null;
+        string? key = RunCache.Enabled && !o.Strict ? RunCache.Key(files, name, o.Refs) : null;   // a cached image skipped the strict check
         var image = key != null ? RunCache.TryGet(key) : null;
         if (image == null)
         {
             bool native = false;
-            image = CompileFiles(files, name, true, o.Refs, onNative: () => native = true);
+            image = CompileFiles(files, name, true, o.Refs, onNative: () => native = true, strict: o.Strict);
             if (image == null) return 1;
             if (key != null && !native) RunCache.Put(key, image);   // a native library lives beside the run, not in the image
         }
@@ -120,13 +122,13 @@ public static class CompileCommands
     }
 
     /// <summary>Builds every workspace member, dependencies first.</summary>
-    public static int BuildWorkspace(string root, bool release)
+    public static int BuildWorkspace(string root, bool release, bool strict = false)
     {
         var ws = Workspace.Load(root);
         UiH.Status(T("workspace"), $"{ws.Members.Count} member(s): {string.Join(", ", ws.Members.Select(m => m.Name))}", "blue");
         foreach (var m in ws.Members)
         {
-            int rc = BuildProject(Manifest.Sync(m.Dir), release);
+            int rc = BuildProject(Manifest.Sync(m.Dir), release, strict: strict);
             if (rc != 0) return rc;
         }
         return 0;
@@ -147,7 +149,7 @@ public static class CompileCommands
         var proj = ProjectFiles.Find(where) ?? throw UsageException.NoProject();
         bool wasm = ProjectFiles.Kind(proj) == "wasm";
         if (wasm) WasmCommands.RequireNode();
-        int rc = BuildProject(proj, o.Release);
+        int rc = BuildProject(proj, o.Release, strict: o.Strict);
         if (rc != 0) return rc;
         UiH.Status(T("running"), Path.GetFileNameWithoutExtension(proj));
         if (wasm) return WasmCommands.Run(proj, o.Rest);
@@ -161,11 +163,11 @@ public static class CompileCommands
         var o = Parse(a);
         if (o.Files.Count == 0)
         {
-            if (Workspace.IsWorkspaceRoot(o.Project ?? ".")) return BuildWorkspace(o.Project ?? ".", o.Release);
+            if (Workspace.IsWorkspaceRoot(o.Project ?? ".")) return BuildWorkspace(o.Project ?? ".", o.Release, o.Strict);
             var proj = ProjectFiles.Find(o.Project ?? ".") ?? throw UsageException.NoProject();
             if (o.Native && ProjectFiles.Kind(proj) == "wasm")
                 throw new UsageException("--native does not apply to a WebAssembly package", "alice build --release trims it (and compiles it ahead of time with the wasm-tools workload)");
-            return BuildProject(proj, o.Release || o.Native, o.Native, o.ReadyToRun);
+            return BuildProject(proj, o.Release || o.Native, o.Native, o.ReadyToRun, o.Strict);
         }
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Output ?? o.Files[0]);
@@ -174,7 +176,7 @@ public static class CompileCommands
         if (o.Native) return NativeSingle(files, name, dir, o.Refs);
         var cs = AliceCompiler.TranspileAll(files, o.Refs);
         bool exe = cs.Any(c => c.Contains("public static void Main(string[] ARGV)"));
-        var image = CompileFiles(files, name, exe, o.Refs, dir);
+        var image = CompileFiles(files, name, exe, o.Refs, dir, strict: o.Strict);
         if (image == null) return 1;
         var dll = Path.Combine(dir, name + ".dll");
         File.WriteAllBytes(dll, image);
@@ -261,7 +263,7 @@ public static class CompileCommands
         return 0;
     }
 
-    public static int BuildProject(string proj, bool release, bool native = false, bool readyToRun = false)
+    public static int BuildProject(string proj, bool release, bool native = false, bool readyToRun = false, bool strict = false)
     {
         if (native) return Publish(proj, Path.Combine(Path.GetDirectoryName(proj)!, "bin", "native"));
         var sw = Stopwatch.StartNew();
@@ -269,7 +271,9 @@ public static class CompileCommands
         int built = 0;
         UiH.Status(T("compiling"), $"{name} ({(release ? "release" : "debug")})");
         if (ProjectFiles.Kind(proj) == "wasm") return WasmCommands.Build(proj, release, sw);
-        var r = UiH.Spin($"{T("building")} {name}…", () => DotNet.Run(["build", proj, "-c", release ? "Release" : "Debug", "-v", "q", "-nologo", "-clp:NoSummary"],
+        // --strict overrides alice.toml for this build (`[build] strict = true` sets AliceStrict in the .alproj)
+        string[] buildArgs = ["build", proj, "-c", release ? "Release" : "Debug", "-v", "q", "-nologo", "-clp:NoSummary", .. (strict ? new[] { "-p:AliceStrict=true" } : [])];
+        var r = UiH.Spin($"{T("building")} {name}…", () => DotNet.Run(buildArgs,
             line => { if (line.Contains(" -> ")) Interlocked.Increment(ref built); }));
         if (r.ExitCode != 0 || r.Diagnostics.Any(d => d.Severity == "error"))
         {
@@ -315,7 +319,7 @@ public static class CompileCommands
         if (paths.Count == 0) throw new UsageException(T("no.files"), T("hint.no.project"));
         var files = Read(paths);
         var sw = Stopwatch.StartNew();
-        var image = CompileFiles(files, "check", false, o.Refs);
+        var image = CompileFiles(files, "check", false, o.Refs, strict: o.Strict);
         if (image == null) return 1;
         UiH.Status(T("finished"), $"{T("checking")} {files.Count} file(s) ({UiH.Elapsed(sw)})");
         return 0;
@@ -364,8 +368,17 @@ public static class CompileCommands
         var o = Parse(a);
         if (o.Files.Count == 0) throw UsageException.Usage("alice emit <file.al>");
         var files = Read(o.Files);
-        if (air) Console.Write(Alice.Compiler.Mir.MirDump.Collect(() => AliceCompiler.TranspileAll(files, o.Refs)));
-        else foreach (var cs in AliceCompiler.TranspileAll(files, o.Refs)) Console.WriteLine(cs);
+        try
+        {
+            var units = () => AliceCompiler.TranspileFull(files, o.Refs, "alice_native", strict: o.Strict).CSharp;
+            if (air) Console.Write(Alice.Compiler.Mir.MirDump.Collect(() => units()));
+            else foreach (var cs in units()) Console.WriteLine(cs);
+        }
+        catch (CompileException e) when (o.Strict)
+        {
+            Ui.DiagnosticRenderer.Render(e.Diagnostics, Sources(files));
+            return 1;
+        }
         return 0;
     }
 
@@ -376,7 +389,7 @@ public static class CompileCommands
         // diagnostics (DotNet.ParseLine). The in-process check is a second, cold compile: 2.4 of 3.7 s per edit.
         bool check = !a.Remove("--no-check");
         bool sequential = a.Remove("--sequential");
-        var o = Parse(a);
+        var o = Parse(a);   // --strict (AliceStrict): AL0220
         if (o.Output == null || o.Files.Count == 0) throw new CompileException(T("no.files"));
         Directory.CreateDirectory(o.Output);
         try
@@ -384,7 +397,7 @@ public static class CompileCommands
             var files = Read(o.Files);
             string lib = o.Rest.FirstOrDefault(r => r.StartsWith("--native-lib="))?["--native-lib=".Length..] ?? "alice_native";
             string naming = o.Rest.FirstOrDefault(r => r.StartsWith("--naming="))?["--naming=".Length..] ?? "alice";
-            var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib, naming == "dotnet", sequential);
+            var (cs, csrc) = AliceCompiler.TranspileFull(files, o.Refs, lib, naming == "dotnet", sequential, o.Strict);
             // read by Alice.targets when alice.toml leaves [runtime] gc at "auto"
             File.WriteAllText(Path.Combine(o.Output, "alice.gc"), AliceCompiler.UsesParallel(cs) ? "server" : "workstation");
             if (csrc != null) File.WriteAllText(Path.Combine(o.Output, lib + ".c"), csrc);

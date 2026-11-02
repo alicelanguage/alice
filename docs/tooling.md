@@ -8,15 +8,15 @@ Run from source: `dotnet run --project src/Alice.Cli -- <command>`.
 |---|---|
 | `alice new <name> [--lib\|--tool\|--game\|--wasm]` | create package (exe, library with `naming = "dotnet"`, .NET tool, MonoGame game, or [WebAssembly](#webassembly-kind--wasm) package): `alice.toml`, `src/`, `test/`, `.gitignore`; inside a workspace it is added to `members` |
 | `alice new <name> --workspace` | create workspace root (`[workspace] members = []`) |
-| `alice build [dir\|files] [--release] [--native] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT |
-| `alice run [dir\|file.al] [member] [-- args]` | build and run; workspace with several exe members: `alice run <member>` |
-| `alice check` | type-check, no output |
+| `alice build [dir\|files] [--release] [--native] [--strict] [-o out] [-r ref.dll]` | package/workspace: MSBuild build; files: compile to IL; `--native` = NativeAOT; `--strict` = [strict typing](language.md#strict-typing-al0220) for this build |
+| `alice run [dir\|file.al] [member] [--strict] [-- args]` | build and run; workspace with several exe members: `alice run <member>` |
+| `alice check [--strict]` | type-check, no output; `--strict`: anything not statically typed is AL0220 |
 | `alice test [files]` | build the package, run every `def test_*` in `test/*.al` |
 | `alice fmt [--check] [paths]` | format `.al` files in place; `--check` lists unformatted files, exit 1 (CI) |
 | `alice add <pkg> [--version v] [--path p]` | add dependency to `alice.toml` (default version `*`), regenerate, restore |
 | `alice update` | delete `alice.lock`, rebuild, lock newly resolved versions |
 | `alice clean [dir]` | remove `bin/` and `obj/` |
-| `alice emit file.al` | print lowered C# |
+| `alice emit [--strict] file.al` | print lowered C# |
 | `alice explain [files]` | show which optimizations each method received (parallel loops, stack arrays, presized collections, shared immutable objects, ...) |
 | `alice prove [files] [--check] [--smt]` | prove every `rule` (usually in `RULES.al`) and write `PROOF.al`; `--check` verifies only (CI); `--smt` proves rules over whole Int32/Int64 ranges with Z3 ([rules and proofs](#rules-and-proofs-alice-prove)) |
 | `alice guide [topic]` | print the Alice guide (`guide/GUIDE.md`); topics: `performance`, `proofs`, `interop` |
@@ -38,6 +38,8 @@ Single files: `alice run main.al` / `alice build main.al` follow `require` trans
 covers every source and `require`d file, the references and the compiler build, so an unchanged program skips
 transpiling and the Roslyn compile: a hello world goes from 1.2 s to 0.13 s on the second run. Programs with
 `@[Native]` functions are not cached. `ALICE_NO_CACHE=1` turns the cache off; deleting the directory clears it.
+The directory is owner-only (0700 on Unix) and every image carries an HMAC with a per-install key (`.key`, 0600);
+a modified image, or one in a directory other users can write to, is a miss and gets recompiled.
 
 ## alice.toml
 
@@ -58,6 +60,7 @@ shared = { workspace = true }   # workspace member by name
 native = true                # PublishAot (identical method bodies folded, AOT analyzers on)
 ready_to_run = true          # `alice build --release` also publishes precompiled code to bin/r2r (or: alice build --r2r)
 threads = false              # single-threaded target: parallel loops, pipelines and forks compile to serial code (wasm default)
+strict = true                # strict typing: an inferred `dynamic` (not written as `Any`) is error AL0220 (or: --strict)
 
 [runtime]
 gc = "auto"                  # default: server GC if the program runs in parallel, else workstation; or workstation | server | low-memory
@@ -171,7 +174,7 @@ Restores use `dotnet restore`, so packages live in the standard .NET global cach
 | `alice install --tool <name>` | install/update a .NET global tool |
 | `alice cache [--clear]` | show or clear the shared package cache |
 | `alice pack [dir] [-o out]` | build a `.nupkg` (lib or tool) into `bin/package/` |
-| `alice publish [dir] [--source url\|dir] [--api-key k] [--dry-run]` | pack and push; default source nuget.org, key from `--api-key` or `NUGET_API_KEY` |
+| `alice publish [dir] [--source url\|dir] [--api-key k] [--dry-run] [--dotnet-push]` | pack and push; default source nuget.org, key from `NUGET_API_KEY` (preferred: an argument is visible in the process list) or `--api-key`. Feeds are pushed to by alice over https with the key in a header; an existing version is skipped. `--dotnet-push` uses `dotnet nuget push`, which takes the key as an argument |
 
 ### Publishing
 
@@ -292,8 +295,11 @@ eval "$(alice completions bash)"   # zsh, fish, pwsh too
 ```
 
 Layout: `~/.alice/toolchains/VERSION/`, `~/.alice/bin/alice` (shim to the default), `~/.alice/settings.json`.
-Selection order: `alice +VERSION`, `ALICE_TOOLCHAIN`, nearest `alice-toolchain` file, default. `ALICE_HOME` moves
-the root; `ALICE_RELEASES_REPO` points at a fork; `GITHUB_TOKEN` raises API limits. Once a day a background
+Selection order: `alice +VERSION`, `ALICE_TOOLCHAIN`, nearest `alice-toolchain` file, default. An `alice-toolchain`
+file holds an exact version (`0.10.1`, `0.11.0-nightly.20261016`) or `stable`/`nightly`; anything else, a path
+included, is an error, and only toolchains under `~/.alice/toolchains` run. `ALICE_HOME` moves
+the root; `ALICE_RELEASES_REPO` points at a fork; `GITHUB_TOKEN` raises API limits and is sent only to
+`api.github.com`. Archives are downloaded only over https from GitHub. Once a day a background
 check caches the newest stable release and the next command prints a one-line notice; `ALICE_NO_UPDATE_CHECK=1`
 or `CI` disables it.
 

@@ -87,10 +87,19 @@ public sealed partial class Lowerer
             }
         }
 
+        // an assignment inside an if/case/begin used as a value is invisible to the move flow (step 4): its locals stay GC
+        foreach (var s in ValueStmts(body))
+            if (s is Assign va)
+            {
+                if (Assigned(va) is { } vl) Drop(cands, reasons, vl, va, "it is assigned inside an if/case used as a value");
+                if (va.Value is NameExpr { Sym: LocalSym vs }) Drop(cands, reasons, vs, va, "it is assigned inside an if/case used as a value");
+            }
+
         // 2. every mention must be an owning use
         var tailValues = new HashSet<Syntax.Expr>();
         if (tail == Tail.Return) TailExprs(body, tailValues);
-        foreach (var l in cands.Keys.ToList()) CheckUses(body, l, cands, reasons, tailValues);
+        var appends = StatementAppends(body, tail);
+        foreach (var l in cands.Keys.ToList()) CheckUses(body, l, cands, reasons, tailValues, appends);
 
         // 3. moves join locals into one ownership group: all of it is owned or none
         bool changed = true;
@@ -165,7 +174,13 @@ public sealed partial class Lowerer
     /// </summary>
     bool OwnedResult(Syntax.Expr e)
     {
-        if (Unwrap(e) is not CallExpr { Sym: MethodSym m, Block: null } || m.Ret is not { Kind: "array", Elem: { } el } || !Unmanaged.Contains(el.Cs)) return false;
+        if (Unwrap(e) is not CallExpr { Res: "alice", Sym: MethodSym m, Block: null }) return false;
+        return Overrides(m).All(OwnedResultOf);   // a virtual call may run any override: each must hand over a fresh array
+    }
+
+    bool OwnedResultOf(MethodSym m)
+    {
+        if (m.Ret is not { Kind: "array", Elem: { } el } || !Unmanaged.Contains(el.Cs)) return false;
         if (ownedResults.TryGetValue(m, out var known)) return known;
         if (m.Decl is not { HasBody: true } d || m.IsAsync || m.UsesYield || m.IsCtor) return ownedResults[m] = false;
         ownedResults[m] = false;   // recursion: not owned while being analysed
@@ -179,7 +194,7 @@ public sealed partial class Lowerer
             if (assigns.Count == 0 || assigns.Any(a => a.Op != "=" || !Fresh(a.Value))) return false;
             if (WalkStmts(d.Body).OfType<MultiAssign>().Any(ma => ma.Locals.Contains(l))) return false;
             var cands = new Dictionary<LocalSym, string> { [l] = el.Cs };
-            CheckUses(d.Body, l, cands, new(), tails);
+            CheckUses(d.Body, l, cands, new(), tails, StatementAppends(d.Body, Tail.Return));
             if (!cands.ContainsKey(l)) return false;
         }
         return ownedResults[m] = true;
@@ -275,7 +290,56 @@ public sealed partial class Lowerer
         }
     }
 
-    void CheckUses(List<Stmt> body, LocalSym l, Dictionary<LocalSym, string> cands, Dictionary<LocalSym, (Node, string)> reasons, HashSet<Syntax.Expr> tailValues)
+    /// <summary>Statements inside if/case/begin used as a value (and inlined bodies).</summary>
+    static IEnumerable<Stmt> ValueStmts(List<Stmt> body) =>
+        WalkStmts(body).SelectMany(s => Roots(s).OfType<Syntax.Expr>().SelectMany(StmtValues)).SelectMany(se => WalkStmts([se.Stmt]));
+
+    /// <summary>
+    /// `xs << a << b` statements whose value is dropped: not the method's result, not inside an if/case/begin used as
+    /// a value. Each `<<` of such a chain returns the list only to the next `<<`.
+    /// </summary>
+    static HashSet<Syntax.Expr> StatementAppends(List<Stmt> body, Tail tail)
+    {
+        var values = new HashSet<Stmt>();
+        if (tail == Tail.Return) TailStmts(body, values);
+        var inValues = ValueStmts(body).ToHashSet();
+        var r = new HashSet<Syntax.Expr>();
+        foreach (var s in WalkStmts(body))
+            if (s is ExprStmt es && !values.Contains(es) && !inValues.Contains(es))
+                for (var e = es.Expr; e is BinaryExpr { Op: "<<" } b; e = b.L) r.Add(b);
+        return r;
+    }
+
+    /// <summary>Statements whose value becomes the value of `body` (as the lowering threads its tail).</summary>
+    static void TailStmts(List<Stmt> body, HashSet<Stmt> into)
+    {
+        if (body.Count == 0) return;
+        var last = body[^1];
+        into.Add(last);
+        switch (last)
+        {
+            case IfStmt i: foreach (var b in i.Bodies) TailStmts(b, into); if (i.Else != null) TailStmts(i.Else, into); break;
+            case CaseStmt c: foreach (var w in c.Whens) TailStmts(w.Body, into); if (c.Else != null) TailStmts(c.Else, into); break;
+            case BeginStmt b: TailStmts(b.Body, into); foreach (var r in b.Rescues) TailStmts(r.Body, into); break;
+            case UsingStmt u: TailStmts(u.Body, into); break;
+        }
+    }
+
+    /// <summary>
+    /// The methods a call of m may run: m and, for an instance method of a class with subclasses, every override in
+    /// the program (the receiver may be a subclass). An analysis of the callee must hold for all of them.
+    /// </summary>
+    IEnumerable<MethodSym> Overrides(MethodSym m)
+    {
+        yield return m;
+        if (m.IsStatic || m.IsCtor || m.Owner is not { Kind: "class", HasSubclass: true } owner) yield break;
+        foreach (var t in binder.Types.Values.Distinct())
+            if (t != owner && Inherits(t, owner) && t.Methods.TryGetValue(m.Name, out var list))
+                foreach (var o in list)
+                    if (o != m && !o.IsStatic) yield return o;
+    }
+
+    void CheckUses(List<Stmt> body, LocalSym l, Dictionary<LocalSym, string> cands, Dictionary<LocalSym, (Node, string)> reasons, HashSet<Syntax.Expr> tailValues, HashSet<Syntax.Expr> appends)
     {
         int mentions = 0, allowed = 0;
         foreach (var e in Walk(body))
@@ -289,13 +353,15 @@ public sealed partial class Lowerer
                 case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "clr" or "field" } lc when x == l && cands[l].StartsWith(ListPrefix)
                     && (lc.Res == "field" ? lc.Name is "Count" or "Capacity" : ListMethods.Contains(lc.Name)): allowed++; break;
                 case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "ext" } lx when x == l && cands[l].StartsWith(ListPrefix) && ListExts.Contains(Binder.Mangle(lx.Name)): allowed++; break;
-                case BinaryExpr { Op: "<<", L: NameExpr { Sym: LocalSym x } } when x == l && cands[l].StartsWith(ListPrefix): allowed++; break;
+                // `xs << v` returns xs: only an append whose value is dropped leaves the list where it is
+                case BinaryExpr { Op: "<<", L: NameExpr { Sym: LocalSym x } } ap when x == l && cands[l].StartsWith(ListPrefix) && appends.Contains(ap): allowed++; break;
                 case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "clr" or "field" } dc when x == l && cands[l].StartsWith(DictPrefix)
                     && (dc.Res == "field" ? dc.Name is "Count" : DictMethods.Contains(dc.Name)): allowed++; break;
                 case CallExpr { Recv: NameExpr { Sym: LocalSym x }, Res: "ext" } dx when x == l && cands[l].StartsWith(DictPrefix) && DictExts.Contains(Binder.Mangle(dx.Name)): allowed++; break;
                 case LambdaExpr lam when WalkExpr(lam).OfType<NameExpr>().Any(n => n.Sym == l): Drop(cands, reasons, l, lam, "it is captured by a block"); return;
                 case CallExpr { Block: { } blk } cb when Walk(blk.Body).OfType<NameExpr>().Any(n => n.Sym == l): Drop(cands, reasons, l, cb, "it is captured by a block"); return;
-                case CallExpr { Sym: MethodSym m, Block: null } call:
+                // only a direct Alice call binds arguments to the callee's parameters (method_missing gets them as objects)
+                case CallExpr { Res: "alice", Sym: MethodSym m, Block: null } call:
                     for (int k = 0; k < call.Args.Count; k++)
                         if (call.Args[k] is { Value: NameExpr { Sym: LocalSym x } } arg && x == l)
                         {
@@ -332,7 +398,9 @@ public sealed partial class Lowerer
     /// Parameter k of m only borrows its array: inside m it is indexed, sized, iterated, or lent to another borrowing
     /// parameter; never assigned, stored, returned or captured. Recursion is assumed to borrow while being analysed.
     /// </summary>
-    bool Borrows(MethodSym m, int k, HashSet<(MethodSym, int)> visiting)
+    bool Borrows(MethodSym m, int k, HashSet<(MethodSym, int)> visiting) => Overrides(m).All(o => BorrowsOne(o, k, visiting));
+
+    bool BorrowsOne(MethodSym m, int k, HashSet<(MethodSym, int)> visiting)
     {
         if (borrows.TryGetValue((m, k), out var known)) return known;
         if (m.Decl is not { HasBody: true } d || m.IsAsync || m.UsesYield || k >= m.Params.Count || m.Params[k].Splat || m.Params[k].Block) return borrows[(m, k)] = false;
@@ -351,7 +419,7 @@ public sealed partial class Lowerer
                 case CallExpr { Name: "Length" } c when c.Recv != null && IsParam(c.Recv): allowed++; break;
                 case LambdaExpr lam when WalkExpr(lam).Any(IsParam): ok = false; break;
                 case CallExpr { Block: { } blk } when Walk(blk.Body).Any(IsParam): ok = false; break;
-                case CallExpr { Sym: MethodSym callee, Block: null } call:
+                case CallExpr { Res: "alice", Sym: MethodSym callee, Block: null } call:
                     for (int j = 0; j < call.Args.Count; j++)
                         if (call.Args[j] is { Value: { } v } arg && IsParam(v))
                         {
@@ -594,7 +662,11 @@ public sealed partial class Lowerer
                         return end;
                     }
                 case BeginStmt { Rescues.Count: 0, Ensure: null } b:
+                    Use(b.Lock, s, b);
                     return Block(b.Body, s, tail);
+                case UsingStmt u:
+                    Use(u.Value, s, u);
+                    return Block(u.Body, s, Tail.None);
                 default:
                     UseAll(st, s);
                     return s;

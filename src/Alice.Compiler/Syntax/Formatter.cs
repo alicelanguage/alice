@@ -4,7 +4,8 @@ namespace Alice.Compiler.Syntax;
 
 /// <summary>
 /// `alice fmt`: canonical layout. Re-indents by block structure (2 spaces), strips trailing whitespace,
-/// collapses blank-line runs, ends with one newline. Strings and comments are never inspected as code.
+/// collapses blank-line runs, ends with one newline. Strings and comments are never inspected as code, and heredoc
+/// bodies (with their terminator line) are kept byte for byte.
 /// Idempotent: Format(Format(x)) == Format(x).
 /// </summary>
 public static class Formatter
@@ -20,9 +21,19 @@ public static class Formatter
         var stack = new List<string>();   // open block kinds
         int blank = 0;
         bool started = false;
+        var heredocs = new Queue<(string Id, bool Plain)>();   // opened on an earlier line, bodies still to copy
         for (int li = 0; li < lines.Length; li++)
         {
             string raw = lines[li];
+            if (heredocs.Count > 0)
+            {
+                var (id, plain) = heredocs.Peek();
+                if (blank > 0) outp.Append('\n', 1);
+                blank = 0;
+                outp.Append(raw).Append('\n');
+                if (plain ? raw.TrimEnd('\r') == id : raw.Trim() == id) heredocs.Dequeue();
+                continue;
+            }
             string line = raw.Trim();
             if (line.Length == 0)
             {
@@ -33,6 +44,7 @@ public static class Formatter
             blank = 0;
             started = true;
             string code = CodeOf(line);
+            foreach (var h in HeredocOpeners(code, lines, li)) heredocs.Enqueue(h);
             var words = Words(code);
             string first = words.Count > 0 ? words[0] : "";
             int level = stack.Count;
@@ -103,6 +115,24 @@ public static class Formatter
         return false;
     }
 
+    /// <summary>`<<~ID`, `<<-ID`, `<<~'ID'`, and plain `<<ID` when a line `ID` follows (Lexer.HeredocStart rule).</summary>
+    static IEnumerable<(string Id, bool Plain)> HeredocOpeners(string code, string[] lines, int at)
+    {
+        for (int i = code.IndexOf("<<", StringComparison.Ordinal); i >= 0; i = code.IndexOf("<<", i + 2, StringComparison.Ordinal))
+        {
+            int k = i + 2;
+            bool plain = !(k < code.Length && code[k] is '~' or '-');
+            if (!plain) k++;
+            if (k < code.Length && code[k] is '\'' or '"') k++;
+            int s = k;
+            if (k >= code.Length || !char.IsUpper(code[k])) continue;
+            while (k < code.Length && (char.IsLetterOrDigit(code[k]) || code[k] == '_')) k++;
+            string id = code[s..k];
+            if (plain && !lines.Skip(at + 1).Any(l => l.TrimEnd('\r') == id)) continue;
+            yield return (id, plain);
+        }
+    }
+
     static bool ClosesOnSameLine(List<string> words, string kw) => words.Count > 1 && words[^1] == "end" && words.IndexOf(kw) < words.Count - 1;
 
     static bool EndsWithDoParams(string code)
@@ -119,6 +149,29 @@ public static class Formatter
         {
             char c = line[i];
             if (c == '#') break;
+            if (c == '%' && PercentOpen(line, i) is int open and > 0)
+            {
+                // %w[...] / %q(...) / %(...): the contents are text, not code
+                char o = line[open], close = o switch { '(' => ')', '[' => ']', '{' => '}', '<' => '>', _ => o };
+                int d = 1, j = open + 1;
+                for (; j < line.Length && d > 0; j++)
+                {
+                    if (line[j] == '\\') { j++; continue; }
+                    if (line[j] == close && o != close) d--;
+                    else if (line[j] == close) d = 0;
+                    else if (line[j] == o) d++;
+                }
+                sb.Append('"').Append('"');
+                i = j - 1;
+                continue;
+            }
+            if ((c == '"' || c == '\'') && (sb.ToString().EndsWith("<<") || sb.ToString().EndsWith("<<~") || sb.ToString().EndsWith("<<-")) && line.IndexOf(c, i + 1) is int qe and > 0)
+            {
+                // `<<~'EOT'`: the quoted heredoc name stays visible (HeredocOpeners)
+                sb.Append(line, i, qe - i + 1);
+                i = qe;
+                continue;
+            }
             if (c == '"' || c == '\'')
             {
                 char q = c;
@@ -139,6 +192,19 @@ public static class Formatter
             sb.Append(c);
         }
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>Index of the opening delimiter of a %-literal starting at `at`, or -1.</summary>
+    static int PercentOpen(string line, int at)
+    {
+        int k = at + 1;
+        bool letter = k < line.Length && line[k] is 'q' or 'Q' or 'w' or 'W' or 'i' or 'I';
+        if (letter) k++;
+        if (k >= line.Length || !(line[k] is '(' or '[' or '{' or '<' or '|' or '!')) return -1;
+        int b = at - 1;
+        while (b >= 0 && line[b] == ' ') b--;
+        bool prefix = b < 0 || line[b] is '(' or ',' or '=' or '[' or '{' || (b < at - 1 && char.IsLetter(line[b]));
+        return prefix ? k : -1;
     }
 
     static List<string> Words(string code)

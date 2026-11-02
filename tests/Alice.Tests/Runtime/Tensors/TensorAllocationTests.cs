@@ -1,16 +1,19 @@
 using Alice.Runtime;
+using Alice.Tests.Runtime;
 
 namespace Alice.Tests.Runtime.Tensors;
 
-/// <summary>Steady-state tensor kernels must not allocate (ADR 0030).</summary>
+/// <summary>
+/// Steady-state tensor kernels must not allocate (ADR 0030). Measured alone, best of a few windows
+/// (<see cref="AllocationProbe"/>).
+/// </summary>
+[Collection(IsolatedAllocationCollection.Name)]
 public class TensorAllocationTests
 {
     static long Allocated(Action f)
     {
-        for (int i = 0; i < 5; i++) f();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 20; i++) f();
-        return GC.GetAllocatedBytesForCurrentThread() - before;
+        for (int i = 0; i < 5; i++) f();   // warm up: JIT, kernel worker threads (started by the first parallel call)
+        return AllocationProbe.Least(() => { for (int i = 0; i < 20; i++) f(); });
     }
 
     [Fact]
