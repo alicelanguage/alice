@@ -20,6 +20,9 @@
   `Mir/MExpr.Lower.cs`; what a pass cannot lower (`await foreach`/`await using`, untyped operands, `bool?` logic) is
   left as is and listed in `IlLowerContext.Unsupported`.
 - Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
+- AIR helper declarations (backend plan D0.7c): the `__par_*`, `__parfor_*` and `__fork_*` helper methods and the
+  `__shared_*` constant fields are typed declarations (`AirHelperDecl` over `AirMethodDecl`/`AirFieldDecl`, MIR bodies) in
+  `Lowerer.TypedExtra`; their C# in `Lowerer.Extra` is printed from them (`Printer.Helper`), byte-identical on the corpus.
 - AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
   build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,
   `AirForkable`, `AirRent`, `AirRelease`, `AirLength`, `AirTripCount`, `AirOffset`, `AirPresizeCount` in
