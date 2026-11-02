@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- IL backend dynamic sites (backend plan D1.9, ADR 0033): `Alice.Runtime.Dyn` (`src/Alice.Runtime/Dynamic/`) dispatches
+  `Any` values without the C# runtime binder: one `DynSite` per call site with a monomorphic entry and a 4-entry
+  polymorphic inline cache keyed by receiver and argument runtime types, `MethodInvoker` thunks (allocation-free hit
+  path), overloads by runtime types with numeric widening, nil, C# operator semantics (checked), `define_method` /
+  `method_missing`, public members only. The IL-only pass `Air/Passes/DynSites.cs` rewrites dynamic operations into
+  `AirDynCall` (`Mir/MExpr.Dyn.cs`) and lists the site fields; AL0232 reports dynamic sites under `native = true` and
+  on wasm. The C# backend is unchanged.
 - AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
   (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
   `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is

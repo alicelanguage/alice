@@ -127,6 +127,17 @@ puts len("abcd")   # 4
 puts len([1, 2])   # 2
 ```
 
+How it runs: the C# backend compiles `Any` to C# `dynamic`. The IL backend (ADR 0033) gives every dynamic operation
+(call, member read or write, index, operator, conversion, `.()`) its own call site, served by `Alice.Runtime.Dyn`. The
+first call resolves the member by reflection for the receiver's runtime type and caches it: public members only; the
+compiled name first, then its .NET spelling (`x.total_area` finds `TotalArea`); overloads by the arguments' runtime
+types with numeric widening; nil fits reference and nullable parameters; then `define_method` bodies and
+`method_missing`. A later call with the same types costs a type check per argument and a cached reflection invoke,
+with no allocation besides boxing value-type arguments and results. A site keeps 5 receiver/argument type
+combinations; past that it re-resolves from a per-type member cache. Operators on numbers follow C#: checked
+arithmetic, truncating `/` and `%` (statically typed `Int32` code uses floored division). Under `native = true`
+(NativeAOT) and on wasm a dynamic site is error AL0232: type the value, or convert it with `x.as(T)`.
+
 ### Strict typing (AL0220)
 
 By default a value the compiler cannot type becomes `dynamic` (see Inference). Strict mode makes that a compile

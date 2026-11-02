@@ -41,6 +41,7 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0221 | unassigned field | `class P`<br>`  @name : String`<br>`  def initialize`<br>`  end` | `field \`@name\` (String) is never assigned by every \`initialize\` ...` | assign it in every `initialize`, give it a default (`@name : String = ""`) or make it `String?` |
 | AL0230 | message not sendable | `Actor(List(Int32)).new(->(m : List(Int32)) { })`; `Actor(Box(Array(Int32)))`; `Actor(T)` in a generic class | `message type ... is not sendable between actors` | send numbers, String, enums, records/structs of sendable fields, tuples, `System.Collections.Immutable` types or actor handles |
 | AL0231 | actor not isolated | `xs = List(Int32).new`<br>`Actor(Int32).new(->(m : Int32) { puts xs.Count })` | `actor is not isolated: it captures ...` | build the state in `init` (`Actor(S, T)`), send it as a message, or share it through `Mutex(T)`, `Atomic` or another actor |
+| AL0232 | dynamic dispatch under NativeAOT or wasm (IL backend) | `n : Any = 4`<br>`puts n.abs` with `[build] native = true` or the wasm target | `` `.abs` on an `Any` value needs dynamic dispatch, which `native = true` (NativeAOT) does not support; ... `` | give the value a static type (`n : Int32 = 4`, `def f(x : T)`) or convert it (`n.as(Int32)`); `Any` works on the JIT (`alice run`, `alice build` without `native`) |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 
 Codes marked *planned* are reserved by an accepted ADR and are not reported by the compiler yet.
