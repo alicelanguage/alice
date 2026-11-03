@@ -219,7 +219,8 @@ public sealed partial class AirToIl
                 a.IsInterface = td.Kind == "interface";
                 a.IsStatic = td.Kind is "module" || sym.Kind == "extension";
                 a.IsRecord = td.Kind.StartsWith("record");
-                if (sym.IsStack) throw new IlUnsupportedException("Decl:ref-struct", Sp(it), sym.Name);
+                a.IsRefStruct = sym.IsStack && a.IsValueType;
+                if (sym.IsStack && !a.IsValueType) throw new IlUnsupportedException("Decl:ref-struct (not a struct)", Sp(it), sym.Name);
             }
             else if (it is DelegateDecl) a.IsDelegate = true;
             else if (it is EnumDecl ed)
@@ -260,6 +261,8 @@ public sealed partial class AirToIl
             if (a.IsDelegate) return;   // after every other proxy: its signature needs them (MakeDelegate)
             if (outer != null) MakeOf(outer);
             if (a.Sym.BaseClass is { } bc && Types.BySym.TryGetValue(bc, out var ba)) { MakeOf(ba); a.Base = ba; }
+            else if (a.Sym.BaseClass is { } gbc && genericBySym.ContainsKey(gbc) && a.Sym.Bases.FirstOrDefault(b => b.Sym == gbc) is { } gbt
+                && Types.Alice(Types.FromAType(gbt)) is { } gi) a.Base = gi;   // class IntBox < Box(Int32): the generic instance (D1.10 il-emit2)
             if (!made.Add(a)) return;
             foreach (var b in a.Sym.Bases)
                 if (b.Sym == null && b.Clr is { IsClass: true } clr && clr != typeof(object)) a.ClrBase = clr;
@@ -304,6 +307,7 @@ public sealed partial class AirToIl
                 else if (b.Sym == null && b.Clr is { IsInterface: true }) a.Def.Interfaces.Add(Types.Il(Types.FromAType(b)));
             }
             if (!a.IsStatic && !a.IsVariant && !a.IsAdt) a.Def.AddCustomAttribute(Module.Import(typeof(Alice.Runtime.AliceTypeAttribute).GetConstructor(Type.EmptyTypes)!));
+            if (a.IsRefStruct) a.Def.AddCustomAttribute(Module.Import(typeof(System.Runtime.CompilerServices.IsByRefLikeAttribute).GetConstructor(Type.EmptyTypes)!));
         }
         DeclareLibs(all); // H5 il-emit2
     }
@@ -669,9 +673,8 @@ public sealed partial class AirToIl
         var m = (MethodSym)d.Sym!;
         if (d.IsPartial) throw new IlUnsupportedException("Decl:partial-method (source generator)", Sp(d), m.Name);
         if (m.TypeParams.Count > 0 && !m.HasInferredGenerics) { DeclareTemplate(d, a, m); return; } // D1.10 il-emit2
-        if (d.Attrs.Any(x => x is not ("Inline" or "NoInline" or "Hot" or "StrictMath" or "Native" or "Open" or "Stack") && !x.StartsWith("Native(") && !x.StartsWith("__enumerable:")))
-            throw new IlUnsupportedException("Decl:attribute", Sp(d), string.Join(",", d.Attrs));
-        if (m.Params.Any(p => p.Block || p.Mod != "")) throw new IlUnsupportedException("Decl:param-kind", Sp(d), m.Name);
+
+        if (m.Params.Any(p => p.Mod != "")) throw new IlUnsupportedException("Decl:param-kind", Sp(d), m.Name);
         if (!m.HasInferredGenerics || !d.HasBody) { DeclareVariant(d, a, m, null); return; }
         int n = 0;
         foreach (var inst in m.Instances.Values.Where(i => i.Seen)) { DeclareVariant(d, a, m, inst); n++; }
@@ -699,7 +702,7 @@ public sealed partial class AirToIl
             names.Add(Bare(m.Params[i].CsName));
         }
         bool isStatic = m.IsStatic || a.IsStatic || ext;
-        string name = m.CsName;
+        string name = Bare(m.CsName);   // `double` is `@double` in C# text
         bool special = false;
         bool isToString = d.Name == "to_s" && m.Params.Count == 0;
         if (m.IsCtor) name = ".ctor";
@@ -728,6 +731,7 @@ public sealed partial class AirToIl
             if (ext ? i > 0 && m.Params[i - 1].Splat : m.Params[i].Splat)
                 p.CustomAttributes.Add(new IlCustomAttribute(Module.Import(typeof(ParamArrayAttribute).GetConstructor(Type.EmptyTypes)!), []));
         }
+        if (!TryApplyAttributes(md.CustomAttributes, d.Attrs, out var badAttr)) throw new IlUnsupportedException("Decl:attribute", sp, badAttr);   // D1.10 il-emit2
         if (d.Attrs.Contains("Inline")) md.ImplAttributes |= MethodImplAttributes.AggressiveInlining;
         if (d.Attrs.Contains("NoInline")) md.ImplAttributes |= MethodImplAttributes.NoInlining;
         if (d.Attrs.Contains("Hot")) md.ImplAttributes |= MethodImplAttributes.AggressiveOptimization;
@@ -774,6 +778,9 @@ public sealed partial class AirToIl
         foreach (var b in a.Sym.Bases)
         {
             if (b.Sym != null && Types.BySym.TryGetValue(b.Sym, out var bi) && bi.IsInterface && bi.Sym.Methods.Values.SelectMany(x => x).Any(x => x.CsName == name && x.Params.Count == argc)) return true;
+            if (b.Sym != null && Types.BySym.TryGetValue(b.Sym, out var pi) && pi.IsInterface && name.Length > 4 && name[3] == '_' && name[..3] is "get" or "set"
+                && pi.Sym.Fields.Values.Any(f => f.Kind is "property" or "getter" or "setter" && Bare(f.CsName).Equals(name[4..], StringComparison.OrdinalIgnoreCase)
+                    && (name[0] == 'g' ? f.Kind != "setter" : f.Kind != "getter"))) return true;   // interface property accessors
             if (b.Sym == null && b.Clr is { IsInterface: true } ci && ci.GetMethods().Concat(ci.GetInterfaces().SelectMany(i => i.GetMethods())).Any(x => x.Name == name && x.GetParameters().Length == argc)) return true;
         }
         return false;
