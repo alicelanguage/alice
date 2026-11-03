@@ -95,8 +95,9 @@ public class PerfShapeTests
     public void Primitive_loop_calling_leaf_functions_keeps_tiered_pgo()   // kmeans chunk: within 3% either way on a core pair
     {
         var cs = Cs("enum St\n  L(n : UInt32)\nend\ndef h(x : UInt32) : UInt32\n  x ^ (x << 13)\nend\ndef chunk(i : UInt32) : St\n  s = 0_u32\n  j = 64_u32\n  while j != 0_u32\n    s = s &+ h(i &+ j)\n    j = j &- 1_u32\n  end\n  St::L(s)\nend\n");
-        Assert.Contains("public static St chunk", cs);
-        Assert.DoesNotContain(Opt + ")]\npublic static St chunk", cs);
+        // St is an arena sum type (ADR 0037): its values are ulong terms
+        Assert.Contains("public static ulong chunk", cs);
+        Assert.DoesNotContain(Opt + ")]\npublic static ulong chunk", cs);
     }
 
     [Fact]

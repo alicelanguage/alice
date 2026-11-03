@@ -573,9 +573,20 @@ puts total(t) &+ n             # consumes t
 | AL0242 | an affine value is used after a `case` consumed it or it was moved into a call (`swap(t)` twice, where `swap` consumes); a read after a move is a Keep instead |
 | AL0243 | a `borrow` parameter, or a field read from it, is consumed |
 
-Calls move their arguments unless the parameter is written or inferred `borrow`. The pass only records facts for now:
-the arena lowering is `Lowering/Lowerer.Affine.cs` (ADR 0040), and the emitted C# is the same with or without
-`affine`. `alice explain` lists every sum type as `arena` or `record (demoted: ... at file:line: why)`. `affine` is a
+Calls move their arguments unless the parameter is written or inferred `borrow`.
+
+**Lowering** (`Lowering/Lowerer.Affine.cs`, ADR 0040). A value of an arena type is one 64-bit term: bit 63 packed,
+bits 56-62 the variant tag, bits 32-55 the lane (thread) that allocated it, bits 0-31 a packed payload or a slot
+index. A slot variant's fields live in its thread's slab as `ulong` words. `case` dispatches on the top byte of the
+term; a Take reads the fields and pushes the slot on the free list, so a constructor in the same arm reuses it; a
+Borrow only reads. Where an owned value dies unconsumed (the Drops of the analysis, and the fields a Take arm does
+not bind) its whole subtree is freed, except children a borrowing arm bound to locals (they own them now). Only the
+thread that allocated a node frees it; a node read on another thread returns when the enclosing region ends.
+`scope ... end` in the main program is a region: every slot allocated inside is reset at `end`. The C# backend calls
+`Arena<TSlot>.Alloc/Take/Borrow`; the IL backend inlines them (lane-cursor slot access without bounds checks).
+`ALICE_NO_ARENA=1` compiles sum types to records, `ALICE_ARENA_DEEP=0` frees only the dead node's own slot.
+A value passed straight from a call into a borrowing parameter (`total(build(n))`) is a temporary with no local, so
+nothing drops it: bind it to a local (`t = build(n)`, `total(t)`) to free it after the call. `alice explain` lists every sum type as `arena` or `record (demoted: ... at file:line: why)`. `affine` is a
 modifier only in front of `enum`; it stays an ordinary name elsewhere.
 
 ### Modules

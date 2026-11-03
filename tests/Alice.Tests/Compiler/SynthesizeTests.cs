@@ -20,7 +20,11 @@ public class SynthesizeTests
         var ast = Parser.ParseFile(src, "main.al");
         var binder = new Binder([ast], new ClrTypes(null));
         binder.Bind();
-        return Synthesize.Run(binder);
+        // these tests read the record declarations of sum types: keep them records (no arena lowering, ADR 0037)
+        var pd = Alice.Compiler.Lowering.AffinePlan.Disable;
+        Alice.Compiler.Lowering.AffinePlan.Disable = true;
+        try { return Synthesize.Run(binder); }
+        finally { Alice.Compiler.Lowering.AffinePlan.Disable = pd; }
     }
 
     static AirTypeDecl Type(AirModuleDecl m, string name) =>

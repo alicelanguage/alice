@@ -35,6 +35,8 @@ public sealed partial class Lowerer
                 return Call(c);
             case NewExpr { AsCall: not null } nc:
                 return Expr(nc.AsCall);
+            case NewExpr ne when AffineNew(ne) is MExpr arena:   // ADR 0037 arena variant (Lowerer.Affine.cs)
+                return arena;
             case NewExpr ne when TryShared(ne) is MExpr shared:
                 return shared;
             case NewExpr ne:
@@ -164,6 +166,7 @@ public sealed partial class Lowerer
 
     MExpr Const(ConstExpr ce)
     {
+        if (AffineConst(ce) is MExpr arena) return arena;   // ADR 0037 packed variant (Lowerer.Affine.cs)
         if (ce.Res == "type" && ce.Sym is AType t)
             return t.Sym is { Kind: "variant", FieldOrder.Count: 0 } ? At(new MMember { Target = new AirTypeRef(t.ToAir()), Name = "Value" }, ce) : new AirTypeRef(t.ToAir());   // a field-less variant is its singleton
         if (ce.Res == "path" && ce.Sym is ConstPath cp)
