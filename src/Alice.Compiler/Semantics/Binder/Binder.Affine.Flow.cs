@@ -76,6 +76,7 @@ public sealed partial class Binder
         public Blk Cur = null!, Exit = null!;
         public readonly Stack<(Blk Break, Blk Next)> Loops = new();
         public readonly List<LocalSym> Tracked = [];
+        public readonly Dictionary<LocalSym, ParamSym> Params = [];
         public string File = "";
 
         public Blk New() { var b = new Blk(); Blocks.Add(b); return b; }
@@ -102,7 +103,10 @@ public sealed partial class Binder
         if (m != null)
             foreach (var p in m.Params)
                 if (p.Local != null && Tracked(p.Local))
-                    fl.Add(new Ev { K = EvKind.Def, L = p.Local, At = body.Method!, D = p.Borrow ? DefKind.Borrowed : DefKind.Owned });
+                {
+                    fl.Params[p.Local] = p;
+                    fl.Add(new Ev { K = EvKind.Def, L = p.Local, At = body.Method!, D = Lends(p) ? DefKind.Borrowed : DefKind.Owned });
+                }
         if (body.Stmts.Count > 0) fl.Add(new Ev { K = EvKind.Anchor, At = body.Stmts[0], Before = true });
         var tail = m != null && !m.Ret.IsVoid && !m.IsCtor ? Sink.Return : (Sink?)null;
         Stmts(body.Stmts, tail);
@@ -596,7 +600,7 @@ public sealed partial class Binder
                 var p = a.Name != null ? m!.Params.FirstOrDefault(x => x.Name == a.Name) : i < m!.Params.Count ? m.Params[i] : null;
                 if (p == null || p.Splat || p.Block || a.Mod != "") s = Sink.Esc($"passed to a splat or block parameter of `{c.Name}`");
                 else if (Cand(p.Type) == null) s = Sink.Esc($"passed to parameter `{p.Name}` of `{c.Name}` typed {p.Type.Cs}");
-                else s = p.Borrow ? new Sink(UseKind.BorrowArg) : Sink.Move;
+                else s = Lends(p) ? new Sink(UseKind.BorrowArg) : Sink.Move;
             }
             Arg(a.Value, s, deferred);
         }
@@ -803,6 +807,13 @@ public sealed partial class Binder
                         return;
                     case StK.BorrowedParam:
                         if (e.U == UseKind.Assign) return;
+                        if (fl.Params.TryGetValue(s.Root!, out var bp) && !bp.Borrow)
+                        {
+                            // an inferred borrow that the body consumes: the parameter is owned after all
+                            if (Affine.InferredBorrow.Contains(bp)) borrowFlips.Add(bp);
+                            st[l] = new St(StK.Moved, null, e.N, false);
+                            return;
+                        }
                         if (record)
                         {
                             string what = s.Root == l ? $"`{l.Name}`" : $"`{l.Name}` (a field of borrowed `{s.Root!.Name}`)";

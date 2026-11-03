@@ -102,8 +102,12 @@ public sealed class AffineFacts
 
     public AffineOp? Site(NameExpr n) => Uses.TryGetValue(n, out var op) ? op : null;
 
-    /// <summary>Explicit `borrow p` only (no interprocedural inference yet).</summary>
-    public bool BorrowParam(ParamSym p) => p.Borrow && LayoutOf(p.Type) != null;
+    /// <summary>Parameters of arena type the analysis inferred as borrowed: the body only reads them (every `case`
+    /// arm Borrows, no move, no consume of the value or of a field read from it), to a whole-program fixpoint.</summary>
+    public readonly HashSet<ParamSym> InferredBorrow = [];
+
+    /// <summary>The callee only reads this arena parameter: written `borrow p`, or inferred.</summary>
+    public bool BorrowParam(ParamSym p) => (p.Borrow || InferredBorrow.Contains(p)) && LayoutOf(p.Type) != null;
 
     public IReadOnlyList<LocalSym> DropsAt(Node n) =>
         n is Stmt s && DropsBefore.TryGetValue(s, out var b) ? b : Drops.TryGetValue(n, out var l) ? l : [];
@@ -145,6 +149,7 @@ public sealed partial class Binder
         if (Affine.Layouts.Values.All(l => !l.Arena)) { Finish(); return; }
         ScanTypePositions(decls);
         PropagateDemotions(decls);
+        InferBorrows();
         foreach (var (body, f) in AffineBodies()) FlowBody(body, f);
         PropagateDemotions(decls);
         Finish();
@@ -153,6 +158,8 @@ public sealed partial class Binder
         {
             foreach (var l in Affine.Layouts.Values)
             {
+                l.Enum.Arena = l.Arena ? l : null;
+                foreach (var v in l.Enum.Variants) v.Arena = l.Enum.Arena;
                 if (l.Arena) Layout(l);
                 else if (demotions.TryGetValue(l.Enum, out var d)) l.Demotion = $"{d.Kind} at {d.File}:{d.At.Line}: {d.Reason}";
             }
@@ -162,7 +169,49 @@ public sealed partial class Binder
                 d.RemoveAll(l => Affine.LayoutOf(l.Type) == null);
             foreach (var k in Affine.Drops.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key).ToList()) Affine.Drops.Remove(k);
             foreach (var k in Affine.DropsBefore.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key).ToList()) Affine.DropsBefore.Remove(k);
+            Affine.InferredBorrow.RemoveWhere(p => Affine.LayoutOf(p.Type) == null);
         }
+    }
+
+    /// <summary>Set while the borrow inference runs the flow: no errors, no demotions, facts are discarded.</summary>
+    bool inferPass;
+    readonly HashSet<ParamSym> borrowFlips = [];
+
+    /// <summary>A parameter lends (does not take) its argument: written `borrow`, or inferred.</summary>
+    bool Lends(ParamSym p) => p.Borrow || Affine.InferredBorrow.Contains(p);
+
+    /// <summary>
+    /// Bend 2's borrow inference: every arena-typed parameter of a non-virtual Alice method starts borrowed and flips
+    /// to owned when its body consumes it (moves it, returns it, builds it into a node, consumes a field read from
+    /// it); repeated over the whole program until nothing flips (a flip can make a caller consume its own parameter).
+    /// Explicit `borrow` is a contract and never flips (AL0243 instead).
+    /// </summary>
+    void InferBorrows()
+    {
+        foreach (var m in AllMethods())
+            if (m.Decl is { HasBody: true, IsAbstract: false } && !m.Owner.HasSubclass && m.Owner.Kind != "interface")
+                foreach (var p in m.Params)
+                    if (!p.Borrow && !p.Splat && !p.Block && p.Mod == "" && Cand(p.Type) != null) Affine.InferredBorrow.Add(p);
+        if (Affine.InferredBorrow.Count == 0) return;
+        var bodies = AffineBodies().ToList();
+        inferPass = true;
+        try
+        {
+            for (int round = 0; round < 64; round++)
+            {
+                borrowFlips.Clear();
+                foreach (var (body, f) in bodies) FlowBody(body, f);
+                if (borrowFlips.Count == 0) break;
+                Affine.InferredBorrow.ExceptWith(borrowFlips);
+            }
+        }
+        finally { inferPass = false; }
+        Affine.Arms.Clear();
+        Affine.Uses.Clear();
+        Affine.Drops.Clear();
+        Affine.DropsBefore.Clear();
+        armTypes.Clear();
+        keepSites.Clear();
     }
 
     readonly Dictionary<When, ArenaLayout> armTypes = new();
@@ -204,7 +253,7 @@ public sealed partial class Binder
     /// <summary>A failed proof for `l`'s type: AL error under `affine enum`, else demotion (first site wins).</summary>
     void Violate(ArenaLayout l, string f, Node at, string code, string declared, string inferred)
     {
-        if (!l.Arena) return;
+        if (!l.Arena || inferPass) return;
         if (l.Declared) throw new CompileException($"{f}:{at.Line}:{Math.Max(1, at.Col)}: error {code}: {declared}");
         l.Arena = false;
         string kind = code switch { "AL0240" => "not eligible", "AL0242" => "used after move", "AL0243" => "borrow consumed", _ => "escapes" };

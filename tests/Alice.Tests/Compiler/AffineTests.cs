@@ -160,34 +160,58 @@ public class AffineTests
         Assert.Equal(v["Node"].SlotIndex[1..], v["Quad"].SlotIndex[..2]);
     }
 
+    /// <summary>A consumer: the Leaf arm returns t, the Node arm builds t's fields into a new node (same line count as
+    /// <see cref="Total"/>, so line numbers below agree for both).</summary>
+    const string Swap = """
+
+        def swap(t : Tree) : Tree
+          case t
+          when Tree::Leaf(v) then t
+          when Tree::Node(l, r) then Tree::Node(r, l)
+          end
+        end
+
+        """;
+
     // ---- Take / Borrow / Move / Drop ----
 
     [Fact]
     public void A_case_on_a_value_never_used_again_takes_it()
     {
-        var b = Bind(Tree + Total + "puts total(Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32)))\n");
+        // tree-bitonic warp_node: the Leaf arm returns t itself (Borrow), the Node arm consumes it (Take)
+        var b = Bind(Tree + Swap + "x = swap(Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32)))\n");
         Assert.True(b.Affine.IsArena(Layout(b, "Tree").Enum));
-        Assert.Equal(ArmMode.Take, ArmAt(b, 7, "Leaf"));
+        Assert.Equal(ArmMode.Borrow, ArmAt(b, 7, "Leaf"));
         Assert.Equal(ArmMode.Take, ArmAt(b, 8, "Node"));
         Assert.All(b.Affine.Uses.Where(u => u.Key.Name is "l" or "r"), u => Assert.Equal(AffineOp.Move, u.Value));
+        Assert.False(b.Affine.BorrowParam(((MethodSym)b.Program.Methods["swap"][0]).Params[0]));
     }
 
     [Fact]
-    public void A_case_whose_arm_reuses_the_value_borrows_in_that_arm_only()
+    public void A_parameter_the_body_only_reads_is_inferred_borrowed()
     {
-        // tree-bitonic warp_node: the Leaf arm returns t itself, the Node arm consumes it
-        var b = Bind(Tree + """
-
-            def keep_or_sum(t : Tree) : Tree
-              case t
-              when Tree::Leaf(v) then t
-              when Tree::Node(l, r) then Tree::Node(r, l)
-              end
-            end
-            puts 1
-            """);
+        // Bend 2's borrow inference: total only reads t (its fields go to total, which only reads), so callers lend
+        var b = Bind(Tree + Total + "t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))\na = total(t)\nb = total(t)\nputs a &+ b\n");
+        var total = ((MethodSym)b.Program.Methods["total"][0]).Params[0];
+        Assert.True(b.Affine.BorrowParam(total));
+        Assert.False(total.Borrow);                                  // inferred, not written
+        Assert.True(Layout(b, "Tree").Arena);                        // reading t twice is fine
         Assert.Equal(ArmMode.Borrow, ArmAt(b, 7, "Leaf"));
-        Assert.Equal(ArmMode.Take, ArmAt(b, 8, "Node"));
+        Assert.Equal(ArmMode.Borrow, ArmAt(b, 8, "Node"));
+        Assert.All(b.Affine.Uses.Where(u => u.Key.Name is "t" or "l" or "r"), u => Assert.Equal(AffineOp.BorrowArg, u.Value));
+        Assert.Equal(["t"], DropsAt(b, 13));                         // the caller still owns t: dropped after its last read
+    }
+
+    [Fact]
+    public void Borrow_inference_reaches_a_fixpoint_across_callers()
+    {
+        // outer passes its parameter to swap, which consumes it: outer's parameter flips to owned too
+        var b = Bind(Tree + Swap + "def outer(t : Tree) : Tree\n  swap(t)\nend\ndef reader(t : Tree) : UInt32\n  outer2(t)\nend\ndef outer2(t : Tree) : UInt32\n  case t\n  when Tree::Leaf(v) then v\n  when Tree::Node(l, r) then 0_u32\n  end\nend\nputs 1\n");
+        ParamSym P(string m) => ((MethodSym)b.Program.Methods[m][0]).Params[0];
+        Assert.False(b.Affine.BorrowParam(P("swap")));
+        Assert.False(b.Affine.BorrowParam(P("outer")));
+        Assert.True(b.Affine.BorrowParam(P("outer2")));
+        Assert.True(b.Affine.BorrowParam(P("reader")));
     }
 
     [Fact]
@@ -234,11 +258,11 @@ public class AffineTests
     public void A_guarded_arm_borrows_and_a_value_set_on_one_path_is_not_dropped()
     {
         var b = Bind(Tree + Total + """
-            def pick(t : Tree, c : Bool) : UInt32
+            def pick(t : Tree, c : Bool) : Tree
               case t
-              in Tree::Node(l, r) if c then total(l)
-              when Tree::Node(l, r) then total(r)
-              when Tree::Leaf(v) then v
+              in Tree::Node(l, r) if c then l
+              when Tree::Node(l, r) then r
+              when Tree::Leaf(v) then t
               end
             end
             def maybe(c : Bool) : UInt32
@@ -247,7 +271,7 @@ public class AffineTests
               end
               7_u32
             end
-            puts pick(Tree::Leaf(1_u32), true) &+ maybe(false)
+            x = pick(Tree::Leaf(1_u32), true)
             """);
         Assert.Equal(ArmMode.Borrow, ArmAt(b, 13, "Node"));   // the guard may fail and fall to the next arm
         Assert.Equal(ArmMode.Take, ArmAt(b, 14, "Node"));
@@ -271,7 +295,7 @@ public class AffineTests
     [Fact]
     public void Under_affine_a_read_after_a_move_keeps_the_value()
     {
-        var b = Bind("affine " + Tree + Total + """
+        var b = Bind("affine " + Tree + Swap + """
             def size(borrow t : Tree) : UInt32
               case t
               when Tree::Leaf(v) then 1_u32
@@ -279,15 +303,14 @@ public class AffineTests
               end
             end
             t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))
-            a = total(t)
+            a = swap(t)
             case t
             when Tree::Leaf(v) then puts v
             when Tree::Node(l, r) then puts size(l)
             end
-            puts a
+            puts size(a)
             """);
-        var t = b.Affine.Uses.Where(u => u.Key.Name == "t").OrderBy(u => u.Key.Line).ToList();
-        Assert.Equal(AffineOp.Keep, t[0].Value);              // total(t): t gets a second owner
+        Assert.Equal(AffineOp.Keep, b.Affine.Uses.Single(u => u.Key.Name == "t" && u.Key.Line == 18).Value);   // swap(t): t gets a second owner
         Assert.Equal(ArmMode.Keep, ArmAt(b, 20, "Leaf"));     // the later case reads the shared node
         Assert.Equal(ArmMode.Keep, ArmAt(b, 21, "Node"));
     }
@@ -295,11 +318,11 @@ public class AffineTests
     [Fact]
     public void Without_affine_the_same_program_demotes_and_still_runs()
     {
-        const string body = Total + """
+        const string body = Swap + """
             t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))
-            a = total(t)
-            b = total(t)
-            puts a &+ b
+            a = swap(t)
+            b = swap(t)
+            puts 6
             """;
         var l = Layout(Bind(Tree + body), "Tree");
         Assert.False(l.Arena);
@@ -346,18 +369,18 @@ public class AffineTests
     [Fact]
     public void AL0242_use_after_consume()
     {
-        var d = Error("affine " + Tree + Total + "t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))\na = total(t)\nb = total(t)\nputs a &+ b\n");
+        var d = Error("affine " + Tree + Swap + "t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))\na = swap(t)\nb = swap(t)\nputs 1\n");
         Assert.Equal("AL0242", d.Code);
         Assert.Equal(13, d.Line);
         Assert.Contains("`t` read after it was consumed (moved at main.al:12)", d.Message);
         // consuming a field while the node it came from is used later
-        var f = Error("affine " + Tree + Total + """
+        var f = Error("affine " + Tree + Swap + Total + """
             def g(t : Tree) : UInt32
               case t
               when Tree::Leaf(v) then v
               when Tree::Node(l, r)
-                x = total(l)
-                x &+ total(t)
+                x = swap(l)
+                total(t)
               end
             end
             puts g(Tree::Leaf(1_u32))
@@ -369,15 +392,14 @@ public class AffineTests
     [Fact]
     public void AL0242_use_after_move_in_a_loop()
     {
-        var d = Error("affine " + Tree + Total + """
+        var d = Error("affine " + Tree + Swap + """
             def f(t : Tree, n : Int32) : UInt32
-              s = 0_u32
               i = 0
               while i < n
-                s = s &+ total(t)
+                x = swap(t)
                 i += 1
               end
-              s
+              0_u32
             end
             puts f(Tree::Leaf(1_u32), 2)
             """);
@@ -390,7 +412,7 @@ public class AffineTests
         var d = Error("affine " + Tree + Total + "def keep(borrow t : Tree) : Tree\n  t\nend\nputs 1\n");
         Assert.Equal("AL0243", d.Code);
         Assert.Contains("borrowed affine value `t` is consumed", d.Message);
-        var f = Error("affine " + Tree + Total + "def half(borrow t : Tree) : UInt32\n  case t\n  when Tree::Leaf(v) then v\n  when Tree::Node(l, r) then total(l)\n  end\nend\nputs 1\n");
+        var f = Error("affine " + Tree + Swap + "def half(borrow t : Tree) : Tree\n  case t\n  when Tree::Leaf(v) then Tree::Leaf(v)\n  when Tree::Node(l, r) then swap(l)\n  end\nend\nputs 1\n");
         Assert.Equal("AL0243", f.Code);
         Assert.Contains("`l` (a field of borrowed `t`)", f.Message);
     }
@@ -401,11 +423,11 @@ public class AffineTests
     [InlineData("puts t", "escapes at main.al:12: passed to .NET `puts`")]
     [InlineData("xs = [t]", "escapes at main.al:12: stored in a collection")]
     [InlineData("u : Tree? = nil", "escapes at main.al:12: nullable")]
-    [InlineData("f = ->() { total(t) }", "escapes at main.al:12: ")]
-    [InlineData("puts total(t) &+ total(t)", "used after move at main.al:12: `t` used after it was moved at main.al:12")]
+    [InlineData("f = ->() { swap(t) }", "escapes at main.al:12: ")]
+    [InlineData("a = swap(t)\nb = swap(t)", "used after move at main.al:13: `t` used after it was moved at main.al:12")]
     public void Demotion_names_the_site(string use, string why)
     {
-        var l = Layout(Bind(Tree + Total + "t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))\n" + use + "\n"), "Tree");
+        var l = Layout(Bind(Tree + Swap + "t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))\n" + use + "\n"), "Tree");
         Assert.False(l.Arena);
         Assert.StartsWith("record (demoted: " + why, l.Explain);
     }
@@ -413,8 +435,8 @@ public class AffineTests
     [Fact]
     public void A_packed_value_is_copied_not_moved()
     {
-        // Leaf(UInt32) lives in the term word: using it twice copies one word, so nothing is demoted
-        var b = Bind(Tree + Total + "t = Tree::Leaf(1_u32)\nputs total(t) &+ total(t)\n");
+        // Leaf(UInt32) lives in the term word: consuming it twice copies one word, so nothing is demoted
+        var b = Bind(Tree + Swap + "t = Tree::Leaf(1_u32)\na = swap(t)\nb = swap(t)\n");
         Assert.True(Layout(b, "Tree").Arena);
     }
 
@@ -423,21 +445,41 @@ public class AffineTests
     {
         var b = Bind(Tree + "\nenum W\n  A(s : String)\nend\nputs 1\n");
         Assert.Equal(["Tree: arena", "W: record (demoted: not eligible at main.al:6: field `s` of A is string, not unmanaged)"], b.Affine.Explain());
+        Assert.Same(Layout(b, "Tree"), Layout(b, "Tree").Enum.Arena);
+        Assert.All(Layout(b, "Tree").Enum.Variants, v => Assert.Same(Layout(b, "Tree"), v.Arena));
+        Assert.Null(Layout(b, "W").Enum.Arena);
+        var rows = Alice.Cli.Commands.Explain.EnumRows([new SourceFile("main.al", Tree + "\nenum W\n  A(s : String)\nend\nputs 1\n")], []);
+        Assert.Equal(("enum Tree", "arena"), rows[0]);
+        Assert.StartsWith("record (demoted: not eligible", rows[1].Form);
     }
 
-    // ---- the bend2 ports ----
+    // ---- the bend2 ports: with borrow inference every sum type is an arena ----
 
     [Theory]
     [InlineData("tree-radix", "Arr: arena", "Map: arena")]
     [InlineData("tree-bitonic", "Tree: arena")]
-    [InlineData("tree-matmul", "Mat: record (demoted: used after move at {0}:62: `a0` used after it was moved at {0}:61)",
-        "Vec: record (demoted: used after move at {0}:101: `l` used after it was moved at {0}:100)")]
-    [InlineData("merkle", "Mt: record (demoted: used after move at {0}:71: `l` used after it was moved at {0}:71)", "Path: arena")]
-    [InlineData("symreg", "Expr: record (demoted: used after move at {0}:69: `e` used after it was moved at {0}:69)")]
+    [InlineData("tree-matmul", "Mat: arena", "Vec: arena")]
+    [InlineData("merkle", "Mt: arena", "Path: arena")]
+    [InlineData("symreg", "Expr: arena")]
     public void Bend2_ports(string port, params string[] explain)
     {
-        var path = Port(port);
-        Assert.Equal(explain.Select(e => string.Format(e, path)), BindFile(path).Affine.Explain());
+        Assert.Equal(explain, BindFile(Port(port)).Affine.Explain());
+    }
+
+    [Fact]
+    public void Bend2_reader_parameters_are_inferred_borrowed()
+    {
+        var merkle = BindFile(Port("merkle"));
+        bool Lends(Binder b, string m) => b.Affine.BorrowParam(((MethodSym)b.Program.Methods[m][0]).Params[0]);
+        Assert.True(Lends(merkle, "hash_of"));   // build reads l, r, then builds them into Mn
+        Assert.True(Lends(merkle, "audit"));
+        Assert.True(Lends(merkle, "pverify"));
+        var symreg = BindFile(Port("symreg"));
+        Assert.True(Lends(symreg, "expr_eval"));
+        Assert.True(Lends(symreg, "expr_size"));
+        var matmul = BindFile(Port("tree-matmul"));
+        Assert.True(Lends(matmul, "mul"));
+        Assert.True(Lends(matmul, "cksum"));
     }
 
     // ---- the pass changes no output ----
@@ -448,6 +490,27 @@ public class AffineTests
         const string body = Total + "puts total(Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32)))\n";
         Assert.Equal(AliceCompiler.Transpile(Tree + body), AliceCompiler.Transpile("affine " + Tree + body));
         Assert.Equal("3", AliceCompiler.Run("affine " + Tree + body).Trim());
+    }
+
+    [Fact]
+    public void A_case_on_a_borrow_parameter_of_an_arena_type_compiles()
+    {
+        // the ADR 0016 check (AL0213) trusts Binder.Affine for arena parameters: `borrow t` with a `case` on t is fine
+        const string src = """
+            affine enum Tree
+              Leaf(v : UInt32)
+              Node(l : Tree, r : Tree)
+            end
+            def size(borrow t : Tree) : UInt32
+              case t
+              when Tree::Leaf(v) then 1_u32
+              when Tree::Node(l, r) then size(l) &+ size(r)
+              end
+            end
+            t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))
+            puts size(t)
+            """;
+        Assert.Equal("2", AliceCompiler.Run(src).Trim());
     }
 
     [Fact]

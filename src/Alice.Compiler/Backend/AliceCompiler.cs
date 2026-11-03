@@ -132,6 +132,20 @@ public static class AliceCompiler
 
     public static string Transpile(string src, string file = "main.al") => TranspileAll([new SourceFile(file, src)])[0];
 
+    /// <summary>`alice explain` per sum type (ADR 0037): `Tree: arena` or `Tree: record (demoted: ... at file:line: why)`.</summary>
+    public static List<string> AffineReport(IReadOnlyList<SourceFile> files, IEnumerable<string>? extraRefs = null)
+    {
+        var asts = files.Select(f =>
+        {
+            var ast = Syntax.Parser.ParseFile(f.Text, f.Path);
+            if (f.LibraryOnly) ast.Items.RemoveAll(i => i is Syntax.StmtItem);
+            return ast;
+        }).ToList();
+        var binder = new Semantics.Binder(asts, new Semantics.ClrTypes(extraRefs));
+        binder.Bind();
+        return binder.Affine.Explain().ToList();
+    }
+
     static readonly CSharpParseOptions Parse = new(LanguageVersion.Preview);
 
     static IEnumerable<MetadataReference> References()
