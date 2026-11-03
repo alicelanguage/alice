@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
@@ -204,6 +205,46 @@ internal static class Operators
         return TypeCode.Int32;
     }
 
+    /// <summary>C# `dynamic` on two values of one enum type: `&amp; | ^` give the enum, `== != &lt; &lt;= &gt; &gt;=` compare the
+    /// underlying values; anything else falls through to operator lookup (and raises there).</summary>
+    static bool EnumOp(DynOp op, Type t, object l, object r, out object? result)
+    {
+        result = null;
+        var code = Type.GetTypeCode(Enum.GetUnderlyingType(t));
+        bool signed = code is TypeCode.SByte or TypeCode.Int16 or TypeCode.Int32 or TypeCode.Int64;
+        ulong a = EnumBits(l, code), b = EnumBits(r, code);
+        int cmp = signed ? ((long)a).CompareTo((long)b) : a.CompareTo(b);
+        result = op switch
+        {
+            DynOp.BitAnd => Enum.ToObject(t, a & b),
+            DynOp.BitOr => Enum.ToObject(t, a | b),
+            DynOp.BitXor => Enum.ToObject(t, a ^ b),
+            DynOp.Eq => a == b,
+            DynOp.Ne => a != b,
+            DynOp.Lt => cmp < 0,
+            DynOp.Le => cmp <= 0,
+            DynOp.Gt => cmp > 0,
+            DynOp.Ge => cmp >= 0,
+            _ => null,
+        };
+        return result != null;
+    }
+
+    /// <summary>The underlying value of a boxed enum, sign-extended to 64 bits (a boxed enum unboxes as its underlying type).</summary>
+    static ulong EnumBits(object e, TypeCode code) => code switch
+    {
+        TypeCode.SByte => (ulong)(sbyte)e,
+        TypeCode.Byte => (byte)e,
+        TypeCode.Int16 => (ulong)(short)e,
+        TypeCode.UInt16 => (ushort)e,
+        TypeCode.Int32 => (ulong)(int)e,
+        TypeCode.UInt32 => (uint)e,
+        TypeCode.Int64 => (ulong)(long)e,
+        TypeCode.UInt64 => (ulong)e,
+        TypeCode.Char => (char)e,
+        _ => (ulong)(byte)((bool)e ? 1 : 0),
+    };
+
     static TypeCode Unary(TypeCode c) => c is TypeCode.UInt32 or TypeCode.Int64 or TypeCode.UInt64 or TypeCode.Single or TypeCode.Double or TypeCode.Decimal ? c : TypeCode.Int32;
 
     static T As<T>(object v) where T : INumberBase<T> => v switch
@@ -223,7 +264,7 @@ internal static class Operators
         }
         var lt = l.GetType();
         var rt = r.GetType();
-        if (lt.IsEnum || rt.IsEnum) return false;
+        if (lt.IsEnum || rt.IsEnum) return lt == rt && EnumOp(op, lt, l, r, out result);
         var lc = Type.GetTypeCode(lt);
         var rc = Type.GetTypeCode(rt);
         if (lc == TypeCode.String || rc == TypeCode.String)
@@ -376,19 +417,74 @@ internal static class Overloads
         DynMatch? best = null;
         int bestCost = int.MaxValue;
         MethodInfo? tie = null;
-        foreach (var m in cands)
+        foreach (var def in cands)
         {
+            var m = def;
+            if (m.IsGenericMethodDefinition)
+            {
+                if (Infer(m, args) is not { } closed) continue;
+                m = closed;
+            }
             if (Applicable(m, args) is not { } a) continue;
             if (a.Cost < bestCost) { best = a.DynMatch; bestCost = a.Cost; tie = null; }
             else if (a.Cost == bestCost && best is { } b)
             {
-                if (MoreSpecific(m, b.Method)) { best = a.DynMatch; tie = null; }
-                else if (!MoreSpecific(b.Method, m)) tie = m;
+                // C#: a non-generic method beats a generic one with the same parameter types
+                if (MoreSpecific(m, b.Method) || !MoreSpecific(b.Method, m) && b.Method.IsGenericMethod && !m.IsGenericMethod) { best = a.DynMatch; tie = null; }
+                else if (!MoreSpecific(b.Method, m) && !(m.IsGenericMethod && !b.Method.IsGenericMethod)) tie = m;
             }
         }
         if (tie != null)
             throw new AmbiguousMatchException($"ambiguous call `{name}` on {Dyn.Alice(recv)} with ({Dyn.ArgList(args)}): {Dyn.Signature(best!.Value.Method)} and {Dyn.Signature(tie)} both match");
         return best;
+    }
+
+    /// <summary>C# `dynamic` type inference from the runtime argument types: a type parameter used as a parameter
+    /// type, an array element or a type argument of a generic parameter type (matched against the argument's class,
+    /// base classes and interfaces) binds to what the argument has. Null when a type parameter stays unbound,
+    /// two arguments disagree, or a constraint fails.</summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Dynamic dispatch closes generic methods at run time by design.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = "Dynamic dispatch reflects over runtime types by design.")]
+    static MethodInfo? Infer(MethodInfo def, ReadOnlySpan<object?> args)
+    {
+        var tps = def.GetGenericArguments();
+        var bound = new Type?[tps.Length];
+        var ps = def.GetParameters();
+        for (int i = 0; i < args.Length && i < ps.Length; i++)
+            if (args[i] is { } a && !Unify(ps[i].ParameterType, a.GetType(), bound)) return null;
+        foreach (var t in bound) if (t == null) return null;
+        try { return def.MakeGenericMethod(bound!); }
+        catch (ArgumentException) { return null; }   // a constraint does not hold
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "Dynamic dispatch reflects over runtime types by design.")]
+    static bool Unify(Type p, Type a, Type?[] bound)
+    {
+        if (p.IsGenericMethodParameter)
+        {
+            ref var b = ref bound[p.GenericParameterPosition];
+            if (b == null || b == a) { b = a; return true; }
+            if (b.IsAssignableFrom(a)) return true;
+            if (a.IsAssignableFrom(b)) { b = a; return true; }
+            return false;
+        }
+        if (!p.ContainsGenericParameters) return true;   // checked by Applicable
+        if (p.IsArray) return a.IsArray && a.GetArrayRank() == p.GetArrayRank() && Unify(p.GetElementType()!, a.GetElementType()!, bound);
+        if (!p.IsGenericType) return true;
+        var gd = p.GetGenericTypeDefinition();
+        for (var t = a; t != null; t = t.BaseType)
+            if (t.IsGenericType && t.GetGenericTypeDefinition() == gd) return UnifyArgs(p, t, bound);
+        foreach (var i in a.GetInterfaces())
+            if (i.IsGenericType && i.GetGenericTypeDefinition() == gd) return UnifyArgs(p, i, bound);
+        return false;
+    }
+
+    static bool UnifyArgs(Type p, Type a, Type?[] bound)
+    {
+        var pa = p.GetGenericArguments();
+        var aa = a.GetGenericArguments();
+        for (int k = 0; k < pa.Length; k++) if (!Unify(pa[k], aa[k], bound)) return false;
+        return true;
     }
 
     static (DynMatch DynMatch, int Cost)? Applicable(MethodInfo m, ReadOnlySpan<object?> args)

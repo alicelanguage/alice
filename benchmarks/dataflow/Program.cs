@@ -148,7 +148,7 @@ static class Flow
             return s.pass < s.passes;
         });
         Pipe<uint> tokens = replicate > 0
-            ? src.Replicate<byte[], uint>(text, Tokenize, workers: replicate, ordered: true, batch: 1024)
+            ? src.Replicate<byte[], uint>(() => text, Tokenize, workers: replicate, ordered: true, batch: 1024)   // read-only text, shared on purpose
             : src.Stage<byte[], uint>(text, Tokenize);
         var sink = tokens.Sink(Counts.New(), static (ref Counts c, ReadOnlySpan<uint> hs) =>
         {

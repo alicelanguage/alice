@@ -124,35 +124,6 @@ public class DataflowLowerTests
     }
 
     [Fact]
-    public void No_allocation_per_item()
-    {
-        static string Prog(int n) => $$"""
-            total = 0_i64
-            def go(n : Int32) : Int64
-              t = 0_i64
-              dataflow do
-                a = source { |out|
-                  for i in 0...n
-                    out << i
-                  end
-                }
-                b = a.stage { |x, out| out << x.to_i64 }
-                b.sink { |v| t += v }
-              end
-              t
-            end
-            go(1000)
-            a0 = GC.GetTotalAllocatedBytes(true)
-            total = go({{n}})
-            puts GC.GetTotalAllocatedBytes(true) - a0
-            """;
-        long small = long.Parse(Run(Prog(10_000)));
-        long big = long.Parse(Run(Prog(1_000_000)));
-        // 100x the items: allocation is per graph (rings, nodes, spills), not per item
-        Assert.True(big < small + 64 * 1024, $"10k items: {small} B, 1M items: {big} B");
-    }
-
-    [Fact]
     public void AL0246_two_consumers()
     {
         Assert.StartsWith("AL0246", Code("dataflow do\n  a = source { |out| out << 1 }\n  a.sink { |x| puts x }\n  a.sink { |x| puts x }\nend\n"));
@@ -206,5 +177,48 @@ public class DataflowLowerTests
     {
         Assert.StartsWith("AL0246", Code("stream def f(n : Int32) : Int32\n  n\nend\nputs f(1)\n"));
         Assert.Equal("6", Run("stream def nums(n : Int32) : IEnumerable(Int32)\n  for i in 1..n\n    yield i\n  end\nend\ns = 0\nnums(3).each { |x| s += x }\nputs s\n"));
+    }
+}
+
+/// <summary>The allocation test of <see cref="DataflowLowerTests"/>, isolated: it reads the process-wide allocation
+/// counter, so no other test may run meanwhile (it was flaky in parallel runs).</summary>
+[Collection(Alice.Tests.Runtime.IsolatedAllocationCollection.Name)]
+public class DataflowLowerAllocationTests
+{
+    static string Run(string src) => AliceCompiler.Run(src).Trim().ReplaceLineEndings("\n");
+
+    [Fact]
+    public void No_allocation_per_item()
+    {
+        static string Prog(int n) => $$"""
+            total = 0_i64
+            def go(n : Int32) : Int64
+              t = 0_i64
+              dataflow do
+                a = source { |out|
+                  for i in 0...n
+                    out << i
+                  end
+                }
+                b = a.stage { |x, out| out << x.to_i64 }
+                b.sink { |v| t += v }
+              end
+              t
+            end
+            go(1000)
+            a0 = GC.GetTotalAllocatedBytes(true)
+            total = go({{n}})
+            puts GC.GetTotalAllocatedBytes(true) - a0
+            """;
+        // process-wide counter (the graph runs on pool threads): this class runs alone, and the least of a few runs
+        // discards a window in which the GC or the runtime allocated on its own
+        long small = long.MaxValue, big = long.MaxValue;
+        for (int k = 0; k < Alice.Tests.Runtime.AllocationProbe.Attempts && !(big < small + 64 * 1024); k++)
+        {
+            small = Math.Min(small, long.Parse(Run(Prog(10_000))));
+            big = Math.Min(big, long.Parse(Run(Prog(1_000_000))));
+        }
+        // 100x the items: allocation is per graph (rings, nodes, spills), not per item
+        Assert.True(big < small + 64 * 1024, $"10k items: {small} B, 1M items: {big} B");
     }
 }

@@ -343,7 +343,10 @@ public sealed partial class Parser
             ExpectKw("end");
             return lw;
         }
+        bool savedDo = noDo;
+        noDo = true;   // `while f do`: the `do` opens the loop body, not a block of f (fuzz P7)
         Expr c = Expression();
+        noDo = savedDo;
         if (neg) c = At(new UnaryExpr { Op = "!", E = c }, tok);
         if (IsKw("do")) Next();
         var w = At(new WhileStmt { Cond = c, Body = Block(" end ") }, tok);

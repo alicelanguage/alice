@@ -14,9 +14,12 @@ namespace Alice.Compiler.Backend.Il;
 /// none, SetLastError false, PreserveSig; `[SuppressGCTransition]` for `@[Fast]`) behind an inlined wrapper:
 /// String/String? as UTF-8 through <see cref="Alice.Runtime.Utf8Arg"/> on a `localloc` buffer (try/finally Dispose),
 /// arrays of numbers pinned through a `pinned T&amp;` local, `out`/`ref` as pinned byrefs, Bool as a byte,
-/// String returns borrowed (<see cref="Alice.Runtime.Utf8Arg.Decode"/>), callbacks as `delegate* unmanaged[Cdecl]`
-/// with <see cref="Alice.Runtime.NativeCallback.Rethrow"/> after the call.</item>
-/// <item>callbacks: a static `[UnmanagedCallersOnly(CallConvs = [CallConvCdecl])]` trampoline that calls the managed
+/// String returns borrowed (<see cref="Alice.Runtime.Utf8Arg.Decode"/>), callbacks as `delegate* unmanaged[Cdecl]`.
+/// Every `fun` of a lib that declares any callback parameter brackets its C call with
+/// <see cref="Alice.Runtime.NativeCallback.Enter"/> and <see cref="Alice.Runtime.NativeCallback.Rethrow(int)"/>: C may
+/// run a stored callback from a `fun` that takes none.</item>
+/// <item>callbacks: a static `[UnmanagedCallersOnly(CallConvs = [CallConvCdecl])]` trampoline (the declared calling
+/// convention) that calls the managed
 /// body inside try/catch (<see cref="Alice.Runtime.NativeCallback.Fail"/>), passed as `ldftn` + `NativeFn(nint)`.</item>
 /// <item>`@[Native]`: `calli` through a function pointer resolved by <see cref="Alice.Runtime.NativeLibs.Export"/> in
 /// the static constructor of a nested holder class, with the managed body as the fallback branch.</item>
@@ -64,7 +67,8 @@ public sealed partial class AirToIlFfi
     IlMethod SpanCtor => Module.Import(typeof(Span<byte>).GetConstructor([typeof(void*), typeof(int)])!);
     IlMethod NativeFnAddress => Module.Import(typeof(Alice.Runtime.NativeFn).GetProperty(nameof(Alice.Runtime.NativeFn.Address))!.GetMethod!);
     IlMethod NativeFnCtor => Module.Import(typeof(Alice.Runtime.NativeFn).GetConstructor([typeof(nint)])!);
-    IlMethod Rethrow => Rt(typeof(Alice.Runtime.NativeCallback), nameof(Alice.Runtime.NativeCallback.Rethrow));
+    IlMethod Rethrow => Rt(typeof(Alice.Runtime.NativeCallback), nameof(Alice.Runtime.NativeCallback.Rethrow), typeof(int));
+    IlMethod Enter => Rt(typeof(Alice.Runtime.NativeCallback), nameof(Alice.Runtime.NativeCallback.Enter));
     IlMethod Fail => Rt(typeof(Alice.Runtime.NativeCallback), nameof(Alice.Runtime.NativeCallback.Fail), typeof(Exception));
     IlMethod Export => Rt(typeof(Alice.Runtime.NativeLibs), nameof(Alice.Runtime.NativeLibs.Export), typeof(string), typeof(string));
     IlType NativeFnType => Module.Import(typeof(Alice.Runtime.NativeFn));
@@ -203,15 +207,19 @@ public sealed partial class AirToIlFfi
     public void EmitFuns(LibDecl l, IlTypeDef t)
     {
         var s = (TypeSym)l.Sym!;
-        foreach (var f in l.Funs) EmitFun(t, l.LibName, f, s.Methods[f.Name][0]);
+        // C may keep a callback and run it from any fun of the lib, so every fun of such a lib rethrows (review F5)
+        bool libCallbacks = l.Funs.Any(f => s.Methods[f.Name][0].Params.Any(p => Param(p).Kind == PassKind.Fn));
+        foreach (var f in l.Funs) EmitFun(t, l.LibName, f, s.Methods[f.Name][0], libCallbacks);
     }
 
-    public IlMethodDef EmitFun(IlTypeDef t, string libName, FunDecl f, MethodSym m)
+    /// <param name="libCallbacks">the lib declares a callback parameter on some fun: bracket this C call with
+    /// Enter/Rethrow even if this fun takes no callback.</param>
+    public IlMethodDef EmitFun(IlTypeDef t, string libName, FunDecl f, MethodSym m, bool libCallbacks = false)
     {
         var parts = m.Params.Select(Param).ToList();
         var (rk, retPublic, retRaw) = Return(m);
-        bool callbacks = parts.Any(x => x.Kind == PassKind.Fn);
-        bool direct = parts.All(x => x.Kind == PassKind.Same) && rk == RetKind.Same;
+        bool callbacks = libCallbacks || parts.Any(x => x.Kind == PassKind.Fn);
+        bool direct = !callbacks && parts.All(x => x.Kind == PassKind.Same) && rk == RetKind.Same;
         string name = Clr(m.CsName);
 
         var import = t.DefineMethod(direct ? name : "__raw_" + name, (direct ? PublicStatic : PrivateStatic) | MethodAttributes.PinvokeImpl,
@@ -275,7 +283,13 @@ public sealed partial class AirToIlFfi
             }
             EmitFixedArray(il, i, x.Elem, pin, p);
         }
-        // 4. the call
+        // 4. the call, `var __d = NativeCallback.Enter()` first when a callback may run during it
+        IlLocal? depth = null;
+        if (callbacks)
+        {
+            il.EmitCall(Enter);
+            il.EmitStoreLocal(depth = il.DeclareLocal(IlType.Int32, "__d"));
+        }
         for (int i = 0; i < parts.Count; i++)
         {
             var x = parts[i];
@@ -299,7 +313,11 @@ public sealed partial class AirToIlFfi
         IlLocal? result = null;
         if (returns && (callbacks || spans.Count > 0 || pins.Count > 0)) il.EmitStoreLocal(result = il.DeclareLocal(retPublic, "__r"));
         foreach (var pin in pins) { il.EmitLoadConst(0); il.Emit(ILOpCode.Conv_u); il.EmitStoreLocal(pin); }   // end of `fixed`
-        if (callbacks) il.EmitCall(Rethrow);   // an exception raised in an Alice callback resurfaces here, after the C frames are gone
+        if (callbacks)   // an exception raised in an Alice callback resurfaces here, after the C frames are gone
+        {
+            il.EmitLoadLocal(depth!);
+            il.EmitCall(Rethrow);
+        }
         // 5. close the `using`s innermost first
         foreach (var i in utf8.Keys.Reverse())
         {
@@ -319,14 +337,25 @@ public sealed partial class AirToIlFfi
     /// A lambda passed to a `Callback(...)` parameter: <paramref name="body"/> is its lifted static method (emitted by
     /// the caller). Returns the `[UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]` trampoline
     /// `__cb_N(args) { try { return body(args); } catch (Exception e) { NativeCallback.Fail(e); return default; } }`.
+    /// <paramref name="conv"/> is the parameter's declared convention (<see cref="FnPtrSig"/>): CDecl, StdCall,
+    /// ThisCall and FastCall name their CallConv type; Unmanaged/Default leave CallConvs out (the platform default).
     /// </summary>
-    public IlMethodDef EmitCallback(IlTypeDef owner, IlMethodDef body, string? name = null)
+    public IlMethodDef EmitCallback(IlTypeDef owner, IlMethodDef body, string? name = null, SignatureCallingConvention conv = SignatureCallingConvention.CDecl)
     {
         var sig = body.Signature;
         var cb = owner.DefineMethod(name ?? $"__cb_{++callbackN}", PrivateStatic, sig.Return, [.. sig.Parameters]);
+        Type? callConv = conv switch
+        {
+            SignatureCallingConvention.CDecl => typeof(CallConvCdecl),
+            SignatureCallingConvention.StdCall => typeof(CallConvStdcall),
+            SignatureCallingConvention.ThisCall => typeof(CallConvThiscall),
+            SignatureCallingConvention.FastCall => typeof(CallConvFastcall),
+            SignatureCallingConvention.Unmanaged or SignatureCallingConvention.Default => null,
+            _ => throw new NotSupportedException($"FFI: callback calling convention {conv}"),
+        };
         cb.CustomAttributes.Add(new IlCustomAttribute(AttrCtor(typeof(UnmanagedCallersOnlyAttribute)), [],
-            [new IlNamedArgument(nameof(UnmanagedCallersOnlyAttribute.CallConvs), Module.Import(typeof(Type)).SzArray(),
-                new[] { typeof(CallConvCdecl).FullName }, IsField: true)]));
+            callConv == null ? [] : [new IlNamedArgument(nameof(UnmanagedCallersOnlyAttribute.CallConvs), Module.Import(typeof(Type)).SzArray(),
+                new[] { callConv.FullName }, IsField: true)]));
         var il = cb.Il;
         bool returns = sig.ReturnsValue;
         var r = returns ? il.DeclareLocal(sig.Return, "__r") : null;

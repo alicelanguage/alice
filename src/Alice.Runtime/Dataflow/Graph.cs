@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 
 namespace Alice.Runtime;
@@ -176,23 +177,49 @@ public sealed class Pipe<T>
     /// cut into batches of <paramref name="batch"/> items (0: <see cref="Graph.Batch"/>) numbered in order; each batch
     /// runs on a fresh copy of <paramref name="state"/>. With <paramref name="ordered"/> the outputs are merged in
     /// batch order through a window of <c>2 * workers</c> batches, so the result equals the serial stage; with
-    /// <c>ordered: false</c> they are merged as batches finish.
+    /// <c>ordered: false</c> they are merged as batches finish. A copy of a state that is or holds a reference
+    /// would share the referenced object between the k workers (a data race once the body writes it), so such a
+    /// <typeparamref name="TState"/> is rejected here: pass a factory (<c>() => new State()</c>), which runs once
+    /// per batch.
     /// </summary>
     public Pipe<TOut> Replicate<TState, TOut>(TState state, StageBody<TState, T, TOut> body, int workers = 0, bool ordered = true, int batch = 0, int capacity = 0)
     {
         ArgumentNullException.ThrowIfNull(body);
-        unsafe { return Replicate(state, body, null, workers, ordered, batch, capacity); }
+        if (RuntimeHelpers.IsReferenceOrContainsReferences<TState>())
+            throw new ArgumentException($"Replicate: state type {typeof(TState).Name} is or holds a reference, which every worker would share (a data race if the body writes it); pass a factory instead: Replicate(() => <new state>, body, ...)", nameof(state));
+        unsafe { return Replicate(state, null, body, null, workers, ordered, batch, capacity); }
     }
 
-    /// <summary>A replicated stage whose body is a static function pointer.</summary>
+    /// <summary>A replicated stage whose state comes from <paramref name="state"/>, called once per batch: each batch
+    /// gets its own object, so nothing is shared between the workers unless the factory returns a shared one.</summary>
+    public Pipe<TOut> Replicate<TState, TOut>(Func<TState> state, StageBody<TState, T, TOut> body, int workers = 0, bool ordered = true, int batch = 0, int capacity = 0)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(body);
+        unsafe { return Replicate(default!, state, body, null, workers, ordered, batch, capacity); }
+    }
+
+    /// <summary>A replicated stage whose body is a static function pointer: the compiler's `stage(par: true)`. The
+    /// state is copied per batch; a state that is or holds a reference is shared by the workers, which is sound only
+    /// because the body never writes it (the compiler proves it, AL0245). C# callers with a mutable reference state use
+    /// the factory overload.</summary>
     public unsafe Pipe<TOut> Replicate<TState, TOut>(TState state, delegate*<ref TState, ReadOnlySpan<T>, ref RingWriter<TOut>, void> body,
         int workers = 0, bool ordered = true, int batch = 0, int capacity = 0)
     {
         if (body == null) throw new ArgumentNullException(nameof(body));
-        return Replicate<TState, TOut>(state, null, body, workers, ordered, batch, capacity);
+        return Replicate<TState, TOut>(state, null, null, body, workers, ordered, batch, capacity);
     }
 
-    unsafe Pipe<TOut> Replicate<TState, TOut>(TState state, StageBody<TState, T, TOut>? body,
+    /// <summary>A function-pointer replicated stage with a per-batch state factory.</summary>
+    public unsafe Pipe<TOut> Replicate<TState, TOut>(Func<TState> state, delegate*<ref TState, ReadOnlySpan<T>, ref RingWriter<TOut>, void> body,
+        int workers = 0, bool ordered = true, int batch = 0, int capacity = 0)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (body == null) throw new ArgumentNullException(nameof(body));
+        return Replicate<TState, TOut>(default!, state, null, body, workers, ordered, batch, capacity);
+    }
+
+    unsafe Pipe<TOut> Replicate<TState, TOut>(TState state, Func<TState>? factory, StageBody<TState, T, TOut>? body,
         delegate*<ref TState, ReadOnlySpan<T>, ref RingWriter<TOut>, void> fn, int workers, bool ordered, int batch, int capacity)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(workers);
@@ -201,7 +228,7 @@ public sealed class Pipe<T>
         int k = workers > 0 ? workers : Environment.ProcessorCount;
         int b = Math.Min(batch > 0 ? batch : graph.Batch, ring.Capacity);   // a full batch must fit in the input ring
         var output = graph.NewRing<TOut>(capacity);
-        return graph.Add(new ReplicateNode<TState, T, TOut>(state, body, fn, ring, output, k, b, ordered), output);
+        return graph.Add(new ReplicateNode<TState, T, TOut>(state, factory, body, fn, ring, output, k, b, ordered), output);
     }
 
     /// <summary>The end of a branch; read <see cref="SinkResult{TState}.State"/> after <see cref="Graph.Run"/>.</summary>

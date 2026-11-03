@@ -182,6 +182,9 @@ public sealed partial class Binder
     {
         if (a.Target is NameExpr n)
         {
+            // a rebinding pass (after a hoist) may turn an earlier declaration into an assignment: drop the stale
+            // declaration, or lowering emits `var x` beside the hoisted `x` (C# CS0136, fuzz F5)
+            a.Declares = null;
             var l = FindLocal(n.Name);
             if (l == null && a.Op == "=")
             {

@@ -102,7 +102,8 @@ public sealed partial class Binder
 
     /// <summary>Containers and non-values: their parts are checked, not they.</summary>
     static bool Reportable(Expr e) => e is not (LambdaExpr or StmtExpr or ArrayPatternExpr or BindPatternExpr or HashPatternExpr)
-        && e.Res is not ("type" or "namespace");
+        && e.Res is not ("type" or "namespace")
+        && !(e is RangeExpr r && !ChildUntyped(r));   // `when 3..15`: a range pattern is two comparisons, typed by its bounds (fuzz F1)
 
     static readonly Dictionary<Type, FieldInfo[]> exprFields = new();
 

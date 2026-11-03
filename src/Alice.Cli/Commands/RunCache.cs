@@ -24,6 +24,8 @@ public static class RunCache
         sb.Append(typeof(AliceCompiler).Assembly.ManifestModule.ModuleVersionId).Append('\n');
         sb.Append(typeof(Alice.Runtime.Prelude).Assembly.ManifestModule.ModuleVersionId).Append('\n');
         sb.Append(Environment.Version).Append('\n').Append(name).Append('\n');
+        // the image depends on the optimizer switch too (fuzz T1): a run with passes off must not reuse an optimized image
+        sb.Append("ALICE_DISABLE_PASSES=").Append(Environment.GetEnvironmentVariable("ALICE_DISABLE_PASSES")).Append('\n');
         foreach (var r in refs)
             sb.Append("ref ").Append(r).Append(' ').Append(File.Exists(r) ? File.GetLastWriteTimeUtc(r).Ticks : 0).Append('\n');
         foreach (var f in files)

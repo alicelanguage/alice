@@ -463,6 +463,8 @@ public sealed partial class Lowerer
         "destructure" => p.Sym is Destructure d && d.Parts.All(x => x.Eq == null || PureRead(x.Eq, plan)),
         "type" => true,
         "hashpat" or "arraypat" => true,   // literal keys/elements and bindings
+        // `when 1..44` is two comparisons against the subject, not a Range value (fuzz F4)
+        _ when p is Syntax.RangeExpr r => (r.A == null || PureRead(r.A, plan)) && (r.B == null || PureRead(r.B, plan)),
         _ => PureRead(p, plan),
     };
 
