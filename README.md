@@ -85,6 +85,18 @@ then Roslyn compiles that to IL; errors still point at your `.al` lines.
 All 100% Alice. Celeste Classic is an unofficial educational rewrite of the game by Maddy Thorson and Noel
 Berry ([credits](samples/celeste/README.md)). More in [`samples/`](samples) and [`examples/`](examples).
 
+Starting points by kind of program, each one built, run and tested by `examples/verify.sh` and `SampleTests`:
+
+| Kind | Sample | Shows |
+|---|---|---|
+| Web API | [examples/web/aspnet](examples/web/aspnet/README.md) | ASP.NET Core minimal API, JSON, DI, EF Core, WebSocket, `WebApplicationFactory` checks |
+| Network | [samples/netchat](samples/netchat/README.md) | TCP chat server and client with `spawn` and `Channel` |
+| Desktop | [examples/ui/avalonia](examples/ui/avalonia/README.md) | Avalonia app: MVVM, two views, saved settings, headless run |
+| Games | [samples/raylib-pong](samples/raylib-pong/README.md), [Breakout](samples/Breakout), [celeste](samples/celeste) | raylib and MonoGame; rules tested headless and proven |
+| CLI | [samples/alice-grep](samples/alice-grep/README.md) | flags, globs, parallel scan, NativeAOT (3.3 ms start) |
+| Data | [examples/data/pipeline](examples/data/pipeline/README.md) | CSV to totals to JSON, in integer cents |
+| Low level | [samples/lowlevel](samples/lowlevel/README.md) | libc calls, `@[Native]` kernel, `unsafe` pointers, an index-based tree |
+
 ## Get started
 
 ```bash
