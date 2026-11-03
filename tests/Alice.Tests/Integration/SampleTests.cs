@@ -28,7 +28,7 @@ public class SampleTests
     public void Interop_samples_build_and_run()
     {
         // the Alice workspace generates its MSBuild projects; C# then references AliceLib like any project
-        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", Path.Combine(Root(), "samples")]));
+        AliceCli(Path.Combine(Root(), "samples"), "build");
         Dotnet("build", "CSharpApp/CSharpApp.csproj");
         var cs = Dotnet("run", "--no-build", "--project", "CSharpApp/CSharpApp.csproj");
         Assert.Contains("distance=5", cs);
@@ -45,7 +45,7 @@ public class SampleTests
         // a DbContext subclass written in Alice; EF translates the Where/Select/Count lambdas (expression trees),
         // and the paren-less `ToQueryString` resolves to EF's extension method
         var dir = Path.Combine(Root(), "examples", "data", "efcore");
-        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
+        AliceCli(dir, "build");
         var output = Dotnet("run", "--no-build", "--project", Path.Combine(dir, ".alice", "efcore.alproj"));
         Assert.Contains("rated above 3: alice, carol", output);
         Assert.Contains("names starting with b: 1", output);
@@ -58,7 +58,7 @@ public class SampleTests
         // ILGPU compiles the Alice module function passed as `->Kernels.saxpy` (a method group, not a lambda) and runs
         // it on the preferred device: a GPU (CUDA/OpenCL) when present, else ILGPU's CPU accelerator
         var dir = Path.Combine(Root(), "examples", "gpu", "ilgpu");
-        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
+        AliceCli(dir, "build");
         var output = Dotnet("run", "--no-build", "--project", Path.Combine(dir, ".alice", "ilgpu_saxpy.alproj"));
         Assert.Contains("y[0]=1.0 y[10]=21.0 y[1023]=2047.0", output);
         Assert.Contains("gpu for: y[0]=1.0 y[10]=21.0 y[4095]=8191.0", output);   // the loop compiled to a kernel
@@ -69,6 +69,9 @@ public class SampleTests
     // ---- domain samples (ROADMAP-1.0 stream H): each builds, runs headless, and its `alice test` specs pass ----
 
     /// <summary>`alice ARGS` in a child process run from <paramref name="dir"/> (`alice test` reads ./test and ./src).</summary>
+    /// <summary>Runs the CLI as a child process in <paramref name="dir"/> and fails with its output. Never in-process:
+    /// App.Run reads and writes process-wide state (current directory, ALICE_HOME, AnsiConsole, Console, Ui.Quiet)
+    /// that the parallel "console" collection changes meanwhile.</summary>
     static string AliceCli(string dir, params string[] args)
     {
         var psi = new ProcessStartInfo("dotnet") { WorkingDirectory = dir };
@@ -145,7 +148,7 @@ public class SampleTests
         // under `alice test`, Pong plays 60 s without a window, and its RULES.al proof is current
         var samples = Path.Combine(Root(), "samples");
         foreach (var game in new[] { "BounceGame", "Breakout", "celeste", "raylib-pong" })
-            Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", Path.Combine(samples, game)]));
+            AliceCli(Path.Combine(samples, game), "build");
         Assert.Contains("0 failures", AliceCli(Path.Combine(samples, "Breakout"), "test"));
         Assert.Contains("0 failures", AliceCli(Path.Combine(samples, "celeste"), "test"));
         var pong = Path.Combine(samples, "raylib-pong");
@@ -160,7 +163,7 @@ public class SampleTests
     public void Grep_cli_globs_scans_in_parallel_and_follows_grep_exit_codes()
     {
         var dir = Path.Combine(Root(), "samples", "alice-grep");
-        Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));
+        AliceCli(dir, "build");
         var (code, o) = RunBuilt(dir, "alice-grep", "-n", "def self.walk", "src/**/*.al");
         Assert.True(code == 0, o);
         Assert.Matches(@"src/glob\.al:\d+:  def self\.walk\(dir : String\) : Array\(String\)", o);   // file:line:text

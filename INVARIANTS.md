@@ -148,9 +148,13 @@ cases are compile errors instead: AL0240 (payload), AL0241 (escape), AL0242 (use
 consumed).
 
 **Scope and exclusions.** Arena slabs are per thread; arena values do not cross threads except through forks the
-compiler creates.
+compiler creates. A region (`scope`) marks and resets only its own thread's lane and the lanes it leased to its forks
+(ADR 0037 amendment 2026-11-03): another thread's region never moves a node this thread holds.
 
-**Pinned by.** `tests/Alice.Tests/Compiler/AffineTests.cs`, `tests/Alice.Tests/Runtime/ArenaTests.cs`.
+**Pinned by.** `tests/Alice.Tests/Compiler/AffineTests.cs`, `tests/Alice.Tests/Runtime/ArenaTests.cs` (regions:
+`A_region_on_another_thread_does_not_move_this_threads_lane`, `Regions_on_another_thread_race_with_this_lane_without_effect`,
+`A_fork_inside_a_region_allocates_in_a_leased_lane_reclaimed_with_the_region`, `A_thread_outside_the_region_keeps_its_nodes`,
+`A_region_ends_on_the_thread_that_entered_it`).
 
 ## 10. `alice prove` verdicts are sound
 

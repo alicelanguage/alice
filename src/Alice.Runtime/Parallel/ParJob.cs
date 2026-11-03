@@ -16,6 +16,7 @@ sealed class ParJob<T> : IThreadPoolWorkItem
     readonly int n, chunks;
     int next, pending;
     ExceptionDispatchInfo? error;
+    readonly RegionFrame? region = ArenaRegion.Context;   // chunks on helpers allocate in lanes the region leases
 
     ParJob(int n, int chunks, Func<int, int, T>? chunk, Action<int, int>? action)
     {
@@ -86,8 +87,10 @@ sealed class ParJob<T> : IThreadPoolWorkItem
         if (c >= chunks) return false;
         {
             int lo = (int)((long)n * c / chunks), hi = (int)((long)n * (c + 1) / chunks);
+            ChildLane lane = default;
             try
             {
+                lane = ArenaRegion.EnterChild(region);   // per claimed chunk: a late helper never touches an ended region
                 if (error == null)
                 {
                     if (action != null) action(lo, hi);
@@ -98,6 +101,7 @@ sealed class ParJob<T> : IThreadPoolWorkItem
             {
                 Interlocked.CompareExchange(ref error, ExceptionDispatchInfo.Capture(e), null);
             }
+            finally { ArenaRegion.ExitChild(lane); }
             Interlocked.Decrement(ref pending);
         }
         return true;

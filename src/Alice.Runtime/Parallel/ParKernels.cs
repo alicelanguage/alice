@@ -146,6 +146,7 @@ abstract class KernelJob : IThreadPoolWorkItem
 {
     int n, chunks, next, pending, helpers;
     ExceptionDispatchInfo? error;
+    RegionFrame? region;
 
     protected abstract void Chunk(int c, int lo, int hi);
 
@@ -158,6 +159,7 @@ abstract class KernelJob : IThreadPoolWorkItem
         this.chunks = chunks;
         next = 0;
         error = null;
+        region = ArenaRegion.Context;
         Volatile.Write(ref pending, chunks);
         RunOne();
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -186,14 +188,17 @@ abstract class KernelJob : IThreadPoolWorkItem
         int c = Interlocked.Increment(ref next) - 1;
         if (c >= chunks) return false;
         int lo = (int)((long)n * c / chunks), hi = (int)((long)n * (c + 1) / chunks);
+        ChildLane lane = default;
         try
         {
+            lane = ArenaRegion.EnterChild(region);   // per claimed chunk: a late helper never touches an ended region
             if (error == null) Chunk(c, lo, hi);
         }
         catch (Exception e)
         {
             Interlocked.CompareExchange(ref error, ExceptionDispatchInfo.Capture(e), null);
         }
+        finally { ArenaRegion.ExitChild(lane); }
         Interlocked.Decrement(ref pending);
         return true;
     }
@@ -249,6 +254,7 @@ sealed class ForkKernelJob<TBranch, A> : IThreadPoolWorkItem where TBranch : str
     [ThreadStatic] static int pooled;
 
     int state = Done, waiting, depth;
+    RegionFrame? region;
     TBranch branch;
     A? result;
     ExceptionDispatchInfo? error;
@@ -260,6 +266,7 @@ sealed class ForkKernelJob<TBranch, A> : IThreadPoolWorkItem where TBranch : str
         if (p != null) p[pooled] = null;
         j.branch = branch;
         j.depth = depth;
+        j.region = ArenaRegion.Context;
         j.result = default;
         j.error = null;
         j.waiting = 0;
@@ -271,6 +278,7 @@ sealed class ForkKernelJob<TBranch, A> : IThreadPoolWorkItem where TBranch : str
     {
         j.branch = default;
         j.result = default;
+        j.region = null;
         var p = pool ??= new ForkKernelJob<TBranch, A>?[PoolSize];
         if (pooled < PoolSize) p[pooled++] = j;
     }
@@ -284,9 +292,18 @@ sealed class ForkKernelJob<TBranch, A> : IThreadPoolWorkItem where TBranch : str
     {
         int saved = Par.ForkDepth;
         Par.ForkDepth = depth;
-        try { result = branch.Invoke(); }
+        ChildLane lane = default;
+        try
+        {
+            lane = ArenaRegion.EnterChild(region);
+            result = branch.Invoke();
+        }
         catch (Exception e) { error = ExceptionDispatchInfo.Capture(e); }
-        finally { Par.ForkDepth = saved; }
+        finally
+        {
+            ArenaRegion.ExitChild(lane);
+            Par.ForkDepth = saved;
+        }
         Interlocked.Exchange(ref state, Done);
         if (Volatile.Read(ref waiting) != 0)
             lock (this) Monitor.PulseAll(this);

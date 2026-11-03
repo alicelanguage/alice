@@ -14,6 +14,7 @@ sealed class ForkJob<A>(Func<A> body, int depth) : IThreadPoolWorkItem
     int state, waiting;
     A? result;
     ExceptionDispatchInfo? error;
+    readonly RegionFrame? region = ArenaRegion.Context;   // a fork inside `scope` allocates in a lane the region leases
 
     public void Execute()
     {
@@ -24,9 +25,18 @@ sealed class ForkJob<A>(Func<A> body, int depth) : IThreadPoolWorkItem
     {
         int saved = Par.ForkDepth;
         Par.ForkDepth = depth;
-        try { result = body(); }
+        ChildLane lane = default;
+        try
+        {
+            lane = ArenaRegion.EnterChild(region);
+            result = body();
+        }
         catch (Exception e) { error = ExceptionDispatchInfo.Capture(e); }
-        finally { Par.ForkDepth = saved; }
+        finally
+        {
+            ArenaRegion.ExitChild(lane);
+            Par.ForkDepth = saved;
+        }
         Interlocked.Exchange(ref state, Done);
         if (Volatile.Read(ref waiting) != 0)
             lock (this) Monitor.PulseAll(this);

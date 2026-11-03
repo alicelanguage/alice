@@ -49,6 +49,17 @@ static class ArenaTree
     public static uint Expected(int d) => (uint)(((1UL << d) + (1UL << (d + 1)) - 1) * (1UL << d) / 2);
 }
 
+/// <summary>ArenaTests run alone: they assert exact lane cursors (Used), lower the static slot cap and fork on the
+/// pool, which tests running meanwhile could disturb. Regions themselves are per thread since the ADR 0037
+/// amendment of 2026-11-03 (see A_region_on_another_thread_does_not_move_this_threads_lane); until then a `scope`
+/// run in-process by another test reset this class's lanes mid-test.</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class ArenaRegionCollection
+{
+    public const string Name = "arena-regions";
+}
+
+[Collection(ArenaRegionCollection.Name)]
 public class ArenaTests
 {
     record struct Cell(uint V, uint W);
@@ -184,17 +195,53 @@ public class ArenaTests
     }
 
     [Fact]
-    public void Region_reclaims_foreign_lanes_and_lanes_born_inside_it()
+    public void A_thread_outside_the_region_keeps_its_nodes()
     {
-        uint used = 0;
+        // amendment 2026-11-03: a plain thread is not part of a region it did not enter, so its nodes outlive it
         Term t;
         using (ArenaRegion.Enter())
+            t = RunOnOtherThread(() => Arena<Limited>.Alloc(1, new Limited(5)));
+        Assert.Equal(new Limited(5), Arena<Limited>.Borrow(t));
+    }
+
+    [Fact]
+    public void A_fork_inside_a_region_allocates_in_a_leased_lane_reclaimed_with_the_region()
+    {
+        Term t = default;
+        int main, child = -1, depth = -1;
+        using (var region = ArenaRegion.Enter())
         {
-            t = RunOnOtherThread(() => { var x = Arena<Limited>.Alloc(1, new Limited(5)); used = Arena<Limited>.Used; return x; });
-            Assert.Equal(new Limited(5), Arena<Limited>.Borrow(t));
-            Assert.True(used >= 1);
+            main = ArenaLane.Current;
+            using var started = new ManualResetEventSlim();
+            var (_, waited) = Par.Fork(() =>
+            {
+                started.Set();
+                child = ArenaLane.Current;
+                depth = ArenaRegion.CurrentDepth;
+                t = Arena<Limited>.Alloc(1, new Limited(6));
+                return 0;
+            }, () => started.Wait(TimeSpan.FromSeconds(30)));   // the left half runs on a pool thread, not inline
+            Assert.True(waited);
+            Assert.NotEqual(main, child);
+            Assert.Equal(child, t.Lane);
+            Assert.Equal(1, depth);                                    // the child allocates under the parent's region
+            Assert.Equal(new Limited(6), Arena<Limited>.Borrow(t));    // valid after the join
         }
-        Assert.Throws<InvalidOperationException>(() => Arena<Limited>.Borrow(t));
+        Assert.Throws<InvalidOperationException>(() => Arena<Limited>.Borrow(t));   // reclaimed with the region
+        Assert.Equal(0, ArenaRegion.CurrentDepth);
+    }
+
+    [Fact]
+    public void A_region_ends_on_the_thread_that_entered_it()
+    {
+        var region = ArenaRegion.Enter();
+        Exception? other = null;
+        var th = new Thread(() => { try { region.Dispose(); } catch (Exception x) { other = x; } });
+        th.Start();
+        th.Join();
+        Assert.Contains("on the thread that entered it", Assert.IsType<InvalidOperationException>(other).Message);
+        region.Dispose();   // still open: the owner ends it
+        Assert.Equal(0, ArenaRegion.CurrentDepth);
     }
 
     [Fact]
@@ -355,6 +402,94 @@ public class ArenaTests
         uint used = Arena<ArenaTree.Pair>.Used;
         Assert.Equal(4290772992u, ArenaTree.SumBorrowed(ArenaTree.Gen(23, 1)));
         Assert.Equal(used, Arena<ArenaTree.Pair>.Used);   // the second tree reused every freed slot
+    }
+
+    record struct Bystander(uint V, uint W);
+
+    /// <summary>Why Tree_23 failed in the full parallel run before the ADR 0037 amendment of 2026-11-03: a region was
+    /// process-wide, so a `scope` another test ran on another thread (AffineLowerTests' `scope region`, Bend2 symreg)
+    /// hid this lane's free list while it was open and rolled this lane's cursor back under live nodes when it ended
+    /// (the next Alloc aliased one). Regions are per thread now: another thread's region must not move this lane.</summary>
+    [Fact]
+    public void A_region_on_another_thread_does_not_move_this_threads_lane()
+    {
+        var a = Arena<Bystander>.Alloc(1, new Bystander(1, 1));
+        Arena<Bystander>.Take(a, out _);                                    // a's slot is on this lane's free list
+        using var opened = new SemaphoreSlim(0);
+        using var close = new SemaphoreSlim(0);
+        using var closed = new SemaphoreSlim(0);
+        Exception? error = null;
+        var other = new Thread(() =>
+        {
+            try
+            {
+                using (ArenaRegion.Enter())                                  // another thread opens a scope ...
+                {
+                    Arena<Bystander>.Alloc(1, new Bystander(9, 9));
+                    opened.Release();
+                    close.Wait();
+                }                                                           // ... and ends it while we hold y
+            }
+            catch (Exception e) { error = e; }
+            closed.Release();
+        });
+        other.Start();
+        opened.Wait();
+        var y = Arena<Bystander>.Alloc(1, new Bystander(2, 2));             // this thread is in no region
+        Assert.Equal(a.Slot, y.Slot);                                      // its free list was not hidden
+        uint used = Arena<Bystander>.Used;
+        close.Release();
+        closed.Wait();
+        other.Join();
+        Assert.Null(error);
+        Assert.Equal(used, Arena<Bystander>.Used);                          // the other region did not move our cursor
+        var z = Arena<Bystander>.Alloc(1, new Bystander(3, 3));
+        Assert.NotEqual(y.Slot, z.Slot);                                   // no alias
+        Assert.Equal(new Bystander(2, 2), Arena<Bystander>.Borrow(y));
+        Assert.Equal(new Bystander(3, 3), Arena<Bystander>.Borrow(z));
+    }
+
+    record struct Racer(Term L, Term R);
+
+    static Term RacerGen(int d, uint x) =>
+        d == 0 ? Term.Pack(0, x) : Arena<Racer>.Alloc(1, new Racer(RacerGen(d - 1, x * 2), RacerGen(d - 1, x * 2 + 1)));
+
+    static uint RacerSum(Term t)
+    {
+        if (t.IsPacked) return t.Payload;
+        Arena<Racer>.Take(t, out var p);
+        return RacerSum(p.L) + RacerSum(p.R);
+    }
+
+    /// <summary>The race behind the Tree_23 flake, as a fixed workload: one thread opens and ends regions (allocating
+    /// inside each) while this one builds and consumes trees outside any region. Before the amendment it failed
+    /// within milliseconds (a node past its lane's cursor); now this lane must end exactly where a serial run ends.</summary>
+    [Fact]
+    public void Regions_on_another_thread_race_with_this_lane_without_effect()
+    {
+        const int Trees = 300, Regions = 3000;
+        Exception? error = null;
+        int done = 0;
+        var regions = new Thread(() =>
+        {
+            try
+            {
+                for (int k = 0; k < Regions; k++)
+                {
+                    using var r = ArenaRegion.Enter();
+                    RacerSum(RacerGen(4, (uint)k));
+                    RacerGen(3, (uint)k);   // left for the reset
+                }
+            }
+            catch (Exception e) { error = e; }
+            Volatile.Write(ref done, 1);
+        });
+        regions.Start();
+        for (int k = 0; k < Trees || (Volatile.Read(ref done) == 0 && k < 100 * Trees); k++)
+            Assert.Equal(ArenaTree.Expected(10), RacerSum(RacerGen(10, 1)));
+        regions.Join();
+        Assert.Null(error);
+        Assert.Equal(1023u, Arena<Racer>.Used);   // every freed slot was reused, none lost (2^10 - 1 nodes)
     }
 
     [Fact]

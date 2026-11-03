@@ -149,3 +149,45 @@ IL lowering (ADR 0040, section 2): terms are `uint64` in IL; packing and `case` 
 `switch` on the top byte; the lane slab is read once per method; slot access uses the lane cursor and `Unsafe.Add`
 without bounds checks, and drops the stale check when the node carries `SlotProof.Live`; a `Take` reads the fields and
 pushes the free list in three operations.
+
+## Amendment 2026-11-03: regions are per thread
+
+**Problem.** `ArenaRegion.Enter`/`Dispose` marked and reset every lane of every arena type in the process. A `scope`
+on one thread therefore hid the free list of every other thread's lane while it was open and rolled their cursors
+back when it ended, under nodes those threads still held: the next Alloc there returned a live node's slot (two
+Allocs aliased), and the unsynchronized push/pop raced with their Alloc/Take (lost free-list entries, terms past the
+cursor). Invariant 9 does not allow this. Found as the `ArenaTests.Tree_23_consuming_sum_has_the_bend_checksum`
+flake: `AffineLowerTests` ran `scope` programs in-process in parallel (7 freed slots lost out of 2^23).
+
+**Decision.**
+
+1. `Enter` pushes marks only on the calling thread's lane, in every arena type, and records the region in a
+   thread-static stack (frames reused by depth: 0 allocations steady state). `Dispose` pops only what that region
+   pushed. No global lock or global depth covers other lanes' cursors; another thread's lane is never touched.
+2. Fork children (`Par.Fork`, `ForkJob`, `ForkKernelJob`, the `ParJob`/`KernelJob` chunks) capture the forking
+   thread's innermost region when they are created. A child that runs on another thread inside that region binds
+   (every arena type's thread-static slab) to a lane the region leases for it: a spare lane of the same region, or a
+   fresh lane id whose marks are pushed when it is leased. The child returns to its previous lane before it signals
+   its join; chunks lease per claimed chunk, so a late helper never touches an ended region. Nodes built by children
+   stay valid after the join (they live on the leased lane), and `Dispose` pops every leased lane and returns its id
+   to the lane pool, so fork-built and foreign-consumed nodes are reclaimed with the region as before. A child run
+   inline by the forking thread, or by a thread already under the same region, keeps its lane.
+3. `Dispose` on a thread other than the one that called `Enter` throws `InvalidOperationException`; out-of-order and
+   double `Dispose` still throw. `ArenaRegion.Depth`/`CurrentDepth` count the regions the calling thread allocates
+   under (a fork child counts its parent's).
+4. Threads that are not fork children of the region (plain threads, `spawn`, actors, dataflow stages) are outside it:
+   their nodes outlive it. This matches invariant 9's scope (arena values cross threads only through forks).
+
+**Cost.** Outside regions a fork job reads one thread-static more; inside a region a child on another thread pays a
+lock and one slab store per arena type on entry and exit. Measured on the bend2 tree ports and symreg (serial and
+parallel, results/arena.md "Per-thread regions"): new / old 0.95-1.02, within noise.
+
+**Rejected.** Keeping process-wide regions as a documented limit (a user program with `scope` and an unrelated thread
+using arenas could alias live nodes); popping a child's marks at its join (the parent still reads the child's nodes
+until the region ends); marking the pool thread's own lane for a child (unrelated work that thread runs before the
+region ends would be reset with it).
+
+Tests: `ArenaTests.A_region_on_another_thread_does_not_move_this_threads_lane`,
+`Regions_on_another_thread_race_with_this_lane_without_effect`,
+`A_fork_inside_a_region_allocates_in_a_leased_lane_reclaimed_with_the_region`,
+`A_thread_outside_the_region_keeps_its_nodes`, `A_region_ends_on_the_thread_that_entered_it`.
