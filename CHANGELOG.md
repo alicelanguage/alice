@@ -4,6 +4,12 @@
 
 ## 1.0.0-rc.1 - 2026-11-02
 
+- IL optimizer round 2 (IL backend only): loop-carried store-to-load forwarding (`Air/Passes/IlOpt/StoreForward.cs`,
+  switch `forward`): a load of the element the previous iteration stored reads a register instead of memory, for
+  fresh non-escaping arrays with one unconditional store per iteration and proven-in-bounds loads (editdist IL / C#
+  1.00 -> 0.75); forced inlining now bounds the size a body expands to with its `inline` callees (gameoflife 0.96 ->
+  0.92). bend2 serial geomean IL / C# 0.96 (0.94 without the arena tree ports), warm and parallel tables in
+  benchmarks/bend2/results/il-vs-csharp.md.
 - IL backend optimizer (il-opt; IL backend only, `ALICE_IL_OPT` switches, e.g. `0` or `-inline,-inbounds`): R9
   `[AggressiveInlining]` on small loop-free bodies with at most 3 call sites (never fork dispatchers or `__fork_*`
   helpers); proven-in-bounds array reads and writes (`Air/Passes/IlOpt/InBounds.cs`: interval analysis over

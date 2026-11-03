@@ -1,4 +1,50 @@
-# bend2 serial: IL backend vs C# backend (il-opt)
+# bend2: IL backend vs C# backend (il-opt)
+
+## Round 2 (2026-11-03, main f0f7614 + il-opt round 2)
+
+Same machine. Serial: `taskset -c 12,28 env ALICE_PAR=0` (cores 13,29 were shared with another worker's timing
+runs during part of round 1 and round 2, so round 2 re-measures every image on 12,28), cold process runs, medians
+of 3 after a checksum run. `R1` = round 1 il-opt, `R2` = round 2 (store forwarding, inline expansion bound).
+Warm: in-process repeats of the entry point (`.ilopt/warm`, scratch harness: 5 runs in one process, median of runs
+3-5, checksum checked every run). Parallel: all cores, default `ALICE_PAR`, medians of 5 (10 for the rerun rows);
+the box had load average 19-28 from other jobs, so parallel walls carry ~5-10 % noise. Checksums identical for
+every image, mode and run. Ratios IL / C# (< 1: IL faster).
+
+| workload | C# ms | R1 cold | R2 cold | R2 cycles | R2 warm | R2 parallel | note |
+|---|---:|---:|---:|---:|---:|---:|---|
+| bfs | 10513 | 0.759 | 0.735 | 0.752 | | 0.844 | R2 inlining bound |
+| editdist | 11579 | 1.001 | **0.754** | 0.734 | **0.733** | 0.770 | store forwarding: the DP row carry stays in a register |
+| gameoflife | 15388 | 0.957 | **0.922** | 0.946 | | 0.992 | inline expansion bound: `classify` no longer forced into `chunk` |
+| hashmap | 1438 | 0.985 | 0.988 | 0.985 | | 0.924 | |
+| kmeans | 22430 | 0.999 | 0.989 | 0.996 | 0.998 | 0.960 | parity (same machine code) |
+| lexer | 2188 | 0.889 | 0.891 | 0.887 | | 0.997 | |
+| mandelbrot | 3779 | 0.985 | 0.977 | 0.983 | | 0.920 | |
+| merkle | 8516 | 0.998 | 0.999 | 1.000 | 0.998 | 0.983 | parity |
+| nbody | 8142 | 1.000 | 1.003 | 1.002 | 1.002 | 0.998 | parity (same machine code) |
+| queens | 6447 | 1.009 | 1.006 | 1.006 | 1.001 | 0.930 | parity: IL equals Roslyn's but for one dead struct temp |
+| raytrace | 10015 | 0.990 | 0.991 | 0.993 | | 0.980 | |
+| symreg | 8376 | 0.981 | 1.007 | 0.993 | **0.916** | 1.06-1.10 | arena; parallel: 1.18 cycles (arena path, fix-runtime) |
+| terrain | 6063 | 0.974 | 0.980 | 0.979 | | 0.886 | |
+| tree-bitonic (21) | 16626 | 1.170 | 1.106 | 1.087 | 1.21 | | OPEN: arena Alloc/Take (fix-runtime worker, AirToIl.Arena.cs) |
+| tree-matmul | 9980 | 1.089 | 1.093 | 1.089 | 1.110 | 1.15-1.17 | OPEN: arena |
+| tree-radix | 12534 | 1.018 | 1.013 | 1.015 | **0.951** | 1.023 | arena |
+
+Geomean IL / C#, serial cold: 0.96 (R1 0.98); without the three tree ports: 0.94. Warm (9 rows): 0.98.
+editdist's R2 cold row is its own rerun (C# 11579 ms); the other R2 rows come from the same run as R1.
+
+## Round 2 changes
+
+- **Loop-carried store forwarding** (`Air/Passes/IlOpt/StoreForward.cs`, switch `forward`): a load that reads the
+  element the previous iteration stored (`rows[co + j]` after `rows[co + j + 1] = v`) reads a local instead; only
+  for fresh, non-escaping arrays with one unconditional store per iteration and proven-in-bounds loads (proof list
+  in the type summary). editdist 11.6 s -> 8.7 s cold; the C# backend cannot express it without the source change.
+- **Inline expansion bound** (`Backend/Il/Opt/MethodFlags.cs`): a method is forced inline only if its size with
+  the `inline`/tiny callees the JIT will put in stays under the bound; gameoflife's `chunk` keeps its own
+  `inline` step_cells instead of spending the budget on `classify` (FullOpts `chunk` 4152 B -> 1760 B, C# 1797 B).
+- Looked at and left: `merkle.speck`'s 22 constant-index loads (the JIT already checks `rk.Length > 21` once),
+  queens `solve` (Roslyn's IL but for a dead `initobj` temp), kmeans `chunk` (same machine code as C#).
+
+## Round 1
 
 Machine: forge, Intel Xeon Platinum 8488C (AVX-512), .NET SDK 10.0.114, 2026-11-03, main 21b5933 + il-opt.
 Method: `taskset -c 13,29 env ALICE_PAR=0` (one core pair, serial), cold process runs, `hyperfine -N`, medians

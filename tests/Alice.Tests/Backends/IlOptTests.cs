@@ -77,6 +77,52 @@ public class IlOptTests(ITestOutputHelper output)
         Same(Kernel, res.Pe!);
     }
 
+    const string Expanding = """
+        inline def mixa(x : UInt32) : UInt32
+          a = x ^ (x << 13)
+          b = a ^ (a >> 17)
+          c = b ^ (b << 5)
+          d = c &* 2654435761_u32
+          e = d ^ (d >> 15)
+          f = e &* 2246822519_u32
+          f ^ (f >> 13)
+        end
+
+        inline def mixb(x : UInt32) : UInt32
+          mixa(mixa(x) &+ 1_u32) ^ mixa(mixa(x &+ 7_u32) &+ 3_u32)
+        end
+
+        def wrap(x : UInt32) : UInt32
+          mixb(x) ^ mixb(x &+ 1_u32)
+        end
+
+        def tiny(x : UInt32) : UInt32
+          x &* 3_u32 &+ 1_u32
+        end
+
+        acc = 0_u32
+        i = 0_u32
+        while i < 1000_u32
+          acc = (acc ^ wrap(i)) &+ tiny(i)
+          i = i &+ 1_u32
+        end
+        puts acc
+        """;
+
+    [Fact]
+    public void Inlining_counts_the_inline_callees_a_body_expands_to()
+    {
+        // `wrap` is 2 instructions of its own plus two `inline` mixb calls (four mixa each): forcing it into the loop
+        // would spend the caller's inlining budget on one call site
+        var res = Il(Expanding, "ilopt_exp");
+        var inl = Flagged(AliceCompiler.Load(res.Pe!), MethodImplAttributes.AggressiveInlining);
+        Assert.Contains("mixa", inl);   // `inline def`: kept
+        Assert.Contains("mixb", inl);
+        Assert.Contains("tiny", inl);
+        Assert.DoesNotContain("wrap", inl);
+        Same(Expanding, res.Pe!);
+    }
+
     static HashSet<string> Flagged(Assembly a, MethodImplAttributes f) =>
         [.. a.GetType("Program")!.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .Where(m => m.MethodImplementationFlags.HasFlag(f)).Select(m => m.Name)];
@@ -413,6 +459,100 @@ public class IlOptTests(ITestOutputHelper output)
         // risky: an 8-element array becomes a stackalloc Span (not an array): nothing to prove, output unchanged
         Same(Rows, res.Pe!);
         AirToIlVerify(res.Pe!);
+    }
+
+    const string Carried = """
+        def sink(a : Array(UInt32)) : UInt32
+          a[3]
+        end
+
+        def dp(p : UInt32) : UInt32
+          rows = Array(UInt32).new(130)
+          k = 0
+          while k <= 64
+            rows[k] = k.to_u32 &* p
+            k += 1
+          end
+          co = 65
+          rows[co] = p
+          j = 0
+          while j < 64
+            left = rows[co + j] &+ 1_u32
+            dg = rows[j] &+ (p & 1_u32)
+            rows[co + j + 1] = left < dg ? left : dg
+            j += 1
+          end
+          rows[co + 64]
+        end
+
+        def prefix(p : UInt32) : UInt32
+          acc = Array(UInt32).new(100)
+          acc[0] = p
+          i = 1
+          while i < 100
+            acc[i] = acc[i - 1] &* 3_u32 &+ i.to_u32
+            i += 1
+          end
+          acc[99]
+        end
+
+        def escaped(p : UInt32) : UInt32
+          acc = Array(UInt32).new(100)
+          acc[0] = p
+          i = 1
+          while i < 100
+            acc[i] = acc[i - 1] &+ sink(acc)
+            i += 1
+          end
+          acc[99]
+        end
+
+        def guarded(p : UInt32) : UInt32
+          acc = Array(UInt32).new(100)
+          acc[0] = p
+          i = 1
+          while i < 100
+            acc[i] = acc[i - 1] &+ 1_u32 if (p &+ i.to_u32) % 3_u32 != 0_u32
+            i += 1
+          end
+          acc[99]
+        end
+
+        def none(p : UInt32) : UInt32
+          acc = Array(UInt32).new(100)
+          acc[0] = p
+          i = 1
+          while i < 0
+            acc[i] = acc[i - 1] &+ 1_u32
+            i += 1
+          end
+          acc[0]
+        end
+
+        puts dp(7_u32) ^ prefix(5_u32) ^ escaped(9_u32) ^ guarded(11_u32) ^ none(13_u32)
+        """;
+
+    [Fact]
+    public void Loop_carried_stores_forward_to_the_next_iterations_load()
+    {
+        var res = Il(Carried, "ilopt_fwd");
+        var text = Listing(res);
+        // the DP recurrence and the prefix sum read the previous iteration's store from a register
+        Assert.Contains("__fwd0", Body(text, "dp"));
+        Assert.Contains("__fwd0", Body(text, "prefix"));
+        // an array passed to a call, a conditional store: not forwarded
+        Assert.DoesNotContain("__fwd", Body(text, "escaped"));
+        Assert.DoesNotContain("__fwd", Body(text, "guarded"));
+        // a loop that never runs: the guarded pre-load does not run either (output unchanged)
+        Same(Carried, res.Pe!);
+        AirToIlVerify(res.Pe!);
+        var saved = IlOpt.Enabled;
+        try
+        {
+            IlOpt.Enabled = IlOptPass.All & ~IlOptPass.Forward;
+            Assert.DoesNotContain("__fwd", Listing(Il(Carried, "ilopt_fwd0")));
+        }
+        finally { IlOpt.Enabled = saved; }
     }
 
     static int CountCalls(string body, string what) =>
