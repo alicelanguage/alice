@@ -221,10 +221,12 @@ public class JsonDomTests
         var e = doc.Root.ToJsonElement();
         Assert.Equal(7, e.GetProperty("id").GetInt64());
         Assert.Equal("Alé \"q\"", e.GetProperty("name").GetString());
-        Assert.Equal(7, Prelude.parse_json(Sample)["id"]!.GetValue<long>()); // duplicates: last wins (JsonNode.Parse would throw)
+        Assert.Equal(7, Prelude.parse_json(Sample)["id"].GetInt64()); // duplicates: last wins (JsonNode.Parse would throw)
         const string plain = """{"a":[1,2.5,"x",{"b":null}],"c":true}""";
-        Assert.Equal(2, Prelude.parse_json(Sample)["dup"]!.GetValue<long>());
-        Assert.Equal(System.Text.Json.Nodes.JsonNode.Parse(plain)!.ToJsonString(), Prelude.parse_json(plain).ToJsonString());
+        Assert.Equal(2, Prelude.parse_json(Sample)["dup"].GetInt64());
+        Assert.Equal(2, Prelude.parse_json(Sample).ToJsonElement().GetProperty("dup").GetInt64());
+        Assert.Equal(System.Text.Json.Nodes.JsonNode.Parse(plain)!.ToJsonString(), System.Text.Json.Nodes.JsonNode.Parse(Prelude.parse_json(plain).ToJsonElement().GetRawText())!.ToJsonString());
+        Assert.Equal(plain, Prelude.parse_json(plain).ToJson());
     }
 
     [Fact]

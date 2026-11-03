@@ -212,6 +212,42 @@ public static class JsonMap
         w.WriteEndObject();
     }
 
+    // ---- plain enums: by member name ----
+
+    /// <summary>Writes the member name of <paramref name="value"/> (`"Green"`); 0 bytes allocated (names cached per type).</summary>
+    public static void WriteEnum<T>(ref JsonWriter w, T value) where T : struct, Enum
+    {
+        var names = EnumNames<T>.Utf8;
+        var values = EnumNames<T>.Values;
+        for (int i = 0; i < values.Length; i++)
+            if (EqualityComparer<T>.Default.Equals(values[i], value)) { w.WriteString(names[i]); return; }
+        throw new ArgumentException($"{value} is not a member of {typeof(T).Name}");
+    }
+
+    /// <summary>Reads a member name (exact, case-sensitive).</summary>
+    public static T ReadEnum<T>(ref JsonIterator r) where T : struct, Enum
+    {
+        long at = r.Offset;
+        var raw = r.ReadRawString(out bool esc);
+        var names = EnumNames<T>.Utf8;
+        if (!esc)
+            for (int i = 0; i < names.Length; i++)
+                if (raw.SequenceEqual(names[i])) return EnumNames<T>.Values[i];
+        throw new JsonParseException($"not a member of {typeof(T).Name}", at);
+    }
+
+    static class EnumNames<T> where T : struct, Enum
+    {
+        public static readonly T[] Values = Enum.GetValues<T>();
+        public static readonly byte[][] Utf8 = Values.Select(v => System.Text.Encoding.UTF8.GetBytes(v.ToString())).ToArray();
+    }
+
+    /// <summary>The string of a raw property name from <see cref="JsonIterator.NextProperty"/> (escapes decoded).</summary>
+    public static string Key(ReadOnlySpan<byte> rawName) => Strings.Materialize(rawName);
+
+    /// <summary>The error for a required field absent from the object (generated readers).</summary>
+    public static JsonParseException MissingField(string field, string type, long offset) => new($"missing field \"{field}\" of {type}", offset);
+
     // ---- sum types: {"<tag>":"Variant", ...fields} ----
 
     /// <summary>

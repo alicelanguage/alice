@@ -104,7 +104,7 @@ public static class Builtins
         "file_exists?" => AType.Bool,
         "read_lines" => AType.Array(AType.String),
         "now" => ClrTypes.FromClr(typeof(DateTime)),
-        "parse_json" => ClrTypes.FromClr(typeof(System.Text.Json.Nodes.JsonNode)),
+        "parse_json" => ClrTypes.FromClr(typeof(Alice.Core.Json.JsonAny)),
         _ => AType.Void,
     };
 

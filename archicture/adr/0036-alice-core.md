@@ -123,3 +123,10 @@ baseline for each compiler-recognized idiom, and each idiom keeps a runtime fall
   name must be a valid `Names.Dotnet` image of its Alice name, or get explicit Prelude sugar.
 - Names that collide with BCL types (`JsonDocument`, `HttpRequest`) need an alias in C# files that import both
   namespaces.
+
+## Amendment 1 (2026-11-03): `scoped` span parameters on `JsonWriter`
+
+`WritePropertyName`, `WriteString` (both overloads each) and `WriteRawValue` take `scoped ReadOnlySpan<T>`. Without
+it, passing a span over a local (`stackalloc`, a `u8` slice of a local buffer) to a writer reached through
+`ref JsonWriter` is CS8350, because the compiler must assume the writer could keep the span. The writer copies the
+bytes and never stores the span, so `scoped` states the real contract; callers that compiled before still compile.

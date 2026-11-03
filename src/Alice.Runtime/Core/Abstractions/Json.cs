@@ -308,10 +308,10 @@ public ref partial struct JsonWriter
     public partial void WriteEndArray();
 
     /// <summary>A property name given as UTF-8 that needs no escaping (generated code: `"id"u8`).</summary>
-    public partial void WritePropertyName(ReadOnlySpan<byte> utf8Name);
+    public partial void WritePropertyName(scoped ReadOnlySpan<byte> utf8Name);
 
     /// <summary>A property name (escaped as needed).</summary>
-    public partial void WritePropertyName(ReadOnlySpan<char> name);
+    public partial void WritePropertyName(scoped ReadOnlySpan<char> name);
 
     /// <summary>`null`.</summary>
     public partial void WriteNull();
@@ -329,13 +329,13 @@ public ref partial struct JsonWriter
     public partial void WriteNumber(double value);
 
     /// <summary>A string (escaped as needed).</summary>
-    public partial void WriteString(ReadOnlySpan<char> value);
+    public partial void WriteString(scoped ReadOnlySpan<char> value);
 
     /// <summary>A UTF-8 string (escaped as needed).</summary>
-    public partial void WriteString(ReadOnlySpan<byte> utf8Value);
+    public partial void WriteString(scoped ReadOnlySpan<byte> utf8Value);
 
     /// <summary>Pre-serialized JSON, copied as is.</summary>
-    public partial void WriteRawValue(ReadOnlySpan<byte> utf8Json);
+    public partial void WriteRawValue(scoped ReadOnlySpan<byte> utf8Json);
 
     /// <summary>Commits pending bytes to the buffer writer.</summary>
     public partial void Flush();
