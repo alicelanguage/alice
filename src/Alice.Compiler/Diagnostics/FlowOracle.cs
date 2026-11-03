@@ -35,7 +35,8 @@ public static class FlowOracle
         var b = binder; var src = sources;
         binder = null; sources = null;
         var errs = all.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error).ToList();
-        var r = errs.Where(d => RoslynIds.Contains(d.Id)).Select(d =>
+        // the nullable ids are warnings (an assertion) since the binder reports AL0310 itself
+        var r = all.Where(d => RoslynIds.Contains(d.Id) && d.Severity >= Microsoft.CodeAnalysis.DiagnosticSeverity.Warning).Select(d =>
         {
             var span = d.Location.GetMappedLineSpan();
             return (Code: CSharpErrors.Translate(d).Code, File: Path.GetFileName(span.Path ?? ""), Line: span.StartLinePosition.Line + 1, Id: d.Id);

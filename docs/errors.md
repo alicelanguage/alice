@@ -60,7 +60,7 @@ Language: `ALICE_LANG=pt|es|en` or `--lang pt`. Default: OS UI culture.
 
 The generated C# is type-checked by Roslyn; its errors are reported in Alice terms (Alice type names, no C# ids).
 
-AL0309 (use before assignment), AL0310 (possible nil) and AL0300 constant overflow (`The operation overflows at compile time in checked mode`, `Constant value ... cannot be converted`) come from the binder, so every backend reports them (IL included).
+AL0309 (use before assignment), AL0310 (possible nil) and AL0300 constant overflow (`The operation overflows at compile time in checked mode`, `Constant value ... cannot be converted`) come from the binder, so every backend reports them (IL included). On the C# backend Roslyn's nullable warnings are only an internal assertion: one that fires prints `alice: flow analysis gap (CS86xx) at file:line` on stderr instead of failing the build.
 
 Two cases are errors although Roslyn never saw them (the generated C# initializes every declared local with `default!`): a reference-typed local declared without a value and read before every path assigns it (`x : String` then `puts x.size`) is AL0309, and a nilable local declared without a value holds nil (`x : String?` then `x.size` is AL0310).
 
