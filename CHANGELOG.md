@@ -28,6 +28,13 @@
   pointers, index tree, safety story). Compiler gaps found on the way: /work/reports/domain-compiler-issues.md;
   new "Not ready" rows in docs/production.md.
 
+- core: Alice.Core.Json engine (ADR 0036, C2.1-C2.4) replaces the JSON stubs: stage 1 structural index (AVX-512BW / AVX2
+  vpshufb classes, carry-less-multiply prefix xor, 128-bit and scalar tiers, ALICE_JSON_TIER to force one), simdjson-style
+  tape (JsonDocument, JsonAny, JsonProperty), on-demand JsonIterator, JsonWriter (Ryu shortest doubles), Eisel-Lemire
+  numbers (Int64 -> UInt64 -> Float64), JsonMap mapping pieces. Prelude: JSON.parse / generate / pretty_generate,
+  JSON::Any sugar (as_i, dig, nil?, to_h ...); to_json and parse_json go through it (to_json keeps 1.0 and non-ASCII
+  as Ruby does). JSONTestSuite 283/283 y_/n_ correct; forge, twitter: stage 1 5.2 GB/s, DOM 2.56 GB/s (3.4x
+  JsonDocument), writer 2.4-1.5x Utf8JsonWriter (benchmarks/core/json/results.md).
 - perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
   earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
   helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays

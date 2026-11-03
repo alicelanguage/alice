@@ -1,0 +1,95 @@
+# Alice.Core.Json on the forge (2026-11-03)
+
+`run.sh 3` (taskset -c 7,23, shared box, load 8-19): median of 3 rounds, each the median of 15 timed calls after >= 1 s warm-up. GB/s = input bytes (serialize: output bytes) / time. Raw: `results/raw-20261103T014850Z.txt`. Alice and System.Text.Json run in the same process on the same bytes.
+
+| case | input | engine | ms | GB/s | alloc B/call |
+|---|---|---|---:|---:|---:|
+| json-dom | canada | alice/dom | 3.2678 | 0.689 | 56 |
+| json-dom | canada | stj/JsonDocument | 7.2952 | 0.309 | 72 |
+| json-dom | citm_catalog | alice/dom | 0.6485 | 2.663 | 56 |
+| json-dom | citm_catalog | stj/JsonDocument | 3.8686 | 0.447 | 72 |
+| json-dom | github_events | alice/dom | 0.0185 | 3.521 | 56 |
+| json-dom | github_events | stj/JsonDocument | 0.0794 | 0.820 | 72 |
+| json-dom | gsoc-2018 | alice/dom | 0.8754 | 3.801 | 56 |
+| json-dom | gsoc-2018 | stj/JsonDocument | 3.8297 | 0.869 | 72 |
+| json-dom | mesh | alice/dom | 1.1367 | 0.637 | 56 |
+| json-dom | mesh | stj/JsonDocument | 2.3461 | 0.308 | 72 |
+| json-dom | twitter | alice/dom | 0.2466 | 2.561 | 56 |
+| json-dom | twitter | stj/JsonDocument | 0.8374 | 0.754 | 72 |
+| json-field-sum | twitter | alice/dom | 0.2896 | 2.181 | 56 |
+| json-field-sum | twitter | alice/ondemand | 0.2326 | 2.715 | 0 |
+| json-field-sum | twitter | stj/JsonDocument | 0.8464 | 0.746 | 72 |
+| json-serialize | canada | alice/writer | 6.3149 | 0.331 | 0 |
+| json-serialize | canada | stj/Utf8JsonWriter | 11.8430 | 0.176 | 0 |
+| json-serialize | canada | stj/Utf8JsonWriter-relaxed | 11.9815 | 0.174 | 0 |
+| json-serialize | canada | stj/sourcegen | 11.9479 | 0.175 | 0 |
+| json-serialize | citm_catalog | alice/writer | 0.4379 | 1.143 | 0 |
+| json-serialize | citm_catalog | stj/Utf8JsonWriter | 0.7032 | 0.713 | 0 |
+| json-serialize | citm_catalog | stj/Utf8JsonWriter-relaxed | 0.6430 | 0.778 | 0 |
+| json-serialize | citm_catalog | stj/sourcegen | 0.4814 | 1.041 | 0 |
+| json-serialize | twitter | alice/writer | 0.1959 | 1.485 | 0 |
+| json-serialize | twitter | stj/Utf8JsonWriter | 0.4905 | 0.805 | 0 |
+| json-serialize | twitter | stj/Utf8JsonWriter-relaxed | 0.2969 | 0.981 | 0 |
+| json-serialize | twitter | stj/sourcegen | 0.4011 | 0.985 | 0 |
+| json-typed | canada | alice/typed | 5.5670 | 0.404 | 6704592 |
+| json-typed | canada | stj/sourcegen | 13.6896 | 0.164 | 8484000 |
+| json-typed | citm_catalog | alice/typed | 0.9682 | 1.784 | 1081888 |
+| json-typed | citm_catalog | stj/sourcegen | 4.5971 | 0.376 | 1083280 |
+| json-typed | twitter | alice/typed | 0.6157 | 1.026 | 355000 |
+| json-typed | twitter | stj/sourcegen | 1.2030 | 0.525 | 356392 |
+| json-validate | canada | alice/stage1 | 0.4225 | 5.328 | 0 |
+| json-validate | canada | alice/stage1-avx2 | 0.4887 | 4.606 | 0 |
+| json-validate | canada | alice/stage1-avx512 | 0.4297 | 5.239 | 0 |
+| json-validate | canada | alice/stage1-scalar | 3.2584 | 0.691 | 0 |
+| json-validate | canada | alice/stage1-vector128 | 0.7698 | 2.924 | 0 |
+| json-validate | canada | alice/validate | 1.0435 | 2.157 | 0 |
+| json-validate | canada | alice/validate-avx2 | 1.0353 | 2.174 | 0 |
+| json-validate | canada | alice/validate-avx512 | 1.3655 | 1.649 | 0 |
+| json-validate | canada | alice/validate-scalar | 3.9084 | 0.576 | 0 |
+| json-validate | canada | alice/validate-vector128 | 1.2798 | 1.759 | 0 |
+| json-validate | canada | bcl/Utf8.IsValid | 0.0363 | 62.012 | 0 |
+| json-validate | citm_catalog | alice/stage1 | 0.2641 | 6.540 | 0 |
+| json-validate | citm_catalog | alice/stage1-avx2 | 0.3281 | 5.264 | 0 |
+| json-validate | citm_catalog | alice/stage1-avx512 | 0.3818 | 4.524 | 0 |
+| json-validate | citm_catalog | alice/stage1-scalar | 2.7321 | 0.632 | 0 |
+| json-validate | citm_catalog | alice/stage1-vector128 | 0.5533 | 3.122 | 0 |
+| json-validate | citm_catalog | alice/validate | 0.5034 | 3.431 | 0 |
+| json-validate | citm_catalog | alice/validate-avx2 | 0.6062 | 2.849 | 0 |
+| json-validate | citm_catalog | alice/validate-avx512 | 0.5190 | 3.328 | 0 |
+| json-validate | citm_catalog | alice/validate-scalar | 2.9101 | 0.594 | 0 |
+| json-validate | citm_catalog | alice/validate-vector128 | 0.7760 | 2.226 | 0 |
+| json-validate | citm_catalog | bcl/Utf8.IsValid | 0.0496 | 34.823 | 0 |
+| json-validate | github_events | alice/stage1 | 0.0087 | 7.486 | 0 |
+| json-validate | github_events | alice/validate | 0.0158 | 4.122 | 0 |
+| json-validate | github_events | bcl/Utf8.IsValid | 0.0012 | 54.277 | 0 |
+| json-validate | gsoc-2018 | alice/stage1 | 0.6537 | 5.091 | 0 |
+| json-validate | gsoc-2018 | alice/validate | 0.7702 | 4.321 | 0 |
+| json-validate | gsoc-2018 | bcl/Utf8.IsValid | 0.1081 | 30.785 | 0 |
+| json-validate | mesh | alice/stage1 | 0.1360 | 5.321 | 0 |
+| json-validate | mesh | alice/validate | 0.3432 | 2.108 | 0 |
+| json-validate | mesh | bcl/Utf8.IsValid | 0.0065 | 111.323 | 0 |
+| json-validate | twitter | alice/stage1 | 0.1210 | 5.219 | 0 |
+| json-validate | twitter | alice/stage1-avx2 | 0.1537 | 4.109 | 0 |
+| json-validate | twitter | alice/stage1-avx512 | 0.1313 | 4.810 | 0 |
+| json-validate | twitter | alice/stage1-scalar | 1.4161 | 0.446 | 0 |
+| json-validate | twitter | alice/stage1-vector128 | 0.2201 | 2.869 | 0 |
+| json-validate | twitter | alice/validate | 0.2181 | 2.896 | 0 |
+| json-validate | twitter | alice/validate-avx2 | 0.2455 | 2.572 | 0 |
+| json-validate | twitter | alice/validate-avx512 | 0.2121 | 2.977 | 0 |
+| json-validate | twitter | alice/validate-scalar | 1.8892 | 0.334 | 0 |
+| json-validate | twitter | alice/validate-vector128 | 0.3178 | 1.987 | 0 |
+| json-validate | twitter | bcl/Utf8.IsValid | 0.0445 | 14.191 | 0 |
+| json-walk | canada | alice/ondemand-walk | 10.6419 | 0.211 | 0 |
+| json-walk | canada | stj/Utf8JsonReader | 5.2273 | 0.431 | 0 |
+| json-walk | citm_catalog | alice/ondemand-walk | 0.8014 | 2.155 | 0 |
+| json-walk | citm_catalog | stj/Utf8JsonReader | 3.4383 | 0.502 | 0 |
+| json-walk | github_events | alice/ondemand-walk | 0.0222 | 2.934 | 0 |
+| json-walk | github_events | stj/Utf8JsonReader | 0.0647 | 1.007 | 0 |
+| json-walk | gsoc-2018 | alice/ondemand-walk | 0.9805 | 3.394 | 0 |
+| json-walk | gsoc-2018 | stj/Utf8JsonReader | 3.6232 | 0.918 | 0 |
+| json-walk | mesh | alice/ondemand-walk | 1.9933 | 0.363 | 0 |
+| json-walk | mesh | stj/Utf8JsonReader | 2.0980 | 0.345 | 0 |
+| json-walk | twitter | alice/ondemand-walk | 0.3059 | 2.064 | 0 |
+| json-walk | twitter | stj/Utf8JsonReader | 0.7304 | 0.865 | 0 |
+
+Typed and serialize use the hand-written readers/writers of `Mapping.cs` (what C2.5 will generate) on the partial schemas of `../baselines/dotnet/Typed.cs`; checksums equal STJ source-gen.
