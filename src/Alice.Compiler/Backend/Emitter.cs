@@ -166,7 +166,7 @@ public sealed class Emitter
     {
         var p = d.RecordParams.FirstOrDefault(r => r.Name == field);
         if (p == null || p.Attrs.Count == 0) return "";
-        return string.Concat(p.Attrs.Select(a => System.Text.RegularExpressions.Regex.IsMatch(a, @"^\w+\s*:\s") ? $"[{a}] " : $"[property: {a}] "));
+        return string.Concat(p.Attrs.Select(a => Alice.Core.Text.Regex.Cached(@"\A\w+\s*:\s").IsMatch(a) ? $"[{a}] " : $"[property: {a}] "));
     }
 
     static string Attrs(List<string> attrs)

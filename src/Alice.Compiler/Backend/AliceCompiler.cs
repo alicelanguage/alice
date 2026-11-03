@@ -100,7 +100,7 @@ public static class AliceCompiler
         return new NativeBuild(image, dir);
     }
 
-    static readonly System.Text.RegularExpressions.Regex RequireLine = new(@"^\s*require(?:_relative)?\s+""(?<p>[^""]+)""", System.Text.RegularExpressions.RegexOptions.Multiline);
+    static class RequireHolder { public static readonly Alice.Core.Text.Regex Line = new(@"^\s*require(?:_relative)?\s+""(?<p>[^""]+)"""); }
 
     /// <summary>Loads entry files plus everything they `require` or `require_relative` (paths relative to the requiring
     /// file, `.al` optional), transitively.</summary>
@@ -115,14 +115,14 @@ public static class AliceCompiler
             if (!seen.Add(path)) continue;
             var text = File.ReadAllText(path);
             result.Add(new SourceFile(path, text));
-            foreach (System.Text.RegularExpressions.Match m in RequireLine.Matches(text))
+            foreach (var m in RequireHolder.Line.MatchAll(text))
             {
-                var rel = m.Groups["p"].Value;
+                var rel = m["p"]!;
                 var full = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(path)!, rel));
                 if (!full.EndsWith(".al")) full += ".al";
                 if (!File.Exists(full))
                 {
-                    int line = text[..m.Index].Count(c => c == '\n') + 1;
+                    int line = text[..m.Begin(0)].Count(c => c == '\n') + 1;
                     throw new CompileException($"{path}:{line}:1: cannot find '{rel}' (looked for {full})");
                 }
                 queue.Enqueue(full);

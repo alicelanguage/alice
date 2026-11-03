@@ -63,7 +63,7 @@ public sealed partial class Binder
     CompileException Unassigned(string path, Node at, string name, AType t, bool noCtor)
     {
         // Alice spelling of the type: `DbSet(Blog)`, not `global::Microsoft.EntityFrameworkCore.DbSet<Blog>`
-        string ty = System.Text.RegularExpressions.Regex.Replace(t.Cs, @"global::(\w+\.)*", "").Replace('<', '(').Replace('>', ')');
+        string ty = Alice.Core.Text.Regex.Cached(@"global::(?:\w+\.)*").Replace(t.Cs, "").Replace('<', '(').Replace('>', ')');
         return new([new Diagnostic("error", UnassignedFieldCode, path, at.Line, Math.Max(1, at.Col),
             $"field `@{name}` ({ty}) is never assigned{(noCtor ? " (the class has no `initialize`)" : " by every `initialize`")} and has no initializer, so it would be nil; assign it in every `initialize`, give it a default (`@{name} : {ty} = ...`) or make it nilable (`{ty}?`)")]);
     }

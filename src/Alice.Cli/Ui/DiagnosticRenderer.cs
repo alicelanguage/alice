@@ -57,14 +57,14 @@ public static class DiagnosticRenderer
     public static int AliceColumn(string code, string message, int col, string line)
     {
         if (!code.StartsWith("AL03")) return col;
-        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(message, "'([A-Za-z_][A-Za-z0-9_?!]*)'"))
+        foreach (var m in Alice.Core.Text.Regex.Cached("'([A-Za-z_][A-Za-z0-9_?!]*)'").MatchAll(message))
         {
-            string name = m.Groups[1].Value;
-            string snake = System.Text.RegularExpressions.Regex.Replace(name, "(?<=[a-z0-9])([A-Z])", "_$1").ToLowerInvariant();
+            string name = m[1]!;
+            string snake = Alice.Core.Text.Regex.Cached("(?<=[a-z0-9])([A-Z])").Replace(name, @"_\1").ToLowerInvariant();
             foreach (var n in new[] { name, snake })
             {
-                var hit = System.Text.RegularExpressions.Regex.Match(line, $@"(?<![A-Za-z0-9_]){System.Text.RegularExpressions.Regex.Escape(n)}(?![A-Za-z0-9_])");
-                if (hit.Success) return hit.Index + 1;
+                var hit = Alice.Core.Text.Regex.Cached($@"(?<![A-Za-z0-9_]){Alice.Core.Text.Regex.Escape(n)}(?![A-Za-z0-9_])").Match(line);
+                if (hit != null) return hit.Begin(0) + 1;
             }
         }
         int first = line.Length - line.TrimStart().Length;

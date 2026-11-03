@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Text.RegularExpressions;
 using Alice.Compiler.Mir;
 using Alice.Compiler.Optimizer;
 using Alice.Compiler.Semantics;
@@ -162,7 +161,7 @@ public abstract class IlPass : MirRewriter, IMirPass
 
     protected static MExprStmt Do(MExpr e) => new() { E = e };
 
-    static readonly Regex Ident = new(@"^@?[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant);
+    static readonly Alice.Core.Text.Regex Ident = new(@"\A@?[A-Za-z_][A-Za-z0-9_]*\Z");
 
     /// <summary>A plain identifier (a local or parameter name).</summary>
     protected static bool IsIdent(string s) => Ident.IsMatch(s) && s is not ("true" or "false" or "null" or "this" or "base" or "default");

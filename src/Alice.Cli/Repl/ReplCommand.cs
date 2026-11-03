@@ -177,7 +177,7 @@ public static class ReplCommand
     }
 
     static string Clean(string chunk) =>
-        System.Text.RegularExpressions.Regex.Replace(chunk, @"\n?ReplHost\.show\([^)]*\)", "").Replace("__v", "v");
+        Alice.Core.Text.Regex.Cached(@"\n?ReplHost\.show\([^)]*\)").Replace(chunk, "").Replace("__v", "v");
 
     static void Shell(string cmd)
     {

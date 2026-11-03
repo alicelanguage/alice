@@ -40,6 +40,9 @@ public static partial class Prelude
     [Pure] public static HashSet<T> to_set<T>(this IEnumerable<T> a) => new(a);
 
     /// <summary>`grep(/re/)` / `grep_v(/re/)`: the strings that match / do not match. (Type and range filters: `select`.)</summary>
+    [Pure] public static string[] grep(this IEnumerable<string> a, Alice.Core.Text.Regex re) => a.Where(s => re.IsMatch(s)).ToArray();
+    [Pure] public static string[] grep_v(this IEnumerable<string> a, Alice.Core.Text.Regex re) => a.Where(s => !re.IsMatch(s)).ToArray();
+    public static R[] grep<R>(this IEnumerable<string> a, Alice.Core.Text.Regex re, Func<string, R> f) => a.Where(s => re.IsMatch(s)).Select(f).ToArray();
     [Pure] public static string[] grep(this IEnumerable<string> a, Regex re) => a.Where(s => re.IsMatch(s)).ToArray();
     [Pure] public static string[] grep_v(this IEnumerable<string> a, Regex re) => a.Where(s => !re.IsMatch(s)).ToArray();
     public static R[] grep<R>(this IEnumerable<string> a, Regex re, Func<string, R> f) => a.Where(s => re.IsMatch(s)).Select(f).ToArray();

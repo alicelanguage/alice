@@ -55,7 +55,7 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 | `(1..)` | endless range, counts up lazily (to `Int32::MAX`) |
 | `when 4..`, `in ..3` | open range in a pattern (bounded by `Int32::MIN`/`MAX`); `..b` elsewhere is an error |
 | `%w[a b]` / `%i[a b]` | `Array(String)` of words / symbols; also `%w{}`, `%w()`, `%w<>`, `%w\|\|` |
-| `/\d+/i` | regex literal, flags `i m x s`, compiled once and cached |
+| `/\d+/i` | regex literal: Ruby/Onigmo syntax on Alice's own engine (ADR 0036; automata for regular patterns, a memoizing backtracker for look-around, backreferences, atomic and possessive groups), flags `i` (Unicode simple case folding), `m` (dot-all; `s` is an alias), `x`; compiled once and cached. `^ $` are line anchors (`^` not after a final newline), `\A \z \Z` text anchors; `\w \d \s \h \b` are ASCII, `[[:alpha:]]`, `[[:word:]]` and `\p{L}` Unicode; once a group is named, unnamed groups do not capture |
 | `<<~EOS ... EOS` | heredoc, common indent stripped, interpolates |
 | `<<-EOS ... EOS` | heredoc, indented terminator, text kept as is |
 | `<<EOS ... EOS` | plain heredoc: terminator at column 0, text kept as is (only where an operand starts and an `EOS` line follows) |
@@ -264,7 +264,7 @@ C# loops take 9.3 ms and 32 MB per call; LINQ `Select().ToArray()` takes 11.7 ms
 | Logical | `&& \|\| !`, `and or not` |
 | Assignment | `= += -= *= /=` |
 | Ternary | `c ? a : b` |
-| Regex | `s =~ /re/` (match index or `nil`), `s !~ /re/`, `s.match?(/re/)` |
+| Regex | `s =~ /re/` (match index or `nil`; records the last match without allocating), `s !~ /re/`, `s.match?(/re/)` (never touches the last match, allocation-free); the last match is `Prelude.last_match` / `last_match(n)` (the runtime behind `$~` and `$1`) |
 | Append | `xs << 1 << 2` on `List`/`StringBuilder` (chainable) |
 | Array | `a + b`, `a - b`, `a & b` (intersection), `a \| b` (union) |
 | String | `"%05d\|%.2f" % [42, 3.14]` (format), `"ab" * 3` (repeat) |
@@ -1101,7 +1101,7 @@ Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
 | Type | Methods |
 |---|---|
 | String | `size center ljust rjust chomp chop strip squeeze count(set) index rindex starts_with? ends_with? includes? include? sub gsub(str\|Regex) tr delete lines each_line each_char chars scan(Regex\|pattern) match? repeat(n) to_sym succ bytes hex oct to_i to_f upcase downcase capitalize swapcase title reverse split lstrip rstrip bytesize codepoints blank? camelcase camelcase(lower: true) underscore to_i(base) to_i?(base = 10) to_f? ljust/rjust/center(n, String) match(Regex) gsub/sub(Regex) { \|m\| } gsub(Regex, Hash) dup clone hash eql? equal?`; `each_char` without a block is an `IEnumerable(Char)` |
-| MatchData | `s.match(/re/)` / `re.match(s)` (nil when no match): `m[0]` whole match, `m[1]`, `m["name"]` (nil for a group that did not take part), `begin(i) end(i) pre_match post_match captures named_captures to_a size to_s` |
+| MatchData | `Alice.Core.Text.MatchData`: `s.match(/re/)`, `s.match(/re/, pos)` / `re.match(s)` (nil when no match): `m[0]` whole match, `m[1]`, `m[-1]`, `m["name"]` (nil for a group that did not take part), `begin(i) end(i)` (-1 when unset) `offset(i) pre_match post_match captures named_captures names to_a values_at size to_s`. Regex methods on String: `sub gsub` (templates `\1 \k<name> \0 \&`), `gsub/sub { |m| }`, `gsub(re, hash)`, `scan(re)`, `scan(re) { |m| }`, `scan_groups(re)`, `split(re, limit)` (captures kept), `slice(re, n)`, `grep(re)`. C# sees `Alice.Core.Text.Regex`: `IsMatch Find Count Matches` (struct enumerator) `TryMatch(span, Span<Range>)` (no allocation), `Match Split Replace` (UTF-16 and UTF-8 into an `IBufferWriter<byte>`) |
 | Char | `upcase downcase letter? digit? number? alphanumeric? whitespace? uppercase? lowercase? ascii? ascii_letter? hex? succ pred ord to_i` |
 | Array / Enumerable | `each each_with_index map select reject find find_index count sum min max minmax min_by max_by sort sort{\|a,b\|} sort_by uniq uniq{} reverse reverse_each first(n) last(n) take drop take_while drop_while each_slice each_cons zip flatten compact group_by partition tally chunk_while flat_map product sample shuffle(Random?) rotate reduce inject each_with_object step(n) cycle(n) combination(k) permutation(k) join to_a to_h include? cover? flatten(depth) max(n) min(n) max_by(n) min_by(n) slice_when to_set grep(Regex) grep_v(Regex) find_index(value) transpose to_h([[k, v]]) to_h { \|x\| {k, v} } sum(init) filter_map dup clone eql? hash` |
 | Hash | `each each_pair map select reject fetch dig merge key? has_key? value? keys values invert to_a min_by max_by sort_by transform_values transform_keys group_by sum count any? all? fetch(k) { \|k\| } delete(k) delete(k) { \|k\| } each_key each_value dig(a, b) dig(a, b, c) include? includes? member? has_value? key(v) store(k, v) length empty? update(h) update(h) { \|k, old, new\| } merge(h) { \|k, old, new\| } filter_map to_h { \|k, v\| {k2, v2} } values_at slice except filter clear dup clone` (blocks get `\|k, v\|`; `delete`, `dig`, `key` return nil when absent) |

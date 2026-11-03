@@ -63,11 +63,11 @@ public static class ProjectCommands
         string rel = Path.GetRelativePath(root, dir).Replace('\\', '/');
         string file = Path.Combine(root, Manifest.FileName);
         string text = File.ReadAllText(file);
-        var m = System.Text.RegularExpressions.Regex.Match(text, @"members\s*=\s*\[(?<items>[^\]]*)\]");
-        if (!m.Success) return;
-        string items = m.Groups["items"].Value.Trim();
+        var m = Alice.Core.Text.Regex.Cached(@"members\s*=\s*\[(?<items>[^\]]*)\]").Match(text);
+        if (m == null) return;
+        string items = m["items"]!.Trim();
         string updated = items.Length == 0 ? $"\"{rel}\"" : items.TrimEnd(',') + $", \"{rel}\"";
-        File.WriteAllText(file, text.Remove(m.Groups["items"].Index, m.Groups["items"].Length).Insert(m.Groups["items"].Index, updated));
+        File.WriteAllText(file, text.Remove(m.Begin(1), m.End(1) - m.Begin(1)).Insert(m.Begin(1), updated));
         UiH.Status(T("workspace"), $"+ {rel}", "blue");
     }
 

@@ -276,7 +276,7 @@ public static class IlSpikeCompiler
 
     /// <summary>The helper families in Lowerer.Extra (`__fork_batch_1` -> `__fork`), sorted.</summary>
     static string ExtraKinds(List<string> extra) => string.Join("+", extra.Select(x =>
-        System.Text.RegularExpressions.Regex.Match(x, @"(__[a-z]+|[A-Za-z]+__[a-z]+)") is { Success: true } mm ? mm.Groups[1].Value : FirstLine(x)).Distinct().Order());
+        Alice.Core.Text.Regex.Cached(@"(__[a-z]+|[A-Za-z]+__[a-z]+)").Match(x) is { } mm ? mm[1]! : FirstLine(x)).Distinct().Order());
 
     static string FirstLine(string x)
     {
@@ -342,8 +342,8 @@ public static class IlSpikeCompiler
         if (ClrResolve.TryLiteral(t, out _, out _)) return "literal";
         if (t is "default!" or "default") return "default";
         if (t == "this" || t == "base") return "this/base";
-        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^@?[A-Za-z_][A-Za-z0-9_]*$")) return "name";
-        if (System.Text.RegularExpressions.Regex.IsMatch(t, @"^(global::)?[A-Za-z_][A-Za-z0-9_.]*(<[^()]*>)?$")) return "type/static path";
+        if (Alice.Core.Text.Regex.Cached(@"\A@?[A-Za-z_][A-Za-z0-9_]*\Z").IsMatch(t)) return "name";
+        if (Alice.Core.Text.Regex.Cached(@"\A(?:global::)?[A-Za-z_][A-Za-z0-9_.]*(?:<[^()]*>)?\Z").IsMatch(t)) return "type/static path";
         if (t.StartsWith("$\"") || t.StartsWith("@\"")) return "C# string form";
         if (t.Contains('(')) return "C# call/expr text";
         return "other text";

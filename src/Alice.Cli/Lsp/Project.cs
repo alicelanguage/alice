@@ -1,5 +1,4 @@
 using Alice.Compiler.Semantics;
-using System.Text.RegularExpressions;
 
 namespace Alice.Cli.Lsp;
 
@@ -61,7 +60,7 @@ public sealed class Project
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
     }
 
-    static readonly Regex Require = new("^\\s*require\\s+\"([^\"]+)\"", RegexOptions.Multiline);
+    static readonly Alice.Core.Text.Regex Require = new(@"^\s*require\s+""([^""]+)""");
     public static List<Document> Sources(Document doc, IEnumerable<Document> open)
     {
         var result = new Dictionary<string, Document>(StringComparer.OrdinalIgnoreCase) { [Path.GetFullPath(doc.Path)] = doc };
@@ -76,9 +75,9 @@ public sealed class Project
         for (int i = 0; i < result.Count; i++)
         {
             var source = result.Values.ElementAt(i);
-            foreach (Match match in Require.Matches(source.Text))
+            foreach (var match in Require.MatchAll(source.Text))
             {
-                var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source.Path)!, match.Groups[1].Value));
+                var path = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(source.Path)!, match[1]!));
                 if (!Path.HasExtension(path)) path += ".al";
                 Load(path);
             }
