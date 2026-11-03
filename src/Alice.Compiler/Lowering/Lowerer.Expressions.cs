@@ -111,6 +111,8 @@ public sealed partial class Lowerer
                 return new MCall { Target = AirTypeRef.Prelude(), Name = "regex", Args = { AirConst.Str(rx.Pattern), AirConst.Str(rx.Flags) } };
             case AwaitExpr aw:
                 return new MUnary { Op = AirUnOp.Await, E = Expr(aw.E) };
+            case DataflowExpr df:
+                return Dataflow(df);   // ADR 0038 (Lowerer.Dataflow.cs)
             case SpawnExpr sp:
                 return new MCall { Target = AirTypeRef.Prelude(), Name = "spawn", Args = { Lambda(sp.Body) } };
             case YieldExpr { Sym: null } yi:   // iterator method

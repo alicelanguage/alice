@@ -224,6 +224,7 @@ public sealed partial class Printer
         if (EIterators(e) is { } iter) return iter;
         if (EParallel(e) is { } par) return par;
         if (EClosures(e) is { } clo) return clo;
+        if (EDataflow(e) is { } dfl) return dfl;   // ADR 0038 (Printer.Dataflow.cs)
         throw new InvalidOperationException(e.GetType().Name);
     }
 

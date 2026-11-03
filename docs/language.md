@@ -941,6 +941,31 @@ unchecked
 end
 ```
 
+### Dataflow networks: `dataflow do` (ADR 0038)
+
+```crystal
+dataflow(capacity: 16384, batch: 512) do            # options: ring capacity, items per body call
+  lines  = source(state: idx) { |all, out|         # one producer; `out << v` emits
+    for k in 0...all.size
+      out << all[k]
+    end
+  }
+  hashes = lines.stage(state: text) { |t, l, out| out << hash(t, l) }   # stateful, 1:n
+  scores = hashes.stage(par: true, workers: 16, batch: 1024) { |h| score(h) }   # pure: replicated, ordered
+  scores.sink { |s| total += s }                   # sink writes are copied back after the run
+end
+```
+
+Each node is a static method over a batch, `(ref state, ReadOnlySpan(TIn), ref RingWriter(TOut))`, registered by
+function pointer: no delegate or lambda per item, no allocation per item. Edges are bounded SPSC rings; the
+output equals the serial program for every thread count (`ordered: false` lets a replicated stage merge batches as
+they finish). A stage block is `|x, out|`, `|x|` (its value is the output) or with `state:` `|st, x, out|`; a
+source is `|out|`/`|st, out|` and runs as an iterator (bounded memory), so `out << v` must be a statement of its
+body or of its loops. Errors: AL0244 (a node captures a non-sendable or written local; only the sink may write
+locals or own a mutable one; no `self`), AL0245 (`par: true` on a block that is not pure), AL0246 (two consumers or
+producers, a cycle, an edge without consumer, anything but nodes in the block). `stream def f(...) : Iterator(T)`
+declares an iterator whose consumer may run concurrently; today it runs as a plain iterator (same output).
+
 ### Race safety (AL0202)
 
 Concurrent contexts: `spawn`, `Par.For`, `par_each`, `Task.Run` lambdas, `Actor` handlers.

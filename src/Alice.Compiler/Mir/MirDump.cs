@@ -188,6 +188,7 @@ public sealed partial class MirDump
         if (CoreIterators(e) is { } iter) return iter;
         if (CoreParallel(e) is { } par) return par;
         if (CoreClosures(e) is { } clo) return clo;
+        if (CoreDataflow(e) is { } dfl) return dfl;   // ADR 0038 (MirDump.Dataflow.cs)
         return "(" + e.GetType().Name + ")";
     }
 }
