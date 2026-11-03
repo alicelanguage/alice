@@ -52,1114 +52,2822 @@ public sealed partial record AlPerformance(ulong eventId, ulong id, string? logo
 public sealed partial record AlCitm(global::System.Collections.Generic.Dictionary<string, string> areaNames, global::System.Collections.Generic.Dictionary<string, string> audienceSubCategoryNames, global::System.Collections.Generic.Dictionary<string, string> blockNames, global::System.Collections.Generic.Dictionary<string, AlEvent> events, AlPerformance[] performances, global::System.Collections.Generic.Dictionary<string, string> seatCategoryNames, global::System.Collections.Generic.Dictionary<string, string> subTopicNames, global::System.Collections.Generic.Dictionary<string, string> subjectNames, global::System.Collections.Generic.Dictionary<string, string> topicNames, global::System.Collections.Generic.Dictionary<string, ulong[]> topicSubTopics, global::System.Collections.Generic.Dictionary<string, string> venueNames);
 public static partial class AlJson
 {
+internal static AlTwitter __json_R2_AlTwitter(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    AlStatus[] f0 = default!;
+    bool h0 = false;
+    AlSearchMetadata f1 = default!;
+    bool h1 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "statuses"))
+        {
+            f0 = __json_R0_AlStatus__(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "search_metadata"))
+            {
+                f1 = __json_R1_AlSearchMetadata(ref r);
+                h1 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("statuses", "AlTwitter", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("search_metadata", "AlTwitter", at);
+    }
+    return new AlTwitter(f0, f1);
+}
+internal static void __json_W2_AlTwitter(ref global::Alice.Core.Json.JsonWriter w, AlTwitter v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "statuses");
+    __json_W0_AlStatus__(ref w, v.statuses);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "search_metadata");
+    __json_W1_AlSearchMetadata(ref w, v.search_metadata);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlStatus[] __json_R0_AlStatus__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlStatus[] a = global::Alice.Core.Json.JsonMap.NewArray<AlStatus>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlStatus>(a);
+        }
+        a[n] = __json_R3_AlStatus(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlStatus>(a, n);
+}
+internal static void __json_W0_AlStatus__(ref global::Alice.Core.Json.JsonWriter w, AlStatus[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W3_AlStatus(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static AlSearchMetadata __json_R1_AlSearchMetadata(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    double f0 = default;
+    bool h0 = false;
+    ulong f1 = default;
+    bool h1 = false;
+    string f2 = default!;
+    bool h2 = false;
+    string f3 = default!;
+    bool h3 = false;
+    string f4 = default!;
+    bool h4 = false;
+    string f5 = default!;
+    bool h5 = false;
+    uint f6 = default;
+    bool h6 = false;
+    ulong f7 = default;
+    bool h7 = false;
+    string f8 = default!;
+    bool h8 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "completed_in"))
+        {
+            f0 = __json_R4_double(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "max_id"))
+            {
+                f1 = __json_R5_ulong(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "max_id_str"))
+                {
+                    f2 = __json_R6_string(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    if (global::Alice.Core.Json.JsonMap.Is(n, "next_results"))
+                    {
+                        f3 = __json_R6_string(ref r);
+                        h3 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.Is(n, "query"))
+                        {
+                            f4 = __json_R6_string(ref r);
+                            h4 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.Is(n, "refresh_url"))
+                            {
+                                f5 = __json_R6_string(ref r);
+                                h5 = true;
+                            }
+                            else
+                            {
+                                if (global::Alice.Core.Json.JsonMap.Is(n, "count"))
+                                {
+                                    f6 = __json_R7_uint(ref r);
+                                    h6 = true;
+                                }
+                                else
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.Is(n, "since_id"))
+                                    {
+                                        f7 = __json_R5_ulong(ref r);
+                                        h7 = true;
+                                    }
+                                    else
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.Is(n, "since_id_str"))
+                                        {
+                                            f8 = __json_R6_string(ref r);
+                                            h8 = true;
+                                        }
+                                        else
+                                        {
+                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("completed_in", "AlSearchMetadata", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("max_id", "AlSearchMetadata", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("max_id_str", "AlSearchMetadata", at);
+    }
+    if (!h3)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("next_results", "AlSearchMetadata", at);
+    }
+    if (!h4)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("query", "AlSearchMetadata", at);
+    }
+    if (!h5)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("refresh_url", "AlSearchMetadata", at);
+    }
+    if (!h6)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("count", "AlSearchMetadata", at);
+    }
+    if (!h7)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("since_id", "AlSearchMetadata", at);
+    }
+    if (!h8)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("since_id_str", "AlSearchMetadata", at);
+    }
+    return new AlSearchMetadata(f0, f1, f2, f3, f4, f5, f6, f7, f8);
+}
+internal static void __json_W1_AlSearchMetadata(ref global::Alice.Core.Json.JsonWriter w, AlSearchMetadata v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "completed_in");
+    __json_W4_double(ref w, v.completed_in);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "max_id");
+    __json_W5_ulong(ref w, v.max_id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "max_id_str");
+    __json_W6_string(ref w, v.max_id_str);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "next_results");
+    __json_W6_string(ref w, v.next_results);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "query");
+    __json_W6_string(ref w, v.query);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "refresh_url");
+    __json_W6_string(ref w, v.refresh_url);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "count");
+    __json_W7_uint(ref w, v.count);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "since_id");
+    __json_W5_ulong(ref w, v.since_id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "since_id_str");
+    __json_W6_string(ref w, v.since_id_str);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlStatus __json_R3_AlStatus(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    AlMetadata f0 = default!;
+    bool h0 = false;
+    string f1 = default!;
+    bool h1 = false;
+    ulong f2 = default;
+    bool h2 = false;
+    string f3 = default!;
+    bool h3 = false;
+    string f4 = default!;
+    bool h4 = false;
+    string f5 = default!;
+    bool h5 = false;
+    bool f6 = default;
+    bool h6 = false;
+    ulong? f7 = default;
+    bool h7 = false;
+    ulong? f8 = default;
+    bool h8 = false;
+    string? f9 = default!;
+    bool h9 = false;
+    AlUser f10 = default!;
+    bool h10 = false;
+    uint f11 = default;
+    bool h11 = false;
+    uint f12 = default;
+    bool h12 = false;
+    AlEntities f13 = default!;
+    bool h13 = false;
+    bool f14 = default;
+    bool h14 = false;
+    bool f15 = default;
+    bool h15 = false;
+    string f16 = default!;
+    bool h16 = false;
+    bool? f17 = default;
+    bool h17 = false;
+    AlStatus? f18 = default!;
+    bool h18 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "metadata"))
+        {
+            f0 = __json_R8_AlMetadata(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "created_at"))
+            {
+                f1 = __json_R6_string(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+                {
+                    f2 = __json_R5_ulong(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    if (global::Alice.Core.Json.JsonMap.Is(n, "id_str"))
+                    {
+                        f3 = __json_R6_string(ref r);
+                        h3 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.Is(n, "text"))
+                        {
+                            f4 = __json_R6_string(ref r);
+                            h4 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.Is(n, "source"))
+                            {
+                                f5 = __json_R6_string(ref r);
+                                h5 = true;
+                            }
+                            else
+                            {
+                                if (global::Alice.Core.Json.JsonMap.Is(n, "truncated"))
+                                {
+                                    f6 = __json_R9_bool(ref r);
+                                    h6 = true;
+                                }
+                                else
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.Is(n, "in_reply_to_status_id"))
+                                    {
+                                        f7 = __json_R10_ulong_(ref r);
+                                        h7 = true;
+                                    }
+                                    else
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.Is(n, "in_reply_to_user_id"))
+                                        {
+                                            f8 = __json_R10_ulong_(ref r);
+                                            h8 = true;
+                                        }
+                                        else
+                                        {
+                                            if (global::Alice.Core.Json.JsonMap.Is(n, "in_reply_to_screen_name"))
+                                            {
+                                                f9 = __json_R11_string_(ref r);
+                                                h9 = true;
+                                            }
+                                            else
+                                            {
+                                                if (global::Alice.Core.Json.JsonMap.Is(n, "user"))
+                                                {
+                                                    f10 = __json_R12_AlUser(ref r);
+                                                    h10 = true;
+                                                }
+                                                else
+                                                {
+                                                    if (global::Alice.Core.Json.JsonMap.Is(n, "retweet_count"))
+                                                    {
+                                                        f11 = __json_R7_uint(ref r);
+                                                        h11 = true;
+                                                    }
+                                                    else
+                                                    {
+                                                        if (global::Alice.Core.Json.JsonMap.Is(n, "favorite_count"))
+                                                        {
+                                                            f12 = __json_R7_uint(ref r);
+                                                            h12 = true;
+                                                        }
+                                                        else
+                                                        {
+                                                            if (global::Alice.Core.Json.JsonMap.Is(n, "entities"))
+                                                            {
+                                                                f13 = __json_R13_AlEntities(ref r);
+                                                                h13 = true;
+                                                            }
+                                                            else
+                                                            {
+                                                                if (global::Alice.Core.Json.JsonMap.Is(n, "favorited"))
+                                                                {
+                                                                    f14 = __json_R9_bool(ref r);
+                                                                    h14 = true;
+                                                                }
+                                                                else
+                                                                {
+                                                                    if (global::Alice.Core.Json.JsonMap.Is(n, "retweeted"))
+                                                                    {
+                                                                        f15 = __json_R9_bool(ref r);
+                                                                        h15 = true;
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        if (global::Alice.Core.Json.JsonMap.Is(n, "lang"))
+                                                                        {
+                                                                            f16 = __json_R6_string(ref r);
+                                                                            h16 = true;
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            if (global::Alice.Core.Json.JsonMap.Is(n, "possibly_sensitive"))
+                                                                            {
+                                                                                f17 = __json_R14_bool_(ref r);
+                                                                                h17 = true;
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                if (global::Alice.Core.Json.JsonMap.Is(n, "retweeted_status"))
+                                                                                {
+                                                                                    f18 = __json_R15_AlStatus_(ref r);
+                                                                                    h18 = true;
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("metadata", "AlStatus", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("created_at", "AlStatus", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlStatus", at);
+    }
+    if (!h3)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("id_str", "AlStatus", at);
+    }
+    if (!h4)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("text", "AlStatus", at);
+    }
+    if (!h5)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("source", "AlStatus", at);
+    }
+    if (!h6)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("truncated", "AlStatus", at);
+    }
+    if (!h10)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("user", "AlStatus", at);
+    }
+    if (!h11)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("retweet_count", "AlStatus", at);
+    }
+    if (!h12)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("favorite_count", "AlStatus", at);
+    }
+    if (!h13)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("entities", "AlStatus", at);
+    }
+    if (!h14)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("favorited", "AlStatus", at);
+    }
+    if (!h15)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("retweeted", "AlStatus", at);
+    }
+    if (!h16)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("lang", "AlStatus", at);
+    }
+    return new AlStatus(f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18);
+}
+internal static void __json_W3_AlStatus(ref global::Alice.Core.Json.JsonWriter w, AlStatus v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "metadata");
+    __json_W8_AlMetadata(ref w, v.metadata);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "created_at");
+    __json_W6_string(ref w, v.created_at);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "id");
+    __json_W5_ulong(ref w, v.id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "id_str");
+    __json_W6_string(ref w, v.id_str);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "text");
+    __json_W6_string(ref w, v.text);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "source");
+    __json_W6_string(ref w, v.source);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "truncated");
+    __json_W9_bool(ref w, v.truncated);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "in_reply_to_status_id");
+    __json_W10_ulong_(ref w, v.in_reply_to_status_id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "in_reply_to_user_id");
+    __json_W10_ulong_(ref w, v.in_reply_to_user_id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "in_reply_to_screen_name");
+    __json_W11_string_(ref w, v.in_reply_to_screen_name);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "user");
+    __json_W12_AlUser(ref w, v.user);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "retweet_count");
+    __json_W7_uint(ref w, v.retweet_count);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "favorite_count");
+    __json_W7_uint(ref w, v.favorite_count);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "entities");
+    __json_W13_AlEntities(ref w, v.entities);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "favorited");
+    __json_W9_bool(ref w, v.favorited);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "retweeted");
+    __json_W9_bool(ref w, v.retweeted);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "lang");
+    __json_W6_string(ref w, v.lang);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "possibly_sensitive");
+    __json_W14_bool_(ref w, v.possibly_sensitive);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "retweeted_status");
+    __json_W15_AlStatus_(ref w, v.retweeted_status);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static double __json_R4_double(ref global::Alice.Core.Json.JsonIterator r)
+{
+    return global::Alice.Core.Json.JsonMap.ReadDouble(ref r);
+}
+internal static void __json_W4_double(ref global::Alice.Core.Json.JsonWriter w, double v)
+{
+    global::Alice.Core.Json.JsonMap.WriteDouble(ref w, v);
+}
+internal static ulong __json_R5_ulong(ref global::Alice.Core.Json.JsonIterator r)
+{
+    return global::Alice.Core.Json.JsonMap.ReadUInt64(ref r);
+}
+internal static void __json_W5_ulong(ref global::Alice.Core.Json.JsonWriter w, ulong v)
+{
+    global::Alice.Core.Json.JsonMap.WriteUInt64(ref w, v);
+}
+internal static string __json_R6_string(ref global::Alice.Core.Json.JsonIterator r)
+{
+    return global::Alice.Core.Json.JsonMap.ReadString(ref r);
+}
+internal static void __json_W6_string(ref global::Alice.Core.Json.JsonWriter w, string v)
+{
+    global::Alice.Core.Json.JsonMap.WriteString(ref w, v);
+}
+internal static uint __json_R7_uint(ref global::Alice.Core.Json.JsonIterator r)
+{
+    return global::Alice.Core.Json.JsonMap.ReadUInt32(ref r);
+}
+internal static void __json_W7_uint(ref global::Alice.Core.Json.JsonWriter w, uint v)
+{
+    global::Alice.Core.Json.JsonMap.WriteUInt64(ref w, ((ulong)v));
+}
+internal static AlMetadata __json_R8_AlMetadata(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string f0 = default!;
+    bool h0 = false;
+    string f1 = default!;
+    bool h1 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "result_type"))
+        {
+            f0 = __json_R6_string(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "iso_language_code"))
+            {
+                f1 = __json_R6_string(ref r);
+                h1 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("result_type", "AlMetadata", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("iso_language_code", "AlMetadata", at);
+    }
+    return new AlMetadata(f0, f1);
+}
+internal static void __json_W8_AlMetadata(ref global::Alice.Core.Json.JsonWriter w, AlMetadata v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "result_type");
+    __json_W6_string(ref w, v.result_type);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "iso_language_code");
+    __json_W6_string(ref w, v.iso_language_code);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static bool __json_R9_bool(ref global::Alice.Core.Json.JsonIterator r)
+{
+    return global::Alice.Core.Json.JsonMap.ReadBoolean(ref r);
+}
+internal static void __json_W9_bool(ref global::Alice.Core.Json.JsonWriter w, bool v)
+{
+    global::Alice.Core.Json.JsonMap.WriteBoolean(ref w, v);
+}
+internal static ulong? __json_R10_ulong_(ref global::Alice.Core.Json.JsonIterator r)
+{
+    if (global::Alice.Core.Json.JsonMap.TryNull(ref r))
+    {
+        return default(ulong?);
+    }
+    return ((ulong?)__json_R5_ulong(ref r));
+}
+internal static void __json_W10_ulong_(ref global::Alice.Core.Json.JsonWriter w, ulong? v)
+{
+    if (v.HasValue)
+    {
+        __json_W5_ulong(ref w, v.Value);
+    }
+    else
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+    }
+}
+internal static string? __json_R11_string_(ref global::Alice.Core.Json.JsonIterator r)
+{
+    if (global::Alice.Core.Json.JsonMap.TryNull(ref r))
+    {
+        return null;
+    }
+    return __json_R6_string(ref r);
+}
+internal static void __json_W11_string_(ref global::Alice.Core.Json.JsonWriter w, string? v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+    }
+    else
+    {
+        __json_W6_string(ref w, v);
+    }
+}
+internal static AlUser __json_R12_AlUser(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    ulong f0 = default;
+    bool h0 = false;
+    string f1 = default!;
+    bool h1 = false;
+    string f2 = default!;
+    bool h2 = false;
+    string f3 = default!;
+    bool h3 = false;
+    string f4 = default!;
+    bool h4 = false;
+    string f5 = default!;
+    bool h5 = false;
+    bool f6 = default;
+    bool h6 = false;
+    ulong f7 = default;
+    bool h7 = false;
+    ulong f8 = default;
+    bool h8 = false;
+    ulong f9 = default;
+    bool h9 = false;
+    string f10 = default!;
+    bool h10 = false;
+    ulong f11 = default;
+    bool h11 = false;
+    int? f12 = default;
+    bool h12 = false;
+    string? f13 = default!;
+    bool h13 = false;
+    bool f14 = default;
+    bool h14 = false;
+    bool f15 = default;
+    bool h15 = false;
+    ulong f16 = default;
+    bool h16 = false;
+    string f17 = default!;
+    bool h17 = false;
+    string f18 = default!;
+    bool h18 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+        {
+            f0 = __json_R5_ulong(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "id_str"))
+            {
+                f1 = __json_R6_string(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+                {
+                    f2 = __json_R6_string(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    if (global::Alice.Core.Json.JsonMap.Is(n, "screen_name"))
+                    {
+                        f3 = __json_R6_string(ref r);
+                        h3 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.Is(n, "location"))
+                        {
+                            f4 = __json_R6_string(ref r);
+                            h4 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.Is(n, "description"))
+                            {
+                                f5 = __json_R6_string(ref r);
+                                h5 = true;
+                            }
+                            else
+                            {
+                                if (global::Alice.Core.Json.JsonMap.Is(n, "protected"))
+                                {
+                                    f6 = __json_R9_bool(ref r);
+                                    h6 = true;
+                                }
+                                else
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.Is(n, "followers_count"))
+                                    {
+                                        f7 = __json_R5_ulong(ref r);
+                                        h7 = true;
+                                    }
+                                    else
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.Is(n, "friends_count"))
+                                        {
+                                            f8 = __json_R5_ulong(ref r);
+                                            h8 = true;
+                                        }
+                                        else
+                                        {
+                                            if (global::Alice.Core.Json.JsonMap.Is(n, "listed_count"))
+                                            {
+                                                f9 = __json_R5_ulong(ref r);
+                                                h9 = true;
+                                            }
+                                            else
+                                            {
+                                                if (global::Alice.Core.Json.JsonMap.Is(n, "created_at"))
+                                                {
+                                                    f10 = __json_R6_string(ref r);
+                                                    h10 = true;
+                                                }
+                                                else
+                                                {
+                                                    if (global::Alice.Core.Json.JsonMap.Is(n, "favourites_count"))
+                                                    {
+                                                        f11 = __json_R5_ulong(ref r);
+                                                        h11 = true;
+                                                    }
+                                                    else
+                                                    {
+                                                        if (global::Alice.Core.Json.JsonMap.Is(n, "utc_offset"))
+                                                        {
+                                                            f12 = __json_R16_int_(ref r);
+                                                            h12 = true;
+                                                        }
+                                                        else
+                                                        {
+                                                            if (global::Alice.Core.Json.JsonMap.Is(n, "time_zone"))
+                                                            {
+                                                                f13 = __json_R11_string_(ref r);
+                                                                h13 = true;
+                                                            }
+                                                            else
+                                                            {
+                                                                if (global::Alice.Core.Json.JsonMap.Is(n, "geo_enabled"))
+                                                                {
+                                                                    f14 = __json_R9_bool(ref r);
+                                                                    h14 = true;
+                                                                }
+                                                                else
+                                                                {
+                                                                    if (global::Alice.Core.Json.JsonMap.Is(n, "verified"))
+                                                                    {
+                                                                        f15 = __json_R9_bool(ref r);
+                                                                        h15 = true;
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        if (global::Alice.Core.Json.JsonMap.Is(n, "statuses_count"))
+                                                                        {
+                                                                            f16 = __json_R5_ulong(ref r);
+                                                                            h16 = true;
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                            if (global::Alice.Core.Json.JsonMap.Is(n, "lang"))
+                                                                            {
+                                                                                f17 = __json_R6_string(ref r);
+                                                                                h17 = true;
+                                                                            }
+                                                                            else
+                                                                            {
+                                                                                if (global::Alice.Core.Json.JsonMap.Is(n, "profile_image_url"))
+                                                                                {
+                                                                                    f18 = __json_R6_string(ref r);
+                                                                                    h18 = true;
+                                                                                }
+                                                                                else
+                                                                                {
+                                                                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlUser", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("id_str", "AlUser", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("name", "AlUser", at);
+    }
+    if (!h3)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("screen_name", "AlUser", at);
+    }
+    if (!h4)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("location", "AlUser", at);
+    }
+    if (!h5)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("description", "AlUser", at);
+    }
+    if (!h6)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("protected", "AlUser", at);
+    }
+    if (!h7)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("followers_count", "AlUser", at);
+    }
+    if (!h8)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("friends_count", "AlUser", at);
+    }
+    if (!h9)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("listed_count", "AlUser", at);
+    }
+    if (!h10)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("created_at", "AlUser", at);
+    }
+    if (!h11)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("favourites_count", "AlUser", at);
+    }
+    if (!h14)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("geo_enabled", "AlUser", at);
+    }
+    if (!h15)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("verified", "AlUser", at);
+    }
+    if (!h16)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("statuses_count", "AlUser", at);
+    }
+    if (!h17)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("lang", "AlUser", at);
+    }
+    if (!h18)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("profile_image_url", "AlUser", at);
+    }
+    return new AlUser(f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18);
+}
+internal static void __json_W12_AlUser(ref global::Alice.Core.Json.JsonWriter w, AlUser v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "id");
+    __json_W5_ulong(ref w, v.id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "id_str");
+    __json_W6_string(ref w, v.id_str);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "name");
+    __json_W6_string(ref w, v.name);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "screen_name");
+    __json_W6_string(ref w, v.screen_name);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "location");
+    __json_W6_string(ref w, v.location);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "description");
+    __json_W6_string(ref w, v.description);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "protected");
+    __json_W9_bool(ref w, v.@protected);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "followers_count");
+    __json_W5_ulong(ref w, v.followers_count);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "friends_count");
+    __json_W5_ulong(ref w, v.friends_count);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "listed_count");
+    __json_W5_ulong(ref w, v.listed_count);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "created_at");
+    __json_W6_string(ref w, v.created_at);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "favourites_count");
+    __json_W5_ulong(ref w, v.favourites_count);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "utc_offset");
+    __json_W16_int_(ref w, v.utc_offset);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "time_zone");
+    __json_W11_string_(ref w, v.time_zone);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "geo_enabled");
+    __json_W9_bool(ref w, v.geo_enabled);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "verified");
+    __json_W9_bool(ref w, v.verified);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "statuses_count");
+    __json_W5_ulong(ref w, v.statuses_count);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "lang");
+    __json_W6_string(ref w, v.lang);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "profile_image_url");
+    __json_W6_string(ref w, v.profile_image_url);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlEntities __json_R13_AlEntities(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    AlHashtag[] f0 = default!;
+    bool h0 = false;
+    AlUrl[] f1 = default!;
+    bool h1 = false;
+    AlMention[] f2 = default!;
+    bool h2 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "hashtags"))
+        {
+            f0 = __json_R17_AlHashtag__(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "urls"))
+            {
+                f1 = __json_R18_AlUrl__(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "user_mentions"))
+                {
+                    f2 = __json_R19_AlMention__(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("hashtags", "AlEntities", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("urls", "AlEntities", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("user_mentions", "AlEntities", at);
+    }
+    return new AlEntities(f0, f1, f2);
+}
+internal static void __json_W13_AlEntities(ref global::Alice.Core.Json.JsonWriter w, AlEntities v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "hashtags");
+    __json_W17_AlHashtag__(ref w, v.hashtags);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "urls");
+    __json_W18_AlUrl__(ref w, v.urls);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "user_mentions");
+    __json_W19_AlMention__(ref w, v.user_mentions);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static bool? __json_R14_bool_(ref global::Alice.Core.Json.JsonIterator r)
+{
+    if (global::Alice.Core.Json.JsonMap.TryNull(ref r))
+    {
+        return default(bool?);
+    }
+    return ((bool?)__json_R9_bool(ref r));
+}
+internal static void __json_W14_bool_(ref global::Alice.Core.Json.JsonWriter w, bool? v)
+{
+    if (v.HasValue)
+    {
+        __json_W9_bool(ref w, v.Value);
+    }
+    else
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+    }
+}
+internal static AlStatus? __json_R15_AlStatus_(ref global::Alice.Core.Json.JsonIterator r)
+{
+    if (global::Alice.Core.Json.JsonMap.TryNull(ref r))
+    {
+        return null;
+    }
+    return __json_R3_AlStatus(ref r);
+}
+internal static void __json_W15_AlStatus_(ref global::Alice.Core.Json.JsonWriter w, AlStatus? v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+    }
+    else
+    {
+        __json_W3_AlStatus(ref w, v);
+    }
+}
+internal static int? __json_R16_int_(ref global::Alice.Core.Json.JsonIterator r)
+{
+    if (global::Alice.Core.Json.JsonMap.TryNull(ref r))
+    {
+        return default(int?);
+    }
+    return ((int?)__json_R20_int(ref r));
+}
+internal static void __json_W16_int_(ref global::Alice.Core.Json.JsonWriter w, int? v)
+{
+    if (v.HasValue)
+    {
+        __json_W20_int(ref w, v.Value);
+    }
+    else
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+    }
+}
+internal static AlHashtag[] __json_R17_AlHashtag__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlHashtag[] a = global::Alice.Core.Json.JsonMap.NewArray<AlHashtag>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlHashtag>(a);
+        }
+        a[n] = __json_R21_AlHashtag(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlHashtag>(a, n);
+}
+internal static void __json_W17_AlHashtag__(ref global::Alice.Core.Json.JsonWriter w, AlHashtag[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W21_AlHashtag(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static AlUrl[] __json_R18_AlUrl__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlUrl[] a = global::Alice.Core.Json.JsonMap.NewArray<AlUrl>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlUrl>(a);
+        }
+        a[n] = __json_R22_AlUrl(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlUrl>(a, n);
+}
+internal static void __json_W18_AlUrl__(ref global::Alice.Core.Json.JsonWriter w, AlUrl[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W22_AlUrl(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static AlMention[] __json_R19_AlMention__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlMention[] a = global::Alice.Core.Json.JsonMap.NewArray<AlMention>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlMention>(a);
+        }
+        a[n] = __json_R23_AlMention(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlMention>(a, n);
+}
+internal static void __json_W19_AlMention__(ref global::Alice.Core.Json.JsonWriter w, AlMention[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W23_AlMention(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static int __json_R20_int(ref global::Alice.Core.Json.JsonIterator r)
+{
+    return global::Alice.Core.Json.JsonMap.ReadInt32(ref r);
+}
+internal static void __json_W20_int(ref global::Alice.Core.Json.JsonWriter w, int v)
+{
+    global::Alice.Core.Json.JsonMap.WriteInt64(ref w, ((long)v));
+}
+internal static AlHashtag __json_R21_AlHashtag(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string f0 = default!;
+    bool h0 = false;
+    uint[] f1 = default!;
+    bool h1 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "text"))
+        {
+            f0 = __json_R6_string(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "indices"))
+            {
+                f1 = __json_R24_uint__(ref r);
+                h1 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("text", "AlHashtag", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("indices", "AlHashtag", at);
+    }
+    return new AlHashtag(f0, f1);
+}
+internal static void __json_W21_AlHashtag(ref global::Alice.Core.Json.JsonWriter w, AlHashtag v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "text");
+    __json_W6_string(ref w, v.text);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "indices");
+    __json_W24_uint__(ref w, v.indices);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlUrl __json_R22_AlUrl(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string f0 = default!;
+    bool h0 = false;
+    string f1 = default!;
+    bool h1 = false;
+    string f2 = default!;
+    bool h2 = false;
+    uint[] f3 = default!;
+    bool h3 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "url"))
+        {
+            f0 = __json_R6_string(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "expanded_url"))
+            {
+                f1 = __json_R6_string(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "display_url"))
+                {
+                    f2 = __json_R6_string(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    if (global::Alice.Core.Json.JsonMap.Is(n, "indices"))
+                    {
+                        f3 = __json_R24_uint__(ref r);
+                        h3 = true;
+                    }
+                    else
+                    {
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("url", "AlUrl", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("expanded_url", "AlUrl", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("display_url", "AlUrl", at);
+    }
+    if (!h3)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("indices", "AlUrl", at);
+    }
+    return new AlUrl(f0, f1, f2, f3);
+}
+internal static void __json_W22_AlUrl(ref global::Alice.Core.Json.JsonWriter w, AlUrl v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "url");
+    __json_W6_string(ref w, v.url);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "expanded_url");
+    __json_W6_string(ref w, v.expanded_url);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "display_url");
+    __json_W6_string(ref w, v.display_url);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "indices");
+    __json_W24_uint__(ref w, v.indices);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlMention __json_R23_AlMention(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string f0 = default!;
+    bool h0 = false;
+    string f1 = default!;
+    bool h1 = false;
+    ulong f2 = default;
+    bool h2 = false;
+    string f3 = default!;
+    bool h3 = false;
+    uint[] f4 = default!;
+    bool h4 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "screen_name"))
+        {
+            f0 = __json_R6_string(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+            {
+                f1 = __json_R6_string(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+                {
+                    f2 = __json_R5_ulong(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    if (global::Alice.Core.Json.JsonMap.Is(n, "id_str"))
+                    {
+                        f3 = __json_R6_string(ref r);
+                        h3 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.Is(n, "indices"))
+                        {
+                            f4 = __json_R24_uint__(ref r);
+                            h4 = true;
+                        }
+                        else
+                        {
+                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("screen_name", "AlMention", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("name", "AlMention", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlMention", at);
+    }
+    if (!h3)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("id_str", "AlMention", at);
+    }
+    if (!h4)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("indices", "AlMention", at);
+    }
+    return new AlMention(f0, f1, f2, f3, f4);
+}
+internal static void __json_W23_AlMention(ref global::Alice.Core.Json.JsonWriter w, AlMention v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "screen_name");
+    __json_W6_string(ref w, v.screen_name);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "name");
+    __json_W6_string(ref w, v.name);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "id");
+    __json_W5_ulong(ref w, v.id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "id_str");
+    __json_W6_string(ref w, v.id_str);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "indices");
+    __json_W24_uint__(ref w, v.indices);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static uint[] __json_R24_uint__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    uint[] a = global::Alice.Core.Json.JsonMap.NewArray<uint>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<uint>(a);
+        }
+        a[n] = __json_R7_uint(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<uint>(a, n);
+}
+internal static void __json_W24_uint__(ref global::Alice.Core.Json.JsonWriter w, uint[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W7_uint(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
 #line 41 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
 public static AlTwitter twitter(byte[] s)
 {
 #line 41 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
-    return global::Alice.Core.Json.JsonMap.Parse<AlTwitter>(s, global::__AliceJson.R0_AlTwitter);
+    return global::Alice.Core.Json.JsonMap.Parse<AlTwitter>(s, __json_R2_AlTwitter);
+}
+internal static AlCanada __json_R26_AlCanada(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string f0 = default!;
+    bool h0 = false;
+    AlFeature[] f1 = default!;
+    bool h1 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "type"))
+        {
+            f0 = __json_R6_string(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "features"))
+            {
+                f1 = __json_R25_AlFeature__(ref r);
+                h1 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("type", "AlCanada", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("features", "AlCanada", at);
+    }
+    return new AlCanada(f0, f1);
+}
+internal static void __json_W26_AlCanada(ref global::Alice.Core.Json.JsonWriter w, AlCanada v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "type");
+    __json_W6_string(ref w, v.type);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "features");
+    __json_W25_AlFeature__(ref w, v.features);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlFeature[] __json_R25_AlFeature__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlFeature[] a = global::Alice.Core.Json.JsonMap.NewArray<AlFeature>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlFeature>(a);
+        }
+        a[n] = __json_R27_AlFeature(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlFeature>(a, n);
+}
+internal static void __json_W25_AlFeature__(ref global::Alice.Core.Json.JsonWriter w, AlFeature[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W27_AlFeature(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static AlFeature __json_R27_AlFeature(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string f0 = default!;
+    bool h0 = false;
+    AlProps f1 = default!;
+    bool h1 = false;
+    AlGeometry f2 = default!;
+    bool h2 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "type"))
+        {
+            f0 = __json_R6_string(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "properties"))
+            {
+                f1 = __json_R28_AlProps(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "geometry"))
+                {
+                    f2 = __json_R29_AlGeometry(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("type", "AlFeature", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("properties", "AlFeature", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("geometry", "AlFeature", at);
+    }
+    return new AlFeature(f0, f1, f2);
+}
+internal static void __json_W27_AlFeature(ref global::Alice.Core.Json.JsonWriter w, AlFeature v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "type");
+    __json_W6_string(ref w, v.type);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "properties");
+    __json_W28_AlProps(ref w, v.properties);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "geometry");
+    __json_W29_AlGeometry(ref w, v.geometry);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlProps __json_R28_AlProps(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string f0 = default!;
+    bool h0 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+        {
+            f0 = __json_R6_string(ref r);
+            h0 = true;
+        }
+        else
+        {
+            global::Alice.Core.Json.JsonMap.Skip(ref r);
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("name", "AlProps", at);
+    }
+    return new AlProps(f0);
+}
+internal static void __json_W28_AlProps(ref global::Alice.Core.Json.JsonWriter w, AlProps v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "name");
+    __json_W6_string(ref w, v.name);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlGeometry __json_R29_AlGeometry(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string f0 = default!;
+    bool h0 = false;
+    double[][][] f1 = default!;
+    bool h1 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "type"))
+        {
+            f0 = __json_R6_string(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "coordinates"))
+            {
+                f1 = __json_R30_double______(ref r);
+                h1 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("type", "AlGeometry", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("coordinates", "AlGeometry", at);
+    }
+    return new AlGeometry(f0, f1);
+}
+internal static void __json_W29_AlGeometry(ref global::Alice.Core.Json.JsonWriter w, AlGeometry v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "type");
+    __json_W6_string(ref w, v.type);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "coordinates");
+    __json_W30_double______(ref w, v.coordinates);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static double[][][] __json_R30_double______(ref global::Alice.Core.Json.JsonIterator r)
+{
+    double[][][] a = global::Alice.Core.Json.JsonMap.NewArray<double[][]>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<double[][]>(a);
+        }
+        a[n] = __json_R31_double____(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<double[][]>(a, n);
+}
+internal static void __json_W30_double______(ref global::Alice.Core.Json.JsonWriter w, double[][][] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W31_double____(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static double[][] __json_R31_double____(ref global::Alice.Core.Json.JsonIterator r)
+{
+    double[][] a = global::Alice.Core.Json.JsonMap.NewArray<double[]>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<double[]>(a);
+        }
+        a[n] = __json_R32_double__(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<double[]>(a, n);
+}
+internal static void __json_W31_double____(ref global::Alice.Core.Json.JsonWriter w, double[][] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W32_double__(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static double[] __json_R32_double__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    double[] a = global::Alice.Core.Json.JsonMap.NewArray<double>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<double>(a);
+        }
+        a[n] = __json_R4_double(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<double>(a, n);
+}
+internal static void __json_W32_double__(ref global::Alice.Core.Json.JsonWriter w, double[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W4_double(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
 }
 #line 42 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
 public static AlCanada canada(byte[] s)
 {
 #line 42 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
-    return global::Alice.Core.Json.JsonMap.Parse<AlCanada>(s, global::__AliceJson.R1_AlCanada);
+    return global::Alice.Core.Json.JsonMap.Parse<AlCanada>(s, __json_R26_AlCanada);
+}
+internal static AlCitm __json_R37_AlCitm(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    global::System.Collections.Generic.Dictionary<string, string> f0 = default!;
+    bool h0 = false;
+    global::System.Collections.Generic.Dictionary<string, string> f1 = default!;
+    bool h1 = false;
+    global::System.Collections.Generic.Dictionary<string, string> f2 = default!;
+    bool h2 = false;
+    global::System.Collections.Generic.Dictionary<string, AlEvent> f3 = default!;
+    bool h3 = false;
+    AlPerformance[] f4 = default!;
+    bool h4 = false;
+    global::System.Collections.Generic.Dictionary<string, string> f5 = default!;
+    bool h5 = false;
+    global::System.Collections.Generic.Dictionary<string, string> f6 = default!;
+    bool h6 = false;
+    global::System.Collections.Generic.Dictionary<string, string> f7 = default!;
+    bool h7 = false;
+    global::System.Collections.Generic.Dictionary<string, string> f8 = default!;
+    bool h8 = false;
+    global::System.Collections.Generic.Dictionary<string, ulong[]> f9 = default!;
+    bool h9 = false;
+    global::System.Collections.Generic.Dictionary<string, string> f10 = default!;
+    bool h10 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "areaNames"))
+        {
+            f0 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "audienceSubCategoryNames"))
+            {
+                f1 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "blockNames"))
+                {
+                    f2 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    if (global::Alice.Core.Json.JsonMap.Is(n, "events"))
+                    {
+                        f3 = __json_R34_System_Collections_Generic_Dictionary_string__AlEvent_(ref r);
+                        h3 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.Is(n, "performances"))
+                        {
+                            f4 = __json_R35_AlPerformance__(ref r);
+                            h4 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.Is(n, "seatCategoryNames"))
+                            {
+                                f5 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                h5 = true;
+                            }
+                            else
+                            {
+                                if (global::Alice.Core.Json.JsonMap.Is(n, "subTopicNames"))
+                                {
+                                    f6 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                    h6 = true;
+                                }
+                                else
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.Is(n, "subjectNames"))
+                                    {
+                                        f7 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                        h7 = true;
+                                    }
+                                    else
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.Is(n, "topicNames"))
+                                        {
+                                            f8 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                            h8 = true;
+                                        }
+                                        else
+                                        {
+                                            if (global::Alice.Core.Json.JsonMap.Is(n, "topicSubTopics"))
+                                            {
+                                                f9 = __json_R36_System_Collections_Generic_Dictionary_string__ulong___(ref r);
+                                                h9 = true;
+                                            }
+                                            else
+                                            {
+                                                if (global::Alice.Core.Json.JsonMap.Is(n, "venueNames"))
+                                                {
+                                                    f10 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                                    h10 = true;
+                                                }
+                                                else
+                                                {
+                                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("areaNames", "AlCitm", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("audienceSubCategoryNames", "AlCitm", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("blockNames", "AlCitm", at);
+    }
+    if (!h3)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("events", "AlCitm", at);
+    }
+    if (!h4)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("performances", "AlCitm", at);
+    }
+    if (!h5)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("seatCategoryNames", "AlCitm", at);
+    }
+    if (!h6)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("subTopicNames", "AlCitm", at);
+    }
+    if (!h7)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("subjectNames", "AlCitm", at);
+    }
+    if (!h8)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("topicNames", "AlCitm", at);
+    }
+    if (!h9)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("topicSubTopics", "AlCitm", at);
+    }
+    if (!h10)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("venueNames", "AlCitm", at);
+    }
+    return new AlCitm(f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10);
+}
+internal static void __json_W37_AlCitm(ref global::Alice.Core.Json.JsonWriter w, AlCitm v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "areaNames");
+    __json_W33_System_Collections_Generic_Dictionary_string__string_(ref w, v.areaNames);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "audienceSubCategoryNames");
+    __json_W33_System_Collections_Generic_Dictionary_string__string_(ref w, v.audienceSubCategoryNames);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "blockNames");
+    __json_W33_System_Collections_Generic_Dictionary_string__string_(ref w, v.blockNames);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "events");
+    __json_W34_System_Collections_Generic_Dictionary_string__AlEvent_(ref w, v.events);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "performances");
+    __json_W35_AlPerformance__(ref w, v.performances);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "seatCategoryNames");
+    __json_W33_System_Collections_Generic_Dictionary_string__string_(ref w, v.seatCategoryNames);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "subTopicNames");
+    __json_W33_System_Collections_Generic_Dictionary_string__string_(ref w, v.subTopicNames);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "subjectNames");
+    __json_W33_System_Collections_Generic_Dictionary_string__string_(ref w, v.subjectNames);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "topicNames");
+    __json_W33_System_Collections_Generic_Dictionary_string__string_(ref w, v.topicNames);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "topicSubTopics");
+    __json_W36_System_Collections_Generic_Dictionary_string__ulong___(ref w, v.topicSubTopics);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "venueNames");
+    __json_W33_System_Collections_Generic_Dictionary_string__string_(ref w, v.venueNames);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static global::System.Collections.Generic.Dictionary<string, string> __json_R33_System_Collections_Generic_Dictionary_string__string_(ref global::Alice.Core.Json.JsonIterator r)
+{
+    global::System.Collections.Generic.Dictionary<string, string> d = new global::System.Collections.Generic.Dictionary<string, string>();
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var k))
+        {
+            break;
+        }
+        d[global::Alice.Core.Json.JsonMap.Key(k)] = __json_R6_string(ref r);
+    }
+    return d;
+}
+internal static void __json_W33_System_Collections_Generic_Dictionary_string__string_(ref global::Alice.Core.Json.JsonWriter w, global::System.Collections.Generic.Dictionary<string, string> v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    foreach (var kv in v)
+    {
+        global::Alice.Core.Json.JsonMap.WriteName(ref w, kv.Key);
+        __json_W6_string(ref w, kv.Value);
+    }
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static global::System.Collections.Generic.Dictionary<string, AlEvent> __json_R34_System_Collections_Generic_Dictionary_string__AlEvent_(ref global::Alice.Core.Json.JsonIterator r)
+{
+    global::System.Collections.Generic.Dictionary<string, AlEvent> d = new global::System.Collections.Generic.Dictionary<string, AlEvent>();
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var k))
+        {
+            break;
+        }
+        d[global::Alice.Core.Json.JsonMap.Key(k)] = __json_R38_AlEvent(ref r);
+    }
+    return d;
+}
+internal static void __json_W34_System_Collections_Generic_Dictionary_string__AlEvent_(ref global::Alice.Core.Json.JsonWriter w, global::System.Collections.Generic.Dictionary<string, AlEvent> v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    foreach (var kv in v)
+    {
+        global::Alice.Core.Json.JsonMap.WriteName(ref w, kv.Key);
+        __json_W38_AlEvent(ref w, kv.Value);
+    }
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlPerformance[] __json_R35_AlPerformance__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlPerformance[] a = global::Alice.Core.Json.JsonMap.NewArray<AlPerformance>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlPerformance>(a);
+        }
+        a[n] = __json_R39_AlPerformance(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlPerformance>(a, n);
+}
+internal static void __json_W35_AlPerformance__(ref global::Alice.Core.Json.JsonWriter w, AlPerformance[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W39_AlPerformance(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static global::System.Collections.Generic.Dictionary<string, ulong[]> __json_R36_System_Collections_Generic_Dictionary_string__ulong___(ref global::Alice.Core.Json.JsonIterator r)
+{
+    global::System.Collections.Generic.Dictionary<string, ulong[]> d = new global::System.Collections.Generic.Dictionary<string, ulong[]>();
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var k))
+        {
+            break;
+        }
+        d[global::Alice.Core.Json.JsonMap.Key(k)] = __json_R40_ulong__(ref r);
+    }
+    return d;
+}
+internal static void __json_W36_System_Collections_Generic_Dictionary_string__ulong___(ref global::Alice.Core.Json.JsonWriter w, global::System.Collections.Generic.Dictionary<string, ulong[]> v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    foreach (var kv in v)
+    {
+        global::Alice.Core.Json.JsonMap.WriteName(ref w, kv.Key);
+        __json_W40_ulong__(ref w, kv.Value);
+    }
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlEvent __json_R38_AlEvent(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    string? f0 = default!;
+    bool h0 = false;
+    ulong f1 = default;
+    bool h1 = false;
+    string? f2 = default!;
+    bool h2 = false;
+    string f3 = default!;
+    bool h3 = false;
+    ulong[] f4 = default!;
+    bool h4 = false;
+    string? f5 = default!;
+    bool h5 = false;
+    string? f6 = default!;
+    bool h6 = false;
+    ulong[] f7 = default!;
+    bool h7 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "description"))
+        {
+            f0 = __json_R11_string_(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+            {
+                f1 = __json_R5_ulong(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "logo"))
+                {
+                    f2 = __json_R11_string_(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+                    {
+                        f3 = __json_R6_string(ref r);
+                        h3 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.Is(n, "subTopicIds"))
+                        {
+                            f4 = __json_R40_ulong__(ref r);
+                            h4 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.Is(n, "subjectCode"))
+                            {
+                                f5 = __json_R11_string_(ref r);
+                                h5 = true;
+                            }
+                            else
+                            {
+                                if (global::Alice.Core.Json.JsonMap.Is(n, "subtitle"))
+                                {
+                                    f6 = __json_R11_string_(ref r);
+                                    h6 = true;
+                                }
+                                else
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.Is(n, "topicIds"))
+                                    {
+                                        f7 = __json_R40_ulong__(ref r);
+                                        h7 = true;
+                                    }
+                                    else
+                                    {
+                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlEvent", at);
+    }
+    if (!h3)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("name", "AlEvent", at);
+    }
+    if (!h4)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("subTopicIds", "AlEvent", at);
+    }
+    if (!h7)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("topicIds", "AlEvent", at);
+    }
+    return new AlEvent(f0, f1, f2, f3, f4, f5, f6, f7);
+}
+internal static void __json_W38_AlEvent(ref global::Alice.Core.Json.JsonWriter w, AlEvent v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "description");
+    __json_W11_string_(ref w, v.description);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "id");
+    __json_W5_ulong(ref w, v.id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "logo");
+    __json_W11_string_(ref w, v.logo);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "name");
+    __json_W6_string(ref w, v.name);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "subTopicIds");
+    __json_W40_ulong__(ref w, v.subTopicIds);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "subjectCode");
+    __json_W11_string_(ref w, v.subjectCode);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "subtitle");
+    __json_W11_string_(ref w, v.subtitle);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "topicIds");
+    __json_W40_ulong__(ref w, v.topicIds);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlPerformance __json_R39_AlPerformance(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    ulong f0 = default;
+    bool h0 = false;
+    ulong f1 = default;
+    bool h1 = false;
+    string? f2 = default!;
+    bool h2 = false;
+    string? f3 = default!;
+    bool h3 = false;
+    AlPrice[] f4 = default!;
+    bool h4 = false;
+    AlSeatCategory[] f5 = default!;
+    bool h5 = false;
+    string? f6 = default!;
+    bool h6 = false;
+    ulong f7 = default;
+    bool h7 = false;
+    string f8 = default!;
+    bool h8 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "eventId"))
+        {
+            f0 = __json_R5_ulong(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+            {
+                f1 = __json_R5_ulong(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "logo"))
+                {
+                    f2 = __json_R11_string_(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+                    {
+                        f3 = __json_R11_string_(ref r);
+                        h3 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.Is(n, "prices"))
+                        {
+                            f4 = __json_R41_AlPrice__(ref r);
+                            h4 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.Is(n, "seatCategories"))
+                            {
+                                f5 = __json_R42_AlSeatCategory__(ref r);
+                                h5 = true;
+                            }
+                            else
+                            {
+                                if (global::Alice.Core.Json.JsonMap.Is(n, "seatMapImage"))
+                                {
+                                    f6 = __json_R11_string_(ref r);
+                                    h6 = true;
+                                }
+                                else
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.Is(n, "start"))
+                                    {
+                                        f7 = __json_R5_ulong(ref r);
+                                        h7 = true;
+                                    }
+                                    else
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.Is(n, "venueCode"))
+                                        {
+                                            f8 = __json_R6_string(ref r);
+                                            h8 = true;
+                                        }
+                                        else
+                                        {
+                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("eventId", "AlPerformance", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlPerformance", at);
+    }
+    if (!h4)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("prices", "AlPerformance", at);
+    }
+    if (!h5)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("seatCategories", "AlPerformance", at);
+    }
+    if (!h7)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("start", "AlPerformance", at);
+    }
+    if (!h8)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("venueCode", "AlPerformance", at);
+    }
+    return new AlPerformance(f0, f1, f2, f3, f4, f5, f6, f7, f8);
+}
+internal static void __json_W39_AlPerformance(ref global::Alice.Core.Json.JsonWriter w, AlPerformance v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "eventId");
+    __json_W5_ulong(ref w, v.eventId);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "id");
+    __json_W5_ulong(ref w, v.id);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "logo");
+    __json_W11_string_(ref w, v.logo);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "name");
+    __json_W11_string_(ref w, v.name);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "prices");
+    __json_W41_AlPrice__(ref w, v.prices);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "seatCategories");
+    __json_W42_AlSeatCategory__(ref w, v.seatCategories);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "seatMapImage");
+    __json_W11_string_(ref w, v.seatMapImage);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "start");
+    __json_W5_ulong(ref w, v.start);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "venueCode");
+    __json_W6_string(ref w, v.venueCode);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static ulong[] __json_R40_ulong__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    ulong[] a = global::Alice.Core.Json.JsonMap.NewArray<ulong>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<ulong>(a);
+        }
+        a[n] = __json_R5_ulong(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<ulong>(a, n);
+}
+internal static void __json_W40_ulong__(ref global::Alice.Core.Json.JsonWriter w, ulong[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W5_ulong(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static AlPrice[] __json_R41_AlPrice__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlPrice[] a = global::Alice.Core.Json.JsonMap.NewArray<AlPrice>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlPrice>(a);
+        }
+        a[n] = __json_R43_AlPrice(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlPrice>(a, n);
+}
+internal static void __json_W41_AlPrice__(ref global::Alice.Core.Json.JsonWriter w, AlPrice[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W43_AlPrice(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static AlSeatCategory[] __json_R42_AlSeatCategory__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlSeatCategory[] a = global::Alice.Core.Json.JsonMap.NewArray<AlSeatCategory>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlSeatCategory>(a);
+        }
+        a[n] = __json_R44_AlSeatCategory(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlSeatCategory>(a, n);
+}
+internal static void __json_W42_AlSeatCategory__(ref global::Alice.Core.Json.JsonWriter w, AlSeatCategory[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W44_AlSeatCategory(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static AlPrice __json_R43_AlPrice(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    ulong f0 = default;
+    bool h0 = false;
+    ulong f1 = default;
+    bool h1 = false;
+    ulong f2 = default;
+    bool h2 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "amount"))
+        {
+            f0 = __json_R5_ulong(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "audienceSubCategoryId"))
+            {
+                f1 = __json_R5_ulong(ref r);
+                h1 = true;
+            }
+            else
+            {
+                if (global::Alice.Core.Json.JsonMap.Is(n, "seatCategoryId"))
+                {
+                    f2 = __json_R5_ulong(ref r);
+                    h2 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("amount", "AlPrice", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("audienceSubCategoryId", "AlPrice", at);
+    }
+    if (!h2)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("seatCategoryId", "AlPrice", at);
+    }
+    return new AlPrice(f0, f1, f2);
+}
+internal static void __json_W43_AlPrice(ref global::Alice.Core.Json.JsonWriter w, AlPrice v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "amount");
+    __json_W5_ulong(ref w, v.amount);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "audienceSubCategoryId");
+    __json_W5_ulong(ref w, v.audienceSubCategoryId);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "seatCategoryId");
+    __json_W5_ulong(ref w, v.seatCategoryId);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlSeatCategory __json_R44_AlSeatCategory(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    AlArea[] f0 = default!;
+    bool h0 = false;
+    ulong f1 = default;
+    bool h1 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "areas"))
+        {
+            f0 = __json_R45_AlArea__(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "seatCategoryId"))
+            {
+                f1 = __json_R5_ulong(ref r);
+                h1 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("areas", "AlSeatCategory", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("seatCategoryId", "AlSeatCategory", at);
+    }
+    return new AlSeatCategory(f0, f1);
+}
+internal static void __json_W44_AlSeatCategory(ref global::Alice.Core.Json.JsonWriter w, AlSeatCategory v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "areas");
+    __json_W45_AlArea__(ref w, v.areas);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "seatCategoryId");
+    __json_W5_ulong(ref w, v.seatCategoryId);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
+}
+internal static AlArea[] __json_R45_AlArea__(ref global::Alice.Core.Json.JsonIterator r)
+{
+    AlArea[] a = global::Alice.Core.Json.JsonMap.NewArray<AlArea>();
+    int n = 0;
+    global::Alice.Core.Json.JsonMap.StartArray(ref r);
+    while (global::Alice.Core.Json.JsonMap.NextElement(ref r))
+    {
+        if (n == a.Length)
+        {
+            a = global::Alice.Core.Json.JsonMap.Grow<AlArea>(a);
+        }
+        a[n] = __json_R46_AlArea(ref r);
+        n = n + 1;
+    }
+    return global::Alice.Core.Json.JsonMap.Trim<AlArea>(a, n);
+}
+internal static void __json_W45_AlArea__(ref global::Alice.Core.Json.JsonWriter w, AlArea[] v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartArray(ref w);
+    for (int i = 0; i < v.Length; i = unchecked(i + 1))
+    {
+        __json_W46_AlArea(ref w, v[i]);
+    }
+    global::Alice.Core.Json.JsonMap.EndArray(ref w);
+}
+internal static AlArea __json_R46_AlArea(ref global::Alice.Core.Json.JsonIterator r)
+{
+    long at = global::Alice.Core.Json.JsonMap.Offset(ref r);
+    ulong f0 = default;
+    bool h0 = false;
+    ulong[] f1 = default!;
+    bool h1 = false;
+    global::Alice.Core.Json.JsonMap.StartObject(ref r);
+    while (true)
+    {
+        if (!global::Alice.Core.Json.JsonMap.NextProperty(ref r, out var n))
+        {
+            break;
+        }
+        if (global::Alice.Core.Json.JsonMap.Is(n, "areaId"))
+        {
+            f0 = __json_R5_ulong(ref r);
+            h0 = true;
+        }
+        else
+        {
+            if (global::Alice.Core.Json.JsonMap.Is(n, "blockIds"))
+            {
+                f1 = __json_R40_ulong__(ref r);
+                h1 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+    }
+    if (!h0)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("areaId", "AlArea", at);
+    }
+    if (!h1)
+    {
+        throw global::Alice.Core.Json.JsonMap.MissingField("blockIds", "AlArea", at);
+    }
+    return new AlArea(f0, f1);
+}
+internal static void __json_W46_AlArea(ref global::Alice.Core.Json.JsonWriter w, AlArea v)
+{
+    if (v == null)
+    {
+        global::Alice.Core.Json.JsonMap.WriteNull(ref w);
+        return;
+    }
+    global::Alice.Core.Json.JsonMap.StartObject(ref w);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "areaId");
+    __json_W5_ulong(ref w, v.areaId);
+    global::Alice.Core.Json.JsonMap.WriteName(ref w, "blockIds");
+    __json_W40_ulong__(ref w, v.blockIds);
+    global::Alice.Core.Json.JsonMap.EndObject(ref w);
 }
 #line 43 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
 public static AlCitm citm(byte[] s)
 {
 #line 43 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
-    return global::Alice.Core.Json.JsonMap.Parse<AlCitm>(s, global::__AliceJson.R2_AlCitm);
+    return global::Alice.Core.Json.JsonMap.Parse<AlCitm>(s, __json_R37_AlCitm);
 }
 #line 44 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
 public static string write(AlTwitter t)
 {
 #line 44 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
-    return global::Alice.Core.Json.JsonMap.ToJson<AlTwitter>(t, global::__AliceJson.W0_AlTwitter);
+    return global::Alice.Core.Json.JsonMap.ToJson<AlTwitter>(t, __json_W2_AlTwitter);
 }
 #line 45 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
 public static string write(AlCanada c)
 {
 #line 45 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
-    return global::Alice.Core.Json.JsonMap.ToJson<AlCanada>(c, global::__AliceJson.W1_AlCanada);
+    return global::Alice.Core.Json.JsonMap.ToJson<AlCanada>(c, __json_W26_AlCanada);
 }
 #line 46 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
 public static string write(AlCitm c)
 {
 #line 46 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
-    return global::Alice.Core.Json.JsonMap.ToJson<AlCitm>(c, global::__AliceJson.W2_AlCitm);
+    return global::Alice.Core.Json.JsonMap.ToJson<AlCitm>(c, __json_W37_AlCitm);
 }
 }
 public static partial class AlGenProgram
 {
-}
-internal static partial class __AliceJson
-{
-internal static void W0_AlTwitter(ref global::Alice.Core.Json.JsonWriter w, AlTwitter v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("statuses"u8); W3_AlStatus__(ref w, v.statuses);
-    w.WritePropertyName("search_metadata"u8); W4_AlSearchMetadata(ref w, v.search_metadata);
-    w.WriteEndObject();
-}
-internal static AlTwitter R0_AlTwitter(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    AlStatus[] f0 = default!; bool h0 = false;
-    AlSearchMetadata f1 = default!; bool h1 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 8 when n.SequenceEqual("statuses"u8): f0 = R3_AlStatus__(ref r); h0 = true; break;
-            case 15 when n.SequenceEqual("search_metadata"u8): f1 = R4_AlSearchMetadata(ref r); h1 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("statuses", "AlTwitter", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("search_metadata", "AlTwitter", at);
-    return new AlTwitter(f0, f1);
-}
-internal static void W1_AlCanada(ref global::Alice.Core.Json.JsonWriter w, AlCanada v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("type"u8); W5_string(ref w, v.type);
-    w.WritePropertyName("features"u8); W6_AlFeature__(ref w, v.features);
-    w.WriteEndObject();
-}
-internal static AlCanada R1_AlCanada(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string f0 = default!; bool h0 = false;
-    AlFeature[] f1 = default!; bool h1 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 4 when n.SequenceEqual("type"u8): f0 = R5_string(ref r); h0 = true; break;
-            case 8 when n.SequenceEqual("features"u8): f1 = R6_AlFeature__(ref r); h1 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("type", "AlCanada", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("features", "AlCanada", at);
-    return new AlCanada(f0, f1);
-}
-internal static void W2_AlCitm(ref global::Alice.Core.Json.JsonWriter w, AlCitm v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("areaNames"u8); W7_System_Collections_Generic_Dictionary_string__string_(ref w, v.areaNames);
-    w.WritePropertyName("audienceSubCategoryNames"u8); W7_System_Collections_Generic_Dictionary_string__string_(ref w, v.audienceSubCategoryNames);
-    w.WritePropertyName("blockNames"u8); W7_System_Collections_Generic_Dictionary_string__string_(ref w, v.blockNames);
-    w.WritePropertyName("events"u8); W8_System_Collections_Generic_Dictionary_string__AlEvent_(ref w, v.events);
-    w.WritePropertyName("performances"u8); W9_AlPerformance__(ref w, v.performances);
-    w.WritePropertyName("seatCategoryNames"u8); W7_System_Collections_Generic_Dictionary_string__string_(ref w, v.seatCategoryNames);
-    w.WritePropertyName("subTopicNames"u8); W7_System_Collections_Generic_Dictionary_string__string_(ref w, v.subTopicNames);
-    w.WritePropertyName("subjectNames"u8); W7_System_Collections_Generic_Dictionary_string__string_(ref w, v.subjectNames);
-    w.WritePropertyName("topicNames"u8); W7_System_Collections_Generic_Dictionary_string__string_(ref w, v.topicNames);
-    w.WritePropertyName("topicSubTopics"u8); W10_System_Collections_Generic_Dictionary_string__ulong___(ref w, v.topicSubTopics);
-    w.WritePropertyName("venueNames"u8); W7_System_Collections_Generic_Dictionary_string__string_(ref w, v.venueNames);
-    w.WriteEndObject();
-}
-internal static AlCitm R2_AlCitm(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    global::System.Collections.Generic.Dictionary<string, string> f0 = default!; bool h0 = false;
-    global::System.Collections.Generic.Dictionary<string, string> f1 = default!; bool h1 = false;
-    global::System.Collections.Generic.Dictionary<string, string> f2 = default!; bool h2 = false;
-    global::System.Collections.Generic.Dictionary<string, AlEvent> f3 = default!; bool h3 = false;
-    AlPerformance[] f4 = default!; bool h4 = false;
-    global::System.Collections.Generic.Dictionary<string, string> f5 = default!; bool h5 = false;
-    global::System.Collections.Generic.Dictionary<string, string> f6 = default!; bool h6 = false;
-    global::System.Collections.Generic.Dictionary<string, string> f7 = default!; bool h7 = false;
-    global::System.Collections.Generic.Dictionary<string, string> f8 = default!; bool h8 = false;
-    global::System.Collections.Generic.Dictionary<string, ulong[]> f9 = default!; bool h9 = false;
-    global::System.Collections.Generic.Dictionary<string, string> f10 = default!; bool h10 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 9 when n.SequenceEqual("areaNames"u8): f0 = R7_System_Collections_Generic_Dictionary_string__string_(ref r); h0 = true; break;
-            case 24 when n.SequenceEqual("audienceSubCategoryNames"u8): f1 = R7_System_Collections_Generic_Dictionary_string__string_(ref r); h1 = true; break;
-            case 10 when n.SequenceEqual("blockNames"u8): f2 = R7_System_Collections_Generic_Dictionary_string__string_(ref r); h2 = true; break;
-            case 6 when n.SequenceEqual("events"u8): f3 = R8_System_Collections_Generic_Dictionary_string__AlEvent_(ref r); h3 = true; break;
-            case 12 when n.SequenceEqual("performances"u8): f4 = R9_AlPerformance__(ref r); h4 = true; break;
-            case 17 when n.SequenceEqual("seatCategoryNames"u8): f5 = R7_System_Collections_Generic_Dictionary_string__string_(ref r); h5 = true; break;
-            case 13 when n.SequenceEqual("subTopicNames"u8): f6 = R7_System_Collections_Generic_Dictionary_string__string_(ref r); h6 = true; break;
-            case 12 when n.SequenceEqual("subjectNames"u8): f7 = R7_System_Collections_Generic_Dictionary_string__string_(ref r); h7 = true; break;
-            case 10 when n.SequenceEqual("topicNames"u8): f8 = R7_System_Collections_Generic_Dictionary_string__string_(ref r); h8 = true; break;
-            case 14 when n.SequenceEqual("topicSubTopics"u8): f9 = R10_System_Collections_Generic_Dictionary_string__ulong___(ref r); h9 = true; break;
-            case 10 when n.SequenceEqual("venueNames"u8): f10 = R7_System_Collections_Generic_Dictionary_string__string_(ref r); h10 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("areaNames", "AlCitm", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("audienceSubCategoryNames", "AlCitm", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("blockNames", "AlCitm", at);
-    if (!h3) throw global::Alice.Core.Json.JsonMap.MissingField("events", "AlCitm", at);
-    if (!h4) throw global::Alice.Core.Json.JsonMap.MissingField("performances", "AlCitm", at);
-    if (!h5) throw global::Alice.Core.Json.JsonMap.MissingField("seatCategoryNames", "AlCitm", at);
-    if (!h6) throw global::Alice.Core.Json.JsonMap.MissingField("subTopicNames", "AlCitm", at);
-    if (!h7) throw global::Alice.Core.Json.JsonMap.MissingField("subjectNames", "AlCitm", at);
-    if (!h8) throw global::Alice.Core.Json.JsonMap.MissingField("topicNames", "AlCitm", at);
-    if (!h9) throw global::Alice.Core.Json.JsonMap.MissingField("topicSubTopics", "AlCitm", at);
-    if (!h10) throw global::Alice.Core.Json.JsonMap.MissingField("venueNames", "AlCitm", at);
-    return new AlCitm(f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10);
-}
-internal static AlStatus[] R3_AlStatus__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlStatus[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R11_AlStatus(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W3_AlStatus__(ref global::Alice.Core.Json.JsonWriter w, AlStatus[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W11_AlStatus(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static void W4_AlSearchMetadata(ref global::Alice.Core.Json.JsonWriter w, AlSearchMetadata v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("completed_in"u8); W12_double(ref w, v.completed_in);
-    w.WritePropertyName("max_id"u8); W13_ulong(ref w, v.max_id);
-    w.WritePropertyName("max_id_str"u8); W5_string(ref w, v.max_id_str);
-    w.WritePropertyName("next_results"u8); W5_string(ref w, v.next_results);
-    w.WritePropertyName("query"u8); W5_string(ref w, v.query);
-    w.WritePropertyName("refresh_url"u8); W5_string(ref w, v.refresh_url);
-    w.WritePropertyName("count"u8); W14_uint(ref w, v.count);
-    w.WritePropertyName("since_id"u8); W13_ulong(ref w, v.since_id);
-    w.WritePropertyName("since_id_str"u8); W5_string(ref w, v.since_id_str);
-    w.WriteEndObject();
-}
-internal static AlSearchMetadata R4_AlSearchMetadata(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    double f0 = default!; bool h0 = false;
-    ulong f1 = default!; bool h1 = false;
-    string f2 = default!; bool h2 = false;
-    string f3 = default!; bool h3 = false;
-    string f4 = default!; bool h4 = false;
-    string f5 = default!; bool h5 = false;
-    uint f6 = default!; bool h6 = false;
-    ulong f7 = default!; bool h7 = false;
-    string f8 = default!; bool h8 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 12 when n.SequenceEqual("completed_in"u8): f0 = R12_double(ref r); h0 = true; break;
-            case 6 when n.SequenceEqual("max_id"u8): f1 = R13_ulong(ref r); h1 = true; break;
-            case 10 when n.SequenceEqual("max_id_str"u8): f2 = R5_string(ref r); h2 = true; break;
-            case 12 when n.SequenceEqual("next_results"u8): f3 = R5_string(ref r); h3 = true; break;
-            case 5 when n.SequenceEqual("query"u8): f4 = R5_string(ref r); h4 = true; break;
-            case 11 when n.SequenceEqual("refresh_url"u8): f5 = R5_string(ref r); h5 = true; break;
-            case 5 when n.SequenceEqual("count"u8): f6 = R14_uint(ref r); h6 = true; break;
-            case 8 when n.SequenceEqual("since_id"u8): f7 = R13_ulong(ref r); h7 = true; break;
-            case 12 when n.SequenceEqual("since_id_str"u8): f8 = R5_string(ref r); h8 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("completed_in", "AlSearchMetadata", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("max_id", "AlSearchMetadata", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("max_id_str", "AlSearchMetadata", at);
-    if (!h3) throw global::Alice.Core.Json.JsonMap.MissingField("next_results", "AlSearchMetadata", at);
-    if (!h4) throw global::Alice.Core.Json.JsonMap.MissingField("query", "AlSearchMetadata", at);
-    if (!h5) throw global::Alice.Core.Json.JsonMap.MissingField("refresh_url", "AlSearchMetadata", at);
-    if (!h6) throw global::Alice.Core.Json.JsonMap.MissingField("count", "AlSearchMetadata", at);
-    if (!h7) throw global::Alice.Core.Json.JsonMap.MissingField("since_id", "AlSearchMetadata", at);
-    if (!h8) throw global::Alice.Core.Json.JsonMap.MissingField("since_id_str", "AlSearchMetadata", at);
-    return new AlSearchMetadata(f0, f1, f2, f3, f4, f5, f6, f7, f8);
-}
-internal static string R5_string(ref global::Alice.Core.Json.JsonIterator r) => r.ReadString();
-internal static void W5_string(ref global::Alice.Core.Json.JsonWriter w, string v) { if (v is null) w.WriteNull(); else w.WriteString(v.AsSpan()); }
-internal static AlFeature[] R6_AlFeature__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlFeature[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R15_AlFeature(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W6_AlFeature__(ref global::Alice.Core.Json.JsonWriter w, AlFeature[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W15_AlFeature(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static global::System.Collections.Generic.Dictionary<string, string> R7_System_Collections_Generic_Dictionary_string__string_(ref global::Alice.Core.Json.JsonIterator r)
-{
-    var d = new global::System.Collections.Generic.Dictionary<string, string>();
-    r.ReadStartObject();
-    while (r.NextProperty(out var k)) { string key = global::Alice.Core.Json.JsonMap.Key(k); d[key] = R5_string(ref r); }
-    return d;
-}
-internal static void W7_System_Collections_Generic_Dictionary_string__string_(ref global::Alice.Core.Json.JsonWriter w, global::System.Collections.Generic.Dictionary<string, string> v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    foreach (var kv in v) { w.WritePropertyName(kv.Key.AsSpan()); W5_string(ref w, kv.Value); }
-    w.WriteEndObject();
-}
-internal static global::System.Collections.Generic.Dictionary<string, AlEvent> R8_System_Collections_Generic_Dictionary_string__AlEvent_(ref global::Alice.Core.Json.JsonIterator r)
-{
-    var d = new global::System.Collections.Generic.Dictionary<string, AlEvent>();
-    r.ReadStartObject();
-    while (r.NextProperty(out var k)) { string key = global::Alice.Core.Json.JsonMap.Key(k); d[key] = R16_AlEvent(ref r); }
-    return d;
-}
-internal static void W8_System_Collections_Generic_Dictionary_string__AlEvent_(ref global::Alice.Core.Json.JsonWriter w, global::System.Collections.Generic.Dictionary<string, AlEvent> v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    foreach (var kv in v) { w.WritePropertyName(kv.Key.AsSpan()); W16_AlEvent(ref w, kv.Value); }
-    w.WriteEndObject();
-}
-internal static AlPerformance[] R9_AlPerformance__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlPerformance[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R17_AlPerformance(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W9_AlPerformance__(ref global::Alice.Core.Json.JsonWriter w, AlPerformance[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W17_AlPerformance(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static global::System.Collections.Generic.Dictionary<string, ulong[]> R10_System_Collections_Generic_Dictionary_string__ulong___(ref global::Alice.Core.Json.JsonIterator r)
-{
-    var d = new global::System.Collections.Generic.Dictionary<string, ulong[]>();
-    r.ReadStartObject();
-    while (r.NextProperty(out var k)) { string key = global::Alice.Core.Json.JsonMap.Key(k); d[key] = R18_ulong__(ref r); }
-    return d;
-}
-internal static void W10_System_Collections_Generic_Dictionary_string__ulong___(ref global::Alice.Core.Json.JsonWriter w, global::System.Collections.Generic.Dictionary<string, ulong[]> v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    foreach (var kv in v) { w.WritePropertyName(kv.Key.AsSpan()); W18_ulong__(ref w, kv.Value); }
-    w.WriteEndObject();
-}
-internal static void W11_AlStatus(ref global::Alice.Core.Json.JsonWriter w, AlStatus v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("metadata"u8); W19_AlMetadata(ref w, v.metadata);
-    w.WritePropertyName("created_at"u8); W5_string(ref w, v.created_at);
-    w.WritePropertyName("id"u8); W13_ulong(ref w, v.id);
-    w.WritePropertyName("id_str"u8); W5_string(ref w, v.id_str);
-    w.WritePropertyName("text"u8); W5_string(ref w, v.text);
-    w.WritePropertyName("source"u8); W5_string(ref w, v.source);
-    w.WritePropertyName("truncated"u8); W20_bool(ref w, v.truncated);
-    w.WritePropertyName("in_reply_to_status_id"u8); W21_ulong_(ref w, v.in_reply_to_status_id);
-    w.WritePropertyName("in_reply_to_user_id"u8); W21_ulong_(ref w, v.in_reply_to_user_id);
-    w.WritePropertyName("in_reply_to_screen_name"u8); W22_string_(ref w, v.in_reply_to_screen_name);
-    w.WritePropertyName("user"u8); W23_AlUser(ref w, v.user);
-    w.WritePropertyName("retweet_count"u8); W14_uint(ref w, v.retweet_count);
-    w.WritePropertyName("favorite_count"u8); W14_uint(ref w, v.favorite_count);
-    w.WritePropertyName("entities"u8); W24_AlEntities(ref w, v.entities);
-    w.WritePropertyName("favorited"u8); W20_bool(ref w, v.favorited);
-    w.WritePropertyName("retweeted"u8); W20_bool(ref w, v.retweeted);
-    w.WritePropertyName("lang"u8); W5_string(ref w, v.lang);
-    w.WritePropertyName("possibly_sensitive"u8); W25_bool_(ref w, v.possibly_sensitive);
-    w.WritePropertyName("retweeted_status"u8); W26_AlStatus_(ref w, v.retweeted_status);
-    w.WriteEndObject();
-}
-internal static AlStatus R11_AlStatus(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    AlMetadata f0 = default!; bool h0 = false;
-    string f1 = default!; bool h1 = false;
-    ulong f2 = default!; bool h2 = false;
-    string f3 = default!; bool h3 = false;
-    string f4 = default!; bool h4 = false;
-    string f5 = default!; bool h5 = false;
-    bool f6 = default!; bool h6 = false;
-    ulong? f7 = default!; bool h7 = false;
-    ulong? f8 = default!; bool h8 = false;
-    string? f9 = default!; bool h9 = false;
-    AlUser f10 = default!; bool h10 = false;
-    uint f11 = default!; bool h11 = false;
-    uint f12 = default!; bool h12 = false;
-    AlEntities f13 = default!; bool h13 = false;
-    bool f14 = default!; bool h14 = false;
-    bool f15 = default!; bool h15 = false;
-    string f16 = default!; bool h16 = false;
-    bool? f17 = default!; bool h17 = false;
-    AlStatus? f18 = default!; bool h18 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 8 when n.SequenceEqual("metadata"u8): f0 = R19_AlMetadata(ref r); h0 = true; break;
-            case 10 when n.SequenceEqual("created_at"u8): f1 = R5_string(ref r); h1 = true; break;
-            case 2 when n.SequenceEqual("id"u8): f2 = R13_ulong(ref r); h2 = true; break;
-            case 6 when n.SequenceEqual("id_str"u8): f3 = R5_string(ref r); h3 = true; break;
-            case 4 when n.SequenceEqual("text"u8): f4 = R5_string(ref r); h4 = true; break;
-            case 6 when n.SequenceEqual("source"u8): f5 = R5_string(ref r); h5 = true; break;
-            case 9 when n.SequenceEqual("truncated"u8): f6 = R20_bool(ref r); h6 = true; break;
-            case 21 when n.SequenceEqual("in_reply_to_status_id"u8): f7 = R21_ulong_(ref r); h7 = true; break;
-            case 19 when n.SequenceEqual("in_reply_to_user_id"u8): f8 = R21_ulong_(ref r); h8 = true; break;
-            case 23 when n.SequenceEqual("in_reply_to_screen_name"u8): f9 = R22_string_(ref r); h9 = true; break;
-            case 4 when n.SequenceEqual("user"u8): f10 = R23_AlUser(ref r); h10 = true; break;
-            case 13 when n.SequenceEqual("retweet_count"u8): f11 = R14_uint(ref r); h11 = true; break;
-            case 14 when n.SequenceEqual("favorite_count"u8): f12 = R14_uint(ref r); h12 = true; break;
-            case 8 when n.SequenceEqual("entities"u8): f13 = R24_AlEntities(ref r); h13 = true; break;
-            case 9 when n.SequenceEqual("favorited"u8): f14 = R20_bool(ref r); h14 = true; break;
-            case 9 when n.SequenceEqual("retweeted"u8): f15 = R20_bool(ref r); h15 = true; break;
-            case 4 when n.SequenceEqual("lang"u8): f16 = R5_string(ref r); h16 = true; break;
-            case 18 when n.SequenceEqual("possibly_sensitive"u8): f17 = R25_bool_(ref r); h17 = true; break;
-            case 16 when n.SequenceEqual("retweeted_status"u8): f18 = R26_AlStatus_(ref r); h18 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("metadata", "AlStatus", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("created_at", "AlStatus", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlStatus", at);
-    if (!h3) throw global::Alice.Core.Json.JsonMap.MissingField("id_str", "AlStatus", at);
-    if (!h4) throw global::Alice.Core.Json.JsonMap.MissingField("text", "AlStatus", at);
-    if (!h5) throw global::Alice.Core.Json.JsonMap.MissingField("source", "AlStatus", at);
-    if (!h6) throw global::Alice.Core.Json.JsonMap.MissingField("truncated", "AlStatus", at);
-    if (!h10) throw global::Alice.Core.Json.JsonMap.MissingField("user", "AlStatus", at);
-    if (!h11) throw global::Alice.Core.Json.JsonMap.MissingField("retweet_count", "AlStatus", at);
-    if (!h12) throw global::Alice.Core.Json.JsonMap.MissingField("favorite_count", "AlStatus", at);
-    if (!h13) throw global::Alice.Core.Json.JsonMap.MissingField("entities", "AlStatus", at);
-    if (!h14) throw global::Alice.Core.Json.JsonMap.MissingField("favorited", "AlStatus", at);
-    if (!h15) throw global::Alice.Core.Json.JsonMap.MissingField("retweeted", "AlStatus", at);
-    if (!h16) throw global::Alice.Core.Json.JsonMap.MissingField("lang", "AlStatus", at);
-    return new AlStatus(f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18);
-}
-internal static double R12_double(ref global::Alice.Core.Json.JsonIterator r) => r.ReadDouble();
-internal static void W12_double(ref global::Alice.Core.Json.JsonWriter w, double v) { w.WriteNumber(v); }
-internal static ulong R13_ulong(ref global::Alice.Core.Json.JsonIterator r) => r.ReadUInt64();
-internal static void W13_ulong(ref global::Alice.Core.Json.JsonWriter w, ulong v) { w.WriteNumber(v); }
-internal static uint R14_uint(ref global::Alice.Core.Json.JsonIterator r) => global::Alice.Core.Json.JsonMap.ReadUInt32(ref r);
-internal static void W14_uint(ref global::Alice.Core.Json.JsonWriter w, uint v) { w.WriteNumber((ulong)v); }
-internal static void W15_AlFeature(ref global::Alice.Core.Json.JsonWriter w, AlFeature v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("type"u8); W5_string(ref w, v.type);
-    w.WritePropertyName("properties"u8); W27_AlProps(ref w, v.properties);
-    w.WritePropertyName("geometry"u8); W28_AlGeometry(ref w, v.geometry);
-    w.WriteEndObject();
-}
-internal static AlFeature R15_AlFeature(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string f0 = default!; bool h0 = false;
-    AlProps f1 = default!; bool h1 = false;
-    AlGeometry f2 = default!; bool h2 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 4 when n.SequenceEqual("type"u8): f0 = R5_string(ref r); h0 = true; break;
-            case 10 when n.SequenceEqual("properties"u8): f1 = R27_AlProps(ref r); h1 = true; break;
-            case 8 when n.SequenceEqual("geometry"u8): f2 = R28_AlGeometry(ref r); h2 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("type", "AlFeature", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("properties", "AlFeature", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("geometry", "AlFeature", at);
-    return new AlFeature(f0, f1, f2);
-}
-internal static void W16_AlEvent(ref global::Alice.Core.Json.JsonWriter w, AlEvent v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("description"u8); W22_string_(ref w, v.description);
-    w.WritePropertyName("id"u8); W13_ulong(ref w, v.id);
-    w.WritePropertyName("logo"u8); W22_string_(ref w, v.logo);
-    w.WritePropertyName("name"u8); W5_string(ref w, v.name);
-    w.WritePropertyName("subTopicIds"u8); W18_ulong__(ref w, v.subTopicIds);
-    w.WritePropertyName("subjectCode"u8); W22_string_(ref w, v.subjectCode);
-    w.WritePropertyName("subtitle"u8); W22_string_(ref w, v.subtitle);
-    w.WritePropertyName("topicIds"u8); W18_ulong__(ref w, v.topicIds);
-    w.WriteEndObject();
-}
-internal static AlEvent R16_AlEvent(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string? f0 = default!; bool h0 = false;
-    ulong f1 = default!; bool h1 = false;
-    string? f2 = default!; bool h2 = false;
-    string f3 = default!; bool h3 = false;
-    ulong[] f4 = default!; bool h4 = false;
-    string? f5 = default!; bool h5 = false;
-    string? f6 = default!; bool h6 = false;
-    ulong[] f7 = default!; bool h7 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 11 when n.SequenceEqual("description"u8): f0 = R22_string_(ref r); h0 = true; break;
-            case 2 when n.SequenceEqual("id"u8): f1 = R13_ulong(ref r); h1 = true; break;
-            case 4 when n.SequenceEqual("logo"u8): f2 = R22_string_(ref r); h2 = true; break;
-            case 4 when n.SequenceEqual("name"u8): f3 = R5_string(ref r); h3 = true; break;
-            case 11 when n.SequenceEqual("subTopicIds"u8): f4 = R18_ulong__(ref r); h4 = true; break;
-            case 11 when n.SequenceEqual("subjectCode"u8): f5 = R22_string_(ref r); h5 = true; break;
-            case 8 when n.SequenceEqual("subtitle"u8): f6 = R22_string_(ref r); h6 = true; break;
-            case 8 when n.SequenceEqual("topicIds"u8): f7 = R18_ulong__(ref r); h7 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlEvent", at);
-    if (!h3) throw global::Alice.Core.Json.JsonMap.MissingField("name", "AlEvent", at);
-    if (!h4) throw global::Alice.Core.Json.JsonMap.MissingField("subTopicIds", "AlEvent", at);
-    if (!h7) throw global::Alice.Core.Json.JsonMap.MissingField("topicIds", "AlEvent", at);
-    return new AlEvent(f0, f1, f2, f3, f4, f5, f6, f7);
-}
-internal static void W17_AlPerformance(ref global::Alice.Core.Json.JsonWriter w, AlPerformance v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("eventId"u8); W13_ulong(ref w, v.eventId);
-    w.WritePropertyName("id"u8); W13_ulong(ref w, v.id);
-    w.WritePropertyName("logo"u8); W22_string_(ref w, v.logo);
-    w.WritePropertyName("name"u8); W22_string_(ref w, v.name);
-    w.WritePropertyName("prices"u8); W29_AlPrice__(ref w, v.prices);
-    w.WritePropertyName("seatCategories"u8); W30_AlSeatCategory__(ref w, v.seatCategories);
-    w.WritePropertyName("seatMapImage"u8); W22_string_(ref w, v.seatMapImage);
-    w.WritePropertyName("start"u8); W13_ulong(ref w, v.start);
-    w.WritePropertyName("venueCode"u8); W5_string(ref w, v.venueCode);
-    w.WriteEndObject();
-}
-internal static AlPerformance R17_AlPerformance(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    ulong f0 = default!; bool h0 = false;
-    ulong f1 = default!; bool h1 = false;
-    string? f2 = default!; bool h2 = false;
-    string? f3 = default!; bool h3 = false;
-    AlPrice[] f4 = default!; bool h4 = false;
-    AlSeatCategory[] f5 = default!; bool h5 = false;
-    string? f6 = default!; bool h6 = false;
-    ulong f7 = default!; bool h7 = false;
-    string f8 = default!; bool h8 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 7 when n.SequenceEqual("eventId"u8): f0 = R13_ulong(ref r); h0 = true; break;
-            case 2 when n.SequenceEqual("id"u8): f1 = R13_ulong(ref r); h1 = true; break;
-            case 4 when n.SequenceEqual("logo"u8): f2 = R22_string_(ref r); h2 = true; break;
-            case 4 when n.SequenceEqual("name"u8): f3 = R22_string_(ref r); h3 = true; break;
-            case 6 when n.SequenceEqual("prices"u8): f4 = R29_AlPrice__(ref r); h4 = true; break;
-            case 14 when n.SequenceEqual("seatCategories"u8): f5 = R30_AlSeatCategory__(ref r); h5 = true; break;
-            case 12 when n.SequenceEqual("seatMapImage"u8): f6 = R22_string_(ref r); h6 = true; break;
-            case 5 when n.SequenceEqual("start"u8): f7 = R13_ulong(ref r); h7 = true; break;
-            case 9 when n.SequenceEqual("venueCode"u8): f8 = R5_string(ref r); h8 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("eventId", "AlPerformance", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlPerformance", at);
-    if (!h4) throw global::Alice.Core.Json.JsonMap.MissingField("prices", "AlPerformance", at);
-    if (!h5) throw global::Alice.Core.Json.JsonMap.MissingField("seatCategories", "AlPerformance", at);
-    if (!h7) throw global::Alice.Core.Json.JsonMap.MissingField("start", "AlPerformance", at);
-    if (!h8) throw global::Alice.Core.Json.JsonMap.MissingField("venueCode", "AlPerformance", at);
-    return new AlPerformance(f0, f1, f2, f3, f4, f5, f6, f7, f8);
-}
-internal static ulong[] R18_ulong__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new ulong[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R13_ulong(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W18_ulong__(ref global::Alice.Core.Json.JsonWriter w, ulong[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W13_ulong(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static void W19_AlMetadata(ref global::Alice.Core.Json.JsonWriter w, AlMetadata v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("result_type"u8); W5_string(ref w, v.result_type);
-    w.WritePropertyName("iso_language_code"u8); W5_string(ref w, v.iso_language_code);
-    w.WriteEndObject();
-}
-internal static AlMetadata R19_AlMetadata(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string f0 = default!; bool h0 = false;
-    string f1 = default!; bool h1 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 11 when n.SequenceEqual("result_type"u8): f0 = R5_string(ref r); h0 = true; break;
-            case 17 when n.SequenceEqual("iso_language_code"u8): f1 = R5_string(ref r); h1 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("result_type", "AlMetadata", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("iso_language_code", "AlMetadata", at);
-    return new AlMetadata(f0, f1);
-}
-internal static bool R20_bool(ref global::Alice.Core.Json.JsonIterator r) => r.ReadBoolean();
-internal static void W20_bool(ref global::Alice.Core.Json.JsonWriter w, bool v) { w.WriteBoolean(v); }
-internal static ulong? R21_ulong_(ref global::Alice.Core.Json.JsonIterator r) => r.TryReadNull() ? default(ulong?) : R13_ulong(ref r);
-internal static void W21_ulong_(ref global::Alice.Core.Json.JsonWriter w, ulong? v) { if (v is { } x) W13_ulong(ref w, x); else w.WriteNull(); }
-internal static string? R22_string_(ref global::Alice.Core.Json.JsonIterator r) => r.TryReadNull() ? default(string?) : R5_string(ref r);
-internal static void W22_string_(ref global::Alice.Core.Json.JsonWriter w, string? v) { if (v is null) w.WriteNull(); else W5_string(ref w, v); }
-internal static void W23_AlUser(ref global::Alice.Core.Json.JsonWriter w, AlUser v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("id"u8); W13_ulong(ref w, v.id);
-    w.WritePropertyName("id_str"u8); W5_string(ref w, v.id_str);
-    w.WritePropertyName("name"u8); W5_string(ref w, v.name);
-    w.WritePropertyName("screen_name"u8); W5_string(ref w, v.screen_name);
-    w.WritePropertyName("location"u8); W5_string(ref w, v.location);
-    w.WritePropertyName("description"u8); W5_string(ref w, v.description);
-    w.WritePropertyName("protected"u8); W20_bool(ref w, v.@protected);
-    w.WritePropertyName("followers_count"u8); W13_ulong(ref w, v.followers_count);
-    w.WritePropertyName("friends_count"u8); W13_ulong(ref w, v.friends_count);
-    w.WritePropertyName("listed_count"u8); W13_ulong(ref w, v.listed_count);
-    w.WritePropertyName("created_at"u8); W5_string(ref w, v.created_at);
-    w.WritePropertyName("favourites_count"u8); W13_ulong(ref w, v.favourites_count);
-    w.WritePropertyName("utc_offset"u8); W31_int_(ref w, v.utc_offset);
-    w.WritePropertyName("time_zone"u8); W22_string_(ref w, v.time_zone);
-    w.WritePropertyName("geo_enabled"u8); W20_bool(ref w, v.geo_enabled);
-    w.WritePropertyName("verified"u8); W20_bool(ref w, v.verified);
-    w.WritePropertyName("statuses_count"u8); W13_ulong(ref w, v.statuses_count);
-    w.WritePropertyName("lang"u8); W5_string(ref w, v.lang);
-    w.WritePropertyName("profile_image_url"u8); W5_string(ref w, v.profile_image_url);
-    w.WriteEndObject();
-}
-internal static AlUser R23_AlUser(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    ulong f0 = default!; bool h0 = false;
-    string f1 = default!; bool h1 = false;
-    string f2 = default!; bool h2 = false;
-    string f3 = default!; bool h3 = false;
-    string f4 = default!; bool h4 = false;
-    string f5 = default!; bool h5 = false;
-    bool f6 = default!; bool h6 = false;
-    ulong f7 = default!; bool h7 = false;
-    ulong f8 = default!; bool h8 = false;
-    ulong f9 = default!; bool h9 = false;
-    string f10 = default!; bool h10 = false;
-    ulong f11 = default!; bool h11 = false;
-    int? f12 = default!; bool h12 = false;
-    string? f13 = default!; bool h13 = false;
-    bool f14 = default!; bool h14 = false;
-    bool f15 = default!; bool h15 = false;
-    ulong f16 = default!; bool h16 = false;
-    string f17 = default!; bool h17 = false;
-    string f18 = default!; bool h18 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 2 when n.SequenceEqual("id"u8): f0 = R13_ulong(ref r); h0 = true; break;
-            case 6 when n.SequenceEqual("id_str"u8): f1 = R5_string(ref r); h1 = true; break;
-            case 4 when n.SequenceEqual("name"u8): f2 = R5_string(ref r); h2 = true; break;
-            case 11 when n.SequenceEqual("screen_name"u8): f3 = R5_string(ref r); h3 = true; break;
-            case 8 when n.SequenceEqual("location"u8): f4 = R5_string(ref r); h4 = true; break;
-            case 11 when n.SequenceEqual("description"u8): f5 = R5_string(ref r); h5 = true; break;
-            case 9 when n.SequenceEqual("protected"u8): f6 = R20_bool(ref r); h6 = true; break;
-            case 15 when n.SequenceEqual("followers_count"u8): f7 = R13_ulong(ref r); h7 = true; break;
-            case 13 when n.SequenceEqual("friends_count"u8): f8 = R13_ulong(ref r); h8 = true; break;
-            case 12 when n.SequenceEqual("listed_count"u8): f9 = R13_ulong(ref r); h9 = true; break;
-            case 10 when n.SequenceEqual("created_at"u8): f10 = R5_string(ref r); h10 = true; break;
-            case 16 when n.SequenceEqual("favourites_count"u8): f11 = R13_ulong(ref r); h11 = true; break;
-            case 10 when n.SequenceEqual("utc_offset"u8): f12 = R31_int_(ref r); h12 = true; break;
-            case 9 when n.SequenceEqual("time_zone"u8): f13 = R22_string_(ref r); h13 = true; break;
-            case 11 when n.SequenceEqual("geo_enabled"u8): f14 = R20_bool(ref r); h14 = true; break;
-            case 8 when n.SequenceEqual("verified"u8): f15 = R20_bool(ref r); h15 = true; break;
-            case 14 when n.SequenceEqual("statuses_count"u8): f16 = R13_ulong(ref r); h16 = true; break;
-            case 4 when n.SequenceEqual("lang"u8): f17 = R5_string(ref r); h17 = true; break;
-            case 17 when n.SequenceEqual("profile_image_url"u8): f18 = R5_string(ref r); h18 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlUser", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("id_str", "AlUser", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("name", "AlUser", at);
-    if (!h3) throw global::Alice.Core.Json.JsonMap.MissingField("screen_name", "AlUser", at);
-    if (!h4) throw global::Alice.Core.Json.JsonMap.MissingField("location", "AlUser", at);
-    if (!h5) throw global::Alice.Core.Json.JsonMap.MissingField("description", "AlUser", at);
-    if (!h6) throw global::Alice.Core.Json.JsonMap.MissingField("protected", "AlUser", at);
-    if (!h7) throw global::Alice.Core.Json.JsonMap.MissingField("followers_count", "AlUser", at);
-    if (!h8) throw global::Alice.Core.Json.JsonMap.MissingField("friends_count", "AlUser", at);
-    if (!h9) throw global::Alice.Core.Json.JsonMap.MissingField("listed_count", "AlUser", at);
-    if (!h10) throw global::Alice.Core.Json.JsonMap.MissingField("created_at", "AlUser", at);
-    if (!h11) throw global::Alice.Core.Json.JsonMap.MissingField("favourites_count", "AlUser", at);
-    if (!h14) throw global::Alice.Core.Json.JsonMap.MissingField("geo_enabled", "AlUser", at);
-    if (!h15) throw global::Alice.Core.Json.JsonMap.MissingField("verified", "AlUser", at);
-    if (!h16) throw global::Alice.Core.Json.JsonMap.MissingField("statuses_count", "AlUser", at);
-    if (!h17) throw global::Alice.Core.Json.JsonMap.MissingField("lang", "AlUser", at);
-    if (!h18) throw global::Alice.Core.Json.JsonMap.MissingField("profile_image_url", "AlUser", at);
-    return new AlUser(f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18);
-}
-internal static void W24_AlEntities(ref global::Alice.Core.Json.JsonWriter w, AlEntities v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("hashtags"u8); W32_AlHashtag__(ref w, v.hashtags);
-    w.WritePropertyName("urls"u8); W33_AlUrl__(ref w, v.urls);
-    w.WritePropertyName("user_mentions"u8); W34_AlMention__(ref w, v.user_mentions);
-    w.WriteEndObject();
-}
-internal static AlEntities R24_AlEntities(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    AlHashtag[] f0 = default!; bool h0 = false;
-    AlUrl[] f1 = default!; bool h1 = false;
-    AlMention[] f2 = default!; bool h2 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 8 when n.SequenceEqual("hashtags"u8): f0 = R32_AlHashtag__(ref r); h0 = true; break;
-            case 4 when n.SequenceEqual("urls"u8): f1 = R33_AlUrl__(ref r); h1 = true; break;
-            case 13 when n.SequenceEqual("user_mentions"u8): f2 = R34_AlMention__(ref r); h2 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("hashtags", "AlEntities", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("urls", "AlEntities", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("user_mentions", "AlEntities", at);
-    return new AlEntities(f0, f1, f2);
-}
-internal static bool? R25_bool_(ref global::Alice.Core.Json.JsonIterator r) => r.TryReadNull() ? default(bool?) : R20_bool(ref r);
-internal static void W25_bool_(ref global::Alice.Core.Json.JsonWriter w, bool? v) { if (v is { } x) W20_bool(ref w, x); else w.WriteNull(); }
-internal static AlStatus? R26_AlStatus_(ref global::Alice.Core.Json.JsonIterator r) => r.TryReadNull() ? default(AlStatus?) : R11_AlStatus(ref r);
-internal static void W26_AlStatus_(ref global::Alice.Core.Json.JsonWriter w, AlStatus? v) { if (v is null) w.WriteNull(); else W11_AlStatus(ref w, v); }
-internal static void W27_AlProps(ref global::Alice.Core.Json.JsonWriter w, AlProps v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("name"u8); W5_string(ref w, v.name);
-    w.WriteEndObject();
-}
-internal static AlProps R27_AlProps(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string f0 = default!; bool h0 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 4 when n.SequenceEqual("name"u8): f0 = R5_string(ref r); h0 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("name", "AlProps", at);
-    return new AlProps(f0);
-}
-internal static void W28_AlGeometry(ref global::Alice.Core.Json.JsonWriter w, AlGeometry v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("type"u8); W5_string(ref w, v.type);
-    w.WritePropertyName("coordinates"u8); W35_double______(ref w, v.coordinates);
-    w.WriteEndObject();
-}
-internal static AlGeometry R28_AlGeometry(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string f0 = default!; bool h0 = false;
-    double[][][] f1 = default!; bool h1 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 4 when n.SequenceEqual("type"u8): f0 = R5_string(ref r); h0 = true; break;
-            case 11 when n.SequenceEqual("coordinates"u8): f1 = R35_double______(ref r); h1 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("type", "AlGeometry", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("coordinates", "AlGeometry", at);
-    return new AlGeometry(f0, f1);
-}
-internal static AlPrice[] R29_AlPrice__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlPrice[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R36_AlPrice(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W29_AlPrice__(ref global::Alice.Core.Json.JsonWriter w, AlPrice[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W36_AlPrice(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static AlSeatCategory[] R30_AlSeatCategory__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlSeatCategory[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R37_AlSeatCategory(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W30_AlSeatCategory__(ref global::Alice.Core.Json.JsonWriter w, AlSeatCategory[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W37_AlSeatCategory(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static int? R31_int_(ref global::Alice.Core.Json.JsonIterator r) => r.TryReadNull() ? default(int?) : R38_int(ref r);
-internal static void W31_int_(ref global::Alice.Core.Json.JsonWriter w, int? v) { if (v is { } x) W38_int(ref w, x); else w.WriteNull(); }
-internal static AlHashtag[] R32_AlHashtag__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlHashtag[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R39_AlHashtag(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W32_AlHashtag__(ref global::Alice.Core.Json.JsonWriter w, AlHashtag[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W39_AlHashtag(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static AlUrl[] R33_AlUrl__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlUrl[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R40_AlUrl(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W33_AlUrl__(ref global::Alice.Core.Json.JsonWriter w, AlUrl[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W40_AlUrl(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static AlMention[] R34_AlMention__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlMention[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R41_AlMention(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W34_AlMention__(ref global::Alice.Core.Json.JsonWriter w, AlMention[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W41_AlMention(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static double[][][] R35_double______(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new double[4][][]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R42_double____(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W35_double______(ref global::Alice.Core.Json.JsonWriter w, double[][][] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W42_double____(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static void W36_AlPrice(ref global::Alice.Core.Json.JsonWriter w, AlPrice v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("amount"u8); W13_ulong(ref w, v.amount);
-    w.WritePropertyName("audienceSubCategoryId"u8); W13_ulong(ref w, v.audienceSubCategoryId);
-    w.WritePropertyName("seatCategoryId"u8); W13_ulong(ref w, v.seatCategoryId);
-    w.WriteEndObject();
-}
-internal static AlPrice R36_AlPrice(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    ulong f0 = default!; bool h0 = false;
-    ulong f1 = default!; bool h1 = false;
-    ulong f2 = default!; bool h2 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 6 when n.SequenceEqual("amount"u8): f0 = R13_ulong(ref r); h0 = true; break;
-            case 21 when n.SequenceEqual("audienceSubCategoryId"u8): f1 = R13_ulong(ref r); h1 = true; break;
-            case 14 when n.SequenceEqual("seatCategoryId"u8): f2 = R13_ulong(ref r); h2 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("amount", "AlPrice", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("audienceSubCategoryId", "AlPrice", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("seatCategoryId", "AlPrice", at);
-    return new AlPrice(f0, f1, f2);
-}
-internal static void W37_AlSeatCategory(ref global::Alice.Core.Json.JsonWriter w, AlSeatCategory v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("areas"u8); W43_AlArea__(ref w, v.areas);
-    w.WritePropertyName("seatCategoryId"u8); W13_ulong(ref w, v.seatCategoryId);
-    w.WriteEndObject();
-}
-internal static AlSeatCategory R37_AlSeatCategory(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    AlArea[] f0 = default!; bool h0 = false;
-    ulong f1 = default!; bool h1 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 5 when n.SequenceEqual("areas"u8): f0 = R43_AlArea__(ref r); h0 = true; break;
-            case 14 when n.SequenceEqual("seatCategoryId"u8): f1 = R13_ulong(ref r); h1 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("areas", "AlSeatCategory", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("seatCategoryId", "AlSeatCategory", at);
-    return new AlSeatCategory(f0, f1);
-}
-internal static int R38_int(ref global::Alice.Core.Json.JsonIterator r) => global::Alice.Core.Json.JsonMap.ReadInt32(ref r);
-internal static void W38_int(ref global::Alice.Core.Json.JsonWriter w, int v) { w.WriteNumber((long)v); }
-internal static void W39_AlHashtag(ref global::Alice.Core.Json.JsonWriter w, AlHashtag v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("text"u8); W5_string(ref w, v.text);
-    w.WritePropertyName("indices"u8); W44_uint__(ref w, v.indices);
-    w.WriteEndObject();
-}
-internal static AlHashtag R39_AlHashtag(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string f0 = default!; bool h0 = false;
-    uint[] f1 = default!; bool h1 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 4 when n.SequenceEqual("text"u8): f0 = R5_string(ref r); h0 = true; break;
-            case 7 when n.SequenceEqual("indices"u8): f1 = R44_uint__(ref r); h1 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("text", "AlHashtag", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("indices", "AlHashtag", at);
-    return new AlHashtag(f0, f1);
-}
-internal static void W40_AlUrl(ref global::Alice.Core.Json.JsonWriter w, AlUrl v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("url"u8); W5_string(ref w, v.url);
-    w.WritePropertyName("expanded_url"u8); W5_string(ref w, v.expanded_url);
-    w.WritePropertyName("display_url"u8); W5_string(ref w, v.display_url);
-    w.WritePropertyName("indices"u8); W44_uint__(ref w, v.indices);
-    w.WriteEndObject();
-}
-internal static AlUrl R40_AlUrl(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string f0 = default!; bool h0 = false;
-    string f1 = default!; bool h1 = false;
-    string f2 = default!; bool h2 = false;
-    uint[] f3 = default!; bool h3 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 3 when n.SequenceEqual("url"u8): f0 = R5_string(ref r); h0 = true; break;
-            case 12 when n.SequenceEqual("expanded_url"u8): f1 = R5_string(ref r); h1 = true; break;
-            case 11 when n.SequenceEqual("display_url"u8): f2 = R5_string(ref r); h2 = true; break;
-            case 7 when n.SequenceEqual("indices"u8): f3 = R44_uint__(ref r); h3 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("url", "AlUrl", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("expanded_url", "AlUrl", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("display_url", "AlUrl", at);
-    if (!h3) throw global::Alice.Core.Json.JsonMap.MissingField("indices", "AlUrl", at);
-    return new AlUrl(f0, f1, f2, f3);
-}
-internal static void W41_AlMention(ref global::Alice.Core.Json.JsonWriter w, AlMention v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("screen_name"u8); W5_string(ref w, v.screen_name);
-    w.WritePropertyName("name"u8); W5_string(ref w, v.name);
-    w.WritePropertyName("id"u8); W13_ulong(ref w, v.id);
-    w.WritePropertyName("id_str"u8); W5_string(ref w, v.id_str);
-    w.WritePropertyName("indices"u8); W44_uint__(ref w, v.indices);
-    w.WriteEndObject();
-}
-internal static AlMention R41_AlMention(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    string f0 = default!; bool h0 = false;
-    string f1 = default!; bool h1 = false;
-    ulong f2 = default!; bool h2 = false;
-    string f3 = default!; bool h3 = false;
-    uint[] f4 = default!; bool h4 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 11 when n.SequenceEqual("screen_name"u8): f0 = R5_string(ref r); h0 = true; break;
-            case 4 when n.SequenceEqual("name"u8): f1 = R5_string(ref r); h1 = true; break;
-            case 2 when n.SequenceEqual("id"u8): f2 = R13_ulong(ref r); h2 = true; break;
-            case 6 when n.SequenceEqual("id_str"u8): f3 = R5_string(ref r); h3 = true; break;
-            case 7 when n.SequenceEqual("indices"u8): f4 = R44_uint__(ref r); h4 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("screen_name", "AlMention", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("name", "AlMention", at);
-    if (!h2) throw global::Alice.Core.Json.JsonMap.MissingField("id", "AlMention", at);
-    if (!h3) throw global::Alice.Core.Json.JsonMap.MissingField("id_str", "AlMention", at);
-    if (!h4) throw global::Alice.Core.Json.JsonMap.MissingField("indices", "AlMention", at);
-    return new AlMention(f0, f1, f2, f3, f4);
-}
-internal static double[][] R42_double____(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new double[4][]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R45_double__(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W42_double____(ref global::Alice.Core.Json.JsonWriter w, double[][] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W45_double__(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static AlArea[] R43_AlArea__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new AlArea[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R46_AlArea(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W43_AlArea__(ref global::Alice.Core.Json.JsonWriter w, AlArea[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W46_AlArea(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static uint[] R44_uint__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new uint[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R14_uint(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W44_uint__(ref global::Alice.Core.Json.JsonWriter w, uint[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W14_uint(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static double[] R45_double__(ref global::Alice.Core.Json.JsonIterator r)
-{
-    r.ReadStartArray();
-    if (!r.NextElement()) return [];
-    var a = new double[4]; int n = 0;
-    do { if (n == a.Length) global::System.Array.Resize(ref a, n * 2); a[n++] = R12_double(ref r); } while (r.NextElement());
-    if (n != a.Length) global::System.Array.Resize(ref a, n);
-    return a;
-}
-internal static void W45_double__(ref global::Alice.Core.Json.JsonWriter w, double[] v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartArray();
-    for (int i = 0; i < v.Length; i++) W12_double(ref w, v[i]);
-    w.WriteEndArray();
-}
-internal static void W46_AlArea(ref global::Alice.Core.Json.JsonWriter w, AlArea v)
-{
-    if (v is null) { w.WriteNull(); return; }
-    w.WriteStartObject();
-    w.WritePropertyName("areaId"u8); W13_ulong(ref w, v.areaId);
-    w.WritePropertyName("blockIds"u8); W18_ulong__(ref w, v.blockIds);
-    w.WriteEndObject();
-}
-internal static AlArea R46_AlArea(ref global::Alice.Core.Json.JsonIterator r)
-{
-    long at = r.Offset;
-    ulong f0 = default!; bool h0 = false;
-    ulong[] f1 = default!; bool h1 = false;
-    r.ReadStartObject();
-    while (r.NextProperty(out var n))
-    {
-        switch (n.Length)
-        {
-            case 6 when n.SequenceEqual("areaId"u8): f0 = R13_ulong(ref r); h0 = true; break;
-            case 8 when n.SequenceEqual("blockIds"u8): f1 = R18_ulong__(ref r); h1 = true; break;
-            default: r.Skip(); break;
-        }
-    }
-    if (!h0) throw global::Alice.Core.Json.JsonMap.MissingField("areaId", "AlArea", at);
-    if (!h1) throw global::Alice.Core.Json.JsonMap.MissingField("blockIds", "AlArea", at);
-    return new AlArea(f0, f1);
-}
 }
 

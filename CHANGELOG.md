@@ -28,6 +28,7 @@
 
 - IL backend wiring (backend plan D1.6/D1.8/D1.9/D1.10, ADR 0033): `alice run --backend il` / `alice emit --il` now compile async/iterator/async-iterator methods (own state machines, `Air/Passes/StateMachines`), `Any` operations (`Alice.Runtime.Dyn` call sites, AL0232), records, struct records and sum types (`Synthesize`), and `lib` P/Invokes; the three stub tests `Il_async/iterator/async_iterator_matches_csharp` are real C#-vs-IL differential tests. Fixes found on the way: `break` inside `for v in <IEnumerable>` left the try with `br`, `String == String` was a reference compare under IL.
 - IL backend declaration kinds (D1.10): generic classes/methods (by monomorphization, incl. generic base classes), delegate types and method-group values, constant-expression enum members (`B = 1 << 1`, `AB = A | B`), default interface methods, interface properties, `@[Stack]` structs, `block` parameters, method/field attributes, and events (Alice and CLR, `+=`/`-=`) now compile under `--backend il`; methods named after C# keywords (`double`) resolve.
+- IL backend: `ref T` locals (`h[k] += v` over `CollectionsMarshal.GetValueRefOrAddDefault`) are byref locals read and written through (was `MDecl:ref-local` unsupported), and `alice emit --il` writes the C# build's GC policy (server GC for parallel programs) into the runtimeconfig instead of always workstation GC. Tests: `AirToIlTests.Ref_locals_and_struct_receivers`, `PackageTests.Emit_il_writes_the_gc_policy_of_the_csharp_build`.
 - dataflow (ADR 0038, P3.2/P3.3): `dataflow do` with `source`/`stage(state:, par:)`/`sink`, `stream def`; binder checks AL0244-AL0246; lowered to AirDataflow/AirStage/AirRing and static stage methods over the runtime function-pointer overloads (one `Graph.Run`); `benchmarks/dataflow/alice/dataflow.al` matches the hand C# graph.
 - Alice Core library modules (ADR 0036; stdlib plan C3.1-C3.5, C4.1, C4.2), one namespace per module under
   `src/Alice.Runtime/Core/`: `Text` (`Utf8String`, SIMD `count/delete/squeeze/tr` over UTF-8, `Format.sprintf/try_format`
@@ -58,6 +59,11 @@
   JSON::Any sugar (as_i, dig, nil?, to_h ...); to_json and parse_json go through it (to_json keeps 1.0 and non-ASCII
   as Ruby does). JSONTestSuite 283/283 y_/n_ correct; forge, twitter: stage 1 5.2 GB/s, DOM 2.56 GB/s (3.4x
   JsonDocument), writer 2.4-1.5x Utf8JsonWriter (benchmarks/core/json/results.md).
+- core: typed JSON mapping under `--backend il` (ADR 0036 C2.5): the generated readers/writers are now typed AIR
+  helpers of the module (`__json_R<n>_T` / `__json_W<n>_T`, by-ref `JsonIterator`/`JsonWriter` parameters) instead of a
+  C#-only `__AliceJson` class, so the IL backend emits them like any other method; `JsonMap` gains the small by-ref
+  shims they call (TryNull, StartObject, NextProperty, Is, WriteName ...). Mapping errors are AL0250 (docs/errors.md),
+  including a variant field named `type` (the sum-type tag). JsonMappingTests runs the mapping on both backends.
 - Fuzzers (closing phase): a shared engine in `tests/Alice.Tests/Fuzz/Engine` (grammar generator `SyntaxGen`, corpus
   `Mutator`, typed generator `TypedGen`, `Oracles`, line/block delta-debugging `Minimizer`, triaged `Known.Issues`),
   a short deterministic seed set in `tests/Alice.Tests/Fuzz` (parser + fmt round trip, typed compile/Roslyn/check/

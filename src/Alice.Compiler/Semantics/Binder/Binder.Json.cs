@@ -49,10 +49,10 @@ public sealed partial class Binder
     {
         if (!JsonInvolvesAlice(j.Type, new HashSet<string>()))
         {
-            if (j.Read) throw Err(c, $"JSON.parse({j.Type.Cs}, ...): typed parsing needs an Alice record, class or enum (use JSON.parse(text) for JSON::Any)");
+            if (j.Read) throw Err(c, $"JSON mapping: JSON.parse({j.Type.Cs}, ...) needs an Alice record, class or enum (use JSON.parse(text) for JSON::Any)");
             return c.Type;   // plain values: the Prelude writer (Ruby shape)
         }
-        if (JsonUnsupported(j.Type, new HashSet<string>()) is string why) throw Err(c, $"cannot map {j.Type.Cs} to JSON: {why}");
+        if (JsonUnsupported(j.Type, new HashSet<string>()) is string why) throw Err(c, $"JSON mapping: cannot map {j.Type.Cs} to JSON: {why}");
         c.Res = "json";
         c.Sym = j;
         return j.Read ? j.Type : AType.String;
@@ -92,12 +92,14 @@ public sealed partial class Binder
             {
                 foreach (var v in s.Variants)
                 {
-                    if (v.FieldOrder.Contains("type")) return $"variant {v.Name} has a field named `type` (the tag)";
+                    if (v.FieldOrder.Contains("type"))
+                        return $"variant {s.Name}::{v.Name} has a field named `type`, which is the sum-type tag (rule: a sum type maps to {{\"type\": \"Variant\", ...fields}}; rename the field)";
                     foreach (var f in v.FieldOrder)
                         if (v.FindField(f) is { } fs && JsonUnsupported(fs.Type, seen) is string w) return $"{v.Name}.{f}: {w}";
                 }
                 return null;
             }
+            if (s.Kind == "variant" && s.FieldOrder.Contains("type") && s.Parent is { } adt) return JsonUnsupported(adt.Type, new HashSet<string>());   // the tag rule, also when the variant is the static type
             foreach (var f in JsonFields(s))
                 if (JsonUnsupported(f.Type, seen) is string w) return $"{s.Name}.{f.Name}: {w}";
             return null;

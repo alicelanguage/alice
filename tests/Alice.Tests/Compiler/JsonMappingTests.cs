@@ -1,4 +1,5 @@
 using Alice.Compiler;
+using Alice.Compiler.Backend.Il;
 
 namespace Alice.Tests.Compiler;
 
@@ -130,16 +131,56 @@ public class JsonMappingTests
     public void Unmappable_types_are_compile_errors()
     {
         var e1 = Assert.ThrowsAny<Exception>(() => AliceCompiler.Run("x = JSON.parse(Int32, \"1\")"));
-        Assert.Contains("typed parsing needs an Alice record, class or enum", e1.Message);
+        Assert.Contains("needs an Alice record, class or enum", e1.Message);
+        Assert.Equal("AL0250", Assert.IsType<CompileException>(e1).Diagnostics[0].Code);
         var e2 = Assert.ThrowsAny<Exception>(() => AliceCompiler.Run("record Bag(items : Set(Int32))\nputs to_json(Bag.new(Set(Int32).new))"));
         Assert.Contains("cannot map Bag to JSON", e2.Message);
+    }
+
+    [Fact]
+    public void The_il_backend_runs_the_typed_mapping()
+    {
+        // the readers/writers are typed AIR helpers, so `--backend il` emits them like any other method
+        var src = Types + """
+            u = User.new("ada", 36, ["x", "y"], Point.new(3, 4), Color::Green, {"m" => 1.5})
+            s = to_json(u)
+            puts s
+            v = User.from_json(s)
+            puts v.name, v.age, v.tags.size, v.home.not_nil!.y, v.color, v.scores["m"]
+            puts User.from_json("{\"name\":\"bo\",\"age\":1,\"tags\":[],\"home\":null,\"color\":\"Red\",\"scores\":{}}").home.nil?
+            shapes = [Shape::Circle(1.0), Shape::Rect(2.0, 3.0), Shape::Empty]
+            t = to_json(shapes)
+            puts t
+            puts JSON.parse<Array(Shape)>(t)[1] == Shape::Rect(2.0, 3.0)
+            puts JSON.pretty_generate(Point.new(1, 2))
+            begin
+              Point.from_json("{\"x\": 1}")
+            rescue => e
+              puts e.message
+            end
+            """;
+        var res = AirToIl.Compile([new SourceFile("main.al", src)], "jsonil", exe: true);
+        Assert.True(res.Ok, "IL backend: " + string.Join("\n", res.Errors.Select(e => e.Message)));
+        var errors = Alice.Tests.Backends.AirToIlTests.IlVerify(res.Pe!);
+        Assert.True(errors.Count == 0, "ILVerify:\n" + string.Join("\n", errors));
+        string il = AliceCompiler.Invoke(AliceCompiler.Load(res.Pe!), []).Trim().ReplaceLineEndings("\n");
+        Assert.Equal(Run(src), il);
+        Assert.StartsWith("{\"name\":\"ada\",\"age\":36,", il);
+    }
+
+    [Fact]
+    public void A_variant_field_named_type_is_AL0250()
+    {
+        var e = Assert.ThrowsAny<Exception>(() => AliceCompiler.Run("enum Ev\n  Click(type : String)\nend\nputs to_json(Ev::Click(\"x\"))"));
+        Assert.Equal("AL0250", Assert.IsType<CompileException>(e).Diagnostics[0].Code);
+        Assert.Contains("variant Ev::Click has a field named `type`, which is the sum-type tag", e.Message);
     }
 
     [Fact]
     public void Generated_code_uses_no_reflection()
     {
         var cs = AliceCompiler.Transpile(Types + "puts to_json(User.from_json(\"{}\"))", "main.al");
-        Assert.Contains("internal static partial class __AliceJson", cs);
+        Assert.Contains("__json_R", cs);
         Assert.Contains("JsonMap.ToJson<User>", cs);
         Assert.DoesNotContain("JsonSerializer", cs);
         Assert.DoesNotContain("GetType()", cs);
