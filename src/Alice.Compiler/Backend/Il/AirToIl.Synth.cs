@@ -16,17 +16,15 @@ namespace Alice.Compiler.Backend.Il;
 /// auto-properties, default constructors, derived operators, the IEnumerable bridge and type initializers.
 /// User members (plain fields, constants, methods, user constructors) are still declared by the driver
 /// (<see cref="DeclareMethod"/>, <see cref="Field"/>); <see cref="AirTypeDecl.FieldInits"/> run at the start of every
-/// user constructor (<see cref="SynthCtorPrologue"/>). `ALICE_IL_SYNTH=0` keeps the mirrored declarations (A/B).
+/// user constructor (<see cref="SynthCtorPrologue"/>).
 /// </summary>
 public sealed partial class AirToIl
 {
-    /// <summary>Whether declarations come from Synthesize (default) or from the Emitter mirror (`ALICE_IL_SYNTH=0`).</summary>
-    internal static readonly bool SynthOn = Environment.GetEnvironmentVariable("ALICE_IL_SYNTH") != "0";
 
     AirModuleDecl? synth;
     readonly List<(AliceT Owner, AirMethodDecl Decl, AMethod M)> synthBodies = [];
 
-    /// <summary>S2: the member declarations (replaces DeclareMembers when <see cref="SynthOn"/>).</summary>
+    /// <summary>S2: the member declarations (the only declaration path).</summary>
     void SynthDeclareMembers(List<FileNode> asts)
     {
         synth = Synthesize.Run(binder);

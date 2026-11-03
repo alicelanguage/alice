@@ -147,7 +147,7 @@ public sealed partial class AirToIl
 
     void DeclareInstance(AliceT a)
     {
-        if (!SynthOn || synth == null) throw new IlUnsupportedException("Decl:generic-type (needs Synthesize)", null, a.ToString());
+        if (synth == null) throw new IlUnsupportedException("Decl:generic-type (needs Synthesize)", null, a.ToString());
         var prevScope = Types.Scope;
         var prevFile = File;
         Types.Scope = a.Scope;

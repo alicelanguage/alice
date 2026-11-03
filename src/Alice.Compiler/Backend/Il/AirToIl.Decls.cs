@@ -50,7 +50,10 @@ public sealed partial class AirToIl
     public static IlCompileResult Compile(IReadOnlyList<SourceFile> files, string name, bool exe = true, IEnumerable<string>? refs = null)
     {
         var c = new AirToIl();
-        return c.Run(files, name, exe, refs);
+        var saved = Optimizer.Pipeline.Backend;
+        Optimizer.Pipeline.Backend = Optimizer.AirBackend.Il;
+        try { return c.Run(files, name, exe, refs); }
+        finally { Optimizer.Pipeline.Backend = saved; }
     }
 
     IlCompileResult Run(IReadOnlyList<SourceFile> files, string name, bool exe, IEnumerable<string>? refs)
@@ -64,7 +67,7 @@ public sealed partial class AirToIl
         }).ToList();
         binder = new Binder(asts, new ClrTypes(refs));
         binder.Bind();
-        lowerer = new Lowerer(binder) { Sequential = true };
+        lowerer = new Lowerer(binder) { Sequential = !ParallelOn };
         Module = new IlModule(name);
         Types = new IlTypes(binder, Module);
         Types.InstantiateType = InstantiateTypeImpl; // D1.10 il-emit2
@@ -78,7 +81,7 @@ public sealed partial class AirToIl
         try
         {
             DeclareTypes(asts);
-            if (SynthOn) SynthDeclareMembers(asts); else DeclareMembers(asts); // S2 il-emit2
+            SynthDeclareMembers(asts); // S2 il-emit2 (Synthesize is the only declaration path)
             main = EmitBodies(asts, exe);
             EmitDynSites(); // H4b il-emit2
         }
@@ -349,30 +352,6 @@ public sealed partial class AirToIl
     }
 
     // ------------------------------------------------------------------ members
-
-    void DeclareMembers(List<FileNode> asts)
-    {
-        foreach (var (it, a) in decls)
-        {
-            File = FileOf(asts, it);
-            switch (it)
-            {
-                case TypeDecl td: TypeMembers(td, a); break;
-                case EnumDecl { IsAdt: true } ed: Variants(ed, a); break;
-            }
-        }
-        foreach (var ast in asts)
-        {
-            File = ast.Path;
-            foreach (var it in ast.Items.Concat(ast.Items.OfType<NamespaceItem>().SelectMany(n => n.Items)))
-                switch (it)
-                {
-                    case MethodDecl m: DeclareMethod(m, ProgramT); break;
-                    case ConstDecl k: Const(k, ProgramT); break;
-                }
-        }
-        foreach (var a in decls.Select(d => d.T).Distinct()) AutoMembers(a);
-    }
 
     static string FileOf(List<FileNode> asts, Item it)
     {
@@ -827,10 +806,10 @@ public sealed partial class AirToIl
                 lowerer.Method = null;
                 var body = lowerer.LowerBody(stmts, Tail.None, f.HoistedLocals, stmts[0].Line);
                 Optimizer.Pipeline.Run(body);
-                DynLower(body); // H4a il-emit2
+                var helpers = TakeHelpers(ProgramT, Sp(stmts[0]));
                 CheckLowerer(Sp(stmts[0]));
-                IlLower(body);
                 var self = new AMethod { Name = "Main", Owner = ProgramT, IsStatic = true, Def = md, Params = [typeof(string[])], ParamNames = ["ARGV"] };
+                Passes(ref body, self, [("ARGV", typeof(string[]))]);
                 var b = new IlBody(this, ProgramT, self, Body(md), typeof(void), true, [("ARGV", typeof(string[]))]);
                 b.Body(body, () =>
                 {
@@ -839,6 +818,8 @@ public sealed partial class AirToIl
                     il.EmitLoadArg(0);
                     il.EmitCall(Module.Import(typeof(Alice.Runtime.Prelude).GetProperty("ARGV")!.GetSetMethod()!));
                 });
+                FlushClosures();
+                EmitHelpers(helpers);
             });
             if (exe) main = md;
         }
@@ -847,7 +828,6 @@ public sealed partial class AirToIl
     }
 
     int emittedT, emittedS;
-    bool legacyDone;
 
     /// <summary>The user bodies and synthesized bodies declared so far; repeated until no instance (D1.10) adds more.</summary>
     void EmitPending(List<FileNode> asts)
@@ -859,16 +839,8 @@ public sealed partial class AirToIl
                 var am = toEmit[emittedT++];
                 Guard(am.ToString(), () => { Types.Scope = am.Scope; try { MethodBody(am, asts); } finally { Types.Scope = null; } });
             }
-            if (SynthOn) SynthBodies(); // S3 il-emit2
-            else if (!legacyDone)
-            {
-                legacyDone = true;
-                foreach (var a in Types.BySym.Values.Distinct())
-                    foreach (var ctor in a.Ctors.Where(x => x.Decl == null && x.Owner == a).ToList())
-                        if (!ctor.Def.Attributes.HasFlag(MethodAttributes.Private) || !a.IsAdt) Guard(a + "::.ctor", () => SyntheticCtor(ctor));
-                foreach (var (owner, inits) in staticInits) Guard(owner + "::.cctor", () => StaticCtor(owner, inits));
-            }
-        } while (emittedT < toEmit.Count || SynthOn && emittedS < synthBodies.Count);
+            SynthBodies(); // S3 il-emit2
+        } while (emittedT < toEmit.Count || emittedS < synthBodies.Count);
     }
 
     void Guard(string where, Action a)
@@ -904,69 +876,25 @@ public sealed partial class AirToIl
         try { body = lowerer.LowerBody(d.Body, returns ? Tail.Return : Tail.None, d.HoistedLocals, d.Line); }
         finally { lowerer.CloneOk = false; }
         Optimizer.Pipeline.Run(body);
-        DynLower(body); // H4a il-emit2
+        var helpers = TakeHelpers(am.Owner, Sp(d));
         CheckLowerer(Sp(d));
-        IlLower(body);
-        body = SmLower(am, body); // H3b il-emit2
-        if (lowerer.Forked) throw new IlUnsupportedException("Lowerer.Forked", Sp(d), m.Name);
-        if (!m.IsCtor && hot.IsHot(d, m, am.Inst, body)) am.Def.ImplAttributes |= MethodImplAttributes.AggressiveOptimization;
+        var serial = lowerer.Forked ? SerialClone(am, d, returns) : null;
         var ps = am.ParamNames.Select((n, i) => (n, am.Params[i])).ToList();
+        Passes(ref body, am, ps);
+        if (!m.IsCtor && hot.IsHot(d, m, am.Inst, body)) am.Def.ImplAttributes |= MethodImplAttributes.AggressiveOptimization;
         var il = Body(am.Def);
         var b = new IlBody(this, am.Owner, am, il, am.Ret, am.IsStatic, ps);
-        b.Body(body, m.IsCtor ? (Action)(() => { if (SynthOn) SynthCtorPrologue(b, am, d); else CtorPrologue(b, am, d); }) : null); // S4 il-emit2
-    }
-
-    /// <summary>Field initializers, the base constructor call (`super` arguments), then `initialize(@x)` auto assignments.</summary>
-    void CtorPrologue(IlBody b, AMethod ctor, MethodDecl? d)
-    {
-        var a = ctor.Owner;
-        var il = ctor.Def.Il;
-        if (instanceInits.TryGetValue(a, out var inits))
-            foreach (var (init, f, file) in inits)
-            {
-                File = file;
-                var v = Init(init, a.Sym);
-                il.EmitLoadArg(0);
-                b.Emit(v, f.Type);
-                il.EmitStoreField(f.Field!);
-            }
-        if (!a.IsValueType)
+        b.Body(body, m.IsCtor ? () => SynthCtorPrologue(b, am, d) : null); // S4 il-emit2
+        FlushClosures();
+        EmitHelpers(helpers);
+        if (serial is var (sam, sbody, shelpers))
         {
-            il.EmitLoadArg(0);
-            if (d?.SuperInit is { } sup)
-            {
-                var args = sup.Select(x => Init(x.Value!, a.Sym)).ToList();
-                if (a.Base != null)
-                {
-                    var infos = args.Select(x => new ArgInfo(b.Infer(x), null, false, "")).ToList();
-                    var cand = Types.Pick(a.Base.Ctors.Select(IlTypes.FromAlice), infos) ?? throw new IlUnsupportedException("Ctor:super", Sp(d), a.ToString());
-                    for (int i = 0; i < args.Count; i++) b.Emit(args[i], cand.Params[i]);
-                    il.EmitCall(cand.Alice!.Def);
-                }
-                else
-                {
-                    var bt = a.ClrBase ?? typeof(object);
-                    var infos = args.Select(x => new ArgInfo(b.Infer(x), null, false, "")).ToList();
-                    var cand = Types.Pick(bt.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Where(x => !x.IsPrivate).Select(x => IlTypes.FromClr(x)), infos)
-                        ?? throw new IlUnsupportedException("Ctor:super", Sp(d), bt.Name);
-                    for (int i = 0; i < args.Count; i++) b.Emit(args[i], cand.Params[i]);
-                    il.EmitCall(Types.Method(cand.Clr!));
-                }
-            }
-            else BaseDefaultCtor(a, il);
+            Passes(ref sbody, sam, ps);
+            new IlBody(this, sam.Owner, sam, Body(sam.Def), sam.Ret, sam.IsStatic, ps).Body(sbody);
+            FlushClosures();
+            EmitHelpers(shelpers);
         }
-        if (d != null && ctor.Sym != null)
-            for (int i = 0; i < ctor.Sym.Params.Count; i++)
-            {
-                var p = ctor.Sym.Params[i];
-                if (!p.Auto) continue;
-                var f = a.FindField(Bare(Binder.Mangle(p.Name))) ?? throw new IlUnsupportedException("Ctor:auto-field", Sp(d), p.Name);
-                il.EmitLoadArg(0);
-                il.EmitLoadArg(i + 1);
-                il.EmitStoreField(f.Field!);
-            }
     }
-
     void BaseDefaultCtor(AliceT a, IlBuilder il)
     {
         if (a.Base != null)
@@ -982,44 +910,6 @@ public sealed partial class AirToIl
         il.EmitCall(Types.Method(ci));
     }
 
-    void SyntheticCtor(AMethod ctor)
-    {
-        var a = ctor.Owner;
-        var il = Body(ctor.Def);
-        var b = new IlBody(this, a, ctor, il, typeof(void), false, ctor.ParamNames.Select((n, i) => (n, ctor.Params[i])).ToList());
-        if (recordCtors.TryGetValue(ctor, out var fields))
-        {
-            b.Body([], () =>
-            {
-                if (!a.IsValueType) { il.EmitLoadArg(0); BaseDefaultCtor(a, il); }
-                for (int i = 0; i < fields.Count; i++)
-                {
-                    il.EmitLoadArg(0);
-                    il.EmitLoadArg(i + 1);
-                    il.EmitStoreField(fields[i].Field!);
-                }
-            });
-            return;
-        }
-        b.Body([], () => CtorPrologue(b, ctor, null));
-    }
-
-    void StaticCtor(AliceT a, List<(MExpr? Value, AField F, string File)> inits)
-    {
-        var cctor = a.Def.DefineConstructor(MethodAttributes.Private | MethodAttributes.HideBySig, isStatic: true);
-        var il = Body(cctor);
-        var b = new IlBody(this, a, null, il, typeof(void), true, []);
-        b.Body([], () =>
-        {
-            foreach (var (v, f, file) in inits)
-            {
-                File = file;
-                if (v == null) continue;
-                b.Emit(v, f.Type);
-                il.EmitStoreField(f.Field!);
-            }
-        });
-    }
 }
 
 /// <summary>

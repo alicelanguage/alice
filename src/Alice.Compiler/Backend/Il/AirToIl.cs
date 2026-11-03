@@ -125,6 +125,7 @@ internal sealed partial class IlBody
     public Type Emit(MExpr e, Type? want)
     {
         if (want == null || want == typeof(void)) return Raw(e);
+        if (e is AirDelegateCreate dc) return MakeDelegate(dc, want);
         if (Literal(e, out var lit) && lit != null && IlTypes.IsNumeric(want) && IlTypes.LiteralFits(lit, want) && IlTypes.IsNumeric(LitType(e)))
         {
             Const(want, lit);
@@ -259,6 +260,13 @@ internal sealed partial class IlBody
                 }
             case AirRangeLength rl: return Raw(MathMax0(rl.Lo, rl.Hi, !rl.Exclusive));
             case AirPresizeCount pc: return Raw(MathMax0(pc.From, pc.To, pc.Inclusive));
+            case AirParGuard or AirReferenceEqualsGuard or AirParProbe or AirAlternateLookup or AirSpanSplit or AirRefOrAddDefault or AirRefOrNullRef:
+                return Raw(Spelled(e));
+            case AirPar p: return Raw(ParCall(p));                 // closure-converted kernels (AirToIl.Closures.cs)
+            case AirForkJoin fj: return Raw(ForkCall(fj));
+            case AirDisplayNew dn: return DisplayNew(dn);
+            case AirDisplayField df: return DisplayFieldLoad(df);
+            case AirDelegateCreate dc: return MakeDelegate(dc, LambdaType(dc) ?? throw No("Closure:untyped-lambda", dc.Method.Name));
             case AirForkable: return Member(new MMember { Target = new MCode("global::Alice.Runtime.Par"), Name = "Forkable" });
             case AirSeq sq:
                 foreach (var st in sq.Pre) Stmt(st);
@@ -276,6 +284,12 @@ internal sealed partial class IlBody
             case AirStackBuffer sb: return StackAlloc(T.Parse(sb.ElemCs, span), sb.Length);
         }
         if (RawExt(e) is { } xt) return xt; // H1 il-emit2
+        // nodes of the other IL partials (partial hooks in AirToIl.Helpers.cs); unimplemented hooks compile away
+        Type? ext = null;
+        RawArena(e, ref ext);
+        if (ext == null) RawCm(e, ref ext);
+        if (ext == null) RawDataflow(e, ref ext);
+        if (ext != null) return ext;
         throw No(Kind(e));
     }
 
@@ -401,6 +415,14 @@ internal sealed partial class IlBody
             return lt;
         }
         if (text is "default" or "default!") throw No("MCode:default-untyped");
+        if (CastLiteralText.Match(text) is { Success: true } cl)   // Syntax/Lexer: `((byte)105)`, `((float)0x1p3)`
+            return Raw(new MCast { TypeCs = cl.Groups[1].Value, E = new MCode(cl.Groups[2].Value), Span = node.Span });
+        if (UnsignedDivText.Match(text) is { Success: true } ud)   // Optimizer/InductionVariables: `(int)((uint)i % 17u)`
+            return Raw(new MCast
+            {
+                TypeCs = ud.Groups[1].Value, Span = node.Span,
+                E = new MBinary { Op = ud.Groups[4].Value == "%" ? AirBinOp.Mod : AirBinOp.Div, L = new MCast { TypeCs = ud.Groups[2].Value, E = new MCode(ud.Groups[3].Value) }, R = new MCode(ud.Groups[5].Value) },
+            });
         if (StackallocText.Match(text) is { Success: true } sm) return StackAlloc(T.Parse(sm.Groups[1].Value, span), int.Parse(sm.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture));
         if (text.EndsWith('!') && text.Length > 1) return Code(text[..^1], node);
         if (Implicit(text) is { } f) return LoadStaticOrThisMember(f);
@@ -424,22 +446,12 @@ internal sealed partial class IlBody
         return span;
     }
 
+    static readonly Regex CastLiteralText = new(@"^\(\((byte|sbyte|short|ushort|float|double)\)(-?[0-9][0-9A-Za-z_.+-]*)\)$", RegexOptions.Compiled);
+    static readonly Regex UnsignedDivText = new(@"^\((int|long)\)\(\((uint|ulong)\)([A-Za-z_][A-Za-z0-9_]*) ([%/]) ([0-9]+(?:u|UL))\)$", RegexOptions.Compiled);
     static readonly Regex StackallocText = new(@"^stackalloc\s+(.+)\[(\d+)\]$", RegexOptions.Compiled);
 
-    readonly Dictionary<string, MExpr?> reparsed = new(StringComparer.Ordinal);
-
-    /// <summary>C# text of a leaf as MIR: a member chain on a variable (`c.Length`, `this.x.y`) or a parsed expression.</summary>
-    MExpr? Reparse(string text)
-    {
-        if (DottedVar(text) is { } chain) return chain;
-        if (!reparsed.TryGetValue(text, out var e))
-        {
-            e = CsText.Parse(text, t => !IsVar(t) && T.TryParse(t) != null);
-            if (e is MCode mc && mc.Text == text) e = null;
-            reparsed[text] = e;
-        }
-        return e;
-    }
+    /// <summary>C# text of a leaf as MIR: a member chain on a variable (`c.Length`, `this.x.y`); the IR is text-free otherwise.</summary>
+    MExpr? Reparse(string text) => DottedVar(text);
 
     MExpr? DottedVar(string text)
     {
@@ -660,6 +672,7 @@ internal sealed partial class IlBody
     {
         switch (e)
         {
+            case AirDisplayField df: DisplayFieldAddress(df); return;
             case MCode or AirLocalRef:
                 {
                     string n = e is MCode mc ? mc.Text.Trim() : ((AirLocalRef)e).Name;
@@ -701,8 +714,39 @@ internal sealed partial class IlBody
     Type Index(MIndex ix)
     {
         var t = Infer(ix.Target);
+        // `xs[^n]` on a type without an Index indexer (List<T>): C# reads xs[xs.Count - n]; the target is a plain name
+        if (ix.Args is [MUnary { Op: AirUnOp.FromEnd } fe] && ix.Target is MCode or AirLocalRef or AirParamRef or AirFieldRef
+            && t.GetProperty("Item", [typeof(Index)]) == null && (t.GetProperty("Count") ?? t.GetProperty("Length")) is { } lenP && lenP.PropertyType == typeof(int))
+            return Index(new MIndex { Target = ix.Target, Span = ix.Span, Args = [new MBinary { Op = AirBinOp.Sub, L = new MMember { Target = ix.Target, Name = lenP.Name }, R = fe.E }] });
+        // `span[range]`: C# lowers it to Slice(range.GetOffsetAndLength(span.Length))
+        if (ix.Args is [var rg] && t.IsGenericType && (t.GetGenericTypeDefinition() == typeof(Span<>) || t.GetGenericTypeDefinition() == typeof(ReadOnlySpan<>))
+            && Infer(rg) == typeof(Range))
+        {
+            var sp = Temp(t);
+            Emit(ix.Target, t);
+            il.EmitStoreLocal(sp);
+            var r = Temp(typeof(Range));
+            Emit(rg, typeof(Range));
+            il.EmitStoreLocal(r);
+            var tu = Temp(typeof(ValueTuple<int, int>));
+            il.EmitLoadLocalAddress(r);
+            il.EmitLoadLocalAddress(sp);
+            il.EmitCall(T.Method(t.GetProperty("Length")!.GetGetMethod()!));
+            il.EmitCall(T.Method(typeof(Range).GetMethod("GetOffsetAndLength")!));
+            il.EmitStoreLocal(tu);
+            il.EmitLoadLocalAddress(sp);
+            il.EmitLoadLocal(tu);
+            il.EmitLoadField(T.Field(typeof(ValueTuple<int, int>).GetField("Item1")!));
+            il.EmitLoadLocal(tu);
+            il.EmitLoadField(T.Field(typeof(ValueTuple<int, int>).GetField("Item2")!));
+            il.EmitCall(T.Method(t.GetMethod("Slice", [typeof(int), typeof(int)])!));
+            return t;
+        }
         if (t.IsSZArray && ix.Args.Count == 1)
         {
+            Type? unc = null;
+            IndexLoadExt(ix, t, ref unc);   // il-opt: proven-in-bounds read
+            if (unc != null) return unc;
             var et = t.GetElementType()!;
             Raw(ix.Target);
             Emit(ix.Args[0], typeof(int));
@@ -1452,6 +1496,13 @@ internal sealed partial class IlBody
 
     Type Unary(MUnary u)
     {
+        if (u.Op == AirUnOp.FromEnd)   // `^n`: System.Index(n, fromEnd: true)
+        {
+            Emit(u.E, typeof(int));
+            il.EmitLoadConst(true);
+            il.EmitNewObj(T.Method(typeof(Index).GetConstructor([typeof(int), typeof(bool)])!));
+            return typeof(Index);
+        }
         switch (u.Op)
         {
             case AirUnOp.NotNull: return Raw(u.E);
