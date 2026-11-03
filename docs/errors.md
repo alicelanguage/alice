@@ -41,6 +41,7 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0247 | not CM-admissible (ADR 0039) | `cm for i in 0...n`<br>`  a[i] = a[i - 1] + 1` | `cannot lower \`cm for\`: ...` | write a scan, combine, compaction or permute shape, or use a plain `for` |
 | AL0248 | non-associative combine (ADR 0039) | `cm for ... h[k[i]] += x[i]` with Float64 `h` | `combine on floats needs \`ordered\`` | use integers, mark it `ordered`, or use a plain `for` |
 | AL0249 | unproven permutation (ADR 0039) | `cm for i ... out[p[i]] = a[i]` | `permutation \`p\` not provably in range and distinct` | produce `p` with `sort_by_key`/`compact`, or mark it `@[Permutation]` |
+| AL0250 | JSON mapping (ADR 0036 C2.5) | `JSON.parse(Int32, s)`; `record Bag(items : Set(Int32))` + `to_json(b)`; a variant field named `type` | `JSON mapping: ... needs an Alice record, class or enum` / `cannot map Bag to JSON: ...` / `variant Ev::Click has a field named \`type\`, which is the sum-type tag` | use `JSON.parse(text)` for JSON::Any, map arrays/hashes/nilables of mappable types, or rename the field |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 
 Codes marked *planned* are reserved by an accepted ADR and are not reported by the compiler yet. AL0222-AL0229 are unassigned (the

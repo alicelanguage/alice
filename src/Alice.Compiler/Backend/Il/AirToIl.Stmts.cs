@@ -857,7 +857,7 @@ internal sealed partial class IlBody
                 string pre = ma.Prefix.Trim();
                 if (pre.Contains(':')) throw No("MArg:named", ma.Prefix);
                 if (pre.StartsWith("out") && (pre.Length > 3 || ma.E is MCode { Text: "_" })) r.Add(new ArgInfo(typeof(void), null, false, "out var"));
-                else r.Add(new ArgInfo(Infer(ma.E), null, false, pre + " "));
+                else { var mt = Infer(ma.E); r.Add(new ArgInfo(mt.IsByRef ? mt.GetElementType()! : mt, null, false, pre + " ")); }   // a ref local passed on
                 continue;
             }
             if (IsNullLit(x) || IsDefaultLit(x) || IsMethodGroup(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }

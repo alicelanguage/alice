@@ -52,6 +52,11 @@
   JSON::Any sugar (as_i, dig, nil?, to_h ...); to_json and parse_json go through it (to_json keeps 1.0 and non-ASCII
   as Ruby does). JSONTestSuite 283/283 y_/n_ correct; forge, twitter: stage 1 5.2 GB/s, DOM 2.56 GB/s (3.4x
   JsonDocument), writer 2.4-1.5x Utf8JsonWriter (benchmarks/core/json/results.md).
+- core: typed JSON mapping under `--backend il` (ADR 0036 C2.5): the generated readers/writers are now typed AIR
+  helpers of the module (`__json_R<n>_T` / `__json_W<n>_T`, by-ref `JsonIterator`/`JsonWriter` parameters) instead of a
+  C#-only `__AliceJson` class, so the IL backend emits them like any other method; `JsonMap` gains the small by-ref
+  shims they call (TryNull, StartObject, NextProperty, Is, WriteName ...). Mapping errors are AL0250 (docs/errors.md),
+  including a variant field named `type` (the sum-type tag). JsonMappingTests runs the mapping on both backends.
 - Fuzzers (closing phase): a shared engine in `tests/Alice.Tests/Fuzz/Engine` (grammar generator `SyntaxGen`, corpus
   `Mutator`, typed generator `TypedGen`, `Oracles`, line/block delta-debugging `Minimizer`, triaged `Known.Issues`),
   a short deterministic seed set in `tests/Alice.Tests/Fuzz` (parser + fmt round trip, typed compile/Roslyn/check/
