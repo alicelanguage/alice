@@ -55,6 +55,7 @@ public sealed partial class AirToIl
         foreach (var t in synth.Types)
         {
             if (genericBySym.ContainsKey(t.Sym)) continue;   // declared per instance (DeclareInstance)
+            if (binder.Affine.IsArena(t.Sym)) continue;   // arena enums are term words (ADR 0037)
             var a = t.Sym == binder.Program ? ProgramT : Types.BySym.GetValueOrDefault(t.Sym)
                 ?? throw new IlUnsupportedException("Synth:type", null, t.Name);
             SynthDeclare(a, t);
