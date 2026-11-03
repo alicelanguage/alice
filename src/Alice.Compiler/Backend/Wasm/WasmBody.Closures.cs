@@ -130,6 +130,7 @@ public sealed partial class WasmBody
         MArg a => [a.E],
         AirSeq sq => [sq.Value],
         AirRent r => r.Args,
+        AirArenaExpr ae => ae.Children(),
         AirRelease r => [r.Target],
         AirLength l => [l.Target],
         AirOffset o => [o.Base, o.Offset],

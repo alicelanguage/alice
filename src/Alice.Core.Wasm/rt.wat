@@ -40,7 +40,8 @@
 
   ;; runtime area offsets: pagemap 0 (65536 bytes, one per 64 KiB page: 0 free/not heap, 1..18 small class,
   ;; 254 large head, 255 large continuation) | free heads 65536 | bump 65664 | bump end 65792 | class sizes 65920 |
-  ;; iov 66048 | stdout buffer 66064 (4096) | stderr buffer 70160 (1024) | mark stack 71184 (65536) | end 136720
+  ;; iov 66048 | stdout buffer 66064 (4096) | stderr buffer 70160 (1024) | mark stack 71184 (65536) |
+  ;; arena slabs 136720 (8 x 32: widths 1..7, entry 0 the region marks) | end 136976
 
   ;; ------------------------------------------------------------------ init
 
@@ -298,6 +299,7 @@
     (global.set $mark_overflow (i32.const 0))
     (call $mark_range (global.get $sp) (global.get $stack_top))
     (call $mark_range (global.get $statics_start) (global.get $statics_end))
+    (call $mark_range (i32.add (global.get $rt) (i32.const 136720)) (i32.add (global.get $rt) (i32.const 136976)))
     (call $mark_drain)
     (block $stable
       (loop $again
@@ -313,6 +315,139 @@
 
   (func $gc_count_get (result i32) (global.get $gc_count))
   (func $total_allocated (result i64) (global.get $total_alloc))
+
+  ;; ------------------------------------------------------------------ affine arena (ADR 0037)
+  ;; One slab per slot width w (1..7 words of 8 bytes), shared by every arena enum of that width, one lane (lane 0).
+  ;; Slab state at rt+136720+32w: +0 data (a noscan Array(UInt64): slot i at data+8+8wi, grown by doubling, so a
+  ;; slot index survives growth), +4 len (bump cursor), +8 capacity (slots), +12 free-list head (index+1, 0 none;
+  ;; the first word of a free slot holds the next head). Entry 0: +0 marks (Array(Int32), 14 words per open region:
+  ;; len and free of every width), +4 depth, +8 capacity (regions). The collector scans this table as roots.
+
+  (func $arena_state (param $w i32) (result i32)
+    (i32.add (i32.add (global.get $rt) (i32.const 136720)) (i32.shl (local.get $w) (i32.const 5))))
+
+  (func $arena_slot (param $w i32) (param $i i32) (result i32)
+    (i32.add (i32.add (i32.load (call $arena_state (local.get $w))) (i32.const 8))
+      (i32.shl (i32.mul (local.get $i) (local.get $w)) (i32.const 3))))
+
+  (func $arena_grow (param $s i32) (param $w i32)
+    (local $cap i32) (local $new i32) (local $old i32)
+    (local.set $cap (i32.load offset=8 (local.get $s)))
+    (local.set $cap (select (i32.shl (local.get $cap) (i32.const 1)) (i32.const 1024) (local.get $cap)))
+    (local.set $new (call $array_new (i32.mul (local.get $cap) (local.get $w)) (i32.const 8) (i32.const 2)))
+    (local.set $old (i32.load (local.get $s)))
+    (if (local.get $old)
+      (then
+        (memory.copy (i32.add (local.get $new) (i32.const 8)) (i32.add (local.get $old) (i32.const 8))
+          (i32.shl (i32.mul (i32.load offset=4 (local.get $s)) (local.get $w)) (i32.const 3)))))
+    (i32.store (local.get $s) (local.get $new))
+    (i32.store offset=8 (local.get $s) (local.get $cap)))
+
+  ;; a slot index: the free list first, else the bump cursor (the caller stores every word)
+  (func $arena_alloc (param $w i32) (result i32)
+    (local $s i32) (local $i i32) (local $f i32)
+    (local.set $s (call $arena_state (local.get $w)))
+    (local.set $f (i32.load offset=12 (local.get $s)))
+    (if (local.get $f)
+      (then
+        (local.set $i (i32.sub (local.get $f) (i32.const 1)))
+        (i32.store offset=12 (local.get $s) (i32.load (call $arena_slot (local.get $w) (local.get $i))))
+        (return (local.get $i))))
+    (local.set $i (i32.load offset=4 (local.get $s)))
+    (if (i32.ge_u (local.get $i) (i32.load offset=8 (local.get $s))) (then (call $arena_grow (local.get $s) (local.get $w))))
+    (i32.store offset=4 (local.get $s) (i32.add (local.get $i) (i32.const 1)))
+    (local.get $i))
+
+  (func $arena_free (param $w i32) (param $i i32)
+    (local $s i32)
+    (local.set $s (call $arena_state (local.get $w)))
+    (i64.store (call $arena_slot (local.get $w) (local.get $i)) (i64.extend_i32_u (i32.load offset=12 (local.get $s))))
+    (i32.store offset=12 (local.get $s) (i32.add (local.get $i) (i32.const 1))))
+
+  ;; Take / Borrow of a w-word slot: copies it to dst, then (frees) pushes it on the free list
+  (func $arena_read (param $w i32) (param $i i32) (param $dst i32) (param $frees i32)
+    (memory.copy (local.get $dst) (call $arena_slot (local.get $w) (local.get $i)) (i32.shl (local.get $w) (i32.const 3)))
+    (if (local.get $frees) (then (call $arena_free (local.get $w) (local.get $i)))))
+
+  (func $arena_read1 (param $i i32) (param $frees i32) (result i64)
+    (local $v i64)
+    (local.set $v (i64.load (call $arena_slot (i32.const 1) (local.get $i))))
+    (if (local.get $frees) (then (call $arena_free (i32.const 1) (local.get $i))))
+    (local.get $v))
+
+  ;; Drop: frees the slot of a term (a packed term is left alone). Words in mask that hold slot terms are dropped too,
+  ;; their subtrees with all; the last child is the next turn of the loop (no recursion along a spine).
+  (func $arena_drop (param $w i32) (param $t i64) (param $mask i32) (param $all i32)
+    (local $p i32) (local $k i32) (local $last i32) (local $v i64)
+    (loop $tail
+      (if (i32.and (i32.wrap_i64 (i64.shr_u (local.get $t) (i64.const 32))) (i32.const -2130706433)) (then (return)))
+      (local.set $p (call $arena_slot (local.get $w) (i32.wrap_i64 (local.get $t))))
+      (local.set $last (i32.const -1))
+      (local.set $k (i32.const 0))
+      (block $done
+        (loop $words
+          (br_if $done (i32.ge_u (local.get $k) (local.get $w)))
+          (local.set $v (i64.load (i32.add (local.get $p) (i32.shl (local.get $k) (i32.const 3)))))
+          (if (i32.and (i32.ne (i32.and (local.get $mask) (i32.shl (i32.const 1) (local.get $k))) (i32.const 0)) (i64.ge_s (local.get $v) (i64.const 0)))
+            (then
+              (if (i32.ge_s (local.get $last) (i32.const 0))
+                (then (call $arena_drop (local.get $w) (i64.load (i32.add (local.get $p) (i32.shl (local.get $last) (i32.const 3)))) (local.get $all) (local.get $all))))
+              (local.set $last (local.get $k))))
+          (local.set $k (i32.add (local.get $k) (i32.const 1)))
+          (br $words)))
+      (if (i32.ge_s (local.get $last) (i32.const 0))
+        (then (local.set $v (i64.load (i32.add (local.get $p) (i32.shl (local.get $last) (i32.const 3)))))))
+      (call $arena_free (local.get $w) (i32.wrap_i64 (local.get $t)))
+      (if (i32.lt_s (local.get $last) (i32.const 0)) (then (return)))
+      (local.set $t (local.get $v))
+      (local.set $mask (local.get $all))
+      (br $tail)))
+
+  ;; scope ... end: the cursor and free list of every width are saved, the free list starts empty; the end restores them
+  (func $arena_region_enter (result i32)
+    (local $m i32) (local $d i32) (local $cap i32) (local $new i32) (local $e i32) (local $w i32) (local $s i32)
+    (local.set $m (call $arena_state (i32.const 0)))
+    (local.set $d (i32.load offset=4 (local.get $m)))
+    (if (i32.ge_u (local.get $d) (i32.load offset=8 (local.get $m)))
+      (then
+        (local.set $cap (select (i32.shl (local.get $d) (i32.const 1)) (i32.const 16) (local.get $d)))
+        (local.set $new (call $array_new (i32.mul (local.get $cap) (i32.const 14)) (i32.const 4) (i32.const 2)))
+        (if (local.get $d)
+          (then (memory.copy (i32.add (local.get $new) (i32.const 8)) (i32.add (i32.load (local.get $m)) (i32.const 8)) (i32.mul (local.get $d) (i32.const 56)))))
+        (i32.store (local.get $m) (local.get $new))
+        (i32.store offset=8 (local.get $m) (local.get $cap))))
+    (local.set $e (i32.add (i32.add (i32.load (local.get $m)) (i32.const 8)) (i32.mul (local.get $d) (i32.const 56))))
+    (local.set $w (i32.const 1))
+    (block $done
+      (loop $each
+        (br_if $done (i32.gt_u (local.get $w) (i32.const 7)))
+        (local.set $s (call $arena_state (local.get $w)))
+        (i32.store (local.get $e) (i32.load offset=4 (local.get $s)))
+        (i32.store offset=4 (local.get $e) (i32.load offset=12 (local.get $s)))
+        (i32.store offset=12 (local.get $s) (i32.const 0))
+        (local.set $e (i32.add (local.get $e) (i32.const 8)))
+        (local.set $w (i32.add (local.get $w) (i32.const 1)))
+        (br $each)))
+    (i32.store offset=4 (local.get $m) (i32.add (local.get $d) (i32.const 1)))
+    (i32.add (local.get $d) (i32.const 1)))
+
+  (func $arena_region_end (param $r i32)
+    (local $m i32) (local $d i32) (local $e i32) (local $w i32) (local $s i32)
+    (if (i32.eqz (local.get $r)) (then (return)))
+    (local.set $m (call $arena_state (i32.const 0)))
+    (local.set $d (i32.sub (local.get $r) (i32.const 1)))
+    (local.set $e (i32.add (i32.add (i32.load (local.get $m)) (i32.const 8)) (i32.mul (local.get $d) (i32.const 56))))
+    (local.set $w (i32.const 1))
+    (block $done
+      (loop $each
+        (br_if $done (i32.gt_u (local.get $w) (i32.const 7)))
+        (local.set $s (call $arena_state (local.get $w)))
+        (i32.store offset=4 (local.get $s) (i32.load (local.get $e)))
+        (i32.store offset=12 (local.get $s) (i32.load offset=4 (local.get $e)))
+        (local.set $e (i32.add (local.get $e) (i32.const 8)))
+        (local.set $w (i32.add (local.get $w) (i32.const 1)))
+        (br $each)))
+    (i32.store offset=4 (local.get $m) (local.get $d)))
 
   ;; ------------------------------------------------------------------ shadow stack
 

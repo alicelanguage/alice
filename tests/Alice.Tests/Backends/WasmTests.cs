@@ -32,9 +32,9 @@ public class WasmTests(ITestOutputHelper output)
         return d!.FullName;
     }
 
-    static byte[] Wasm(IReadOnlyList<SourceFile> files)
+    static byte[] Wasm(IReadOnlyList<SourceFile> files, WasmOptions? options = null)
     {
-        var res = AirToWasm.Compile(files);
+        var res = AirToWasm.Compile(files, options);
         Assert.True(res.Ok, res.Stats + "\n" + string.Join("\n", res.Errors.Select(e => e.Message)));
         return res.Wasm!;
     }
@@ -114,6 +114,26 @@ public class WasmTests(ITestOutputHelper output)
     [InlineData("benchmarks/bend2/idiomatic/tree-radix.al", "6")]
     public void Benchmarks_run_identically_to_csharp(string file, string arg) =>
         Differential(AliceCompiler.LoadWithRequires([Path.Combine(Root(), file)]), arg);
+
+    /// <summary>Arena enums (ADR 0037) as linear-memory slab terms and as heap records print the same as C#, and the
+    /// arena module really uses the slabs.</summary>
+    [Theory]
+    [InlineData("benchmarks/bend2/alice/tree-radix.al", "6")]
+    [InlineData("benchmarks/bend2/alice/merkle.al", "6")]
+    [InlineData("benchmarks/bend2/alice/tree-bitonic.al", "6")]
+    [InlineData("benchmarks/bend2/alice/symreg.al", "6")]
+    public void Arena_and_records_agree_with_csharp(string file, string arg)
+    {
+        if (Node == null) return;
+        var files = AliceCompiler.LoadWithRequires([Path.Combine(Root(), file)]);
+        string cs = RunCs(files, arg);
+        var arena = Wasm(files, new WasmOptions { Arena = true });
+        var records = Wasm(files, new WasmOptions { Arena = false });
+        Assert.Contains("arena_alloc", System.Text.Encoding.UTF8.GetString(arena));
+        Assert.DoesNotContain("arena_alloc", System.Text.Encoding.UTF8.GetString(records));
+        Assert.Equal(cs, RunNode(arena, arg));
+        Assert.Equal(cs, RunNode(records, arg));
+    }
 
     /// <summary>Coverage over benchmarks/ (`WASM_CORPUS=1`; reports, never fails): files that compile, and the
     /// unsupported node kinds ranked.</summary>
