@@ -804,6 +804,52 @@ If the iterations are not provably independent (a write outside `a[i]` / `a[i * 
 read such as `a[i - 1]` of the written array, an impure call) it is compile error AL0209 rather than a silent
 serial loop.
 
+### Data-parallel loop shapes and `cm for` (ADR 0039)
+
+A counted loop `for i in 0...n` that `par for` cannot prove independent may still be one of the
+Connection-Machine communication shapes. The compiler recognizes them after the `par for` check and lowers
+them to the runtime kernels of `Alice.Runtime.Cm` (chunked by `n` only, vectorized, dispatched on the kernel
+pool, no GC allocation once warm):
+
+| Body (after pure body-local definitions) | Kernel |
+|---|---|
+| `acc = acc &+ e(i)` then `out[i] = acc` (also `&*`, `&`, `\|`, `^`; `out[i] = acc` first is exclusive) | scan |
+| `if f(i) then acc = 0 end` before such a scan | segmented scan |
+| one or more `h[k(i)] = h[k(i)] &+ v(i)` (`&+=`), each on its own table `h` not read in the loop | combine (histogram / scatter-add) |
+| `if c(i) then out[m] = xs[i]; m += 1 end`, `m` written only there | compaction |
+| `out[p[i]] = xs[i]` | permutation |
+
+Inference never changes a result: it takes integer scans and combines only with wrapping or bitwise operators
+(checked `+` could raise where a kernel wraps), Int32/UInt32/Int64/UInt64 elements (Float32/Float64 for
+compaction and permutation, which copy), at least 16,384 iterations, and it keeps the plain loop for every
+case a kernel cannot reproduce: aliasing arrays (checked at run time), a compaction whose counter does not start
+at 0 or whose destination is too short, a permutation with a repeated or out-of-range target (the loop then
+runs as written: the last write wins, or it raises), a key of the form `base + i` (distinct cells, not a
+combine). An element `e(i)` that is not a plain array read is materialized first by a map pass, which itself
+runs as an ordinary (possibly parallel) loop. `alice explain` lists the kernels a method uses.
+
+`cm for` makes a shape a requirement, at any trip count, and widens it:
+
+```crystal
+cm for i in 0...n                 # a float scan: chunked, the same bits for any core count
+  acc += xs[i]
+  pre[i] = acc
+end
+
+cm for j in 0...keys.size         # histogram: private tables merged in order
+  row[keys[j].clamp(0, 255)] += 1_u32
+end
+```
+
+- Float scans run with the fixed-chunking contract: chunks of `max(4096, n / 1024)` elements, so results are
+  bit-identical for any `DOTNET_PROCESSOR_COUNT` on the same machine, and may differ from the serial left fold in
+  the last bits. Write a plain `for` when the serial bit pattern matters.
+- Integer `+` and `*` in a `cm for` scan or combine wrap, like `&+` and `&*`.
+- A float combine is AL0248 unless written `cm ordered for`, which runs it in index order (the plain loop).
+- A permutation is AL0249: the compiler has no proof that `p` is a permutation (use a plain `for`, checked at
+  run time).
+- Any other body is AL0247, which names the statement that is not a shape.
+
 ### Declared effects and explicit forks (0.12.2)
 
 Inference stays the default. These modifiers let a program say what it wants, so the compiler optimizes

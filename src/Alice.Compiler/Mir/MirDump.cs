@@ -184,6 +184,7 @@ public sealed partial class MirDump
         if (CoreLower(e) is { } lo) return lo;
         if (CoreDyn(e) is { } dyn) return dyn;
         if (CoreIterators(e) is { } iter) return iter;
+        if (CoreCm(e) is { } cm) return cm;
         if (CoreParallel(e) is { } par) return par;
         if (CoreClosures(e) is { } clo) return clo;
         return "(" + e.GetType().Name + ")";

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- CM loop shapes (ADR 0039, P2.3): counted loops that are a scan, segmented scan, combine (histogram / scatter-add),
+  compaction or permutation lower to `Alice.Runtime.Cm` kernels in both backends (`Lowering/Lowerer.Cm.cs`, AIR nodes
+  in `Mir/MExpr.Cm.cs`, `Backend/Printer.Cm.cs`, `Backend/Il/AirToIl.Cm.cs`); inferred only where the result equals the
+  serial loop (wrapping/bitwise integer ops, 16K+ iterations, serial fallback otherwise). `cm for` / `cm ordered for`
+  require a shape (AL0247), float combines need `ordered` (AL0248), permutations a proof (AL0249). `alice explain`
+  rows; CM idiomatic programs in `benchmarks/bend2/idiomatic/cm/`, results in `benchmarks/bend2/results/cm.md`.
 - perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
   earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
   helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays
