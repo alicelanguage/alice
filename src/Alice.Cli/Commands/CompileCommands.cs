@@ -273,6 +273,10 @@ public static class CompileCommands
         return DotNet.Run(args, inherit: true).ExitCode;
     }
 
+    /// <summary>The runtimeconfig of a built executable: server GC (bounded heaps) when the program uses Alice.Runtime.Par.</summary>
+    static string RuntimeConfig(bool parallel) =>
+        "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":" + (parallel ? "true,\"System.GC.Gen0MaxBudget\":16777216,\"System.GC.HeapCount\":" + ServerHeaps : "false") + ",\"System.GC.Concurrent\":true}}}";
+
     public static int Build(List<string> a)
     {
         if (WasmTarget(a)) return WasmCommands.BuildAlice(a);   // ADR 0034: native wasm backend (runtime = "alice")
@@ -302,8 +306,7 @@ public static class CompileCommands
         File.Copy(rt, Path.Combine(dir, Path.GetFileName(rt)), true);
         foreach (var r in o.Refs) File.Copy(r, Path.Combine(dir, Path.GetFileName(r)), true);
         if (exe)
-            File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"),
-                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":" + (AliceCompiler.UsesParallel(cs) ? "true,\"System.GC.Gen0MaxBudget\":16777216,\"System.GC.HeapCount\":" + ServerHeaps : "false") + ",\"System.GC.Concurrent\":true}}}");
+            File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"), RuntimeConfig(AliceCompiler.UsesParallel(cs)));
         UiH.Status(T("finished"), dll);
         return 0;
     }
@@ -523,8 +526,8 @@ public static class CompileCommands
             File.WriteAllBytes(Path.Combine(dir, name + ".pdb"), res.Pdb!);
             var rt = typeof(Alice.Runtime.Prelude).Assembly.Location;
             File.Copy(rt, Path.Combine(dir, Path.GetFileName(rt)), true);
-            File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"),
-                "{\"runtimeOptions\":{\"tfm\":\"net" + Environment.Version.Major + ".0\",\"framework\":{\"name\":\"Microsoft.NETCore.App\",\"version\":\"" + Environment.Version.Major + ".0.0\"},\"configProperties\":{\"System.Runtime.TieredPGO\":true,\"System.GC.Server\":false,\"System.GC.Concurrent\":true}}}");
+            // the C# build's GC policy (server GC for parallel programs), so IL and C# images run alike
+            File.WriteAllText(Path.Combine(dir, name + ".runtimeconfig.json"), RuntimeConfig(AliceCompiler.UsesParallel(AliceCompiler.TranspileAll(files, o.Refs))));
             Console.Write(Alice.Compiler.Backend.Il.IlDisassembler.Disassemble(res.Module!));
             Console.Error.WriteLine("il: " + res.Stats + " -> " + Path.Combine(dir, name + ".dll"));
             return 0;
