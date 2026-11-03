@@ -162,12 +162,11 @@ public static class Known
     ];
 
     public static string? Match(Finding f) =>
-        Float32Rounding(f) ? "I1-il-float64-constant-in-float32" :
         Issues.FirstOrDefault(k => f.Category.StartsWith(k.Category, StringComparison.Ordinal) && k.Detail.IsMatch(f.Detail)
             && (k.Source == null || k.Source.IsMatch(f.Source))).Id;
 
-    /// <summary>I1: every line where the backends differ is the same Float64 rounded through Float32 on one side.</summary>
-    static bool Float32Rounding(Finding f)
+    /// <summary>I1 (fixed on main by fix-il, so no longer suppressed: a recurrence is a new finding): every line where the backends differ is the same Float64 rounded through Float32 on one side.</summary>
+    public static bool Float32Rounding(Finding f)
     {
         if (!f.Category.StartsWith("diff-il", StringComparison.Ordinal)) return false;
         int c = f.Detail.IndexOf("C# backend:\n", StringComparison.Ordinal), i = f.Detail.IndexOf("\nIL backend:\n", StringComparison.Ordinal);

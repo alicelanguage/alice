@@ -23,6 +23,12 @@ public static partial class Explain
         (new(@"\.(reserve|EnsureCapacity)\(global::System\.Math\.Max"), "collection presized for its fill loop"),
         (new(@"Vector(256|512|128)?<"), "SIMD"),
         (new(@"SuppressGCTransition"), "native call without GC transition"),
+        (new(@"Cm\.(Inclusive|Exclusive)Scan<(float|double)>"), "data-parallel scan over floats: fixed chunking by n, bit-identical for any core count, not the serial fold"),
+        (new(@"Cm\.(Inclusive|Exclusive)Scan<(int|uint|long|ulong)>"), "data-parallel scan (exact)"),
+        (new(@"Cm\.SegmentedScan<"), "data-parallel segmented scan"),
+        (new(@"Cm\.(Histogram|ScatterAdd)<"), "data-parallel histogram/combine: private tables up to 256 KiB merged in order, atomics above"),
+        (new(@"Cm\.Compact<"), "data-parallel compaction"),
+        (new(@"Cm\.Permute<"), "data-parallel permutation (checked at run time, the loop on a repeated target)"),
     ];
 
     [GeneratedRegex(@"^(?:(?:\[[^\n]*\]|#line[^\n]*)\n)*(?:public|private|internal)(?: static)?(?: unsafe)? [\w<>\[\]?, ().:]+ @?(\w+)\(", RegexOptions.Multiline)]

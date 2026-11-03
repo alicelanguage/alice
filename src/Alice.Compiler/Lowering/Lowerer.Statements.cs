@@ -259,10 +259,12 @@ public sealed partial class Lowerer
     {
         if (f.Await) return SerialFor(f);
         if (f.Gpu) return GpuFor(f);
+        if (f.Cm) return TryCmFor(f)!;   // ADR 0039: a CM shape or AL0247 (Lowerer.Cm.cs)
         if (f.Par)
             return TryParallelFor(f) ?? throw new CompileException($"{File}:{f.Line}:{Math.Max(1, f.Col)}: cannot parallelize `par for`: iterations are not provably independent (each may write only locals declared in the body, `a[i]` or `a[i * w + j]` at its own index, one `+=` reduction, and call only pure code)");
         if (TrySplitLoop(f) is MStmt split) return split;
         if (TryParallelFor(f) is MStmt par) return par;
+        if (TryCmFor(f) is MStmt cm) return cm;   // ADR 0039 inferred CM shapes (Lowerer.Cm.cs)
         return SerialFor(f);
     }
 

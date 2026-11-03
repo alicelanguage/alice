@@ -95,6 +95,7 @@ public sealed partial class Parser
             gf.Gpu = true;
             s = gf;
         }
+        else if (IsKw("cm") && Peek(1).Kind == "id" && (Peek(1).Text == "for" || Peek(1).Text == "ordered" && Peek(2).Text == "for")) { Next(); bool ord = IsKw("ordered") && Next() != null; var cf = For(); cf.Cm = true; cf.CmOrdered = ord; s = cf; }   // ADR 0039
         else if (IsKw("par") && Peek(1).Kind == "id" && Peek(1).Text == "for")
         {
             Next();

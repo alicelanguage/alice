@@ -41,6 +41,8 @@ public sealed record WasmOptions
     public string? SourceMapUrl { get; init; }
     /// <summary>Shadow stack bytes (struct locals, reference locals, frames).</summary>
     public int StackSize { get; init; } = 1 << 20;
+    /// <summary>Arena enums (ADR 0037) as slab terms; false keeps them heap records (as `ALICE_NO_ARENA=1`).</summary>
+    public bool Arena { get; init; } = Environment.GetEnvironmentVariable("ALICE_NO_ARENA") != "1";
 }
 
 /// <summary>The module bytes (null when a method was unsupported), the source map and the statistics.</summary>
@@ -75,7 +77,11 @@ public sealed partial class AirToWasm
     public static WasmCompileResult Compile(IReadOnlyList<SourceFile> files, WasmOptions? options = null)
     {
         var c = new AirToWasm(options ?? new WasmOptions());
-        return c.Run(files);
+        // ADR 0037 arena enums: u64 terms in linear-memory slabs (WasmBody.Arena.cs), or heap records with WasmOptions.Arena = false
+        var saved = AffinePlan.Disable;
+        AffinePlan.Disable = !c.Opt.Arena;
+        try { return c.Run(files); }
+        finally { AffinePlan.Disable = saved; }
     }
 
     /// <summary>The runtime sources (embedded from src/Alice.Core.Wasm, or read from the source tree in development).</summary>
@@ -193,7 +199,7 @@ public sealed partial class AirToWasm
     void FinishLayout()
     {
         int rt = (M.DataEnd + 15) & ~15;
-        int stackBase = rt + 136720;
+        int stackBase = rt + 136976;   // rt.wat: the end of the runtime area
         stackBase = (stackBase + 15) & ~15;
         int stackTop = stackBase + Opt.StackSize;
         int heap = (stackTop + 0xFFFF) & ~0xFFFF;

@@ -47,7 +47,7 @@ public class CompilerRegressionTests
         Assert.Equal("6\n", Run(src).Replace("\r\n", "\n"));
     }
 
-    [Fact]
+    [Fact]   // fuzz I1, fixed on main by fix-il
     public void I1_il_backend_folds_float64_constants_in_float64()
     {
         const string src = "puts 1.0 / 3.0\nputs -3.25 / 7.0\n";

@@ -116,6 +116,7 @@ public static class CompileCommands
 
     public static int RunCmd(List<string> a)
     {
+        if (WasmTarget(a)) return WasmCommands.RunAlice(a);   // ADR 0034: native wasm backend (runtime = "alice")
         string? backend = TakeOption(a, "--backend");
         if (backend is not (null or "csharp" or "il")) throw new UsageException($"unknown backend `{backend}`", "--backend il | csharp");
         var o = Parse(a);
@@ -146,6 +147,14 @@ public static class CompileCommands
     }
 
     /// <summary>`--name value` removed from the arguments (before the program arguments are collected).</summary>
+    /// <summary>`--target wasm32` / `wasm32-wasi` (removed from the arguments); any other target is a usage error.</summary>
+    static bool WasmTarget(List<string> a)
+    {
+        string? t = TakeOption(a, "--target");
+        if (t == null || WasmCommands.IsAliceTarget(t)) return t != null;
+        throw new UsageException($"unknown target `{t}`", "--target wasm32 | wasm32-wasi");
+    }
+
     static string? TakeOption(List<string> a, string name)
     {
         int i = a.IndexOf(name);
@@ -266,6 +275,7 @@ public static class CompileCommands
 
     public static int Build(List<string> a)
     {
+        if (WasmTarget(a)) return WasmCommands.BuildAlice(a);   // ADR 0034: native wasm backend (runtime = "alice")
         var o = Parse(a);
         if (o.Files.Count == 0)
         {

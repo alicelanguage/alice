@@ -115,6 +115,7 @@ public sealed partial class WasmBody
                     foreach (var s in sq.Pre) Stmt(s);
                     return Raw(sq.Value);
                 }
+            case AirArenaExpr ae: return Arena(ae);
             case AirRent r: return Rent(r);
             case AirRelease r:
                 {
@@ -335,13 +336,13 @@ public sealed partial class WasmBody
         }
         if (Literal(ac, out var v, out var lt) && v != null) { Const(lt, v); return lt; }
         // a narrow integer constant the lowering spells as a cast: `((byte)105)`
-        if (System.Text.RegularExpressions.Regex.Match(ac.Text, @"^\(*\((sbyte|byte|short|ushort|int|uint|long|ulong)\)(-?[0-9]+)\)*$") is { Success: true } cm)
+        if (System.Text.RegularExpressions.Regex.Match(ac.Text, @"^\(*(-?)\(*\((sbyte|byte|short|ushort|int|uint|long|ulong)\)(-?[0-9]+)\)*$") is { Success: true } cm)
         {
-            var ct = cm.Groups[1].Value switch
+            var ct = cm.Groups[2].Value switch
             {
                 "sbyte" => WT.I8, "byte" => WT.U8, "short" => WT.I16, "ushort" => WT.U16, "int" => WT.I32, "uint" => WT.U32, "long" => WT.I64, _ => WT.U64,
             };
-            Const(ct, ct.K == WK.U64 ? ulong.Parse(cm.Groups[2].Value, CultureInfo.InvariantCulture) : long.Parse(cm.Groups[2].Value, CultureInfo.InvariantCulture));
+            Const(ct, ct.K == WK.U64 ? ulong.Parse(cm.Groups[3].Value, CultureInfo.InvariantCulture) : (cm.Groups[1].Value == "-" ? -1 : 1) * long.Parse(cm.Groups[3].Value, CultureInfo.InvariantCulture));
             return ct;
         }
         throw No("AirConst", ac.Text);

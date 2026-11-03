@@ -48,3 +48,23 @@ for p in nbody queens editdist; do alice build --target wasm32 $p.al; done
 for p in nbody queens editdist; do diff <(node $p.mjs) <(alice run $p.al 2>/dev/null); done
 ALICE_TTFC=1 node nbody.mjs 2>&1 >/dev/null
 ```
+
+## Arena enums (ADR 0037)
+
+Arena sum types are u64 terms in linear-memory slabs (src/Alice.Compiler/Backend/Wasm/WasmBody.Arena.cs, the arena
+section of rt.wat): one slab per slot width shared by every arena enum of that width, one lane, a free list
+threaded through freed slots, bump allocation with doubling growth (slot indices survive it), recursive Drop that
+loops along the last child, and regions that save and restore every cursor. `ALICE_NO_ARENA=1` (or
+`WasmOptions.Arena = false`) keeps them heap records.
+
+Default sizes, Node 26, median of 3 wall-clock runs (2026-11-03). Output identical to `alice run` in both modes.
+Alloc and Take/Borrow are inline (free-list pop or bump, word copies, free-list push); growth, Drop and regions
+call rt.wat. The stale check (slot index below the cursor) is emitted unless the slab is proven live, as in the IL
+backend; Drop always checks.
+
+    program      arena .wasm   records .wasm   arena     records   .NET 1 core
+    tree-radix   12 439 B      12 415 B        16.8 s    20.6 s    17.4 s
+    merkle       17 216 B      17 205 B        13.3 s    12.9 s    10.2 s
+
+tree-radix is 18% faster with the arena. merkle is 3% slower (13.3 s against 12.9 s; it was 9% slower when Alloc and
+Take were calls into rt.wat). The remaining gap is not measured further.

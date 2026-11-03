@@ -6,7 +6,7 @@ public sealed partial class Binder
 {
     static readonly HashSet<string> Special = new() { "to_s", "class", "respond_to?", "send" };
 
-    AType BindCall(CallExpr c)
+    AType BindCallUnmapped(CallExpr c)
     {
         if (c.Recv == null) return BindSelfCall(c);
         if (c.Name == "new" && GenericPathNew(c) is NewExpr ne)

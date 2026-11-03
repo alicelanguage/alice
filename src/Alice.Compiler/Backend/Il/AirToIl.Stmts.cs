@@ -596,6 +596,31 @@ internal sealed partial class IlBody
         bool chk = nodeChecked && Checked;
         switch (target)
         {
+            case AirDisplayField df: DisplayFieldStore(df, op, value, nodeChecked); return;
+            case AirRefOrAddDefault or AirRefOrNullRef or MCall { Name: "GetValueRefOrAddDefault" or "GetValueRefOrNullRef" }:
+                {
+                    // `CollectionsMarshal.GetValueRefOrAddDefault(d, k, out _) += v`: through the returned reference
+                    var bt = Call(target as MCall ?? (MCall)Spelled(target), keepRef: true);
+                    if (!bt.IsByRef) throw No("MAssign:ref-call", bt.Name);
+                    var el = bt.GetElementType()!;
+                    if (compound)
+                    {
+                        il.Emit(ILOpCode.Dup);
+                        il.EmitLoadObj(T.Il(el));
+                        Emit(value, el);
+                        bool ovf = chk && IlTypes.IsIntegral(el), un = IlTypes.IsUnsigned(el);
+                        il.Emit(CompoundOp(op, this) switch
+                        {
+                            AirBinOp.Add => ovf ? (un ? ILOpCode.Add_ovf_un : ILOpCode.Add_ovf) : ILOpCode.Add,
+                            AirBinOp.Sub => ovf ? (un ? ILOpCode.Sub_ovf_un : ILOpCode.Sub_ovf) : ILOpCode.Sub,
+                            AirBinOp.Mul => ovf ? (un ? ILOpCode.Mul_ovf_un : ILOpCode.Mul_ovf) : ILOpCode.Mul,
+                            _ => throw No("MAssign:ref-call-op", op),
+                        });
+                    }
+                    else Emit(value, el);
+                    il.EmitStoreObj(T.Il(el));
+                    return;
+                }
             case MCode or AirLocalRef:
                 {
                     string name = (target is MCode mc ? mc.Text : ((AirLocalRef)target).Name).Trim();
@@ -626,6 +651,7 @@ internal sealed partial class IlBody
                     }
                     var rt = Infer(m.Target);
                     string name = Bare(m.Name);
+                    if (EventAssign(m, rt, name, op, value)) return;   // D1.10 il-emit2
                     if (T.Alice(rt)?.FindField(name) is { IsStatic: false } af)
                     {
                         Receiver(m.Target, rt);
@@ -662,6 +688,9 @@ internal sealed partial class IlBody
                     var at = Infer(ix.Target);
                     if (at.IsSZArray && ix.Args.Count == 1)
                     {
+                        bool unc = false;
+                        IndexStoreExt(ix, at, op, value, nodeChecked, ref unc);   // il-opt: proven-in-bounds write
+                        if (unc) return;
                         var et = at.GetElementType()!;
                         var iet = T.Il(et);
                         if (compound || et.IsValueType && !IlTypes.IsNumeric(et) && et != typeof(bool) && !et.IsEnum && !et.IsPointer)
@@ -831,8 +860,15 @@ internal sealed partial class IlBody
                 else r.Add(new ArgInfo(Infer(ma.E), null, false, pre + " "));
                 continue;
             }
-            if (IsNullLit(x) || IsDefaultLit(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }
+            if (IsNullLit(x) || IsDefaultLit(x) || IsMethodGroup(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }
             if (x is MLambda) throw No("MLambda");
+            if (x is AirDelegateCreate dc)
+            {
+                PrepareDisplay(dc.Target);
+                T.LambdaReturn = LambdaReturn;
+                r.Add(new ArgInfo(IlTypes.LambdaArg, dc, false, ""));
+                continue;
+            }
             Literal(x, out var lit);
             r.Add(new ArgInfo(Infer(x), lit, false, ""));
         }
@@ -914,6 +950,7 @@ internal sealed partial class IlBody
         if (call.Target == null)
         {
             foreach (var m in owner.FindMethods(name)) if (m.IsStatic || !isStatic) cands.Add(IlTypes.FromAlice(m));
+            if (owner.Host is { } host) cands.AddRange(host.FindMethods(name).Where(m => m.IsStatic).Select(IlTypes.FromAlice));
             for (var o = owner.Sym.Parent; o != null; o = o.Parent)
                 if (T.BySym.TryGetValue(o, out var ot)) cands.AddRange(ot.FindMethods(name).Where(m => m.IsStatic).Select(IlTypes.FromAlice));
             pick = T.Pick(cands, infos);

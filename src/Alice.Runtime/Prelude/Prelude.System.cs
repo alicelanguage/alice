@@ -23,12 +23,9 @@ public static partial class Prelude
     /// </summary>
     public static string to_json<T>(T value) => JSON.generate(value);
 
-    /// <summary>Parses with Alice.Core.Json (RFC 8259 strict) and returns a mutable JsonNode tree.</summary>
-    public static JsonNode parse_json(string text)
-    {
-        using var doc = Alice.Core.Json.JsonDocument.Parse(text);
-        return Stj.ToJsonNode(doc.Root) ?? throw new FormatException("JSON null is not a document");
-    }
+    /// <summary>Parses with Alice.Core.Json (RFC 8259 strict): the same `JSON::Any` as <see cref="JSON.parse(string)"/>
+    /// (for System.Text.Json APIs: <c>any.ToJsonElement()</c>).</summary>
+    public static JsonAny parse_json(string text) => JSON.parse(text);
 
     /// <summary>Writes the Ruby shape of <paramref name="v"/> (to_json / JSON.generate).</summary>
     internal static void WriteJsonValue(ref JsonWriter w, object? v)
@@ -98,7 +95,7 @@ public static class JSON
 }
 
 /// <summary>Alice spellings on `JSON::Any` (Prelude sugar over the .NET-named members of <see cref="JsonAny"/>).</summary>
-public static class JsonAnyRuby
+public static partial class Prelude   // in Prelude so the binder sees these extensions (Builtins.ExtNames): paren-less any.as_i
 {
     /// <summary>`as_i`: Int64 (exact integers only).</summary>
     public static long as_i(this JsonAny v) => v.GetInt64();

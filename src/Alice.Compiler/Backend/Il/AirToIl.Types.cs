@@ -27,20 +27,35 @@ public sealed class IlUnsupportedException : Exception
 
 /// <summary>An Alice-declared type in the IL module: its TypeDef, the reflection stand-in used for typing
 /// (<see cref="Proxy"/>: generic instantiations, arrays and base-class chains work through reflection) and members.</summary>
+/// <summary>The type parameters of a generic type or method instance in scope (monomorphization).</summary>
+internal sealed class TypeScope
+{
+    static int next;
+    public readonly int Id = Interlocked.Increment(ref next);
+    public readonly Dictionary<string, Type> Map;
+    public TypeScope(Dictionary<string, Type> map) => Map = map;
+}
+
 internal sealed class AliceT
 {
     public TypeSym Sym = null!;
+    public TypeScope? Scope;             // a generic type's instance: T -> concrete
+    public AliceT? GenericDef;
+    public Type[] TypeArgs = [];
     public IlTypeDef Def = null!;
     public Type Proxy = null!;
     public AliceT? Base;
     public Type? ClrBase;
-    public bool IsValueType, IsInterface, IsEnum, IsStatic, IsRecord, IsAdt, IsVariant;
+    /// <summary>A closure display: the type whose method it was converted from (free calls resolve there).</summary>
+    public AliceT? Host;
+    public bool IsValueType, IsInterface, IsEnum, IsStatic, IsRecord, IsAdt, IsVariant, IsDelegate, IsRefStruct;
     public Type? EnumUnderlying;
+    public readonly Dictionary<TypeSym, AliceT> InstVariants = new();   // a generic sum type's instance: its nested variants
     public readonly Dictionary<string, AField> Fields = new(StringComparer.Ordinal);
     public readonly List<AMethod> Methods = [];
     public readonly List<AMethod> Ctors = [];
     public IlType Il => Def.Type;
-    public override string ToString() => Sym.Type.Cs;
+    public override string ToString() => Host != null ? Host + "/" + Def.Name : Sym.Type.Cs;
 
     public AField? FindField(string name)
     {
@@ -67,6 +82,7 @@ internal sealed class AField
     public AliceT Owner = null!;
     public IlFieldDef? Field;            // the storage (backing field of a property)
     public IlMethodDef? Getter, Setter;  // property accessors (null: plain field)
+    public IlMethodDef? Adder, Remover;  // event accessors (the field is the delegate storage)
     public object? Literal;              // enum member value
     public bool ReadOnly;
 }
@@ -86,6 +102,8 @@ internal sealed class AMethod
     public MethodSym? Sym;
     public Instance? Inst;
     public Syntax.MethodDecl? Decl;
+    public TypeScope? Scope;             // the type parameters in scope (owner instance, own instance)
+    public Type[]? GenericParams;        // a generic method template: its type parameters (stand-ins, never emitted)
     public override string ToString() => Owner + "::" + Name;
 }
 
@@ -108,6 +126,12 @@ internal sealed class IlTypes
     public readonly Dictionary<TypeSym, AliceT> BySym = new();
     public readonly List<string> Usings = [.. ClrTypes.DefaultNamespaces];
 
+    // monomorphization (AirToIl.Generics.cs): type parameter names -> concrete types while a generic body or declaration is processed
+    public TypeScope? Scope;
+    public readonly Dictionary<string, AliceT> GenericDefs = new(StringComparer.Ordinal);   // "Name`arity" -> generic type definition
+    public Func<AliceT, Type[], AliceT>? InstantiateType;
+    public Func<AMethod, Type[], AMethod?>? InstantiateMethod;
+
     public IlTypes(Binder binder, IlModule module)
     {
         this.binder = binder;
@@ -119,6 +143,38 @@ internal sealed class IlTypes
     // ------------------------------------------------------------------ proxies
 
     int pn;
+
+    /// <summary>The reflection stand-in of a closure display class (AirToIl.Closures.cs).</summary>
+    public Type MakeDisplayProxy(AliceT a)
+    {
+        var t = proxies.DefineType("P" + pn++ + "_display", TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.Class).CreateType();
+        ByProxy[t] = a;
+        return t;
+    }
+
+    /// <summary>The argument type of a lambda (an <see cref="AirDelegateCreate"/> in <see cref="ArgInfo.Literal"/>): it
+    /// converts to any delegate of its arity; its result type is inferred through <see cref="LambdaReturn"/>.</summary>
+    public static readonly Type LambdaArg = typeof(LambdaMarker);
+    sealed class LambdaMarker { }
+
+    /// <summary>Set by the body resolving a call: the result type of a lambda argument for given parameter types.</summary>
+    public Func<object, Type[], Type?>? LambdaReturn;
+
+    static bool IsDelegate(Type t) => typeof(Delegate).IsAssignableFrom(t) && t != typeof(Delegate) && t != typeof(MulticastDelegate);
+
+    /// <summary><paramref name="t"/> with the method generic parameters replaced by <paramref name="bound"/> (null: unbound).</summary>
+    static Type? Subst(Type t, Type?[] bound)
+    {
+        if (t.IsGenericParameter) return t.DeclaringMethod != null ? bound[t.GenericParameterPosition] : null;
+        if (t.IsByRef) return Subst(t.GetElementType()!, bound)?.MakeByRefType();
+        if (t.IsArray) return Subst(t.GetElementType()!, bound) is { } e ? (t.IsSZArray ? e.MakeArrayType() : e.MakeArrayType(t.GetArrayRank())) : null;
+        if (t.IsGenericType && t.ContainsGenericParameters)
+        {
+            var args = t.GetGenericArguments().Select(a => Subst(a, bound)).ToArray();
+            return args.Any(a => a == null) ? null : t.GetGenericTypeDefinition().MakeGenericType(args!);
+        }
+        return t;
+    }
 
     /// <summary>The reflection stand-in of an Alice type: a class (with the Alice base chain), struct or enum.</summary>
     public Type MakeProxy(AliceT a, Type? parent, IReadOnlyList<(string Name, object Value)>? enumValues)
@@ -144,6 +200,20 @@ internal sealed class IlTypes
         return t;
     }
 
+    /// <summary>The reflection stand-in of an Alice delegate type: a sealed MulticastDelegate with the runtime-implemented
+    /// constructor and Invoke, so overload resolution and conversions see a real delegate.</summary>
+    public Type MakeDelegateProxy(AliceT a, Type ret, Type[] ps)
+    {
+        var tb = proxies.DefineType("P" + pn++ + "_" + a.Sym.Name, TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.Class, typeof(MulticastDelegate));
+        var ctor = tb.DefineConstructor(MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.RTSpecialName | MethodAttributes.SpecialName, CallingConventions.Standard, [typeof(object), typeof(IntPtr)]);
+        ctor.SetImplementationFlags(MethodImplAttributes.Runtime | MethodImplAttributes.Managed);
+        var inv = tb.DefineMethod("Invoke", MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Virtual, ret, ps);
+        inv.SetImplementationFlags(MethodImplAttributes.Runtime | MethodImplAttributes.Managed);
+        var t = tb.CreateType();
+        ByProxy[t] = a;
+        return t;
+    }
+
     public AliceT? Alice(Type t) => ByProxy.GetValueOrDefault(t);
 
     public bool HasProxy(Type t) =>
@@ -164,11 +234,13 @@ internal sealed class IlTypes
     public Type? TryParse(string cs)
     {
         cs = cs.Trim();
-        if (cache.TryGetValue(cs, out var hit)) return hit;
+        var scope = Scope;
+        string key = scope == null ? cs : scope.Id + "|" + cs;
+        if (cache.TryGetValue(key, out var hit)) return hit;
         Type? r;
         try { r = ParseCore(cs); }
         catch (ArgumentException) { r = null; }
-        return cache[cs] = r;
+        return cache[key] = r;
     }
 
     Type? ParseCore(string cs)
@@ -194,6 +266,7 @@ internal sealed class IlTypes
             return Type.GetType("System.ValueTuple`" + items.Count)!.MakeGenericType(items.ToArray()!);
         }
         if (Keywords.TryGetValue(cs, out var k)) return k;
+        if (Scope != null && Scope.Map.TryGetValue(cs, out var tp)) return tp;
         if (ByCs.TryGetValue(cs, out var at)) return at.Proxy;
         string bare = cs.StartsWith("global::") ? cs[8..] : cs;
         if (ByCs.TryGetValue(bare, out var at2)) return at2.Proxy;
@@ -210,6 +283,7 @@ internal sealed class IlTypes
         {
             var args = SplitTop(bare[(lt + 1)..^1]).Select(TryParse).ToList();
             if (args.Any(a => a == null)) return null;
+            if (GenericDefs.TryGetValue(bare[..lt] + "`" + args.Count, out var gdef)) return InstantiateType!(gdef, args.ToArray()!).Proxy;
             var open = binder.Clr.Find(bare[..lt], args.Count, Usings);
             return open?.MakeGenericType(args.ToArray()!);
         }
@@ -562,6 +636,8 @@ internal sealed class IlTypes
     {
         if (a.Prefix.StartsWith("out") || a.Prefix.StartsWith("ref") || a.Prefix.StartsWith("in "))
             return pt.IsByRef && (a.Prefix.StartsWith("out var") || pt.GetElementType() == a.Type) ? 6 : int.MinValue;
+        if (a.Type == LambdaArg)
+            return IsDelegate(pt) && a.Literal is AirDelegateCreate dc && pt.GetMethod("Invoke")?.GetParameters().Length == dc.Method.Params.Count ? 4 : int.MinValue;
         if (pt.IsByRef)
         {
             var el = pt.GetElementType()!;   // `in` parameter: the argument is passed by reference implicitly
@@ -629,6 +705,15 @@ internal sealed class IlTypes
     /// defaulted, `params` arrays expanded.</summary>
     IEnumerable<Cand> Expand(Cand c, IReadOnlyList<ArgInfo> args)
     {
+        if (c.Alice is { GenericParams: { } tps } template)
+        {
+            // an Alice generic method: infer its type arguments like a CLR one, then use the monomorphic instance
+            var bound = new Type?[tps.Length];
+            for (int i = 0; i < Math.Min(c.Params.Length, args.Count); i++)
+                if (!args[i].IsNull) Unify(c.Params[i], args[i].Type, bound);
+            if (bound.Any(b => b == null) || InstantiateMethod!(template, bound!) is not { } inst) yield break;
+            c = c with { Alice = inst, Params = inst.Params, Ret = inst.Ret };
+        }
         if (c.Clr is MethodInfo { IsGenericMethodDefinition: true } gm)
         {
             var ps0 = gm.GetParameters();
@@ -636,12 +721,22 @@ internal sealed class IlTypes
             int k = c.Extension ? 0 : 0;
             for (int i = 0; i < Math.Min(ps0.Length, args.Count); i++)
             {
-                if (args[i].IsNull) continue;
+                if (args[i].IsNull || args[i].Type == LambdaArg) continue;
                 var pt = ps0[i].ParameterType;
                 if (ps0[i].IsDefined(typeof(ParamArrayAttribute)) && pt.IsArray && !(args[i].Type.IsArray && args.Count == ps0.Length)) pt = pt.GetElementType()!;
                 Unify(pt, args[i].Type, bound);
             }
             _ = k;
+            // generic parameters only a lambda's result binds (`par_sum<T, R>(T[], Func<T, R>)`)
+            for (int i = 0; i < Math.Min(ps0.Length, args.Count) && bound.Any(b => b == null) && LambdaReturn != null; i++)
+            {
+                if (args[i].Type != LambdaArg || !IsDelegate(ps0[i].ParameterType)) continue;
+                var inv = ps0[i].ParameterType.GetMethod("Invoke");
+                if (inv == null || !inv.ReturnType.ContainsGenericParameters) continue;
+                var lps = inv.GetParameters().Select(p => Subst(p.ParameterType, bound)).ToArray();
+                if (lps.Any(p => p == null)) continue;
+                if (LambdaReturn(args[i].Literal!, lps!) is { } r && r != typeof(void)) Unify(inv.ReturnType, r, bound);
+            }
             if (bound.Any(b => b == null)) yield break;
             MethodInfo closed;
             try { closed = gm.MakeGenericMethod(bound!); }

@@ -885,6 +885,52 @@ If the iterations are not provably independent (a write outside `a[i]` / `a[i * 
 read such as `a[i - 1]` of the written array, an impure call) it is compile error AL0209 rather than a silent
 serial loop.
 
+### Data-parallel loop shapes and `cm for` (ADR 0039)
+
+A counted loop `for i in 0...n` that `par for` cannot prove independent may still be one of the
+Connection-Machine communication shapes. The compiler recognizes them after the `par for` check and lowers
+them to the runtime kernels of `Alice.Runtime.Cm` (chunked by `n` only, vectorized, dispatched on the kernel
+pool, no GC allocation once warm):
+
+| Body (after pure body-local definitions) | Kernel |
+|---|---|
+| `acc = acc &+ e(i)` then `out[i] = acc` (also `&*`, `&`, `\|`, `^`; `out[i] = acc` first is exclusive) | scan |
+| `if f(i) then acc = 0 end` before such a scan | segmented scan |
+| one or more `h[k(i)] = h[k(i)] &+ v(i)` (`&+=`), each on its own table `h` not read in the loop | combine (histogram / scatter-add) |
+| `if c(i) then out[m] = xs[i]; m += 1 end`, `m` written only there | compaction |
+| `out[p[i]] = xs[i]` | permutation |
+
+Inference never changes a result: it takes integer scans and combines only with wrapping or bitwise operators
+(checked `+` could raise where a kernel wraps), Int32/UInt32/Int64/UInt64 elements (Float32/Float64 for
+compaction and permutation, which copy), at least 16,384 iterations, and it keeps the plain loop for every
+case a kernel cannot reproduce: aliasing arrays (checked at run time), a compaction whose counter does not start
+at 0 or whose destination is too short, a permutation with a repeated or out-of-range target (the loop then
+runs as written: the last write wins, or it raises), a key of the form `base + i` (distinct cells, not a
+combine). An element `e(i)` that is not a plain array read is materialized first by a map pass, which itself
+runs as an ordinary (possibly parallel) loop. `alice explain` lists the kernels a method uses.
+
+`cm for` makes a shape a requirement, at any trip count, and widens it:
+
+```crystal
+cm for i in 0...n                 # a float scan: chunked, the same bits for any core count
+  acc += xs[i]
+  pre[i] = acc
+end
+
+cm for j in 0...keys.size         # histogram: private tables merged in order
+  row[keys[j].clamp(0, 255)] += 1_u32
+end
+```
+
+- Float scans run with the fixed-chunking contract: chunks of `max(4096, n / 1024)` elements, so results are
+  bit-identical for any `DOTNET_PROCESSOR_COUNT` on the same machine, and may differ from the serial left fold in
+  the last bits. Write a plain `for` when the serial bit pattern matters.
+- Integer `+` and `*` in a `cm for` scan or combine wrap, like `&+` and `&*`.
+- A float combine is AL0248 unless written `cm ordered for`, which runs it in index order (the plain loop).
+- A permutation is AL0249: the compiler has no proof that `p` is a permutation (use a plain `for`, checked at
+  run time).
+- Any other body is AL0247, which names the statement that is not a shape.
+
 ### Declared effects and explicit forks (0.12.2)
 
 Inference stays the default. These modifiers let a program say what it wants, so the compiler optimizes
@@ -1067,7 +1113,7 @@ Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
 | Int / Float | `gcd lcm digits divmod clamp between? round(n) floor(n) ceil(n) abs even? odd? zero? positive? negative? times upto downto step(limit, by) to_s(base) sqrt cbrt log log2 log10 truncate nan? infinite? finite? fdiv sign tdiv remainder popcount leading_zeros_count trailing_zeros_count bit_length to_i8..to_u64 to_i32 to_f64 to_f32 (checked) to_X! (wrapping)` |
 | Range | Enumerable methods plus `step size include? cover? to_a sum`; `("a".."e")` and `('a'..'d')` iterate with `succ`; a Range of another Comparable (`(1.0..2.0)`, dates) has `include? includes? cover? step(Float64)` and raises when iterated; `reverse_each` and `Int#step(limit, by)` without a block return an `IEnumerable` |
 | Free functions | `puts print p gets rand exit format(fmt, ...) read_file write_file file_exists? read_lines sleep(sec) now env(name) to_json(obj) parse_json(text)`; `p a, b` (returns the array), `p nil`, `pp`, `at_exit { }` (last registered runs first, also on `exit`) |
-| JSON (`Alice.Core.Json`, ADR 0036) | `JSON.parse(text)` (RFC 8259 strict; `JSON.parse(text, true)` also accepts `//` and `/* */` comments) returns `JSON::Any` (`JsonAny`): `any["key"]`, `any[0]`, `any[-1]` (missing key or index: an undefined value, `nil?` is true), `dig("a", 0, "b")`, `as_i as_f as_s as_bool as_a as_h nil? size keys each each_pair to_h to_a to_json`; integers are Int64, then UInt64, then Float64 on overflow; duplicate keys: the last wins. `JSON.generate(obj)` / `to_json(obj)` and `JSON.pretty_generate(obj)` write Ruby's shape (`1.0` stays `1.0`, only `"`, `\` and control characters are escaped). `parse_json(text)` parses with the same engine and returns a `JsonNode` tree. C# API: `JsonDocument.Parse`, `JsonIterator` (on-demand), `JsonWriter`, `JsonMap` (mapping pieces for generated `from_json`/`to_json`) |
+| JSON (`Alice.Core.Json`, ADR 0036) | `JSON.parse(text)` (RFC 8259 strict; `JSON.parse(text, true)` also accepts `//` and `/* */` comments) returns `JSON::Any` (`JsonAny`): `any["key"]`, `any[0]`, `any[-1]` (missing key or index: an undefined value, `nil?` is true), `dig("a", 0, "b")`, `as_i as_f as_s as_bool as_a as_h nil? size keys each each_pair to_h to_a to_json`; integers are Int64, then UInt64, then Float64 on overflow; duplicate keys: the last wins. `JSON.generate(obj)` / `to_json(obj)` and `JSON.pretty_generate(obj)` write Ruby's shape (`1.0` stays `1.0`, only `"`, `\` and control characters are escaped). Typed (C2.5, no reflection): `JSON.parse(Point, s)`, `JSON.parse<Array(Shape)>(s)`, `Point.from_json(s)`, `to_json(p)` / `p.to_json` / `JSON.generate(p)` / `JSON.pretty_generate(p)` on records, classes (public properties, built through the matching `initialize`), sum types (`{"type":"Circle","r":1.0}`), plain enums (member name), nil-able values, `Array`, `List`, `Hash(String, V)`; unknown fields are skipped, a missing non-nil-able field raises `JsonParseException`, other field types are a compile error. `parse_json(text)` returns `JSON::Any`. C# API: `JsonDocument.Parse`, `JsonIterator` (on-demand), `JsonWriter`, `JsonMap` (mapping pieces for generated `from_json`/`to_json`) |
 | Globals | `ENV` (a `Hash(String, String)` of the environment; `ENV[k] = v` also sets the process variable), `STDOUT STDERR STDIN` (`puts print write flush gets read read_lines each_line`) |
 | Range | Enumerable methods plus `step size include? cover? to_a sum` |
 | Array (CM, parallel) | `prefix_sum` `scan{\|a,b\|}` (associative block; one call per element, slower than `prefix_sum`) `segmented_sum(flags)` (one sum per segment) `segmented_prefix_sum(flags)` `histogram(k)` (Int32/UInt32 keys in `0...k`) `compact{\|x\| pred}` `scatter_add(idx, vals)` / `scatter_add(target, idx, vals)` (updates the target) `permute(perm)` (`out[perm[i]] = xs[i]`, checked) `sort_by_key(vals)` (stable radix, returns `{keys, values}`). Integers exact; floats bit-identical for any thread count, may differ from a serial loop in the last bits; blocks must be pure |

@@ -4,7 +4,15 @@
 
 ## 1.0.0-rc.1 - 2026-11-02
 
+- CM loop shapes (ADR 0039, P2.3): counted loops that are a scan, segmented scan, combine (histogram / scatter-add),
+  compaction or permutation lower to `Alice.Runtime.Cm` kernels in both backends (`Lowering/Lowerer.Cm.cs`, AIR nodes
+  in `Mir/MExpr.Cm.cs`, `Backend/Printer.Cm.cs`, `Backend/Il/AirToIl.Cm.cs`); inferred only where the result equals the
+  serial loop (wrapping/bitwise integer ops, 16K+ iterations, serial fallback otherwise). `cm for` / `cm ordered for`
+  require a shape (AL0247), float combines need `ordered` (AL0248), permutations a proof (AL0249). `alice explain`
+  rows; CM idiomatic programs in `benchmarks/bend2/idiomatic/cm/`, results in `benchmarks/bend2/results/cm.md`.
+
 - IL backend wiring (backend plan D1.6/D1.8/D1.9/D1.10, ADR 0033): `alice run --backend il` / `alice emit --il` now compile async/iterator/async-iterator methods (own state machines, `Air/Passes/StateMachines`), `Any` operations (`Alice.Runtime.Dyn` call sites, AL0232), records, struct records and sum types (`Synthesize`), and `lib` P/Invokes; the three stub tests `Il_async/iterator/async_iterator_matches_csharp` are real C#-vs-IL differential tests. Fixes found on the way: `break` inside `for v in <IEnumerable>` left the try with `br`, `String == String` was a reference compare under IL.
+- IL backend declaration kinds (D1.10): generic classes/methods (by monomorphization, incl. generic base classes), delegate types and method-group values, constant-expression enum members (`B = 1 << 1`, `AB = A | B`), default interface methods, interface properties, `@[Stack]` structs, `block` parameters, method/field attributes, and events (Alice and CLR, `+=`/`-=`) now compile under `--backend il`; methods named after C# keywords (`double`) resolve.
 - dataflow (ADR 0038, P3.2/P3.3): `dataflow do` with `source`/`stage(state:, par:)`/`sink`, `stream def`; binder checks AL0244-AL0246; lowered to AirDataflow/AirStage/AirRing and static stage methods over the runtime function-pointer overloads (one `Graph.Run`); `benchmarks/dataflow/alice/dataflow.al` matches the hand C# graph.
 - Alice Core library modules (ADR 0036; stdlib plan C3.1-C3.5, C4.1, C4.2), one namespace per module under
   `src/Alice.Runtime/Core/`: `Text` (`Utf8String`, SIMD `count/delete/squeeze/tr` over UTF-8, `Format.sprintf/try_format`
@@ -220,6 +228,7 @@ are published as GitHub prereleases. Every guarantee the toolchain makes is list
 - Dyn (F18): generic methods are callable through `Any` (type arguments inferred from runtime types); `&`, `|`, `^` and comparisons on one enum type; `==` semantics documented (Ruby/Crystal, never raises).
 
 - AL0221: a declared non-nilable field or getter that no `initialize` assigns is a compile error (audit F17).
+- The binder owns nullable flow (AL0310), use before assignment (AL0309) and compile-time constant overflow (AL0300), so they hold under `--backend il` too (D1.12, review-r1 F3): narrowing by `if x`, `unless`, guard clauses, `&&`/`||`, `x.nil?`, `== nil`, `case`/`when`, loops to a fixpoint, `x || d`, `x ||= v`; .NET nullability annotations are read from metadata. A reference-typed local declared without a value (`x : String`) read before it is assigned is AL0309, and a nilable one declared without a value (`x : String?`) is nil until assigned (AL0310 on use); both hid behind the C# `default!`. `.NET` results typed `T?` / `[MaybeNull] T` (`GetValueOrDefault`) are nilable. The C# path now reports these from the binder too; Roslyn CS8600-CS8625 on the generated C# are an assertion logged as `flow analysis gap`. Differential harness: `tools/flow-oracle.sh` (ALICE_FLOW_ORACLE) compares the binder with the C# path's Roslyn diagnostics ([BinderFlowTests](tests/Alice.Tests/Compiler/BinderFlowTests.cs)).
 - AL0202 follows copies of shared references inside concurrent blocks, and writes through ivars make a method mutating for `pure def` (AL0210) and concurrent callers (audit F9, F10).
 - AL0230 checks generic message types with their type arguments; type parameters, pointers and unknown types are not sendable (audit F11).
 - Pooled buffers: more escape routes are checked (`spawn`, `using`, `await`, if/case values, dynamic calls, `xs << v`), and borrows through virtual calls must hold for every override (audit F2, F3, F7, F18 partial).

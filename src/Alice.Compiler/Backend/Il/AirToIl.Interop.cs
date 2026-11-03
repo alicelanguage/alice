@@ -70,7 +70,7 @@ public sealed partial class AirToIl
         try
         {
             DeclareTypes([ast]);
-            if (SynthOn) SynthDeclareMembers([ast]); else DeclareMembers([ast]);
+            SynthDeclareMembers([ast]);
             var md = ProgramT.Def.DefineMethod("Run", MethodAttributes.Public | MethodAttributes.Static | MethodAttributes.HideBySig, IlType.String);
             Guard("Run", () =>
             {

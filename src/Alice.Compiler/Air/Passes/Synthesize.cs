@@ -58,6 +58,8 @@ public static class Synthesize
             foreach (var f in binder.Files) Collect(f.Items, true);
             foreach (var s in order)
             {
+                // an arena sum type (ADR 0037) is ulong terms: its record declaration is dead, its ATypes retyped
+                if (lowerer.Arena?.Enums.ContainsKey(s) == true) continue;
                 AirTypeDecl? t = sums.TryGetValue(s, out var e) ? SumType(s, e) : decls.TryGetValue(s, out var ds) ? Type(s, ds) : null;
                 if (t != null && (t.Fields.Count + t.Methods.Count + t.Properties.Count + t.Nested.Count > 0)) Add(t);
             }

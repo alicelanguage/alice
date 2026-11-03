@@ -64,6 +64,17 @@ public sealed partial class AirToWasm
         ProgramC = Add(new WClass { Name = "Program", IsStatic = true, Sym = binder.Program });
     }
 
+    readonly Dictionary<int, WClass> slotClasses = new();
+
+    /// <summary>The slot value of an N-word arena slab (ADR 0037): a struct of N u64 words, `(ulong, ulong, ...)`.</summary>
+    internal WClass SlotClass(int words)
+    {
+        if (slotClasses.TryGetValue(words, out var s)) return s;
+        s = Add(new WClass { Name = "System.ValueTuple`" + words, IsStruct = true });
+        for (int k = 0; k < words; k++) s.AddField("Item" + (k + 1), WT.U64);
+        return slotClasses[words] = s;
+    }
+
     internal WClass RuntimeClass(string name) => byCs.TryGetValue(name, out var c) ? c : throw new WasmUnsupportedException("Type:runtime-class", null, name);
 
     internal bool IsException(WClass c) => c.IsSubclassOf(byCs["System.Exception"]);
@@ -294,6 +305,14 @@ public sealed partial class AirToWasm
             DefineFunc(ctor);
             va.Ctors.Add(ctor);
             recordCtors[ctor] = ps;
+            // a variant prints as the C# record it lowers to: `B { l = A { x = 1 }, r = ... }`
+            if (!va.Methods.Any(m => m.Name == "ToString" && m.Params.Count == 0))
+            {
+                var ts = new WMethod { Name = "ToString", Owner = va, Ret = WT.Str, Synthetic = b => b.RecordToString() };
+                DefineFunc(ts);
+                va.Methods.Add(ts);
+                synthMethods.Add(ts);
+            }
             if (ps.Count == 0)
             {
                 var vf = va.AddField("Value", va.Type, isStatic: true);

@@ -116,6 +116,31 @@ public class JsonWriterTests
         }
     }
 
+    static void WriteLocalSpans(ref JsonWriter w)
+    {
+        // ADR 0036 amendment 1: spans over locals pass to a writer reached by ref (CS8350 without scoped)
+        Span<byte> name = stackalloc byte[1];
+        name[0] = (byte)'k';
+        Span<char> text = stackalloc char[2];
+        text[0] = 'v'; text[1] = '!';
+        w.WriteStartObject();
+        w.WritePropertyName(name);
+        w.WriteString(text);
+        w.WritePropertyName("r"u8);
+        w.WriteRawValue(stackalloc byte[] { (byte)'1' });
+        w.WriteEndObject();
+    }
+
+    [Fact]
+    public void Scoped_spans_over_locals_are_accepted()
+    {
+        var buf = new System.Buffers.ArrayBufferWriter<byte>();
+        var w = new JsonWriter(buf);
+        WriteLocalSpans(ref w);
+        w.Flush();
+        Assert.Equal("""{"k":"v!","r":1}""", Encoding.UTF8.GetString(buf.WrittenSpan));
+    }
+
     [Fact]
     public void Strings_escape_only_quote_backslash_and_controls()
     {

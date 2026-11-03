@@ -165,22 +165,44 @@ foreach (var name in names)
         case "twitter":
             Typed(name, data, Read.Twitter, SnakeCtx.Default.Twitter, WriteA.Twitter, WriteS.Twitter,
                 v => { long s = v.Statuses.Count; foreach (var st in v.Statuses) s += (long)st.User.FollowersCount; return s; });
+            TypedGen(name, data, __AliceJson.R0_AlTwitter, __AliceJson.W0_AlTwitter,
+                v => { long s = v.statuses.Length; foreach (var st in v.statuses) s += (long)st.user.followers_count; return s; });
             break;
         case "canada":
             Typed(name, data, Read.Canada, CamelCtx.Default.Canada, WriteA.Canada, WriteS.Canada,
                 v => { long s = 0; foreach (var f in v.Features) foreach (var ring in f.Geometry.Coordinates) s += ring.Count; return s; });
+            TypedGen(name, data, __AliceJson.R1_AlCanada, __AliceJson.W1_AlCanada,
+                v => { long s = 0; foreach (var f in v.features) foreach (var ring in f.geometry.coordinates) s += ring.Length; return s; });
             break;
         case "citm_catalog":
             Typed(name, data, Read.Citm, CamelCtx.Default.Citm, WriteA.Citm, WriteS.Citm, v => v.Performances.Count + v.Events.Count);
+            TypedGen(name, data, __AliceJson.R2_AlCitm, __AliceJson.W2_AlCitm, v => v.performances.Length + v.events.Count);
             break;
     }
 }
 return 0;
 
+// The compiler-generated mapping (C2.5): records of alice/typed.al, readers/writers emitted by `alice emit` into
+// AliceTyped.g.cs. Same checksums as the STJ source-gen rows (checked against the hand-written reader in Typed).
+static void TypedGen<U>(string name, byte[] data, JsonRead<U> read, JsonWrite<U> write, Func<U, long> check)
+{
+    Measure("alice/typed-gen", "json-typed", name, data.Length, () => check(JsonMap.Parse(data, read)));
+    U value = JsonMap.Parse(data, read);
+    var buf = new ArrayBufferWriter<byte>(data.Length * 2);
+    long Ours()
+    {
+        buf.ResetWrittenCount();
+        JsonMap.Serialize(buf, value, write);
+        return buf.WrittenCount;
+    }
+    Measure("alice/writer-gen", "json-serialize", name, Ours(), Ours);
+    if (check(JsonMap.Parse(buf.WrittenSpan, read)) != check(value)) throw new Exception("generated mapping does not round-trip");
+}
+
 static void Typed<T>(string name, byte[] data, JsonRead<T> read, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> ti,
     JsonWrite<T> writeA, Action<Utf8JsonWriter, T> writeS, Func<T, long> check)
 {
-    Measure("alice/typed", "json-typed", name, data.Length, () => check(JsonMap.Parse(data, read)));
+    Measure("alice/typed-hand", "json-typed", name, data.Length, () => check(JsonMap.Parse(data, read)));
     Measure("stj/sourcegen", "json-typed", name, data.Length, () => check(JsonSerializer.Deserialize(data, ti)!));
 
     T value = JsonSerializer.Deserialize(data, ti)!;
