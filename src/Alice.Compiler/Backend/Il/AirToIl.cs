@@ -137,6 +137,7 @@ internal sealed partial class IlBody
             if (IlTypes.IsNullable(want)) { DefaultValue(want); return want; }
         }
         if (IsDefaultLit(e)) { DefaultValue(want); return want; }
+        if (typeof(Delegate).IsAssignableFrom(want) && MethodGroup(e, want)) return want;   // D1.10 il-emit2
         if (e is MCond cd) { Cond(cd, want); return want; }
         var t = Raw(e);
         Convert(t, want, false, implicitOnly: true);

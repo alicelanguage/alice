@@ -831,7 +831,7 @@ internal sealed partial class IlBody
                 else r.Add(new ArgInfo(Infer(ma.E), null, false, pre + " "));
                 continue;
             }
-            if (IsNullLit(x) || IsDefaultLit(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }
+            if (IsNullLit(x) || IsDefaultLit(x) || IsMethodGroup(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }
             if (x is MLambda) throw No("MLambda");
             Literal(x, out var lit);
             r.Add(new ArgInfo(Infer(x), lit, false, ""));
