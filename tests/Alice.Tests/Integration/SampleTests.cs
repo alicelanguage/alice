@@ -153,7 +153,7 @@ public class SampleTests
         Assert.Contains("0 failures", AliceCli(Path.Combine(samples, "celeste"), "test"));
         var pong = Path.Combine(samples, "raylib-pong");
         Assert.Contains("7 examples, 0 failures", AliceCli(pong, "test"));
-        AliceCli(pong, "prove", "--check", "RULES.al");
+        AliceCli(pong, "prove", "--smt", "--check", "RULES.al");
         var (code, o) = RunBuilt(pong, "raylib_pong", "--simulate", "3600");
         Assert.True(code == 0, o);
         Assert.Contains("after 3600 frames: left 0, right 2, paddle hits 32", o);

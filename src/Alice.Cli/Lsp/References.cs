@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Alice.Compiler;
 using Alice.Compiler.Semantics;
 using Alice.Compiler.Syntax;
@@ -13,7 +12,7 @@ namespace Alice.Cli.Lsp;
 /// </summary>
 public static class References
 {
-    static readonly Regex Ident = new(@"^@{0,2}[A-Za-z_][A-Za-z0-9_]*[?!]?$");
+    static readonly Alice.Core.Text.Regex Ident = new(@"\A@{0,2}[A-Za-z_][A-Za-z0-9_]*[?!]?\Z");
 
     /// <summary>Occurrences of <paramref name="name"/> in a document: (line, column, length), 0-based.</summary>
     public static List<(int Line, int Col, int Len)> Occurrences(Document doc, string name, (int From, int To)? lines = null)
@@ -22,15 +21,15 @@ public static class References
         List<Token> toks;
         try { toks = new Lexer(doc.Text, doc.Path, 1).Lex(); }
         catch (Exception) { return hits; }   // unlexable text (mid-edit): no answer rather than a wrong one
-        var inHole = new Regex(@"#\{([^}]*)\}");
-        var word = new Regex(@"(?<![A-Za-z0-9_@])" + Regex.Escape(name) + @"(?![A-Za-z0-9_])");
+        var inHole = Alice.Core.Text.Regex.Cached(@"#\{([^}]*)\}");
+        var word = Alice.Core.Text.Regex.Cached(@"(?<![A-Za-z0-9_@])" + Alice.Core.Text.Regex.Escape(name) + @"(?![A-Za-z0-9_])");
         foreach (var t in toks)
         {
             if (t.Kind is "id" or "const" or "ivar" && t.Text == name) hits.Add((t.Line - 1, t.Col - 1, name.Length));
             else if (t.Kind == "str" && t.Text.Contains("#{") && !t.Text.Contains('\n'))
-                foreach (Match h in inHole.Matches(t.Text))
-                    foreach (Match w in word.Matches(h.Groups[1].Value))
-                        hits.Add((t.Line - 1, t.Col - 1 + 1 + h.Groups[1].Index + w.Index, name.Length));   // +1: the opening quote
+                foreach (var h in inHole.MatchAll(t.Text))
+                    foreach (var w in word.MatchAll(h[1]!))
+                        hits.Add((t.Line - 1, t.Col - 1 + 1 + h.Begin(1) + w.Begin(0), name.Length));   // +1: the opening quote
         }
         return lines is { } r ? hits.Where(h => h.Item1 >= r.From && h.Item1 <= r.To).ToList() : hits;
     }
@@ -38,12 +37,12 @@ public static class References
     /// <summary>The `def ... end` around a line (0-based, inclusive), by indentation.</summary>
     public static (int From, int To)? EnclosingDef(Document doc, int line)
     {
-        var def = new Regex(@"^(\s*)(?:(?:private|protected|abstract|async|pure|safe|unsafe|inline|partial)\s+)*def\b");
+        var def = Alice.Core.Text.Regex.Cached(@"\A(\s*)(?:(?:private|protected|abstract|async|pure|safe|unsafe|inline|partial)\s+)*def\b");
         for (int l = line; l >= 0; l--)
         {
             var m = def.Match(doc.Line(l));
-            if (!m.Success) continue;
-            string end = m.Groups[1].Value + "end";
+            if (m == null) continue;
+            string end = m[1] + "end";
             for (int k = l + 1; ; k++)
             {
                 string text = doc.Line(k);

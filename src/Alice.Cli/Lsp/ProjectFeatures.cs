@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using Alice.Compiler;
@@ -38,17 +37,17 @@ public static class ProjectFeatures
         var before = text[..Math.Clamp(ch, 0, text.Length)];
         bool xml = doc.Path.EndsWith(".alproj");
         var version = xml
-            ? Regex.Match(before, "<PackageReference\\b[^>]*Include=\"([^\"]+)\"[^>]*Version=\"([^\"]*)$")
-            : Regex.Match(before, "^\\s*\"?([\\w.-]+)\"?\\s*=\\s*\"([^\"]*)$");
+            ? Alice.Core.Text.Regex.Cached(@"<PackageReference\b[^>]*Include=""([^""]+)""[^>]*Version=""([^""]*)\Z").Match(before)
+            : Alice.Core.Text.Regex.Cached(@"\A\s*""?([\w.-]+)""?\s*=\s*""([^""]*)\Z").Match(before);
         var section = doc.Text[..doc.Offset(line, 0)].Split('\n').LastOrDefault(l => l.TrimStart().StartsWith('['))?.Trim();
-        if (version.Success && (xml || section == "[dependencies]"))
+        if (version != null && (xml || section == "[dependencies]"))
         {
-            string prefix = version.Groups[2].Value;
-            foreach (var v in packages.Versions(version.Groups[1].Value).Where(v => v.StartsWith(prefix))) Add(v, "NuGet version", v, prefix.Length);
+            string prefix = version[2]!;
+            foreach (var v in packages.Versions(version[1]!).Where(v => v.StartsWith(prefix))) Add(v, "NuGet version", v, prefix.Length);
         }
-        else if (xml && Regex.Match(before, "Include=\"([^\"]*)$") is { Success: true } include)
+        else if (xml && Alice.Core.Text.Regex.Cached(@"Include=""([^""]*)\Z").Match(before) is { } include)
         {
-            foreach (var id in packages.Ids(include.Groups[1].Value)) Add(id, "NuGet package", id, include.Groups[1].Length);
+            foreach (var id in packages.Ids(include[1]!)) Add(id, "NuGet package", id, include[1]!.Length);
         }
         else if (!xml && section == "[dependencies]" && !before.Contains('='))
         {
@@ -59,7 +58,7 @@ public static class ProjectFeatures
         {
             string[] keys = xml ? ["PropertyGroup", "ItemGroup", "PackageReference", "ProjectReference", "TargetFramework", "OutputType"] :
                 section switch { "[package]" => ["name", "version", "kind", "target"], "[workspace]" => ["members"], "[build]" => ["native"], _ => ["[package]", "[dependencies]", "[workspace]", "[build]"] };
-            var prefix = Regex.Match(before, @"[\w\[.]*$").Value;
+            var prefix = Alice.Core.Text.Regex.Cached(@"[\w\[.]*\Z").Match(before)?.ToString() ?? "";
             foreach (var key in keys.Where(k => k.StartsWith(prefix))) Add(key, Docs.GetValueOrDefault(key.Trim('[', ']')) ?? "Project setting", key, prefix.Length);
         }
         return new JsonObject { ["isIncomplete"] = false, ["items"] = items };
@@ -104,7 +103,7 @@ public static class ProjectFeatures
             {
                 // Only space the assignment separator; retain comments, values, quotes and inline tables verbatim.
                 formatted = string.Join('\n', doc.Text.Replace("\r\n", "\n").Split('\n').Select(l =>
-                    Regex.Replace(l.TrimEnd(), "^(\\s*(?:\"[^\"]+\"|[\\w.-]+))\\s*=\\s*", "$1 = ")));
+                    Alice.Core.Text.Regex.Cached(@"\A(\s*(?:""[^""]+""|[\w.-]+))\s*=\s*").Replace(l.TrimEnd(), @"\1 = ")));
             }
         }
         catch (Exception e) when (e is XmlException or FormatException) { return []; }

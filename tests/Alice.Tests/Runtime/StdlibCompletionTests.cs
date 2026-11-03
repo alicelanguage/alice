@@ -144,7 +144,7 @@ public class StdlibCompletionTests
             puts "x".match(/\d/).nil?
             r = /b(\d)/.match("ab7c").not_nil!
             puts r[1], r.pre_match, r.post_match, r.begin(0), r.captures.size
-            """, "2024-05\n2024\n05\ntrue\n7\na\nc\n1\n1" },
+            """, "2024-05\n05\n05\ntrue\n7\na\nc\n1\n1" },   // Ruby: once a group is named, (\d+) does not capture
         { "gsub block", "puts \"a1b22\".gsub(/\\d+/) { |d| \"<#{d}>\" }\nputs \"a1b22\".sub(/\\d+/) { |d| \"<#{d}>\" }", "a<1>b<22>\na<1>b22" },
         { "string dup", "puts \"a\".dup + \"b\"", "ab" },
         // Char

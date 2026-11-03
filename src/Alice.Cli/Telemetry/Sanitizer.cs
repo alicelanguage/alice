@@ -1,19 +1,15 @@
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Alice.Cli.Telemetry;
 
 /// <summary>Strips anything personal from crash data: messages, paths, user names, source text, non-Alice frames.</summary>
 public static partial class Sanitizer
 {
-    [GeneratedRegex(@"^\s*at (?<frame>(Alice|System|Microsoft|Spectre)\.[^\s(]+\([^)]*\))")]
-    private static partial Regex Frame();
+    static readonly Alice.Core.Text.Regex FrameRx = new(@"\A\s*at (?<frame>(Alice|System|Microsoft|Spectre)\.[^\s(]+\([^)]*\))");
 
-    [GeneratedRegex(@"^(AL|CS)\d{4}$")]
-    private static partial Regex Code();
+    static readonly Alice.Core.Text.Regex CodeRx = new(@"\A(?:AL|CS)\d{4}\Z");
 
-    [GeneratedRegex(@"^(System|Alice|Microsoft)\.[A-Za-z0-9_.`+]*$")]
-    private static partial Regex TypeName();
+    static readonly Alice.Core.Text.Regex TypeNameRx = new(@"\A(?:System|Alice|Microsoft)\.[A-Za-z0-9_.`+]*\Z");
 
     /// <summary>Exception type (never its message) plus Alice/.NET frames without file or line; other frames become `at <external>`.</summary>
     public static string Stack(string raw)
@@ -24,9 +20,9 @@ public static partial class Sanitizer
         foreach (var l in lines.Skip(1))
         {
             if (!l.TrimStart().StartsWith("at ")) continue;
-            var m = Frame().Match(l);
-            var f = m.Success ? "at " + m.Groups["frame"].Value : "at <external>";
-            if (f == last && !m.Success) continue;
+            var m = FrameRx.Match(l);
+            var f = m != null ? "at " + m["frame"] : "at <external>";
+            if (f == last && m == null) continue;
             sb.Append("\n   ").Append(f);
             last = f;
         }
@@ -34,7 +30,7 @@ public static partial class Sanitizer
         return s.Length > 4000 ? s[..4000] : s;
     }
 
-    static string SafeType(string t) => TypeName().IsMatch(t) ? t : "Exception";
+    static string SafeType(string t) => TypeNameRx.IsMatch(t) ? t : "Exception";
 
     public static string Type(Exception e) => SafeType(e.GetType().FullName ?? "");
 
@@ -42,7 +38,7 @@ public static partial class Sanitizer
     public static Dictionary<string, int> Codes(IEnumerable<string> codes)
     {
         var d = new Dictionary<string, int>();
-        foreach (var c in codes) if (Code().IsMatch(c)) d[c] = d.GetValueOrDefault(c) + 1;
+        foreach (var c in codes) if (CodeRx.IsMatch(c)) d[c] = d.GetValueOrDefault(c) + 1;
         return d;
     }
 }

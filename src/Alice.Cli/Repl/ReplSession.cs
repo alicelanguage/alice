@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Text;
-using System.Text.RegularExpressions;
 using Alice.Compiler;
 using Alice.Compiler.Syntax;
 using Alice.Runtime;
@@ -171,12 +170,12 @@ public sealed class ReplSession(IEnumerable<string>? refs = null)
     }
 
     static string ReplaceAns(string input, string var) =>
-        Regex.Replace(input, "\"(?:\\\\.|[^\"\\\\])*\"|\\bans\\b", m => m.Value == "ans" ? var : m.Value);
+        Alice.Core.Text.Regex.Cached(@"""(?:\\.|[^""\\])*""|\bans\b").Replace(input, (Alice.Core.Text.MatchData m) => m.ToString() == "ans" ? var : m.ToString());
 
     // ---- multi-line input ----
 
-    static readonly Regex Opener = new(@"^\s*(def|class|module|struct|enum|interface|record\s+struct|record|lib|if|unless|while|until|for|case|begin|macro|loop\s+do|describe|context|it)\b");
-    static readonly Regex DoBlock = new(@"\bdo(\s*\|[^|]*\|)?\s*(#.*)?$");
+    static readonly Alice.Core.Text.Regex Opener = new(@"\A\s*(def|class|module|struct|enum|interface|record\s+struct|record|lib|if|unless|while|until|for|case|begin|macro|loop\s+do|describe|context|it)\b");
+    static readonly Alice.Core.Text.Regex DoBlock = new(@"\bdo(\s*\|[^|]*\|)?\s*(#.*)?\Z");
 
     /// <summary>True when the input forms complete statements (blocks closed, strings/brackets balanced).</summary>
     public static bool IsComplete(string src) => Open(src) is var (depth, paren, pending) && depth <= 0 && paren <= 0 && !pending;
@@ -191,17 +190,17 @@ public sealed class ReplSession(IEnumerable<string>? refs = null)
         foreach (var raw in src.Split('\n'))
         {
             if (heredoc != null) { if (raw.Trim() == heredoc) heredoc = null; continue; }
-            var hd = Regex.Match(raw, @"<<[-~]?([A-Z_]+)");
-            if (hd.Success) heredoc = hd.Groups[1].Value;
+            var hd = Alice.Core.Text.Regex.Cached(@"<<[-~]?([A-Z_]+)").Match(raw);
+            if (hd != null) heredoc = hd[1]!;
             string line = StripStrings(raw, out bool openString);
             if (openString) return (depth, paren, true);
             string code = line.Split('#')[0];
-            bool endless = Regex.IsMatch(code, @"^\s*def\s+[\w?!]+(\([^)]*\))?\s*(:\s*\S+\s*)?=\s");
-            bool modifier = Regex.IsMatch(code, @"\S.*\b(if|unless|while|until)\b") && !Regex.IsMatch(code, @"^\s*(if|unless|while|until)\b") && !Regex.IsMatch(code, @"=\s*(if|unless|case|begin)\b");
-            if (!endless && !modifier && Opener.IsMatch(code) && !(Regex.IsMatch(code, @"^\s*(it|describe|context)\b") && !DoBlock.IsMatch(code))) depth++;
-            else if (Regex.IsMatch(code, @"=\s*(if|unless|case|begin)\b")) depth++;
+            bool endless = Alice.Core.Text.Regex.Cached(@"\A\s*def\s+[\w?!]+(\([^)]*\))?\s*(:\s*\S+\s*)?=\s").IsMatch(code);
+            bool modifier = Alice.Core.Text.Regex.Cached(@"\S.*\b(if|unless|while|until)\b").IsMatch(code) && !Alice.Core.Text.Regex.Cached(@"\A\s*(if|unless|while|until)\b").IsMatch(code) && !Alice.Core.Text.Regex.Cached(@"=\s*(if|unless|case|begin)\b").IsMatch(code);
+            if (!endless && !modifier && Opener.IsMatch(code) && !(Alice.Core.Text.Regex.Cached(@"\A\s*(it|describe|context)\b").IsMatch(code) && !DoBlock.IsMatch(code))) depth++;
+            else if (Alice.Core.Text.Regex.Cached(@"=\s*(if|unless|case|begin)\b").IsMatch(code)) depth++;
             if (DoBlock.IsMatch(code) && !Opener.IsMatch(code)) depth++;
-            foreach (Match _ in Regex.Matches(code, @"(^|[\s;])end\b")) depth--;
+            depth -= Alice.Core.Text.Regex.Cached(@"(?:\A|[\s;])end\b").Count(code);
             foreach (char ch in code) { if (ch is '(' or '[' or '{') paren++; else if (ch is ')' or ']' or '}') paren--; }
         }
         return (depth, paren, heredoc != null);
@@ -248,7 +247,7 @@ public sealed class ReplSession(IEnumerable<string>? refs = null)
                 .Select(m => m.Name).Where(n => n.StartsWith(rest)).Distinct().Order().Select(n => prefix[..dot] + "." + n).ToList();
         }
         var names = new HashSet<string>(Keywords);
-        foreach (var c in chunks) foreach (Match m in Regex.Matches(c.Text, @"\b[A-Za-z_][\w]*[?!]?")) if (!m.Value.StartsWith("__")) names.Add(m.Value);
+        foreach (var c in chunks) foreach (var r in Alice.Core.Text.Regex.Cached(@"\b[A-Za-z_][\w]*[?!]?").Matches(c.Text.AsSpan())) { string w = c.Text[r]; if (!w.StartsWith("__")) names.Add(w); }
         foreach (var m in typeof(Prelude).GetMethods(BindingFlags.Public | BindingFlags.Static)) if (!m.Name.StartsWith("__")) names.Add(m.Name.EndsWith("_q") ? m.Name[..^2] + "?" : m.Name);
         foreach (var ct in ReplHelp.CommonTypes) names.Add(ct);
         return names.Where(n => n.StartsWith(prefix) && n != prefix).Order().ToList();

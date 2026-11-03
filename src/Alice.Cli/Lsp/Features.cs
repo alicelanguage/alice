@@ -1,6 +1,5 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using Alice.Compiler.Semantics;
 using Alice.Compiler.Syntax;
 using Alice.Runtime;
@@ -37,7 +36,7 @@ public static class Features
             .Select(g => (g.Key, Repl.ReplHelp.Lookup(g.Key).Split('\n')[0]))
             .ToArray());
 
-    static readonly Regex UsingLine = new(@"^\s*using\s+([\w.]+)", RegexOptions.Multiline);
+    static readonly Alice.Core.Text.Regex UsingLine = new(@"^\s*using\s+([\w.]+)");
 
     // ---------------- completion ----------------
 
@@ -60,9 +59,9 @@ public static class Features
             items.Add(item);
         }
 
-        if (Regex.Match(text[..cur], @"^\s*using\s+([\w.]*)$") is { Success: true } import)
+        if (Alice.Core.Text.Regex.Cached(@"\A\s*using\s+([\w.]*)\Z").Match(text[..cur]) is { } import)
         {
-            string path = import.Groups[1].Value;
+            string path = import[1]!;
             int dot = path.LastIndexOf('.');
             foreach (var ns in project.Index.NamespacePrefix(path).Take(150))
                 Add(ns[(dot + 1)..].Split('.')[0], 9, ns);
@@ -85,8 +84,8 @@ public static class Features
             if (source.Ast is { } ast)
                 foreach (var (name, kind, node) in Declarations(ast.Items))
                     Add(name, kind, Signature(source, node));
-        foreach (Match m in Regex.Matches(doc.Text, @"(?<![\w.:@])([a-z_]\w*[?!]?)\s*=(?!=)"))
-            Add(m.Groups[1].Value, 6, "local");
+        foreach (var m in Alice.Core.Text.Regex.Cached(@"(?<![\w.:@])([a-z_]\w*[?!]?)\s*=(?!=)").MatchAll(doc.Text))
+            Add(m[1]!, 6, "local");
         foreach (var (name, sig) in Prelude.Value) Add(name, 3, "Prelude", "```alice\n" + sig + "\n```");
         if (prefix.Length >= 2 && char.IsUpper(prefix[0]))
         {
@@ -112,8 +111,8 @@ public static class Features
     {
         // user types (and `x = Type.new` locals) first
         string typeName = recv;
-        var assigned = Regex.Match(doc.Text, @"(?<![\w.])" + Regex.Escape(recv) + @"\s*=\s*([A-Z][\w.]*)\.new\b");
-        if (assigned.Success) typeName = assigned.Groups[1].Value;
+        var assigned = Alice.Core.Text.Regex.Cached(@"(?<![\w.])" + Alice.Core.Text.Regex.Escape(recv) + @"\s*=\s*([A-Z][\w.]*)\.new\b").Match(doc.Text);
+        if (assigned != null) typeName = assigned[1]!;
         if (doc.Ast is { } ast && FindType(ast.Items, typeName) is { } td)
         {
             bool statics = typeName == recv;
@@ -174,11 +173,12 @@ public static class Features
         Type? type = receiver.Length > 0 && char.IsUpper(receiver[0])
             ? project.Clr.Find(receiver, 0, usings) ?? Repl.ReplHelp.ResolveType(receiver) : null;
         if (type != null) return type;
-        var annotation = Regex.Match(doc.Text, @"\b" + Regex.Escape(receiver) + @"\s*:\s*([A-Z][\w.]*)");
-        var assignment = Regex.Match(doc.Text, @"\b" + Regex.Escape(receiver) + @"\s*=\s*([A-Z][\w.]*)\.new\b");
-        string name = annotation.Success ? annotation.Groups[1].Value : assignment.Success ? assignment.Groups[1].Value : "";
+        string esc = Alice.Core.Text.Regex.Escape(receiver);
+        var annotation = Alice.Core.Text.Regex.Cached(@"\b" + esc + @"\s*:\s*([A-Z][\w.]*)").Match(doc.Text);
+        var assignment = Alice.Core.Text.Regex.Cached(@"\b" + esc + @"\s*=\s*([A-Z][\w.]*)\.new\b").Match(doc.Text);
+        string name = annotation != null ? annotation[1]! : assignment != null ? assignment[1]! : "";
         if (name.Length > 0) return project.Clr.Find(name, 0, usings) ?? Repl.ReplHelp.ResolveType(name);
-        if (Regex.IsMatch(doc.Text, @"\b" + Regex.Escape(receiver) + "\\s*=\\s*\"")) return typeof(string);
+        if (Alice.Core.Text.Regex.Cached(@"\b" + esc + @"\s*=\s*""").IsMatch(doc.Text)) return typeof(string);
         return null;
     }
 
@@ -203,9 +203,9 @@ public static class Features
         foreach (var call in stack)
         {
             if (text[call.Start] != '(') continue;
-            var match = Regex.Match(text[..call.Start], @"([\w.?!]+)\s*$");
-            if (!match.Success) continue;
-            string name = match.Groups[1].Value;
+            var match = Alice.Core.Text.Regex.Cached(@"([\w.?!]+)\s*\Z").Match(text[..call.Start]);
+            if (match == null) continue;
+            string name = match[1]!;
             int dot = name.LastIndexOf('.');
             if (dot > 0 && ResolveReceiver(doc, project, name[..dot], line) is { } owner)
             {
@@ -215,10 +215,10 @@ public static class Features
             }
             else
             {
-                foreach (Match decl in Regex.Matches(doc.Text, @"(?m)^\s*def\s+(?:self\.)?" + Regex.Escape(name) + @"\s*(\([^\n]*?\))?(?:\s*:\s*[^=\n]+)?"))
+                foreach (var decl in Alice.Core.Text.Regex.Cached(@"^\s*def\s+(?:self\.)?" + Alice.Core.Text.Regex.Escape(name) + @"\s*(\([^\n]*?\))?(?:\s*:\s*[^=\n]+)?").MatchAll(doc.Text))
                 {
-                    var args = decl.Groups[1].Value.Trim('(', ')').Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                    signatures.Add(new JsonObject { ["label"] = decl.Value.Trim(), ["parameters"] = new JsonArray(args.Select(a => (JsonNode)new JsonObject { ["label"] = a }).ToArray()) });
+                    var args = (decl[1] ?? "").Trim('(', ')').Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    signatures.Add(new JsonObject { ["label"] = decl.ToString().Trim(), ["parameters"] = new JsonArray(args.Select(a => (JsonNode)new JsonObject { ["label"] = a }).ToArray()) });
                 }
             }
             if (signatures.Count > 0) return new JsonObject { ["signatures"] = signatures, ["activeSignature"] = 0, ["activeParameter"] = Math.Min(call.Parameter, Math.Max(0, signatures.Max(s => s!["parameters"]!.AsArray().Count) - 1)) };
@@ -282,7 +282,7 @@ public static class Features
     }
 
     static HashSet<string> Usings(Document doc) =>
-        UsingLine.Matches(doc.Text).Select(m => m.Groups[1].Value).ToHashSet();
+        UsingLine.MatchAll(doc.Text).Select(m => m[1]!).ToHashSet();
 
     // ---------------- hover / definition ----------------
 
@@ -339,10 +339,10 @@ public static class Features
         if (doc.Ast is { } ast && FindDecl(ast.Items, word) is { } decl && decl.Node.Line > 0)
             return Location(doc, decl.Node.Line - 1, Math.Max(0, doc.Line(decl.Node.Line - 1).IndexOf(word, StringComparison.Ordinal)), word.Length);
         // first assignment of a local
-        var m = Regex.Match(doc.Text, @"(?m)^[ \t]*(?:val\s+)?" + Regex.Escape(word) + @"\s*=(?!=)");
-        if (m.Success)
+        var m = Alice.Core.Text.Regex.Cached(@"^[ \t]*(?:val\s+)?" + Alice.Core.Text.Regex.Escape(word) + @"\s*=(?!=)").Match(doc.Text);
+        if (m != null)
         {
-            int l = doc.Text[..m.Index].Count(c => c == '\n');
+            int l = doc.Text[..m.Begin(0)].Count(c => c == '\n');
             int col = doc.Line(l).IndexOf(word, StringComparison.Ordinal);
             return Location(doc, l, Math.Max(0, col), word.Length);
         }
@@ -425,7 +425,7 @@ public static class Features
         return [new JsonObject { ["range"] = Range(0, 0, lines.Length - 1, lines[^1].Length), ["newText"] = formatted }];
     }
 
-    static readonly Regex UndefinedName = new(@"(?:undefined name|unknown type|unknown constant|cannot find type|undefined constant)\s+'([A-Z]\w*)'", RegexOptions.IgnoreCase);
+    static readonly Alice.Core.Text.Regex UndefinedName = new(@"(?:undefined name|unknown type|unknown constant|cannot find type|undefined constant)\s+'([A-Z]\w*)'", Alice.Core.Text.RegexFlags.IgnoreCase);
 
     public static JsonArray CodeActions(Document doc, Project project, JsonArray diagnostics)
     {
@@ -435,8 +435,8 @@ public static class Features
         foreach (var d in diagnostics)
         {
             var m = UndefinedName.Match(d?["message"]?.GetValue<string>() ?? "");
-            if (!m.Success) continue;
-            foreach (var ns in project.Index.Namespaces(m.Groups[1].Value).Where(n => !usings.Contains(n)).OrderBy(n => n.StartsWith("System") ? 0 : 1).Take(5))
+            if (m == null) continue;
+            foreach (var ns in project.Index.Namespaces(m[1]!).Where(n => !usings.Contains(n)).OrderBy(n => n.StartsWith("System") ? 0 : 1).Take(5))
             {
                 actions.Add(new JsonObject
                 {

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Alice.Compiler.Mir;
 using Alice.Compiler.Optimizer;
 
@@ -17,11 +16,9 @@ public sealed partial class PatternTemps(IlLowerContext? ctx = null) : IlPass(ct
 {
     public override string Name => "il-pattern-temps";
 
-    [GeneratedRegex(@"^var (@?[A-Za-z_][A-Za-z0-9_]*)$")]
-    private static partial Regex VarPattern();
+    static readonly Alice.Core.Text.Regex VarPattern = new(@"\Avar (@?[A-Za-z_][A-Za-z0-9_]*)\Z");
 
-    [GeneratedRegex(@"^(\S.*) (@?[A-Za-z_][A-Za-z0-9_]*)$")]
-    private static partial Regex DeclPattern();
+    static readonly Alice.Core.Text.Regex DeclPattern = new(@"\A(\S.*) (@?[A-Za-z_][A-Za-z0-9_]*)\Z");
 
     static readonly HashSet<string> NotTypes = ["not", "and", "or", "null", "var", "true", "false"];
 
@@ -103,20 +100,20 @@ public sealed partial class PatternTemps(IlLowerContext? ctx = null) : IlPass(ct
     MExpr? Pattern(MIs i, MStmt owner, Collector c)
     {
         string p = i.TypeCs;
-        if (VarPattern().Match(p) is { Success: true } vm)
+        if (VarPattern.Match(p) is { } vm)
         {
             if (!IlTypes.Known(i.E.Type))
             {
-                Unsupported(owner, $"`is var {vm.Groups[1].Value}` on a value of unknown type");
+                Unsupported(owner, $"`is var {vm[1]}` on a value of unknown type");
                 return null;
             }
-            string x = vm.Groups[1].Value;
+            string x = vm[1]!;
             var seq = new AirSeq { Pre = [new MAssign { Target = Local(x, i.E.Type), Value = i.E }], Value = Const(true), Type = IlTypes.Bool };
             c.Add(Decl(x, i.E.Type!, null), seq);
             return seq;
         }
-        if (DeclPattern().Match(p) is not { Success: true } dm) return null;
-        string ty = dm.Groups[1].Value, name = dm.Groups[2].Value;
+        if (DeclPattern.Match(p) is not { } dm) return null;
+        string ty = dm[1]!, name = dm[2]!;
         if (NotTypes.Contains(ty) || NotTypes.Contains(name) || ty.EndsWith(" not") || ty.Contains('{')) return null;
         var bound = new AirType.ClrRef(ty, null, []);
         MExpr result;

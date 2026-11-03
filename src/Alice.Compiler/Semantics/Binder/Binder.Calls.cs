@@ -55,7 +55,7 @@ public sealed partial class Binder
         {
             if (c.Recv is ConstExpr { Res: "type" } ce)
                 return new TypeTestExpr { Kind = "is", E = new TypeTestExpr { Kind = "as", E = rhs, Ref = new TypeRef { Name = "Object", Nullable = true }, Line = c.Line }, Ref = ce.Ref, Line = c.Line, Col = c.Col };
-            if (recv.Clr == typeof(System.Text.RegularExpressions.Regex))
+            if (recv.Clr == typeof(Alice.Core.Text.Regex) || recv.Clr == typeof(System.Text.RegularExpressions.Regex))
                 return new CallExpr { Recv = c.Recv, Name = "IsMatch", Args = c.Args, Parens = true, Line = c.Line, Col = c.Col };
             if (c.Recv is RangeExpr || recv.Clr is { IsGenericType: true } g && g.GetGenericTypeDefinition() == typeof(IEnumerable<>))
                 return new CallExpr { Recv = c.Recv, Name = "include?", Args = c.Args, Parens = true, Line = c.Line, Col = c.Col };

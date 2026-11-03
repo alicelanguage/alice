@@ -23,9 +23,10 @@ public static class Prove
     /// One rule's verdict. <paramref name="Counterexample"/> is the failing input (`x = 7, lo = -3`) and
     /// <paramref name="Outcome"/> what the compiled rule did on it (`false` or `raised OverflowException`).
     /// <paramref name="NotProven"/> is set when there is no verdict either way (time limit, or --smt cannot translate
-    /// a rule too large to enumerate): not a failure of the code, but not a proof.
+    /// a rule too large to enumerate): not a failure of the code, but not a proof. <paramref name="Cert"/> is the
+    /// sha256 of the rule's checked certificate in PROOF.cert (ADR 0042).
     /// </summary>
-    public sealed record RuleResult(string Rule, long Cases, string? Counterexample, double Ms, bool Smt = false, string? Outcome = null, string? NotProven = null)
+    public sealed record RuleResult(string Rule, long Cases, string? Counterexample, double Ms, bool Smt = false, string? Outcome = null, string? NotProven = null, string? Cert = null)
     {
         public bool Proven => Counterexample == null && NotProven == null;
         public string Status => NotProven != null ? "unknown" : Counterexample == null ? "proven" : "fails";
@@ -35,27 +36,60 @@ public static class Prove
 
     public const string ProofFile = "PROOF.al";
 
-    /// <summary>`--smt`: Z3 proves each rule it can translate for every input of its domain; the rest are enumerated
-    /// (when finite enough) or reported as not proven. A Z3 counterexample is replayed through the compiled rule
-    /// before it is reported, so a counterexample on screen is an input that really fails.</summary>
-    public static List<RuleResult> CheckSmt(List<SourceFile> files, List<string> refs, TimeSpan? timeout = null)
+    /// <summary>`--smt` without certificates (see the overload).</summary>
+    public static List<RuleResult> CheckSmt(List<SourceFile> files, List<string> refs, TimeSpan? timeout = null) =>
+        CheckSmt(files, refs, timeout, null, out _);
+
+    /// <summary>
+    /// `--smt`: Z3 proves each rule it can translate for every input of its domain; the rest are enumerated (when
+    /// finite enough) or reported as not proven. A Z3 counterexample is replayed through the compiled rule before it
+    /// is reported, so a counterexample on screen is an input that really fails. When a proof-writing SAT solver is
+    /// installed (ADR 0042), every proof also gets a checked certificate in <paramref name="certs"/>. With
+    /// <paramref name="existing"/> (a PROOF.cert, for `--check`), no certificate is made: a rule's certificate is the
+    /// existing entry whose IR is the rule's current translation, re-verified by Alice.Check.
+    /// </summary>
+    public static List<RuleResult> CheckSmt(List<SourceFile> files, List<string> refs, TimeSpan? timeout, byte[]? existing, out List<Alice.Check.CertEntry> certs)
     {
         if (Proof.SmtProver.Unavailable() is { } why) throw new UsageException(why);
         var results = new List<RuleResult>();
         var fallback = new HashSet<string>();
         var proved = new Dictionary<string, IReadOnlyList<RuleDomain>>();
+        var made = new Dictionary<string, Alice.Check.CertEntry>();
+        var old = new Dictionary<string, (Alice.Check.CertEntry Entry, string Stated)>();
+        if (existing != null)
+            try { foreach (var x in Alice.Check.Cert.Read(existing).Entries) old[x.Entry.Rule] = x; }
+            catch (Exception e) when (e is FormatException or InvalidDataException) { }   // unreadable: no certificates, so PROOF.al is stale
         uint ms = timeout is { } t ? (uint)Math.Clamp(t.TotalMilliseconds, 1, uint.MaxValue) : Proof.SmtProver.DefaultTimeoutMs;
+        bool sat = existing == null && Proof.SatCert.Unavailable() == null;
         foreach (var o in Proof.SmtProver.Prove(files, refs, ms))
         {
-            if (o.Untranslatable == null)
+            // the certificate: made by the SAT solver, or (--check) the existing entry for this exact IR, re-checked
+            string? cert = null, bad = null;
+            var sw = Stopwatch.StartNew();
+            if (o.T != null && (o.Proved || o.Unknown))
             {
-                results.Add(new RuleResult(o.Rule, -1, o.Counterexample, o.Ms, Smt: true));
-                if (o.Proved && o.Domains != null) proved[o.Rule] = o.Domains;
+                if (existing != null && old.TryGetValue(o.Rule, out var e) && e.Entry.Ir == Alice.Check.Ir.Write(o.T.Goal))
+                {
+                    if (Alice.Check.Cert.Verify(e.Entry, e.Stated) is { } no) bad = no;
+                    else cert = e.Stated;
+                }
+                else if (sat && Proof.SatCert.Certify(o.T, TimeSpan.FromMilliseconds(ms)) is { Entry: { } entry })
+                {
+                    made[o.Rule] = entry;
+                    cert = entry.Sha256;
+                }
+            }
+            double took = o.Ms + sw.Elapsed.TotalMilliseconds;
+            if (bad != null) results.Add(new RuleResult(o.Rule, -1, null, took, Smt: true, NotProven: $"{Alice.Check.Cert.FileName} does not check: {bad}"));
+            else if (o.Untranslatable == null || cert != null)
+            {
+                results.Add(new RuleResult(o.Rule, -1, o.Counterexample, took, Smt: true, Cert: cert));
+                if (o.Counterexample == null && o.Domains != null) proved[o.Rule] = o.Domains;
             }
             else
             {
                 fallback.Add(o.Rule);
-                results.Add(new RuleResult(o.Rule, 0, null, o.Ms, NotProven: $"--smt: {o.Untranslatable}; the domain is too large to enumerate"));
+                results.Add(new RuleResult(o.Rule, 0, null, took, NotProven: $"--smt: {o.Untranslatable}; the domain is too large to enumerate"));
             }
         }
         // one compiled image replays the counterexamples and enumerates the rules Z3 could not decide
@@ -69,6 +103,10 @@ public static class Prove
         if (fallback.Count > 0)
             foreach (var r in Enumerate(program, timeout, fallback))
                 results[results.FindIndex(x => x.Rule == r.Rule)] = r;   // enumerated after all
+        // a certificate is kept only for a rule that ends proven (a sample check can still contradict it)
+        certs = results.Where(r => r.Proven && r.Cert != null && made.ContainsKey(r.Rule)).Select(r => made[r.Rule]).ToList();
+        for (int i = 0; i < results.Count; i++)
+            if (!results[i].Proven && results[i].Cert != null) results[i] = results[i] with { Cert = null };
         return Sorted(results);
     }
 
@@ -240,10 +278,12 @@ public static class Prove
         sb.Append("# Every rule marked proven returned true on every case of its domain. Rules are pure, so this is a proof by\n");
         sb.Append("# exhaustion of the program as Alice compiles it. `alice prove --check` fails when the sources change.\n#\n");
         sb.Append($"# alice {App.Version}\n# sources sha256 {Hash(files)}\n");
+        if (results.Any(r => r.Cert != null))
+            sb.Append($"# certificates in {Alice.Check.Cert.FileName}: re-check them with `alice-check {Alice.Check.Cert.FileName} {ProofFile}` (no Z3, no compiler)\n");
         foreach (var r in results.OrderBy(r => r.Rule, StringComparer.Ordinal))
             sb.Append(r.NotProven != null ? $"# rule {r.Rule}: not proven ({r.NotProven})\n"
                 : r.Counterexample == null
-                ? r.Smt ? $"# rule {r.Rule}: proven for every input of its domain (smt)\n" : $"# rule {r.Rule}: proven over {r.Cases} cases\n"
+                ? r.Smt ? $"# rule {r.Rule}: proven for every input of its domain (smt{(r.Cert != null ? ", cert sha256 " + r.Cert : "")})\n" : $"# rule {r.Rule}: proven over {r.Cases} cases\n"
                 : $"# rule {r.Rule}: FAILS at {r.Counterexample}{(r.Outcome is { } o && o != "false" ? ": " + o : "")}\n");
         return sb.ToString();
     }
@@ -264,6 +304,7 @@ public static class Prove
                 w.WriteString("rule", r.Rule);
                 w.WriteString("status", r.Status);
                 w.WriteString("engine", r.Smt ? "smt" : "enumeration");
+                if (r.Cert != null) w.WriteString("cert", r.Cert);
                 if (r.Smt || r.NotProven != null) w.WriteNull("cases"); else w.WriteNumber("cases", r.Cases);
                 w.WriteNumber("ms", Math.Round(r.Ms, 1));
                 if (r.Counterexample != null)
@@ -291,12 +332,21 @@ public static class Prove
     public static int Run(List<SourceFile> files, List<string> refs, bool checkOnly, string dir, bool smt = false, TimeSpan? timeout = null, bool json = false)
     {
         if (!files.Any(f => f.Text.Contains("rule "))) throw new UsageException("no rules found", "declare them in RULES.al: `rule name(x in 0..100)` ... `end`");
-        var results = smt ? CheckSmt(files, refs, timeout) : Check(files, refs, timeout);
+        string certPath = Path.Combine(dir, Alice.Check.Cert.FileName);
+        List<Alice.Check.CertEntry> certs = [];
+        byte[]? existing = checkOnly ? File.Exists(certPath) ? File.ReadAllBytes(certPath) : Array.Empty<byte>() : null;
+        var results = smt ? CheckSmt(files, refs, timeout, existing, out certs) : Check(files, refs, timeout);
         bool ok = results.All(r => r.Proven);
         string cert = Certificate(files, results), path = Path.Combine(dir, ProofFile);
         bool stale = false;
         if (checkOnly) stale = (File.Exists(path) ? File.ReadAllText(path).Replace("\r\n", "\n") : "") != cert;
-        else File.WriteAllText(path, cert);
+        else
+        {
+            File.WriteAllText(path, cert);
+            // PROOF.cert holds the certificates PROOF.al cites (ADR 0042); without any, an old one would only mislead
+            if (certs.Count > 0) File.WriteAllBytes(certPath, Alice.Check.Cert.Write(Hash(files), certs));
+            else if (File.Exists(certPath)) File.Delete(certPath);
+        }
         if (json)
         {
             Console.Out.Write(Json(results, ok && !stale, checkOnly ? stale ? "stale" : "current" : "written"));
@@ -305,7 +355,7 @@ public static class Prove
         var table = new Table().Border(TableBorder.Rounded).AddColumn("rule").AddColumn(new TableColumn("cases").RightAligned()).AddColumn("result").AddColumn(new TableColumn("ms").RightAligned());
         foreach (var r in results)
             table.AddRow(Markup.Escape(r.Rule), r.Smt ? "all" : r.NotProven != null ? "-" : r.Cases.ToString("N0"),
-                r.NotProven != null ? $"[yellow]not proven: {Markup.Escape(r.NotProven)}[/]" : r.Counterexample == null ? "[green]proven[/]" : "[red]FAILS[/]", r.Ms.ToString("0"));
+                r.NotProven != null ? $"[yellow]not proven: {Markup.Escape(r.NotProven)}[/]" : r.Counterexample == null ? r.Cert != null ? "[green]proven (certificate checked)[/]" : "[green]proven[/]" : "[red]FAILS[/]", r.Ms.ToString("0"));
         AnsiConsole.Write(table);
         foreach (var r in results.Where(r => r.Counterexample != null))
             AnsiConsole.MarkupLine($"[red]{Markup.Escape(r.FailureLine)}[/]");

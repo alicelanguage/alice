@@ -1,6 +1,5 @@
 using System.Security;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Alice.Cli.Projects;
 
@@ -11,13 +10,13 @@ namespace Alice.Cli.Projects;
 public static class MsBuildText
 {
     /// <summary>NuGet package id: dot/dash-separated runs of letters, digits and `_` (also rules out `/`, `\` and `..`).</summary>
-    public static readonly Regex PackageId = new(@"^[A-Za-z0-9_]+([.-][A-Za-z0-9_]+)*\z", RegexOptions.CultureInvariant);
+    public static readonly Alice.Core.Text.Regex PackageId = new(@"\A[A-Za-z0-9_]+(?:[.-][A-Za-z0-9_]+)*\z");
 
     /// <summary>NuGet version or range: `1.2.3`, `3.8.*`, `[1.0, 2.0)`.</summary>
-    public static readonly Regex VersionRange = new(@"^[0-9A-Za-z.+*\[\](), -]+\z", RegexOptions.CultureInvariant);
+    public static readonly Alice.Core.Text.Regex VersionRange = new(@"\A[0-9A-Za-z.+*\[\](), -]+\z");
 
     /// <summary>Target framework moniker: `net10.0`, `net10.0-windows`.</summary>
-    public static readonly Regex TargetFramework = new(@"^[A-Za-z0-9.-]+\z", RegexOptions.CultureInvariant);
+    public static readonly Alice.Core.Text.Regex TargetFramework = new(@"\A[A-Za-z0-9.-]+\z");
 
     /// <summary>
     /// Literal text for an MSBuild property value or (with <paramref name="item"/>) an item spec: `%XX` for the characters

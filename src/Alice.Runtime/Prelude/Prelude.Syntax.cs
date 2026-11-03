@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using CoreRegex = Alice.Core.Text.Regex;
+using CoreMatchData = Alice.Core.Text.MatchData;
 
 namespace Alice.Runtime;
 
@@ -9,18 +11,85 @@ namespace Alice.Runtime;
 public static partial class Prelude
 {
     // lazy: initialized on first use, not when a program first touches Prelude (StartupTests)
-    static class RegexCacheHolder { public static readonly ConcurrentDictionary<(string, string), Regex> Value = new(); }
+    static class RegexCacheHolder { public static readonly ConcurrentDictionary<(string, string), CoreRegex> Value = new(); }
 
-    /// <summary>Regex literals compile once per (pattern, flags) and are reused.</summary>
-    public static Regex regex(string pattern, string flags) => RegexCacheHolder.Value.GetOrAdd((pattern, flags), static k =>
+    /// <summary>Regex literals (Ruby syntax, Alice's own engine, ADR 0036) compile once per (pattern, flags) and are
+    /// reused. Flags: i, m (dot-all), x; s is a dot-all alias.</summary>
+    public static CoreRegex regex(string pattern, string flags) => RegexCacheHolder.Value.GetOrAdd((pattern, flags), static k => new CoreRegex(k.Item1, k.Item2));
+
+    // $~ is the last match of this thread, written by =~, match, scan/gsub/sub (block forms) and never by match?.
+    // =~ stores only (regex, subject, start): the MatchData is built when $~ or $1 is read, so =~ does not allocate.
+    sealed class LastMatch
     {
-        var o = RegexOptions.CultureInvariant;
-        foreach (var f in k.Item2)
-            o |= f switch { 'i' => RegexOptions.IgnoreCase, 'm' => RegexOptions.Multiline, 'x' => RegexOptions.IgnorePatternWhitespace, 's' => RegexOptions.Singleline, _ => 0 };
-        return new Regex(k.Item1, o);
-    });
+        public CoreRegex? Re;
+        public string? Text;
+        public int Start;
+        public CoreMatchData? Data;
+    }
 
-    /// <summary>`str =~ /re/`: index of the first match, or nil.</summary>
+    static class LastMatchSlot
+    {
+        [ThreadStatic] static LastMatch? value;
+        public static LastMatch Get() => value ??= new LastMatch();
+        public static LastMatch? Peek => value;
+    }
+
+    internal static void SetLastMatch(CoreRegex re, string text, int start)
+    {
+        var l = LastMatchSlot.Get();
+        l.Re = re; l.Text = text; l.Start = start; l.Data = null;
+    }
+
+    internal static void SetLastMatch(CoreMatchData? m)
+    {
+        if (m == null) { ClearLastMatch(); return; }
+        var l = LastMatchSlot.Get();
+        l.Re = null; l.Text = null; l.Data = m;
+    }
+
+    static void ClearLastMatch()
+    {
+        if (LastMatchSlot.Peek is { } l) { l.Re = null; l.Text = null; l.Data = null; }
+    }
+
+    /// <summary>$~ : the last match on this thread (nil after a failed match).</summary>
+    public static CoreMatchData? last_match()
+    {
+        var l = LastMatchSlot.Peek;
+        if (l == null) return null;
+        if (l.Data != null) return l.Data;
+        if (l.Re == null || l.Text == null) return null;
+        return l.Data = l.Re.Match(l.Text, l.Start);
+    }
+
+    /// <summary>$1 .. $9 ($~[n]), nil when there is no match or the group did not take part.</summary>
+    public static string? last_match(int group) => last_match()?[group];
+
+    /// <summary>$~[:name].</summary>
+    public static string? last_match(string name) => last_match()?[name];
+
+    /// <summary>The text before the last match.</summary>
+    public static string? last_pre_match() => last_match()?.PreMatch;
+
+    /// <summary>The text after the last match.</summary>
+    public static string? last_post_match() => last_match()?.PostMatch;
+
+    /// <summary>str =~ /re/ : index of the first match, or nil; sets $~ (without allocating).</summary>
+    public static int? match_index(string? s, CoreRegex re)
+    {
+        if (s == null || !re.Find(s.AsSpan(), out var r)) { ClearLastMatch(); return null; }
+        int start = r.Start.Value;
+        SetLastMatch(re, s, start);
+        return start;
+    }
+
+    /// <summary>/re/ =~ str.</summary>
+    public static int? match_index(CoreRegex re, string? s) => match_index(s, re);
+
+    /// <summary>str !~ /re/.</summary>
+    public static bool no_match(string? s, CoreRegex re) => s == null || !re.IsMatch(s);
+
+    // System.Text.RegularExpressions.Regex objects that user code builds explicitly keep .NET semantics
     public static int? match_index(string? s, Regex re)
     {
         if (s == null) return null;

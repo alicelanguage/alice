@@ -1,50 +1,10 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using CoreRegex = Alice.Core.Text.Regex;
+using CoreMatchData = Alice.Core.Text.MatchData;
 
 namespace Alice.Runtime;
-
-/// <summary>
-/// Ruby's MatchData over a .NET <see cref="Match"/>: `m[0]` is the whole match, `m[1]` / `m["name"]` a group
-/// (nil when that group did not take part).
-/// </summary>
-public sealed class MatchData
-{
-    readonly Match m;
-    public MatchData(Match m) => this.m = m;
-
-    public string? this[int i] => i >= 0 && i < m.Groups.Count && m.Groups[i].Success ? m.Groups[i].Value : null;
-    public string? this[string name] => m.Groups[name] is { Success: true } g ? g.Value : null;
-
-    /// <summary>Index of group i's first character (Ruby `begin(0)`); `end(i)` is one past its last.</summary>
-    public int begin(int i) => m.Groups[i].Index;
-    public int end(int i) => m.Groups[i].Index + m.Groups[i].Length;
-    public string pre_match => m.Result("$`");
-    public string post_match => m.Result("$'");
-
-    /// <summary>The groups' texts (not the whole match).</summary>
-    public string[] captures
-    {
-        get { var r = new string[m.Groups.Count - 1]; for (int i = 1; i < m.Groups.Count; i++) r[i - 1] = m.Groups[i].Value; return r; }
-    }
-
-    public Dictionary<string, string?> named_captures
-    {
-        get
-        {
-            var d = new Dictionary<string, string?>();
-            foreach (Group g in m.Groups) if (!int.TryParse(g.Name, out _)) d[g.Name] = g.Success ? g.Value : null;
-            return d;
-        }
-    }
-
-    // Prelude names (`size`, `to_a`, `to_s`) are emitted as calls, other bare names as properties
-    /// <summary>The whole match followed by the groups.</summary>
-    public string[] to_a() { var r = new string[m.Groups.Count]; for (int i = 0; i < r.Length; i++) r[i] = m.Groups[i].Value; return r; }
-    public int size() => m.Groups.Count;
-    public string to_s() => m.Value;
-    public override string ToString() => m.Value;
-}
 
 /// <summary>Ruby/Crystal String and Char methods beyond the basics.</summary>
 public static partial class Prelude
@@ -157,16 +117,116 @@ public static partial class Prelude
         return string.Create(n, pad, static (span, p) => { for (int i = 0; i < span.Length; i++) span[i] = p[i % p.Length]; });
     }
 
-    /// <summary>`s.match(/re/)`: the first match as MatchData, or nil.</summary>
-    public static MatchData? match(this string s, Regex re) { var m = re.Match(s); return m.Success ? new MatchData(m) : null; }
-    public static MatchData? match(this Regex re, string s) { var m = re.Match(s); return m.Success ? new MatchData(m) : null; }
+    /// <summary>s.match(/re/): the first match as MatchData, or nil; sets $~.</summary>
+    public static CoreMatchData? match(this string s, CoreRegex re)
+    {
+        var m = re.Match(s);
+        SetLastMatch(m);
+        return m;
+    }
 
-    /// <summary>`gsub(/re/) { |m| ... }` / `sub(/re/) { |m| ... }`: each match replaced by the block's value.</summary>
+    /// <summary>s.match(/re/, pos): the first match at or after pos (negative: from the end).</summary>
+    public static CoreMatchData? match(this string s, CoreRegex re, int pos)
+    {
+        var m = re.Match(s, pos < 0 ? Math.Max(0, s.Length + pos) : pos);
+        SetLastMatch(m);
+        return m;
+    }
+
+    /// <summary>gsub(/re/) { |m| ... } and sub(/re/) { |m| ... }: each match replaced by the block's value; $~ is the
+    /// current match inside the block.</summary>
+    public static string gsub(this string s, CoreRegex re, Func<string, string> f) => ReplaceBlock(s, re, f, -1);
+    public static string sub(this string s, CoreRegex re, Func<string, string> f) => ReplaceBlock(s, re, f, 1);
+
+    static int ScalarWidth(string s, int i) => char.IsHighSurrogate(s[i]) && i + 1 < s.Length && char.IsLowSurrogate(s[i + 1]) ? 2 : 1;
+
+    static string ReplaceBlock(string s, CoreRegex re, Func<string, string> f, int count)
+    {
+        StringBuilder? sb = null;
+        int pos = 0, last = 0, done = 0;
+        while ((count < 0 || done < count) && pos <= s.Length && re.Find(s.AsSpan(), pos, out var r))
+        {
+            int ms = r.Start.Value, me = r.End.Value;
+            sb ??= new StringBuilder(s.Length + 16);
+            sb.Append(s, last, ms - last);
+            SetLastMatch(re, s, ms);
+            sb.Append(f(s[ms..me]));
+            last = me;
+            done++;
+            if (me == ms)
+            {
+                if (me >= s.Length) break;
+                int w = ScalarWidth(s, me);
+                sb.Append(s, me, w);
+                last = pos = me + w;
+            }
+            else pos = me;
+        }
+        if (sb == null) return s;
+        sb.Append(s, last, s.Length - last);
+        return sb.ToString();
+    }
+
+    /// <summary>gsub(/re/, hash): each match replaced by its hash value (missing: removed, as in Ruby).</summary>
+    public static string gsub(this string s, CoreRegex re, Dictionary<string, string> h) => ReplaceBlock(s, re, m => h.TryGetValue(m, out var r) ? r : "", -1);
+
+    /// <summary>scan(/re/) { |m| ... }: the block gets each whole match and $~ is the current match. The only
+    /// allocations are the match strings it yields.</summary>
+    public static void scan(this string s, CoreRegex re, Action<string> f)
+    {
+        int pos = 0;
+        while (pos <= s.Length && re.Find(s.AsSpan(), pos, out var r))
+        {
+            int ms = r.Start.Value, me = r.End.Value;
+            SetLastMatch(re, s, ms);
+            f(s[ms..me]);
+            if (me > ms) pos = me;
+            else if (me >= s.Length) break;
+            else pos = me + ScalarWidth(s, me);
+        }
+    }
+
+    /// <summary>Ruby scan for a pattern with groups: one array of group texts per match.</summary>
+    public static string?[][] scan_groups(this string s, CoreRegex re)
+    {
+        var all = re.MatchAll(s);
+        if (all.Count > 0) SetLastMatch(all[^1]);
+        return all.Select(m => re.GroupCount == 0 ? new[] { m[0] } : m.Captures).ToArray();
+    }
+
+    /// <summary>Ruby split(/re/, limit = 0): captured groups are kept, trailing empty fields dropped (limit 0).</summary>
+    public static string[] split(this string s, CoreRegex re, int limit = 0) => re.Split(s, limit);
+
+    /// <summary>s[/re/] : the first match's text, or nil; s[/re/, n] : group n. Sets $~.</summary>
+    public static string? slice(this string s, CoreRegex re, int group = 0)
+    {
+        var m = re.Match(s);
+        SetLastMatch(m);
+        return m?[group];
+    }
+
+    // System.Text.RegularExpressions.Regex objects that user code builds explicitly keep .NET semantics; their
+    // matches surface as the same MatchData
+    public static CoreMatchData? match(this string s, Regex re) => FromBcl(s, re.Match(s));
+    public static CoreMatchData? match(this Regex re, string s) => FromBcl(s, re.Match(s));
     public static string gsub(this string s, Regex re, Func<string, string> f) => re.Replace(s, m => f(m.Value));
     public static string sub(this string s, Regex re, Func<string, string> f) => re.Replace(s, m => f(m.Value), 1);
-
-    /// <summary>`gsub(/re/, hash)`: each match replaced by its hash value (missing: removed, as in Ruby).</summary>
     public static string gsub(this string s, Regex re, Dictionary<string, string> h) => re.Replace(s, m => h.TryGetValue(m.Value, out var r) ? r : "");
+
+    static CoreMatchData? FromBcl(string s, Match m)
+    {
+        if (!m.Success) return null;
+        var offs = new int[2 * m.Groups.Count];
+        var names = new string?[m.Groups.Count];
+        for (int g = 0; g < m.Groups.Count; g++)
+        {
+            var gr = m.Groups[g];
+            offs[2 * g] = gr.Success ? gr.Index : -1;
+            offs[2 * g + 1] = gr.Success ? gr.Index + gr.Length : -1;
+            names[g] = g > 0 && !int.TryParse(gr.Name, out _) ? gr.Name : null;
+        }
+        return CoreMatchData.FromOffsets(s, offs, names);
+    }
 
     [Pure] public static string dup(this string s) => s;   // strings are immutable: the copy is the string
     [Pure] public static string clone(this string s) => s;

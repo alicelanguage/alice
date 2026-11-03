@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- alice-check (ADR 0042): re-checks PROOF.cert. Deliberately standalone: no reference to the compiler, the
+       runtime or any package, so trusting a certificate means trusting only these few files. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>alice-check</AssemblyName>
+    <RootNamespace>Alice.Check</RootNamespace>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

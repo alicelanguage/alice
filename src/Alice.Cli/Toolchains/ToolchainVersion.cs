@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 
 namespace Alice.Cli.Toolchains;
 
@@ -9,7 +8,7 @@ public sealed record ToolchainVersion(int Major, int Minor, int Patch, string? P
     public string Channel => Pre == null ? "stable" : Pre.StartsWith("nightly") ? "nightly" : "preview";
 
     /// <summary>SemVer prerelease: dot-separated non-empty identifiers of ASCII letters, digits and `-`.</summary>
-    static readonly Regex PreRelease = new(@"^[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*\z", RegexOptions.CultureInvariant);
+    static readonly Alice.Core.Text.Regex PreRelease = new(@"\A[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*\z");
 
     public static ToolchainVersion? TryParse(string? text)
     {

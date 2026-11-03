@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 using Alice.Compiler.Semantics;
 using Alice.Compiler.Syntax;
 
@@ -163,7 +162,7 @@ public sealed class CEmitter
         string impl = Symbol(m) + "__impl";
         string driver = arrays[0].Name;
         // whole identifiers only: `a__len` must not rewrite `ba__len`
-        string implBody = Regex.Replace(body.ToString(), $@"(?<![A-Za-z0-9_]){Regex.Escape(driver)}__len(?![A-Za-z0-9_])", "alice__N");
+        string implBody = Alice.Core.Text.Regex.Cached($@"(?<![A-Za-z0-9_]){Alice.Core.Text.Regex.Escape(driver)}__len(?![A-Za-z0-9_])").Replace(body.ToString(), "alice__N");
         defs.Append($"static inline __attribute__((always_inline)) {ret} {impl}({plist}, const int32_t alice__N)\n{{\n{implBody}}}\n\n");
         var written = WrittenArrays(d.Body);
         string args(Func<(string CType, string Name, bool Array, AType Type), string> arr) =>

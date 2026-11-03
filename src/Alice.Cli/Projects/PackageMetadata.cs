@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Alice.Cli.Projects;
 
@@ -11,8 +10,8 @@ public static class PackageMetadata
 {
     public static readonly string[] Kinds = ["exe", "lib", "tool", "game", "wasm"];
 
-    static readonly Regex Id = MsBuildText.PackageId;
-    static readonly Regex SemVer = new(@"^\d+(\.\d+){1,3}(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$");
+    static readonly Alice.Core.Text.Regex Id = MsBuildText.PackageId;
+    static readonly Alice.Core.Text.Regex SemVer = new(@"\A\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\Z");
 
     static readonly (string Key, string Property)[] Plain =
     [

@@ -21,7 +21,7 @@ public class DependencyTests
     [Theory]
     [InlineData("Alice.Runtime", new string[0])]
     [InlineData("Alice.Compiler", new[] { "Alice.Runtime" })]
-    [InlineData("Alice.Cli", new[] { "Alice.Compiler" })]
+    [InlineData("Alice.Cli", new[] { "Alice.Compiler", "Alice.Check" })]
     public void Project_references_follow_layering(string project, string[] allowed)
         => Assert.All(ProjectRefs(project), r => Assert.Contains(r, allowed));
 
