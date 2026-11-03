@@ -2,14 +2,14 @@
 
 ## Unreleased
 
+## 1.0.0-rc.1 - 2026-11-02
+
 - CM loop shapes (ADR 0039, P2.3): counted loops that are a scan, segmented scan, combine (histogram / scatter-add),
   compaction or permutation lower to `Alice.Runtime.Cm` kernels in both backends (`Lowering/Lowerer.Cm.cs`, AIR nodes
   in `Mir/MExpr.Cm.cs`, `Backend/Printer.Cm.cs`, `Backend/Il/AirToIl.Cm.cs`); inferred only where the result equals the
   serial loop (wrapping/bitwise integer ops, 16K+ iterations, serial fallback otherwise). `cm for` / `cm ordered for`
   require a shape (AL0247), float combines need `ordered` (AL0248), permutations a proof (AL0249). `alice explain`
   rows; CM idiomatic programs in `benchmarks/bend2/idiomatic/cm/`, results in `benchmarks/bend2/results/cm.md`.
-
-## 1.0.0-rc.1 - 2026-11-02
 
 - IL backend wiring (backend plan D1.6/D1.8/D1.9/D1.10, ADR 0033): `alice run --backend il` / `alice emit --il` now compile async/iterator/async-iterator methods (own state machines, `Air/Passes/StateMachines`), `Any` operations (`Alice.Runtime.Dyn` call sites, AL0232), records, struct records and sum types (`Synthesize`), and `lib` P/Invokes; the three stub tests `Il_async/iterator/async_iterator_matches_csharp` are real C#-vs-IL differential tests. Fixes found on the way: `break` inside `for v in <IEnumerable>` left the try with `br`, `String == String` was a reference compare under IL.
 - IL backend declaration kinds (D1.10): generic classes/methods (by monomorphization, incl. generic base classes), delegate types and method-group values, constant-expression enum members (`B = 1 << 1`, `AB = A | B`), default interface methods, interface properties, `@[Stack]` structs, `block` parameters, method/field attributes, and events (Alice and CLR, `+=`/`-=`) now compile under `--backend il`; methods named after C# keywords (`double`) resolve.
