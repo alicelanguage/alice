@@ -85,6 +85,9 @@ public sealed partial class AirToIl
         catch (IlUnsupportedException e) { Fail(e); }
         if (errors.Count > 0) return new IlCompileResult(null, null, Stats, errors);
         Module.EntryPoint = main;
+        foreach (var hook in IlPipeline.BeforeEncode)
+            foreach (var m in Module.TypeDefOrder().SelectMany(t => t.Methods))
+                if (m.Body is { } b) hook(m, b);
         try
         {
             var (pe, pdb) = Module.Emit();
@@ -622,6 +625,7 @@ public sealed partial class AirToIl
         if (!IlLoweringOn) return;
         var ctx = Air.Passes.IlLowering.Run(body);
         foreach (var u in ctx.Unsupported) Stats.Seen("IlLowering.left:" + u.Split(':')[0]);
+        foreach (var make in IlPipeline.AfterLowering) make(ctx).Run(body);
     }
 
     void CheckLowerer(Span? sp)
@@ -1008,33 +1012,34 @@ public sealed partial class AirToIl
 }
 
 /// <summary>
+/// Extension points of the IL pipeline for the IL-side optimizer (il-opt, Air/Passes/IlOpt, Backend/Il/Opt):
+/// <see cref="AfterLowering"/> MIR passes run per body after IlLowering (before emission);
+/// <see cref="BeforeEncode"/> runs over every emitted body before the module is encoded. Both empty by default.
+/// </summary>
+public static class IlPipeline
+{
+    public static readonly List<Func<Air.Passes.IlLowerContext, Optimizer.IMirPass>> AfterLowering = [];
+    public static readonly List<Action<IlMethodDef, IlBuilder>> BeforeEncode = [];
+}
+
+/// <summary>
 /// Which methods get [MethodImpl(AggressiveOptimization)]: the C# backend's own policy (Emitter.Kernel, LoopLeaves,
-/// LoopNest, PrimitiveLoop), invoked by reflection so the two backends cannot drift.
+/// LoopNest, PrimitiveLoop, internal for this), so the two backends cannot drift.
 /// </summary>
 internal sealed class HotPolicy
 {
     readonly Emitter emitter;
-    static readonly MethodInfo? Kernel = typeof(Emitter).GetMethod("Kernel", BindingFlags.NonPublic | BindingFlags.Static);
-    static readonly MethodInfo? LoopLeaves = typeof(Emitter).GetMethod("LoopLeaves", BindingFlags.NonPublic | BindingFlags.Instance);
-    static readonly MethodInfo? LoopNest = typeof(Emitter).GetMethod("LoopNest", BindingFlags.NonPublic | BindingFlags.Static);
-    static readonly MethodInfo? PrimitiveLoop = typeof(Emitter).GetMethod("PrimitiveLoop", BindingFlags.NonPublic | BindingFlags.Instance);
 
-    /// <summary>True when every Emitter policy method was found (a test guards it).</summary>
-    public static bool Available => Kernel != null && LoopLeaves != null && LoopNest != null && PrimitiveLoop != null;
+    /// <summary>The policy is shared by direct calls now; kept for the guard test.</summary>
+    public static bool Available => true;
 
     public HotPolicy(Binder binder) => emitter = new Emitter(binder, sequential: true);
 
     public bool IsHot(MethodDecl? d, MethodSym? m, Instance? inst, List<MStmt> body)
     {
-        if (!Available) return false;
-        try
-        {
-            if (d == null || m == null) return (bool)LoopNest!.Invoke(null, [body, 0])! || (bool)PrimitiveLoop!.Invoke(emitter, [body])!;
-            if ((bool)Kernel!.Invoke(null, [d, m, inst, body])!) return true;
-            if (((HashSet<MethodSym>)LoopLeaves!.Invoke(emitter, [])!).Contains(m)) return true;
-            if (d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline")) return false;
-            return (bool)LoopNest!.Invoke(null, [body, 0])! || !m.IsAsync && !m.UsesYield && (bool)PrimitiveLoop!.Invoke(emitter, [body])!;
-        }
-        catch (TargetInvocationException) { return false; }
+        if (d == null || m == null) return Emitter.LoopNest(body, 0) || emitter.PrimitiveLoop(body);
+        if (Emitter.Kernel(d, m, inst, body) || emitter.LoopLeaves().Contains(m)) return true;
+        if (d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline")) return false;
+        return Emitter.LoopNest(body, 0) || !m.IsAsync && !m.UsesYield && emitter.PrimitiveLoop(body);
     }
 }

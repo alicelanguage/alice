@@ -702,8 +702,11 @@ internal sealed partial class IlBody
         if (t.IsSZArray && ix.Args.Count == 1)
         {
             var et = t.GetElementType()!;
+            bool unc = Opt.UncheckedIndex.Proven(ix);
             Raw(ix.Target);
+            if (unc) Opt.UncheckedIndex.Head(il, c.Module, T.Il(et));
             Emit(ix.Args[0], typeof(int));
+            if (unc) { Opt.UncheckedIndex.Tail(il, c.Module, T.Il(et)); il.EmitLoadObj(T.Il(et)); return et; }
             il.EmitLoadElement(T.Il(et));
             return et;
         }

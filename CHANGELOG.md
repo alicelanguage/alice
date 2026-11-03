@@ -44,6 +44,12 @@
   (lexer crashes, fmt round trip, strict/purity false positives on range patterns, inherited `initialize` and getter
   state, local redeclaration in sibling blocks, IL Float64 constant folding, run cache key) are skipped regression
   tests in `tests/Alice.Tests/Fuzz/Regressions/` (report: /work/reports/fuzz-findings.md). docs/tooling.md "Fuzzing".
+- IL backend optimizer (il-opt, IL only, `ALICE_IL_OPT` switches): R9 AggressiveInlining on small loop-free bodies
+  with at most 3 call sites; proven-in-bounds array accesses (`Air/Passes/IlOpt/InBounds.cs`, byref + native-int
+  index, no bounds check) and dead overflow checks removed; peepholes (null tests, constant branches, compare-branch
+  fusion, type tests in Roslyn `is T p` shape: symreg `expr_eval` back to the C# code size). Experimental AO
+  switches `+noao`, `+noaoleaves`, `+aoloops`, `+noaoforks` (off). bend2 serial table:
+  benchmarks/bend2/results/il-vs-csharp.md.
 - perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
   earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
   helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays
