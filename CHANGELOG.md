@@ -5,6 +5,18 @@
 ## 1.0.0-rc.1 - 2026-11-02
 
 - dataflow (ADR 0038, P3.2/P3.3): `dataflow do` with `source`/`stage(state:, par:)`/`sink`, `stream def`; binder checks AL0244-AL0246; lowered to AirDataflow/AirStage/AirRing and static stage methods over the runtime function-pointer overloads (one `Graph.Run`); `benchmarks/dataflow/alice/dataflow.al` matches the hand C# graph.
+- Alice Core library modules (ADR 0036; stdlib plan C3.1-C3.5, C4.1, C4.2), one namespace per module under
+  `src/Alice.Runtime/Core/`: `Text` (`Utf8String`, SIMD `count/delete/squeeze/tr` over UTF-8, `Format.sprintf/try_format`
+  without boxing), `Time` (Ruby `Time`, `Duration` with `5.minutes`, 0-allocation `strftime` into spans), `Csv` (RFC 4180
+  reader on a 64-byte SIMD structural index, zero-copy fields, writer), `Toml` (TOML 1.0 parser and writer, passes
+  toml-test; `alice.toml` is now read with it through `Projects/ManifestToml.cs`), `Fs`, `Process` (`Shell`, `Open3`,
+  `Signals.trap`), `Crypto` (CRC-32C, XXH3-64, digests, HMAC, `SecureRandom`), `Collections` (`Set`, `Deque`, `Ring`,
+  `BitSet`), `Env` (`Env`, `Argv`, `Platform`), `Net` (TCP/Unix/UDP sockets, `TcpServer.serve` per connection, owned
+  `RingBuffer`) and `Net.Http` (`HttpSession` over `SocketsHttpHandler`, JSON body hooks for Alice.Core.Json).
+  Prelude: duration literals (`Prelude.CoreTime.cs`). Benchmarks: `benchmarks/core/lib`, `results/core-lib.md`
+  (CSV 1.6 GB/s, CRC-32C 10-11 GB/s, Deque 1.5x Queue and 8.7x LinkedList, echo 0 bytes/message with 256
+  connections). Docs: `docs/stdlib.md`, `docs/language.md`,
+  "Alice Core modules".
 - perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
   earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
   helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays
