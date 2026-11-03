@@ -428,6 +428,7 @@ internal sealed partial class IlBody
         if (Implicit(text) is { } f) return LoadStaticOrThisMember(f);
         if (StaticPath(text) is { } sp) return LoadStatic(sp);
         if (Reparse(text) is { } parsed) return Raw(parsed);
+        if (NegatedCastLiteral(text) is { } nl) return nl;
         throw No("MCode:unresolved", text);
     }
 

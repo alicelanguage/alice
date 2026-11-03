@@ -57,6 +57,7 @@ public sealed partial class AirToIl
                 if (!ed.IsAdt) throw new IlUnsupportedException("Decl:generic-enum", Sp(it), sym.Name);
                 def.IsAdt = true;
             }
+            def.OpenProxy = Types.MakeOpenProxy(def);
             genericBySym[sym] = def;
             genericItems[def] = [];
             genericNs[def] = ns;

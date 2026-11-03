@@ -63,7 +63,7 @@ public sealed partial class AirToIl
         var ast = Parser.ParseFile("", "body.al");
         binder = new Binder([ast], new ClrTypes(refs));
         binder.Bind();
-        lowerer = new Lowerer(binder) { Sequential = true };
+        lowerer = new Lowerer(binder) { Sequential = true, NoSpecialize = true };
         Module = new IlModule(name);
         Types = new IlTypes(binder, Module);
         hot = new HotPolicy(binder);
