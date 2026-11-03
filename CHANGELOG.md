@@ -4,6 +4,15 @@
 
 ## 1.0.0-rc.1 - 2026-11-02
 
+- IL backend optimizer (il-opt; IL backend only, `ALICE_IL_OPT` switches, e.g. `0` or `-inline,-inbounds`): R9
+  `[AggressiveInlining]` on small loop-free bodies with at most 3 call sites (never fork dispatchers or `__fork_*`
+  helpers); proven-in-bounds array reads and writes (`Air/Passes/IlOpt/InBounds.cs`: interval analysis over
+  exact-length local arrays, emitted as `GetArrayDataReference` + `Unsafe.Add`, ILVerify clean) and overflow checks
+  whose exact result interval fits the type removed; peepholes (null tests, constant branches, compare-branch fusion,
+  type tests in Roslyn's `is T p` shape). Wired through main's IL hooks (`IlPipeline.AfterLowering` / `BeforeEncode`,
+  `IlBody.IndexLoadExt` / `IndexStoreExt`, `IlBuilder.OptimizeExtra`). bend2 serial, IL / C# wall geomean 0.98
+  (1.00 without il-opt; raytrace 1.18 -> 0.98, hashmap 1.03 -> 0.98); the arena tree benchmarks stay at 1.02-1.08.
+  Table: benchmarks/bend2/results/il-vs-csharp.md; docs/performance.md "IL backend optimizer".
 - CM loop shapes (ADR 0039, P2.3): counted loops that are a scan, segmented scan, combine (histogram / scatter-add),
   compaction or permutation lower to `Alice.Runtime.Cm` kernels in both backends (`Lowering/Lowerer.Cm.cs`, AIR nodes
   in `Mir/MExpr.Cm.cs`, `Backend/Printer.Cm.cs`, `Backend/Il/AirToIl.Cm.cs`); inferred only where the result equals the

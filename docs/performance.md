@@ -54,6 +54,29 @@ Alice rewrites common source patterns into the IL shape a hand-optimizing C# aut
 | `q, r = a.divmod(b)` | two floored helpers on temps, no array | `Lowerer.Statements` | `AllocationTests` "divmod destructure" |
 | `a.step(limit, k)` with literal `k` | inlined `for` (`+= k` / `-= k`) | `Lowerer.Iterators` | `AllocationTests` "step" |
 
+## IL backend optimizer
+
+The IL backend (`alice emit --il`, `AirToIl`) runs il-opt after IlLowering; the C# backend never sees it
+(`Backend/Il/Opt/`, `Air/Passes/IlOpt/InBounds.cs`, tests `tests/Alice.Tests/Backends/IlOptTests.cs`, each one
+differential against the C# backend's output):
+
+- **Proven-in-bounds indexing** (R2): an interval analysis over the body proves an index inside a local array of
+  exact, fixed length (`Array(T).new(n)` with constant `n`, literals); proven reads and writes become
+  `GetArrayDataReference(a)` + `Unsafe.Add(ref, (nuint)i)` (no bounds check, no sign extension, ILVerify clean).
+  Anything not understood proves nothing in the whole body; a bare `a[i]` under `while i < a.size` is left to the JIT.
+- **Dead overflow checks**: `+ - *` (and `+= -= *=` on locals) whose exact result interval fits the type lose
+  `.ovf` (ADR 0013/0014: only proven-dead checks go).
+- **Inlining** (R9): `[AggressiveInlining]` on small (<= 120 instructions, <= 24 locals) loop-free, non-virtual,
+  non-recursive bodies called from at most 3 sites; fork dispatchers and `__fork_*` helpers are excluded.
+- **Peepholes**: null tests and compare-branch pairs fused into one branch, constant branches removed, type tests in
+  Roslyn's `isinst; stloc; ldloc; brfalse` shape (no `castclass` re-check).
+- `[AggressiveOptimization]` follows the C# backend's hot policy (`HotPolicy` mirrors `Emitter.Kernel` /
+  `LoopLeaves` / `LoopNest` / `PrimitiveLoop`); `+noao`, `+noaoleaves`, `+aoloops` are experiments, off by default.
+
+Switches: `ALICE_IL_OPT=0` (all off) or a comma list of `-name` / `+name` edits (`inline`, `peephole`, `inbounds`,
+`nooverflow`, `noao`, `noaoleaves`, `aoloops`). bend2 serial IL / C# wall geomean 0.98 (1.00 with `ALICE_IL_OPT=0`),
+machine and per-workload numbers in [benchmarks/bend2/results/il-vs-csharp.md](../benchmarks/bend2/results/il-vs-csharp.md).
+
 ## Semantics notes
 
 - Parallelization requires purity; the race checker (AL0202) and purity gate share the same model.
