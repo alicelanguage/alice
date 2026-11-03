@@ -20,6 +20,8 @@ public sealed partial class Lowerer
     readonly List<string> ctx = new();      // loop | lambda | inline
     HashSet<LocalSym> hoisted = new();
     int tmpN;
+    /// <summary>Nesting of `unchecked ... end` regions being lowered: inside one, `&+` operands are not re-checked (F6).</summary>
+    int uncheckedDepth;
     public MethodSym? Method;
 
     /// <summary>Helper methods generated while lowering the current method (e.g. parallel kernels).</summary>

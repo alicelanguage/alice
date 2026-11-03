@@ -17,7 +17,9 @@ namespace Alice.Cli.Proof;
 /// </summary>
 public static class SmtProver
 {
-    public sealed record Outcome(string Rule, bool Proved, string? Counterexample, string? Untranslatable, double Ms = 0);
+    /// <summary><paramref name="Domains"/>: the rule's quantified variables, so a proof can be sample-checked against
+    /// the compiled rule (review-r1 F8: an UNSAT verdict is never trusted blindly).</summary>
+    public sealed record Outcome(string Rule, bool Proved, string? Counterexample, string? Untranslatable, double Ms = 0, IReadOnlyList<RuleDomain>? Domains = null);
 
     /// <summary>Z3's limit per rule when `alice prove --timeout` is not given: a nonlinear 64-bit query can run for hours.</summary>
     public const uint DefaultTimeoutMs = 20000;
@@ -48,7 +50,7 @@ public static class SmtProver
             try
             {
                 var ex = new Exec(ctx, methods, timeoutMs);
-                r.Add(ex.Check(rule) with { Ms = sw.Elapsed.TotalMilliseconds });
+                r.Add(ex.Check(rule) with { Ms = sw.Elapsed.TotalMilliseconds, Domains = rule.Domains });
             }
             catch (Untranslatable u) { r.Add(new Outcome(rule.RuleName!, false, null, u.Message, sw.Elapsed.TotalMilliseconds)); }
         }
@@ -160,13 +162,16 @@ public static class SmtProver
                     case Assign { Op: "=" } a when (a.Declares ?? (a.Target as NameExpr)?.Sym as LocalSym) is { } l:
                         {
                             var v = Eval(a.Value, f.Env, live);
-                            f.Env[l] = f.Env.TryGetValue(l, out var old) ? z.MkITE(live, v, old) : v;
+                            if (f.Env.TryGetValue(l, out var old) && old is BitVecExpr ob && v is BitVecExpr nb && ob.SortSize != nb.SortSize)
+                                throw new Untranslatable($"`{l.Name}` holds values of different widths");
+                            f.Env[l] = old != null ? z.MkITE(live, v, old) : v;
                             break;
                         }
                     case MultiAssign { Values: [CallExpr { Res: "ext", Recv: { } dr, Args: [{ Value: { } dd }] } dc] } ma
                         when Binder.Mangle(dc.Name) == "divmod" && ma.Locals.Count == 2:
                         {
-                            var (q, r) = FlooredDivMod(Eval(dr, f.Env, live), Eval(dd, f.Env, live), dr.Type, live);
+                            var (x, y, sg) = Operands((BitVecExpr)Eval(dr, f.Env, live), (BitVecExpr)Eval(dd, f.Env, live), dr.Type, dd.Type);
+                            var (q, r) = FlooredDivMod(x, y, sg, live);
                             f.Env[ma.Locals[0]] = q;
                             f.Env[ma.Locals[1]] = r;
                             break;
@@ -218,7 +223,7 @@ public static class SmtProver
                 case UnaryExpr { Op: "!" } u: return z.MkNot(Truth(Eval(u.E, env, live)));
                 case UnaryExpr { Op: "-" } neg:
                     {
-                        var x = (BitVecExpr)Eval(neg.E, env, live);
+                        var x = Promote((BitVecExpr)Eval(neg.E, env, live), neg.E.Type);   // -Int8 is an Int32 (C#)
                         if (Signed(neg.E.Type)) Fails(live, z.MkEq(x, MinOf(x.SortSize)));   // -MIN overflows
                         return z.MkBVNeg(x);
                     }
@@ -274,8 +279,7 @@ public static class SmtProver
             var r = Eval(b.R, env, live);
             if (l is BoolExpr lb && r is BoolExpr rb)
                 return b.Op switch { "==" => z.MkEq(lb, rb), "!=" => z.MkNot(z.MkEq(lb, rb)), _ => throw new Untranslatable($"`{b.Op}` on Bool") };
-            var (x, y) = Same((BitVecExpr)l, (BitVecExpr)r, b.L.Type, b.R.Type);
-            bool sg = Signed(b.L.Type);
+            var (x, y, sg) = Operands((BitVecExpr)l, (BitVecExpr)r, b.L.Type, b.R.Type);
             switch (b.Op)
             {
                 case "==": return z.MkEq(x, y);
@@ -299,11 +303,36 @@ public static class SmtProver
                 case "&": return z.MkBVAND(x, y);
                 case "|": return z.MkBVOR(x, y);
                 case "^": return z.MkBVXOR(x, y);
-                case "/": return FlooredDivMod(x, y, b.L.Type, live).Q;
-                case "%": return FlooredDivMod(x, y, b.L.Type, live).R;
+                case "/": return FlooredDivMod(x, y, sg, live).Q;
+                case "%": return FlooredDivMod(x, y, sg, live).R;
             }
             throw new Untranslatable($"operator `{b.Op}` is not supported by --smt");
         }
+
+        /// <summary>
+        /// The operands of a binary operator at the width and signedness the compiled code computes in. Int8/UInt8/
+        /// Int16/UInt16 promote to Int32 first, as in C# (`sbyte + sbyte` is an `int`; review-r1 F8): `&+` on two Int8
+        /// wraps at 32 bits, not 8, and only an explicit `to_i8` (checked) or `to_i8!` (wrapping) narrows again.
+        /// The binder gives such an operation the wider operand type, at least Int32 (Binder.Expressions.cs).
+        /// </summary>
+        (BitVecExpr, BitVecExpr, bool Signed) Operands(BitVecExpr x, BitVecExpr y, AType tx, AType ty)
+        {
+            if (x.SortSize >= 32 && y.SortSize >= 32)
+            {
+                var (a, b) = Same(x, y, tx, ty);
+                return (a, b, Signed(tx));
+            }
+            var hi = tx.NumericRank >= ty.NumericRank ? tx : ty;
+            bool sg = hi.NumericRank < AType.Int.NumericRank || Signed(hi);
+            uint w = Math.Max(32, Math.Max(x.SortSize, y.SortSize));
+            return (Extend(x, tx, w), Extend(y, ty, w), sg);
+        }
+
+        /// <summary>A narrow integer (Int8..UInt16) as the Int32 C# promotes it to; wider values unchanged.</summary>
+        BitVecExpr Promote(BitVecExpr x, AType t) => Extend(x, t, Math.Max(32, x.SortSize));
+
+        BitVecExpr Extend(BitVecExpr x, AType t, uint w) =>
+            x.SortSize >= w ? x : Signed(t) ? z.MkSignExt(w - x.SortSize, x) : z.MkZeroExt(w - x.SortSize, x);
 
         /// <summary>Operands of different widths (an Int32 next to an Int64) widen like C#: sign- or zero-extension.</summary>
         (BitVecExpr, BitVecExpr) Same(BitVecExpr x, BitVecExpr y, AType tx, AType ty)
@@ -314,12 +343,11 @@ public static class SmtProver
         }
 
         /// <summary>Alice's `/` and `%` round toward negative infinity (ADR 0013); zero divisors and MIN / -1 raise.</summary>
-        (BitVecExpr Q, BitVecExpr R) FlooredDivMod(Expr a, Expr b, AType t, BoolExpr live)
+        (BitVecExpr Q, BitVecExpr R) FlooredDivMod(BitVecExpr x, BitVecExpr y, bool signed, BoolExpr live)
         {
-            var (x, y) = Same((BitVecExpr)a, (BitVecExpr)b, t, t);
             var zero = z.MkBV(0, x.SortSize);
             Fails(live, z.MkEq(y, zero));
-            if (!Signed(t)) return (z.MkBVUDiv(x, y), z.MkBVURem(x, y));
+            if (!signed) return (z.MkBVUDiv(x, y), z.MkBVURem(x, y));
             Fails(live, z.MkAnd(z.MkEq(x, MinOf(x.SortSize)), z.MkEq(y, z.MkBV(-1, x.SortSize))));
             var q = z.MkBVSDiv(x, y);
             var r = z.MkBVSRem(x, y);

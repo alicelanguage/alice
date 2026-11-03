@@ -269,7 +269,7 @@ parameters), `[]` (indexer) and `[]=` (its setter: `g[i] = v`). `def <<(x)` used
 works too. `def ===` compiles (method `op_CaseEq`) but `when`/`===` do not dispatch to it yet; `def call` is an
 ordinary method, `obj.call(x)` / `obj.(x)` on a user class are not supported yet.
 
-Integer `/` on ints is integer division; `a/2` is division, not a regex. Signed `/` and `%` are floored (`-7 / 2 == -4`, `-7 % 3 == 2`, like `divmod`); `tdiv`/`remainder` truncate. Integer overflow raises `OverflowException`; `&+ &- &*` wrap. Floats print as `2.0`, `1.0e-07`, `1.0e+16` (ADR 0013). Limits: `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`. User operators: `def +(o : V2) : V2`.
+Integer `/` on ints is integer division; `a/2` is division, not a regex. Signed `/` and `%` are floored (`-7 / 2 == -4`, `-7 % 3 == 2`, like `divmod`); `tdiv`/`remainder` truncate. Integer overflow raises `OverflowException`; `&+ &- &*` wrap. `Int8`/`UInt8`/`Int16`/`UInt16` operands promote to `Int32` before any arithmetic (as in C#), so wrapping happens at the operator's type: `12.to_i8 &* 12.to_i8` is the `Int32` 144, and only an explicit narrowing wraps into the small type (`144.to_i8!` is -112; `144.to_i8` raises). Floats print as `2.0`, `1.0e-07`, `1.0e+16` (ADR 0013). Limits: `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`. User operators: `def +(o : V2) : V2`.
 
 ## 5. Methods
 
@@ -930,7 +930,8 @@ Expressions fork too, HVM-style: when a statement is arithmetic over pure reads 
 ### Wrapping regions: `unchecked`
 
 Integer `+ - *` raise `OverflowException` on overflow (ADR 0013). Inside `unchecked ... end` they wrap, the
-region form of `&+ &- &*` for hashes and PRNGs:
+region form of `&+ &- &*` for hashes and PRNGs (inside the region the operands of `&+ &- &*` wrap too:
+`(a + 1) &+ 1` is `Int32::MIN + 1` for `a = Int32::MAX`; outside it, `a + 1` still raises):
 
 ```crystal
 h = 0
