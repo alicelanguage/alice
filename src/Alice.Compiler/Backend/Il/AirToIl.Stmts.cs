@@ -7,7 +7,7 @@ namespace Alice.Compiler.Backend.Il;
 /// <summary>Statements, calls and assignments of <see cref="IlBody"/>.</summary>
 internal sealed partial class IlBody
 {
-    sealed record Loop(IlLabel Break, IlLabel Continue, int TryDepth);
+    sealed record Loop(IlLabel Break, IlLabel Continue, int TryDepth) { public int BreakDepth { get; init; } = TryDepth; }
 
     readonly Stack<Loop> loops = new();
     int tryDepth;
@@ -129,7 +129,7 @@ internal sealed partial class IlBody
             case MDeconstruct dc: Deconstruct(dc); break;
             case MUsing u: Using(u); break;
             case AirSwitch sw: Switch(sw); break;
-            default: throw No(s.GetType().Name);
+            default: if (!StmtExt(s)) throw No(s.GetType().Name); break; // H2 il-emit2
         }
     }
 
@@ -170,7 +170,7 @@ internal sealed partial class IlBody
     void Branch(Loop l, bool brk)
     {
         var target = brk ? l.Break : l.Continue;
-        if (tryDepth > l.TryDepth) il.EmitLeave(target); else il.EmitBranch(target);
+        if (tryDepth > (brk ? l.BreakDepth : l.TryDepth)) il.EmitLeave(target); else il.EmitBranch(target);
     }
 
     void Return(MReturn r)
@@ -416,7 +416,7 @@ internal sealed partial class IlBody
             EmitInstanceCall(en, cur.GetGetMethod()!);
             var et = Deref(cur.PropertyType);
             BindVars(fe.Vars, et);
-            loops.Push(new(brk, cont, tryDepth));
+            loops.Push(new(brk, cont, tryDepth) { BreakDepth = disposable ? tryDepth - 1 : tryDepth }); // il-emit2: brk lies after the try
             Stmts(fe.Body);
             loops.Pop();
             il.MarkLabel(cont);
@@ -870,7 +870,7 @@ internal sealed partial class IlBody
     {
         if (rt.IsValueType)
         {
-            if (m.DeclaringType == rt && !m.IsVirtual || m.DeclaringType == rt && m.IsFinal) il.EmitCall(T.Method(m));
+            if (m.DeclaringType == rt) il.EmitCall(T.Method(m)); // il-emit2: a struct method cannot be overridden (ILVerify CallVirtOnValueType)
             else { il.EmitConstrainedPrefix(T.Il(rt)); il.EmitCall(T.Method(m), virtualCall: true); }
             return;
         }
@@ -991,7 +991,7 @@ internal sealed partial class IlBody
             var ownerT = recv == null || baseCall ? (owner.ClrBase ?? typeof(object)) : rt!;
             if (!mi.IsStatic && rt != null && rt.IsValueType && !pick.Extension && !baseCall)
             {
-                if (mi.DeclaringType == rt && (!mi.IsVirtual || mi.IsFinal)) il.EmitCall(T.Method(mi));
+                if (mi.DeclaringType == rt) il.EmitCall(T.Method(mi)); // il-emit2: a struct method cannot be overridden (ILVerify CallVirtOnValueType)
                 else { il.EmitConstrainedPrefix(T.Il(rt)); il.EmitCall(T.Method(mi), virtualCall: true); }
             }
             else il.EmitCall(T.Method(mi), virtualCall: !mi.IsStatic && !baseCall && !(recv == null && owner.IsValueType));

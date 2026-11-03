@@ -13,7 +13,7 @@ namespace Alice.Tests.Compiler;
 /// <summary>
 /// IL-only lowering passes (Air/Passes, backend plan D1.7): before/after AIR dumps for every shape, and behaviour
 /// checked against Roslyn as the oracle (the original body printed as C#, against the lowered body printed as C#,
-/// which Roslyn must no longer lower). The IL-emitter runs of the same bodies are Pending until AirToIl (D1.4) lands.
+/// which Roslyn must no longer lower). Il_*: the lowered bodies through the IL emitter (AirToIl.CompileBody).
 /// </summary>
 public class IlLowerTests
 {
@@ -768,27 +768,25 @@ public class IlLowerTests
         Assert.DoesNotContain(Pipeline.Default, p => p().Name.StartsWith("il-"));
     }
 
-    const string PendingIl = "pending: AirToIl (backend plan D1.4) is not merged; un-skip and implement RunIl when it lands";
-
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
+    [Fact(Skip = "pending: the body spells collections as C# text (`new[] { 1, 2, 3, 4, 5 }`), which AirToIl.CsText does not parse (il-emit)"), Trait("Category", "Pending")]
     public void Il_foreach() => SameOnIl(ForeachProgram);
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
+    [Fact]
     public void Il_interp() => SameOnIl(InterpProgram);
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
+    [Fact(Skip = "pending: the lowered body keeps an MLambda, which AirToIl emits after closure conversion (il-emit, D1.5)"), Trait("Category", "Pending")]
     public void Il_patterns() => SameOnIl(PatternProgram, SrcClass);
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
+    [Fact]
     public void Il_using_lock() => SameOnIl(UsingProgram, ResClasses);
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
+    [Fact]
     public void Il_switch() => SameOnIl(SwitchProgram);
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
+    [Fact]
     public void Il_tuples() => SameOnIl(TupleProgram);
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
+    [Fact]
     public void Il_nullable() => SameOnIl(NullableProgram, NClass);
 
     static void SameOnIl(Func<List<MStmt>> make, string extra = "")
@@ -799,7 +797,35 @@ public class IlLowerTests
         Assert.Equal(expected, RunIl(lowered, extra));
     }
 
-    static string RunIl(List<MStmt> body, string extra) => throw new NotSupportedException(PendingIl);
+    /// <summary>The lowered body through the IL emitter (AirToIl.CompileBody) as `Program.Run()`; the C# helper
+    /// classes of <paramref name="extra"/> are compiled by Roslyn into a referenced assembly.</summary>
+    static string RunIl(List<MStmt> body, string extra)
+    {
+        var refs = new List<string>();
+        if (extra.Length > 0)
+        {
+            string src = "using System;\nusing System.Collections.Generic;\n#nullable enable\n" + extra;
+            var trusted = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator).Select(f => MetadataReference.CreateFromFile(f));
+            string name = "ilextra" + Guid.NewGuid().ToString("N");
+            var comp = CSharpCompilation.Create(name, [CSharpSyntaxTree.ParseText(src)], trusted,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+            string path = Path.Combine(Path.GetTempPath(), name + ".dll");
+            var r = comp.Emit(path);
+            Assert.True(r.Success, string.Join("\n", r.Diagnostics));
+            refs.Add(path);
+        }
+        var res = global::Alice.Compiler.Backend.Il.AirToIl.CompileBody(body, "lowered", refs);
+        Assert.True(res.Ok, "IL backend: " + string.Join("\n", res.Errors.Select(e => e.Message)));
+        Assert.Empty(global::Alice.Tests.Backends.AirToIlTests.DecodeCheck(res.Pe!));
+        // ILVerify resolves framework assemblies only: images that reference the helper assembly are decoded, not verified
+        if (refs.Count == 0)
+        {
+            var verify = global::Alice.Tests.Backends.AirToIlTests.IlVerify(res.Pe!);
+            Assert.True(verify.Count == 0, "ILVerify:\n" + string.Join("\n", verify));
+        }
+        var asm = Assembly.Load(res.Pe!);
+        return (string)asm.GetType("Program")!.GetMethod("Run")!.Invoke(null, null)!;
+    }
 
     // ---- oracle: Roslyn compiles the original and the lowered body ----
 

@@ -15,6 +15,7 @@ namespace Alice.Tests.Compiler;
 /// sites under `native = true` and on wasm. Bodies come from the real binder + lowerer (as the IL backend gets them)
 /// and are compared as AIR dumps; AirDynCall prints as `(dyn.Kind#site name target args)` here.
 /// </summary>
+[Collection("console")]
 public class DynSitesTests
 {
     const string Program =
@@ -226,8 +227,28 @@ public class DynSitesTests
         Assert.Equal(SemanticsExpected, string.Concat(got));
     }
 
-    [Fact(Skip = "Pending: AirToIl (D1.4, il-emit) does not emit AirDynCall yet; then run SemanticsProgram under --backend il and assert SemanticsExpected (Alice semantics; the C# backend prints -3, -1, -1.5 for the first three)")]
+    [Fact]
     public void Dynamic_program_runs_with_Alice_semantics_under_the_IL_backend()
     {
+        // the C# backend prints -3, -1, -1.5 for the first three (C# `dynamic` truncates); the IL backend calls Dyn
+        var res = Alice.Compiler.Backend.Il.AirToIl.Compile([new SourceFile("main.al", SemanticsProgram)], "dyn");
+        Assert.True(res.Ok, string.Join("\n", res.Errors.Select(e => e.Message)));
+        var verify = Alice.Tests.Backends.AirToIlTests.IlVerify(res.Pe!);
+        Assert.True(verify.Count == 0, string.Join("\n", verify));
+        Assert.Equal(SemanticsExpected, AliceCompiler.Invoke(AliceCompiler.Load(res.Pe!), []));
+    }
+
+    [Fact]
+    public void Dynamic_program_runs_the_same_under_both_backends()
+    {
+        // where C# `dynamic` and Dyn agree: calls, members, compound stores, indexers, conversions, conditions
+        // (without the `.()` of a lambda: lambdas need closure conversion in AirToIl, il-emit)
+        string src = Program.Replace("f : Any = ->(a : Int32) { a * 2 }\n", "").Replace("puts f.(4)\n", "");
+        var res = Alice.Compiler.Backend.Il.AirToIl.Compile([new SourceFile("main.al", src)], "dyn");
+        Assert.True(res.Ok, string.Join("\n", res.Errors.Select(e => e.Message)));
+        var verify = Alice.Tests.Backends.AirToIlTests.IlVerify(res.Pe!);
+        Assert.True(verify.Count == 0, string.Join("\n", verify));
+        string cs = AliceCompiler.Invoke(AliceCompiler.Load(AliceCompiler.Emit([AliceCompiler.Transpile(src)], "cs", exe: true)), []);
+        Assert.Equal(cs, AliceCompiler.Invoke(AliceCompiler.Load(res.Pe!), []));
     }
 }

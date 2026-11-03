@@ -74,8 +74,9 @@ public sealed partial class AirToIl
         try
         {
             DeclareTypes(asts);
-            DeclareMembers(asts);
+            if (SynthOn) SynthDeclareMembers(asts); else DeclareMembers(asts); // S2 il-emit2
             main = EmitBodies(asts, exe);
+            EmitDynSites(); // H4b il-emit2
         }
         catch (IlUnsupportedException e) { Fail(e); }
         if (errors.Count > 0) return new IlCompileResult(null, null, Stats, errors);
@@ -194,7 +195,7 @@ public sealed partial class AirToIl
         {
             switch (it)
             {
-                case LibDecl: throw new IlUnsupportedException("Decl:lib (FFI, D1.10)", Sp(it));
+                case LibDecl: continue; // H5 il-emit2: DeclareLibs below
                 case DelegateDecl: throw new IlUnsupportedException("Decl:delegate", Sp(it));
                 case TypeDecl { RefineScope: not null }: throw new IlUnsupportedException("Decl:refinement", Sp(it));
             }
@@ -291,6 +292,7 @@ public sealed partial class AirToIl
             }
             if (!a.IsStatic && !a.IsVariant && !a.IsAdt) a.Def.AddCustomAttribute(Module.Import(typeof(Alice.Runtime.AliceTypeAttribute).GetConstructor(Type.EmptyTypes)!));
         }
+        DeclareLibs(all); // H5 il-emit2
     }
 
     static Span? Sp(Node n) => n.Line > 0 ? new Span("", n.Line, Math.Max(1, n.Col), 0) : null;
@@ -596,6 +598,7 @@ public sealed partial class AirToIl
         lowerer.File = File;
         var tmp = lowerer.LowerBody([new ExprStmt { Expr = e, Line = e.Line }], Tail.Return, [], e.Line);
         Optimizer.Pipeline.Run(tmp);
+        DynLower(tmp); // H4a il-emit2
         if (tmp.Count != 1) throw new IlUnsupportedException("Init:statements", Sp(e));
         CheckLowerer(Sp(e));
         return ((MReturn)tmp[^1]).Value!;
@@ -652,7 +655,6 @@ public sealed partial class AirToIl
     {
         var m = (MethodSym)d.Sym!;
         if (d.IsPartial) throw new IlUnsupportedException("Decl:partial-method (source generator)", Sp(d), m.Name);
-        if (m.IsAsync || m.IsIterator || m.UsesYield) throw new IlUnsupportedException(m.IsAsync ? "Decl:async (D1.8)" : "Decl:iterator (D1.8)", Sp(d), m.Name);
         if (m.TypeParams.Count > 0 && !m.HasInferredGenerics) throw new IlUnsupportedException("Decl:generic-method", Sp(d), m.Name);
         if (d.Attrs.Any(x => x is not ("Inline" or "NoInline" or "Hot" or "StrictMath" or "Native" or "Open" or "Stack") && !x.StartsWith("Native(") && !x.StartsWith("__enumerable:")))
             throw new IlUnsupportedException("Decl:attribute", Sp(d), string.Join(",", d.Attrs));
@@ -668,7 +670,7 @@ public sealed partial class AirToIl
         var sp = Sp(d);
         var retA = inst?.Ret ?? m.Ret;
         if (inst != null && retA.IsUnknown) throw new IlUnsupportedException("Decl:dynamic-return", sp, m.Name);
-        var retT = m.IsCtor ? typeof(void) : Types.FromAType(retA, sp);
+        var retT = m.IsCtor ? typeof(void) : SmReturn(m, inst) ?? Types.FromAType(retA, sp); // H3a il-emit2
         var ps = new List<Type>();
         var names = new List<string>();
         bool ext = a.Sym.Kind == "extension";
@@ -787,10 +789,14 @@ public sealed partial class AirToIl
     IlMethodDef? EmitBodies(List<FileNode> asts, bool exe)
     {
         foreach (var am in toEmit) Guard(am.ToString(), () => MethodBody(am, asts));
-        foreach (var a in Types.BySym.Values.Distinct())
-            foreach (var ctor in a.Ctors.Where(x => x.Decl == null && x.Owner == a).ToList())
-                if (!ctor.Def.Attributes.HasFlag(MethodAttributes.Private) || !a.IsAdt) Guard(a + "::.ctor", () => SyntheticCtor(ctor));
-        foreach (var (owner, inits) in staticInits) Guard(owner + "::.cctor", () => StaticCtor(owner, inits));
+        if (SynthOn) SynthBodies(); // S3 il-emit2
+        else
+        {
+            foreach (var a in Types.BySym.Values.Distinct())
+                foreach (var ctor in a.Ctors.Where(x => x.Decl == null && x.Owner == a).ToList())
+                    if (!ctor.Def.Attributes.HasFlag(MethodAttributes.Private) || !a.IsAdt) Guard(a + "::.ctor", () => SyntheticCtor(ctor));
+            foreach (var (owner, inits) in staticInits) Guard(owner + "::.cctor", () => StaticCtor(owner, inits));
+        }
         IlMethodDef? main = null;
         var mains = asts.Where(f => f.Items.OfType<StmtItem>().Any()).ToList();
         if (mains.Count > 1) Fail(new IlUnsupportedException("Main:several-files"));
@@ -808,6 +814,7 @@ public sealed partial class AirToIl
                 lowerer.Method = null;
                 var body = lowerer.LowerBody(stmts, Tail.None, f.HoistedLocals, stmts[0].Line);
                 Optimizer.Pipeline.Run(body);
+                DynLower(body); // H4a il-emit2
                 CheckLowerer(Sp(stmts[0]));
                 IlLower(body);
                 var self = new AMethod { Name = "Main", Owner = ProgramT, IsStatic = true, Def = md, Params = [typeof(string[])], ParamNames = ["ARGV"] };
@@ -858,14 +865,16 @@ public sealed partial class AirToIl
         try { body = lowerer.LowerBody(d.Body, returns ? Tail.Return : Tail.None, d.HoistedLocals, d.Line); }
         finally { lowerer.CloneOk = false; }
         Optimizer.Pipeline.Run(body);
+        DynLower(body); // H4a il-emit2
         CheckLowerer(Sp(d));
         IlLower(body);
+        body = SmLower(am, body); // H3b il-emit2
         if (lowerer.Forked) throw new IlUnsupportedException("Lowerer.Forked", Sp(d), m.Name);
         if (!m.IsCtor && hot.IsHot(d, m, am.Inst, body)) am.Def.ImplAttributes |= MethodImplAttributes.AggressiveOptimization;
         var ps = am.ParamNames.Select((n, i) => (n, am.Params[i])).ToList();
         var il = Body(am.Def);
         var b = new IlBody(this, am.Owner, am, il, am.Ret, am.IsStatic, ps);
-        b.Body(body, m.IsCtor ? () => CtorPrologue(b, am, d) : null);
+        b.Body(body, m.IsCtor ? (Action)(() => { if (SynthOn) SynthCtorPrologue(b, am, d); else CtorPrologue(b, am, d); }) : null); // S4 il-emit2
     }
 
     /// <summary>Field initializers, the base constructor call (`super` arguments), then `initialize(@x)` auto assignments.</summary>

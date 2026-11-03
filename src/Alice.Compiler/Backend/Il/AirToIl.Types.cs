@@ -173,7 +173,8 @@ internal sealed class IlTypes
 
     Type? ParseCore(string cs)
     {
-        if (cs.Length == 0 || cs is "var" or "dynamic") return null;
+        if (cs == "dynamic") return typeof(object); // il-emit2: Any is an object (DynSites, D1.9)
+        if (cs.Length == 0 || cs is "var") return null;
         if (cs.EndsWith('?'))
         {
             var inner = TryParse(cs[..^1]);
@@ -252,7 +253,8 @@ internal sealed class IlTypes
     {
         if (t.IsVoid) return typeof(void);
         if (t.Sym != null && BySym.TryGetValue(t.Sym, out var a) && t.Args.Count == 0 && !t.Nullable) return a.Proxy;
-        if (t.IsUnknown || t.Kind == "dynamic") throw new IlUnsupportedException("Type:dynamic", span, t.Cs);
+        if (t.Kind == "dynamic") return typeof(object); // il-emit2: Any is an object (DynSites, D1.9)
+        if (t.IsUnknown) throw new IlUnsupportedException("Type:dynamic", span, t.Cs);
         return Parse(Lowering.Lowerer.TypeCs(t), span);
     }
 

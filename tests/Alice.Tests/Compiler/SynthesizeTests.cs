@@ -313,11 +313,33 @@ public class SynthesizeTests
         Assert.Equal(Run(RecordsSrc + "x, y = Point.new(7, 8)\nputs x\nputs y\nputs Point.new(1, 9)\nputs Shape::Rect.new(5, 2)\nputs true\n"), ours);
     }
 
-    [Fact(Skip = "Pending: needs the IL backend (D1.4, worker il-emit) to run the synthesized members as IL")]
-    [Trait("Category", "Pending")]
+    /// <summary>The same programs as above (ToString, equality, hashing, Deconstruct, sum types, auto-properties,
+    /// derived operators, field initializers) compiled by the IL backend from these declarations, against the C# backend.</summary>
+    [Fact]
     public void Il_backend_prints_what_the_csharp_backend_prints()
     {
-        // once `--backend il` exists: run RecordsSrc programs above through both backends and compare stdout
+        string src = RecordsSrc +
+            "class Money\n  getter cents : Int32 = 5\n  def initialize(@c : Int32)\n  end\n" +
+            "  def ==(o : Money) : Bool\n    @c == o.amount\n  end\n  def <(o : Money) : Bool\n    @c < o.amount\n  end\n  def <=(o : Money) : Bool\n    @c <= o.amount\n  end\n" +
+            "  def amount : Int32\n    @c\n  end\n  def to_s : String\n    \"m#{@c}\"\n  end\nend\n" +
+            "class Acc\n  getter total : Int32 = 10\n  property label : String = \"acc\"\n  def initialize(k : Int32)\n    @total += k\n  end\nend\n" +
+            "p = Point.new(1, 2)\nputs p\nputs V.new(3, nil)\nputs N.new(\"a\", 1.5, nil, p)\n" +
+            "puts Shape::Circle.new(2.0)\nputs Shape::Rect.new(3, 4)\nputs Shape::Empty\n" +
+            "a = Point.new(1, 2)\nputs a == Point.new(1, 2)\nputs a != Point.new(1, 5)\nputs a == nil\n" +
+            "puts V.new(1, \"s\") == V.new(1, \"s\")\nputs V.new(1, \"s\") == V.new(1, \"t\")\n" +
+            "c1 = Shape::Circle.new(2.0)\nputs c1 == Shape::Circle.new(2.0)\nputs c1 == Shape::Rect.new(2, 0)\nputs Shape::Empty == Shape::Empty.new\n" +
+            "puts c1.Equals(Shape::Rect.new(2, 0))\nputs V.new(3, \"q\").hash\nputs Point.new(4, 5).hash == Point.new(4, 5).hash\n" +
+            "x, y = Point.new(7, 8)\nputs x\nputs y\n" +
+            "m = Money.new(3)\nputs m != Money.new(3)\nputs m > Money.new(1)\nputs m >= Money.new(4)\nputs m.cents\nputs m\n" +
+            "ac = Acc.new(5)\nputs ac.total\nputs ac.label\nac.label = \"z\"\nputs ac.label\n" +
+            "struct Cfg\n  property port : Int32 = 80\n  property host : String = \"localhost\"\nend\nc = Cfg.new\nputs \"#{c.host}:#{c.port}\"\n";
+        var res = Alice.Compiler.Backend.Il.AirToIl.Compile([new SourceFile("main.al", src)], "synth");
+        Assert.True(res.Ok, string.Join("\n", res.Errors.Select(e => e.Message)));
+        var verify = Alice.Tests.Backends.AirToIlTests.IlVerify(res.Pe!);
+        Assert.True(verify.Count == 0, string.Join("\n", verify));
+        string il = AliceCompiler.Invoke(AliceCompiler.Load(res.Pe!), []).Trim().ReplaceLineEndings("\n");
+        Assert.Equal(Run(src), il);
+        Assert.Contains("Point { x = 1, y = 2 }\n", il);
     }
 
     /// <summary>
