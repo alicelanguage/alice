@@ -174,8 +174,16 @@ sealed class Driver(string root, string outDir, int seconds, int seed)
             Oracles.Compiled? compiled = null;
             try { var cs = AliceCompiler.TranspileAll(files); compiled = new(cs, AliceCompiler.Emit(cs, "fuzz", exe: true)); }
             catch (Exception) { Count("not-compiled"); continue; }   // the typed fuzzer owns compile findings
-            int before = ds.Compared;
+            int before = ds.Compared, unsupBefore = ds.IlUnsupported;
             var f = Oracles.CheckDifferential(src, compiled, ds);
+            bool unsupported = ds.IlUnsupported > unsupBefore;
+            foreach (var feat in gen.Features)
+            {
+                var (n, u) = ilCoverage.GetValueOrDefault(feat);
+                ilCoverage[feat] = (n + 1, u + (unsupported ? 1 : 0));
+            }
+            if (unsupported) foreach (var k in ds.LastUnsupported) unsupportedPrograms[k] = unsupportedPrograms.GetValueOrDefault(k) + 1;
+            if ((DateTime.UtcNow - lastCoverage).TotalSeconds >= 600) CoverageTable(final: false);
             if (f != null) Found(f, DiffCheck, 300);
             // variants compare each backend with itself: a known C#-vs-IL difference does not keep a program out
             if (ds.Compared > before && (f == null || Known.Match(f) != null)) pending.Add(("p" + i, src, ds.LastCs!, ds.LastIl!));
@@ -186,6 +194,7 @@ sealed class Driver(string root, string outDir, int seconds, int seed)
         Count("il-compared", ds.Compared);
         Count("il-unsupported", ds.IlUnsupported);
         Report(final: true);
+        CoverageTable(final: true);
         if (ds.Unsupported.Count > 0) Console.WriteLine("IL-UNSUPPORTED " + string.Join(" | ", ds.Unsupported.OrderByDescending(kv => kv.Value).Take(15).Select(kv => kv.Key + " x" + kv.Value)));
         return Watchdog.Leaked >= 3 ? 3 : 0;
     }
@@ -201,6 +210,23 @@ sealed class Driver(string root, string outDir, int seconds, int seed)
         if (f != null && f.Category.StartsWith("rejected:") && EffectCodes.Any(f.Category.Contains)
             && Oracles.CheckTyped(Shrink.WithoutEffects(src), out _, strict: false) is { } g && g.Category.StartsWith("rejected:")) return null;
         return f;
+    }
+
+    // IL coverage per generator feature: programs with the feature, and how many of them the IL backend could not
+    // compile (an unsupported node anywhere in the program); per unsupported node kind, programs that hit it
+    readonly SortedDictionary<string, (int Programs, int Unsupported)> ilCoverage = new(StringComparer.Ordinal);
+    readonly SortedDictionary<string, int> unsupportedPrograms = new(StringComparer.Ordinal);
+    DateTime lastCoverage = DateTime.UtcNow;
+
+    void CoverageTable(bool final)
+    {
+        lastCoverage = DateTime.UtcNow;
+        string tag = final ? "IL-COVERAGE-FINAL" : "IL-COVERAGE";
+        Console.WriteLine($"{tag} t={clock.Elapsed.TotalSeconds:F0}s | feature | programs | il-unsupported | il-ok %");
+        foreach (var (feat, (n, u)) in ilCoverage.OrderByDescending(kv => kv.Value.Unsupported * 1.0 / Math.Max(1, kv.Value.Programs)))
+            Console.WriteLine($"{tag} | {feat} | {n} | {u} | {(n == 0 ? 0 : 100.0 * (n - u) / n):F1}");
+        foreach (var (k, n) in unsupportedPrograms.OrderByDescending(kv => kv.Value))
+            Console.WriteLine($"{tag} | node: {k} | {n} programs");
     }
 
     static Finding? DiffCheck(string src)
