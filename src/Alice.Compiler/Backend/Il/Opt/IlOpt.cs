@@ -26,8 +26,10 @@ public enum IlOptPass
     /// <summary>R10 per shape, experiment: [AggressiveOptimization] on every loop-carrying body the hot policy left
     /// tiered (e.g. a primitive loop that only calls helpers, kmeans `chunk`). Off by default (see <see cref="MethodFlags"/>).</summary>
     AoLoops = 64,
+    /// <summary>Loop-carried store-to-load forwarding over proven-in-bounds fresh arrays (Air/Passes/IlOpt/StoreForward.cs).</summary>
+    Forward = 128,
     /// <summary>The default set.</summary>
-    All = Inline | Peephole | InBounds | NoOverflow,
+    All = Inline | Peephole | InBounds | NoOverflow | Forward,
 }
 
 /// <summary>
@@ -63,6 +65,7 @@ public static class IlOpt
     internal static void Register()
     {
         IlPipeline.AfterLowering.Add(_ => new Air.Passes.IlOpt.InBounds());
+        IlPipeline.AfterLowering.Add(_ => new Air.Passes.IlOpt.StoreForward());
         IlPipeline.BeforeEncode.Add(MethodFlags.Apply);
     }
 #pragma warning restore CA2255

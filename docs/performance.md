@@ -68,13 +68,19 @@ differential against the C# backend's output):
   `.ovf` (ADR 0013/0014: only proven-dead checks go).
 - **Inlining** (R9): `[AggressiveInlining]` on small (<= 120 instructions, <= 24 locals) loop-free, non-virtual,
   non-recursive bodies called from at most 3 sites; fork dispatchers and `__fork_*` helpers are excluded.
+- **Store forwarding**: in a `while` loop stepping its counter by a constant, a load that reads the element the
+  previous iteration stored (`rows[co + j]` after `rows[co + j + 1] = v`) reads a local carrying v; the store stays.
+  Only for fresh arrays that never escape (index, `.size` and pool release only), one unconditional store per
+  iteration, no `continue`/nested loop/lambda in the body, unchecked linear indices and proven-in-bounds loads.
+- **Inline expansion bound**: a method is forced inline only if its size with the `inline` and tiny callees the JIT
+  inlines anyway stays within 120 instructions.
 - **Peepholes**: null tests and compare-branch pairs fused into one branch, constant branches removed, type tests in
   Roslyn's `isinst; stloc; ldloc; brfalse` shape (no `castclass` re-check).
 - `[AggressiveOptimization]` follows the C# backend's hot policy (`HotPolicy` mirrors `Emitter.Kernel` /
   `LoopLeaves` / `LoopNest` / `PrimitiveLoop`); `+noao`, `+noaoleaves`, `+aoloops` are experiments, off by default.
 
 Switches: `ALICE_IL_OPT=0` (all off) or a comma list of `-name` / `+name` edits (`inline`, `peephole`, `inbounds`,
-`nooverflow`, `noao`, `noaoleaves`, `aoloops`). bend2 serial IL / C# wall geomean 0.98 (1.00 with `ALICE_IL_OPT=0`),
+`nooverflow`, `forward`, `noao`, `noaoleaves`, `aoloops`). bend2 serial IL / C# wall geomean 0.96 (1.00 with `ALICE_IL_OPT=0`),
 machine and per-workload numbers in [benchmarks/bend2/results/il-vs-csharp.md](../benchmarks/bend2/results/il-vs-csharp.md).
 
 ## Semantics notes

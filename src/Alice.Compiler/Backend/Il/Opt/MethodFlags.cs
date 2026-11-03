@@ -77,7 +77,49 @@ public static class MethodFlags
         // a fork dispatcher (`f` testing Par.Forkable, its `__fork_f_N` pair) recurses through its own clone and
         // closures: forcing it into callers only copies the fork machinery
         if (m.Name.StartsWith("__fork_", StringComparison.Ordinal) || facts.Calls.Any(c => c.Contains("__serial(", StringComparison.Ordinal) || c.Contains("::__fork_", StringComparison.Ordinal))) return false;
+        // the size the JIT sees once the callees it inlines anyway are in: forcing gameoflife's 30-instruction
+        // `classify` (two `inline` board_step calls, 32 step_cells) into `chunk` spent chunk's inlining budget, and
+        // the step_cells stayed calls (4152 B chunk vs C#'s 1797 B, 8 % slower warm)
+        if (Expanded(m, il, [], MaxInstructions) > MaxInstructions) return false;
         return Sites(m.Owner.Module).GetValueOrDefault(m.ToString()) <= MaxSites;
+    }
+
+    /// <summary>Most instructions of a callee the JIT inlines without [AggressiveInlining] (its always-inline
+    /// threshold is 16 IL bytes).</summary>
+    public const int TinyInstructions = 8;
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IlModule, Dictionary<string, IlMethodDef>> defs = new();
+
+    /// <summary>Methods of <paramref name="module"/> with a body, by their listing name.</summary>
+    static Dictionary<string, IlMethodDef> Defs(IlModule module) => defs.GetValue(module, mod =>
+    {
+        var d = new Dictionary<string, IlMethodDef>();
+        foreach (var t in mod.TypeDefOrder())
+            foreach (var mm in t.Methods)
+                if (mm.Body != null) d.TryAdd(mm.ToString(), mm);
+        return d;
+    });
+
+    /// <summary>Instructions of <paramref name="m"/> with every module callee that is inlined in turn (marked
+    /// [AggressiveInlining], e.g. an `inline def`, or tiny) expanded in place; stops counting past
+    /// <paramref name="limit"/>. Recursion through the stack counts once.</summary>
+    static int Expanded(IlMethodDef m, IlBuilder il, HashSet<string> stack, int limit)
+    {
+        var facts = BodyFacts.Of(il);
+        int n = facts.Instructions;
+        if (!stack.Add(m.ToString())) return n;
+        var all = Defs(m.Owner.Module);
+        foreach (var c in facts.Calls)
+        {
+            if (n > limit) break;
+            if (!all.TryGetValue(c, out var callee) || callee.Body is not { } cb || stack.Contains(c)) continue;
+            if ((callee.ImplAttributes & MethodImplAttributes.NoInlining) != 0) continue;
+            bool inlined = (callee.ImplAttributes & MethodImplAttributes.AggressiveInlining) != 0
+                || BodyFacts.Of(cb).Instructions <= TinyInstructions;
+            if (inlined) n += Expanded(callee, cb, stack, limit) - 1;   // the call instruction goes
+        }
+        stack.Remove(m.ToString());
+        return n;
     }
 }
 
@@ -85,7 +127,10 @@ public static class MethodFlags
 /// (the instruction list after IlBuilder's peepholes; the listing prints labels, regions and symbolic operands).</summary>
 public sealed record BodyFacts(int Instructions, bool Loop, bool Eh, bool Localloc, bool Tail, List<string> Calls)
 {
-    public static BodyFacts Of(IlBuilder il) => Parse(il.Listing(optimize: true));
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IlBuilder, BodyFacts> cache = new();
+
+    /// <summary>The facts of a finished body (BeforeEncode: the instruction list no longer changes), parsed once.</summary>
+    public static BodyFacts Of(IlBuilder il) => cache.GetValue(il, b => Parse(b.Listing(optimize: true)));
 
     public static BodyFacts Parse(string listing)
     {
