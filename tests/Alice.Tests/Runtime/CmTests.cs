@@ -6,6 +6,7 @@ namespace Alice.Tests.Runtime;
 
 /// <summary>Connection-Machine primitives (ADR 0039): exact vs serial folds for integers, bit-identical floats for any
 /// worker count, zero steady-state allocation, edge sizes around the chunk length.</summary>
+[Collection(IsolatedAllocationCollection.Name)]
 public unsafe class CmTests
 {
     static readonly int[] Sizes = [0, 1, 2, 3, 7, 15, 16, 17, 31, 63, 64, 65, 100, 4095, 4096, 4097, 8191, 12_345, 65_536 * 3 + 5, (1 << 20) + 7];
@@ -385,9 +386,7 @@ public unsafe class CmTests
     static long Allocated(Action f)
     {
         for (int i = 0; i < 5; i++) f();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 20; i++) f();
-        return GC.GetAllocatedBytesForCurrentThread() - before;
+        return AllocationProbe.Least(() => { for (int i = 0; i < 20; i++) f(); });
     }
 
     [Fact]
