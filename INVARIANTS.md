@@ -2,8 +2,8 @@
 
 This file lists every guarantee the Alice compiler, runtime and tools make about programs they accept. Each entry
 says what holds, where it does not apply, which tests pin it, and how to report a violation. A program that the
-toolchain accepts and that breaks one of these statements is a bug in Alice, and it is in scope for the planned bug
-bounty (terms to be published with 1.0).
+toolchain accepts and that breaks one of these statements is a bug in Alice: we are confident enough in these
+guarantees to publish them as the 1.0 contract, and we fix any violation as a security bug.
 
 Applies to: the latest release of the 1.x line and the current `main`, on the platforms in
 [docs/releases.md](docs/releases.md), with both backends unless an entry says otherwise. Test paths are relative
