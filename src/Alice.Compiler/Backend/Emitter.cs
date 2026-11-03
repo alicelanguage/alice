@@ -381,6 +381,8 @@ public sealed class Emitter
         // marshalling stub (3x faster per call, inlinable by the JIT, nothing generated at run time for AOT).
         const string U1 = "[global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.U1)]";
         const string Inline = "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n";
+        // C may keep a callback and run it from any fun of the lib, so every fun of such a lib rethrows (review F5)
+        bool libCallbacks = l.Funs.Any(f => s.Methods[f.Name][0].Params.Any(p => p.Type.Cs.StartsWith("delegate* unmanaged")));
         foreach (var f in l.Funs)
         {
             var m = s.Methods[f.Name][0];
@@ -392,7 +394,7 @@ public sealed class Emitter
             if (parts.All(x => x != null) && ret != null)
             {
                 string sig = string.Join(", ", m.Params.Select((p, i) => parts[i]!.Cs + " " + p.CsName));
-                bool callbacks = m.Params.Any(p => p.Type.Cs.StartsWith("delegate* unmanaged"));
+                bool callbacks = libCallbacks;
                 if (parts.All(x => x!.Raw == x.Cs && x.Setup == null) && ret.Value.Raw == retCs && !callbacks)
                 {
                     sb.Append(import).Append($"public static extern {retCs} {m.CsName}({sig});\n");   // already blittable
@@ -413,8 +415,9 @@ public sealed class Emitter
                     var pins = setup.Where(x => x != null && x.Contains("fixed (")).ToList();
                     foreach (var x in pins) body.Append("    ").Append(x).Append("\n    {\n");
                     if (callbacks)   // an exception raised in an Alice callback resurfaces here, after the C frames are gone
-                        body.Append(retCs == "void" ? $"    {call};\n    global::Alice.Runtime.NativeCallback.Rethrow();\n"
-                            : $"    var __r = {call};\n    global::Alice.Runtime.NativeCallback.Rethrow();\n    return __r;\n");
+                        body.Append("    var __d = global::Alice.Runtime.NativeCallback.Enter();\n").Append(retCs == "void"
+                            ? $"    {call};\n    global::Alice.Runtime.NativeCallback.Rethrow(__d);\n"
+                            : $"    var __r = {call};\n    global::Alice.Runtime.NativeCallback.Rethrow(__d);\n    return __r;\n");
                     else body.Append($"    {(retCs == "void" ? "" : "return ")}{call};\n");
                     foreach (var _ in pins) body.Append("    }\n");
                     sb.Append($"public static {retCs} {m.CsName}({sig})\n{{\n{body}}}\n");
@@ -425,7 +428,16 @@ public sealed class Emitter
             string ps = string.Join(", ", m.Params.Select(p => (p.Type.Cs == "bool" ? U1 + " " : "") + p.Type.Cs + " " + p.CsName));
             sb.Append(import);
             if (m.Ret.Cs == "bool") sb.Append("[return: global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.U1)]\n");
-            sb.Append($"public static extern {retCs} {m.CsName}({ps});\n");
+            if (libCallbacks && m.Params.All(p => p.Mod == ""))
+            {
+                // a stored callback may run during this call too: same Enter/Rethrow bracket around the marshalled extern
+                string rawM = "__raw_" + m.CsName.TrimStart('@');
+                string args = string.Join(", ", m.Params.Select(p => p.CsName));
+                sb.Append($"private static extern {retCs} {rawM}({ps});\n").Append(Inline).Append($"public static {retCs} {m.CsName}({string.Join(", ", m.Params.Select(p => p.Type.Cs + " " + p.CsName))})\n{{\n    var __d = global::Alice.Runtime.NativeCallback.Enter();\n")
+                    .Append(retCs == "void" ? $"    {rawM}({args});\n    global::Alice.Runtime.NativeCallback.Rethrow(__d);\n"
+                        : $"    var __r = {rawM}({args});\n    global::Alice.Runtime.NativeCallback.Rethrow(__d);\n    return __r;\n").Append("}\n");
+            }
+            else sb.Append($"public static extern {retCs} {m.CsName}({ps});\n");
         }
         return $"public static unsafe partial class {l.Name}\n{{\n{sb}}}\n";
     }

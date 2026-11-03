@@ -235,17 +235,116 @@ public class ArenaTests
         Assert.Throws<TargetInvocationException>(() => check.Invoke(null, [int.MinValue]));
     }
 
-#if DEBUG
     [Fact]
-    public void Debug_builds_detect_double_free_and_use_after_free()
+    public void Every_build_detects_double_free_and_use_after_free()
     {
-        var t = Arena<Big>.Alloc(0, default);
-        Arena<Big>.Take(t, out _);
+        // review F4: Release builds too; a double Take used to corrupt the free list so that two Allocs aliased
+        var t = Arena<Big>.Alloc(0, new Big(1, 1, 1));
+        Assert.True(Arena<Big>.Take(t, out _));
         Assert.Contains("double free", Assert.Throws<InvalidOperationException>(() => Arena<Big>.Take(t, out _)).Message);
-        Assert.Throws<InvalidOperationException>(() => Arena<Big>.Borrow(t));
-        Arena<Big>.Alloc(0, default);   // pops t's slot: live again
+        Assert.Contains("freed", Assert.Throws<InvalidOperationException>(() => Arena<Big>.Borrow(t)).Message);
+        var x = Arena<Big>.Alloc(0, new Big(2, 2, 2));   // pops t's slot: live again
+        var y = Arena<Big>.Alloc(0, new Big(3, 3, 3));
+        Assert.Equal(t.Slot, x.Slot);
+        Assert.NotEqual(x.Slot, y.Slot);                  // the rejected second Take left the free list intact
+        Assert.Equal(new Big(2, 2, 2), Arena<Big>.Borrow(x));
+        Assert.Equal(new Big(3, 3, 3), Arena<Big>.Borrow(y));
     }
-#endif
+
+    [Fact]
+    public void A_foreign_read_of_a_freed_node_throws()
+    {
+        Term t = RunOnOtherThread(() =>
+        {
+            var a = Arena<Cell>.Alloc(1, new Cell(1, 2));
+            Arena<Cell>.Take(a, out _);
+            return a;
+        });
+        Assert.Throws<InvalidOperationException>(() => Arena<Cell>.Borrow(t));
+        Assert.Throws<InvalidOperationException>(() => Arena<Cell>.Take(t, out _));
+    }
+
+    [Fact]
+    public void Bits_are_fresh_for_slots_reused_after_a_region_reset()
+    {
+        Term inner;
+        using (ArenaRegion.Enter())
+        {
+            inner = Arena<Big>.Alloc(0, new Big(4, 4, 4));
+            Arena<Big>.Take(inner, out _);                  // freed bit set, then the region rewinds past it
+        }
+        using (ArenaRegion.Enter())
+        {
+            var again = Arena<Big>.Alloc(0, new Big(5, 5, 5));   // bumps over the same index
+            Assert.Equal(inner.Slot, again.Slot);
+            Assert.Equal(new Big(5, 5, 5), Arena<Big>.Borrow(again));
+            Assert.True(Arena<Big>.Take(again, out _));
+        }
+    }
+
+    record struct Outer(uint V, uint W);
+
+    [Fact]
+    public void A_node_from_outside_a_region_taken_inside_it_is_not_leaked()
+    {
+        // review F16: the slot goes back to the free list of the level that allocated it, not the region's
+        var o = Arena<Outer>.Alloc(0, new Outer(1, 1));
+        Term mid;
+        using (ArenaRegion.Enter())
+        {
+            mid = Arena<Outer>.Alloc(0, new Outer(2, 2));
+            using (ArenaRegion.Enter())
+            {
+                Arena<Outer>.Take(o, out _);
+                Arena<Outer>.Take(mid, out _);
+                var n = Arena<Outer>.Alloc(0, new Outer(3, 3));
+                Assert.NotEqual(o.Slot, n.Slot);       // the inner region does not reuse outer slots
+                Assert.NotEqual(mid.Slot, n.Slot);
+            }
+            Assert.Equal(mid.Slot, Arena<Outer>.Alloc(0, default).Slot);   // mid's level got it back
+        }
+        Assert.Equal(o.Slot, Arena<Outer>.Alloc(0, default).Slot);         // and o's level got o back
+    }
+
+    record struct S16(ulong A, ulong B);
+
+    [Fact]
+    public void A_lane_commits_two_to_the_12_slots_first()
+    {
+        // review F10: the first chunk was 2^20 slots (16 MiB at 16 B) per thread and arena type
+        int len = 0;
+        RunOnOtherThread(() =>
+        {
+            var t = Arena<S16>.Alloc(0, default);
+            var slab = typeof(Arena<S16>).GetField("t_slab", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
+            var chunks = (Array)slab.GetType().GetField("Chunks", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(slab)!;
+            len = ((Array)chunks.GetValue(0)!).Length;
+            Assert.Null(chunks.GetValue(1));
+            return t;
+        });
+        Assert.Equal(1 << 12, len);
+    }
+
+    record struct Lanes(uint V, uint W);
+
+    [Fact]
+    public void An_exited_threads_lane_is_reused_with_its_nodes_intact()
+    {
+        // review F10: lane ids were never reused, so every short-lived thread kept its slabs for the process' life
+        var lanes = new HashSet<int>();
+        var first = new List<(Term T, uint V)>();
+        for (uint k = 0; k < 24; k++)
+        {
+            uint v = k;
+            var t = RunOnOtherThread(() => Arena<Lanes>.Alloc(1, new Lanes(v, v + 1)));
+            lanes.Add(t.Lane);
+            first.Add((t, v));
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
+        Assert.True(lanes.Count < 24, $"{lanes.Count} distinct lanes for 24 sequential threads");
+        foreach (var (t, v) in first) Assert.Equal(new Lanes(v, v + 1), Arena<Lanes>.Borrow(t));   // nothing freed early
+    }
 
     [Fact]
     public void Tree_23_consuming_sum_has_the_bend_checksum()

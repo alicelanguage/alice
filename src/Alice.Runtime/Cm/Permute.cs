@@ -11,10 +11,12 @@ namespace Alice.Runtime;
 /// </summary>
 public static unsafe partial class Cm
 {
-    /// <summary><c>dst[perm[i]] = src[i]</c>; <paramref name="perm"/> must hold distinct indices into <paramref name="dst"/>.</summary>
+    /// <summary><c>dst[perm[i]] = src[i]</c>; <paramref name="perm"/> must hold distinct indices into <paramref name="dst"/>,
+    /// and <paramref name="dst"/> must not be <paramref name="src"/> (the pass reads src while it writes dst).</summary>
     public static void Permute<T>(T[] src, ReadOnlySpan<int> perm, T[] dst)
     {
         Check(perm.Length == src.Length, "permute indices and values differ in length");
+        if (ReferenceEquals(src, dst)) throw new ArgumentException("permute cannot run in place: dst is src (a write would clobber a value not yet read); pass a separate destination", nameof(dst));
         int n = src.Length, m = dst.Length;
         if (n == 0) return;
         nuint words = (nuint)((m + 63L) / 64);

@@ -78,7 +78,6 @@ public static unsafe partial class Cm
                 ExclusiveTotals<T, TOp>(totals, chunks);
             }
             KernelPool.Run(chunks, ChunkGrain(chunk), &ScanChunks<T, TOp>, &ctx);
-            if (exclusive && typeof(TOp) == typeof(AddOp<T>)) d[0] = T.Zero;   // not the internal -0.0
         }
     }
 

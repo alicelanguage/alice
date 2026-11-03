@@ -35,6 +35,7 @@ sealed unsafe class ReplicateNode<TS, TIn, TOut> : DataflowNode
     }
 
     readonly TS init;
+    readonly Func<TS>? factory;
     readonly StageBody<TS, TIn, TOut>? body;
     readonly delegate*<ref TS, ReadOnlySpan<TIn>, ref RingWriter<TOut>, void> fn;
     readonly Ring<TIn> input;
@@ -46,10 +47,11 @@ sealed unsafe class ReplicateNode<TS, TIn, TOut> : DataflowNode
     long nextIn, nextOut;    // ordered: sequence numbers dispatched / merged; unordered: counts
     int scan;                // unordered: where the next merge scan starts
 
-    public ReplicateNode(TS state, StageBody<TS, TIn, TOut>? body, delegate*<ref TS, ReadOnlySpan<TIn>, ref RingWriter<TOut>, void> fn,
+    public ReplicateNode(TS state, Func<TS>? factory, StageBody<TS, TIn, TOut>? body, delegate*<ref TS, ReadOnlySpan<TIn>, ref RingWriter<TOut>, void> fn,
         Ring<TIn> input, Ring<TOut> output, int workers, int batch, bool ordered)
     {
         init = state;
+        this.factory = factory;
         this.body = body;
         this.fn = fn;
         this.input = input;
@@ -65,7 +67,8 @@ sealed unsafe class ReplicateNode<TS, TIn, TOut> : DataflowNode
 
     void Work(Slot s)
     {
-        var st = init;   // a fresh copy per batch: the result cannot depend on which worker ran which batch
+        // a fresh state per batch (a copy, or the factory's object): the result cannot depend on which worker ran which batch
+        var st = factory != null ? factory() : init;
         var w = new RingWriter<TOut>(s.output);
         var span = new ReadOnlySpan<TIn>(s.input, 0, s.count);
         if (fn != null) fn(ref st, span, ref w);

@@ -139,7 +139,12 @@ types with numeric widening; nil fits reference and nullable parameters; then `d
 with no allocation besides boxing value-type arguments and results. A site keeps 5 receiver/argument type
 combinations; past that it re-resolves from a per-type member cache. Operators on numbers mean what they mean in
 typed code: checked arithmetic, floored `/` and `%` (`-7 / 2` is -4). Under `native = true` (NativeAOT) and on wasm a
-dynamic site is error AL0232: type the value, or convert it with `x.as(T)`.
+dynamic site is error AL0232: type the value, or convert it with `x.as(T)`. On `Dyn` sites (the IL backend), generic
+methods are callable through `Any`: their type arguments are inferred from the arguments' runtime types, and a
+non-generic overload with the same parameter types wins. `&`, `|`, `^` and the comparisons work on two values of one
+enum type. `==` on `Any` values never raises there, unlike C# `dynamic` (the C# backend), and follows Ruby and Crystal
+(the rule ADR 0013 takes where they agree): values of different types are unequal (`1 == "1"` is false), structs and
+tuples compare by value (`(1, 2) == (1, 2)` is true), classes by reference unless they define `==`.
 
 ### Strict typing (AL0220)
 
@@ -751,7 +756,7 @@ end
 | `String`, `String?` (parameter) | NUL-terminated UTF-8 on every OS: stack buffer up to 85 chars, no allocation; `nil` is `NULL`; an embedded NUL raises `ArgumentException` |
 | `String?` (return) | borrowed `char*` (never freed), UTF-8; `NULL` is `nil`. `String` raises on `NULL` |
 | `Array(number)` | pointer to the pinned elements, no copy |
-| `Callback(A, B, R)` | C function pointer. Pass a lambda literal: it is lifted to a static `[UnmanagedCallersOnly]` method (no delegate, no allocation); captures are error AL0215; an exception inside is rethrown after the C call returns |
+| `Callback(A, B, R)` | C function pointer. Pass a lambda literal: it is lifted to a static `[UnmanagedCallersOnly]` method (no delegate, no allocation); captures are error AL0215; an exception inside is rethrown after the C call during which it was raised (every `fun` of a lib with a `Callback` parameter checks; the first exception, later ones in its `Data`); raised on a thread C created, it fails fast |
 | `out x : T` / `ref x : T` | pointer to the caller's variable, pinned for the call: C out-parameters and structs by pointer without `unsafe` (`LibC.clock_gettime(0, out ts)`) |
 | `struct` of numbers | by value, C layout (fields in declaration order) |
 | `Pointer(T)` | raw pointer, only inside `unsafe` (AL0216) |

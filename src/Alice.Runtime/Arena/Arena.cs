@@ -6,13 +6,17 @@ namespace Alice.Runtime;
 /// <summary>
 /// Affine arena for one node type (ADR 0037): the slab behind an `affine enum` whose slot variants store their
 /// fields in <typeparamref name="TSlot"/>. Every thread allocates in its own lane (<see cref="ArenaLane"/>): chunked
-/// slabs of 2^20 slots doubling up to 2^30 per chunk, at most 2^32 - 1 slots per lane, and a free list threaded
+/// slabs of 2^12 slots doubling up to 2^30 per chunk, at most 2^32 - 1 slots per lane, and a free list threaded
 /// through the first 4 bytes of each freed slot. <see cref="Alloc"/> pops the free list or bumps;
 /// <see cref="Take"/> reads a node and frees it when this thread's lane owns it (a node of a foreign lane is only
 /// read and is reclaimed when the enclosing <see cref="ArenaRegion"/> ends, so no free ever crosses a thread);
-/// <see cref="Borrow"/> reads without freeing. Every slot access is bounds-checked against the lane's cursor; Debug
-/// builds also detect double frees and reads of freed slots. 0 allocations after warm-up (a new chunk, lane or
-/// region depth allocates once).
+/// <see cref="Borrow"/> reads without freeing. Every slot access is bounds-checked against the lane's cursor, and
+/// every build (Release included) keeps one freed bit per slot: a second Take of a term, or a Take/Borrow of a term
+/// whose slot is free, throws (fail-stop: the free list is never corrupted, two Allocs never alias). A stale term
+/// whose slot a later Alloc already reused names that live node and is NOT detected: the term word has no room for
+/// a generation, so that case stays the affine checker's (ADR 0037). A node allocated before a region and Taken
+/// inside it returns to the free list of the level that allocated it, so the region's reset does not leak it.
+/// 0 allocations after warm-up (a new chunk, lane or region depth allocates once).
 /// </summary>
 public static class Arena<TSlot> where TSlot : unmanaged
 {
@@ -37,25 +41,27 @@ public static class Arena<TSlot> where TSlot : unmanaged
         uint i = s.Free;
         if (i != None)
         {
-            ref TSlot r = ref s.Ref(i);
+            ArenaSlab<TSlot>.Locate(i, out int c, out uint off);
+            ref TSlot r = ref s.Chunks[c]![off];
             s.Free = Unsafe.As<TSlot, uint>(ref r);
             r = value;
+            s.Freed[c]![off >> 6] &= ~(1UL << (int)off);
         }
         else
         {
             i = s.Len;
             if (i >= s.CurEnd) s.Grow();
-            s.Cur[i - s.CurBase] = value;
+            uint off = i - s.CurBase;
+            s.Cur[off] = value;
+            if (i < s.Dirty) s.CurFreed[off >> 6] &= ~(1UL << (int)off);   // a slot reused after a region reset
             s.Len = i + 1;
         }
-#if DEBUG
-        s.MarkLive(i);
-#endif
         return new Term((ulong)(uint)tag << 56 | s.LaneBits | i);
     }
 
     /// <summary>Reads the node of <paramref name="term"/> and frees its slot if this thread's lane owns it.
-    /// Returns whether the slot was freed (false: a foreign lane's node, left for the region reset).</summary>
+    /// Returns whether the slot was freed (false: a foreign lane's node, left for the region reset). Throws
+    /// <see cref="InvalidOperationException"/> if the slot is already free (double Take).</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool Take(Term term, out TSlot slot)
     {
@@ -65,13 +71,19 @@ public static class Arena<TSlot> where TSlot : unmanaged
         {
             uint i = (uint)term.Raw;
             if (i >= s.Len) ThrowStale(term, s.Len);
-            ref TSlot r = ref s.Ref(i);
-#if DEBUG
-            s.MarkFreed(i, term);
-#endif
+            ArenaSlab<TSlot>.Locate(i, out int c, out uint off);
+            ref ulong w = ref s.Freed[c]![off >> 6];
+            ulong bit = 1UL << (int)off;
+            if ((w & bit) != 0) ThrowFreed(term, "double free (Take)");
+            w |= bit;
+            ref TSlot r = ref s.Chunks[c]![off];
             slot = r;
-            Unsafe.As<TSlot, uint>(ref r) = s.Free;
-            s.Free = i;
+            if (i >= s.RegionBase)
+            {
+                Unsafe.As<TSlot, uint>(ref r) = s.Free;
+                s.Free = i;
+            }
+            else s.FreeOuter(i);
             return true;
         }
         slot = Foreign(term);
@@ -79,7 +91,7 @@ public static class Arena<TSlot> where TSlot : unmanaged
     }
 
     /// <summary>Reads the node of <paramref name="term"/> without freeing it. The reference stays valid until the slot
-    /// is freed and reused or its region ends.</summary>
+    /// is freed and reused or its region ends. Throws <see cref="InvalidOperationException"/> if the slot is free.</summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ref readonly TSlot Borrow(Term term)
     {
@@ -87,10 +99,9 @@ public static class Arena<TSlot> where TSlot : unmanaged
         if (s is null || (term.Raw & LaneMask) != s.LaneBits) s = Kind.SlabOf(term);
         uint i = (uint)term.Raw;
         if (i >= s.Len) ThrowStale(term, s.Len);
-#if DEBUG
-        s.CheckLive(i, term);
-#endif
-        return ref s.Ref(i);
+        ArenaSlab<TSlot>.Locate(i, out int c, out uint off);
+        if ((s.Freed[c]![off >> 6] & (1UL << (int)off)) != 0) ThrowFreed(term, "read (Borrow)");
+        return ref s.Chunks[c]![off];
     }
 
     /// <summary>Slots this thread's lane has bumped so far (its cursor; freed slots included).</summary>
@@ -104,7 +115,9 @@ public static class Arena<TSlot> where TSlot : unmanaged
         var s = Kind.SlabOf(term);
         uint i = (uint)term.Raw;
         if (i >= s.Len) ThrowStale(term, s.Len);
-        return s.Ref(i);
+        ArenaSlab<TSlot>.Locate(i, out int c, out uint off);
+        if ((s.Freed[c]![off >> 6] & (1UL << (int)off)) != 0) ThrowFreed(term, "read (foreign Take)");
+        return s.Chunks[c]![off];
     }
 
     static ArenaTypeOf<TSlot> Kind
@@ -133,11 +146,16 @@ public static class Arena<TSlot> where TSlot : unmanaged
 
     static void ThrowTag(int tag) => throw new ArgumentOutOfRangeException(nameof(tag), tag, $"variant tag must be 0..{Term.MaxTag}");
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    static void ThrowFreed(Term term, string what) =>
+        throw new InvalidOperationException($"Arena<{typeof(TSlot).Name}>: {what} of freed {term}: the term was already Taken (use after move)");
+
     static void ThrowStale(Term term, uint len) =>
         throw new InvalidOperationException($"Arena<{typeof(TSlot).Name}>: {term} is past its lane's cursor {len} (a term of an ended region or a forged word)");
 }
 
-/// <summary>All lanes of one arena type.</summary>
+/// <summary>All lanes of one arena type. A lane id freed by an exited thread is handed to a new thread together
+/// with its slab (<see cref="ArenaLane"/>), so the slab's nodes stay valid and its memory is reused.</summary>
 sealed class ArenaTypeOf<TSlot> : ArenaKind where TSlot : unmanaged
 {
     ArenaSlab<TSlot>?[] _lanes = new ArenaSlab<TSlot>?[8];
@@ -176,22 +194,28 @@ sealed class ArenaTypeOf<TSlot> : ArenaKind where TSlot : unmanaged
     }
 }
 
-/// <summary>One lane of one arena type: chunk c holds 2^(20+c) slots for c up to 10, then 2^30 each.</summary>
+/// <summary>One lane of one arena type: chunk c holds 2^(12+c) slots for c up to 18, then 2^30 each; each chunk has
+/// a bitmap with one freed bit per slot (zeroed at allocation; slots past <see cref="Dirty"/> were never freed).</summary>
 sealed class ArenaSlab<TSlot> where TSlot : unmanaged
 {
-    const int FirstBits = 20, Doublings = 11, MaxBits = 30, ChunkCount = 14;
+    const int FirstBits = 12, Doublings = 19, MaxBits = 30, ChunkCount = 22;
     const uint Big = ((1u << Doublings) - 1) << FirstBits;   // first index of the fixed-size chunks
 
     internal readonly int Lane;
     internal readonly ulong LaneBits;
     internal uint Len, Free = Arena<TSlot>.None, CurBase, CurEnd;
+    /// <summary>Len at the entry of the innermost open region (0 outside regions): slots below it belong to an
+    /// outer level and are freed into that level's list.</summary>
+    internal uint RegionBase;
+    /// <summary>Highest cursor before a region reset: freed bits at or past it are still 0, so a bump there skips
+    /// clearing its bit.</summary>
+    internal uint Dirty;
     internal TSlot[] Cur = [];
-    readonly TSlot[]?[] _chunks = new TSlot[ChunkCount][];
+    internal ulong[] CurFreed = [];
+    internal readonly TSlot[]?[] Chunks = new TSlot[ChunkCount][];
+    internal readonly ulong[]?[] Freed = new ulong[ChunkCount][];
     uint[] _markLen, _markFree;
     int _depth;
-#if DEBUG
-    readonly ulong[]?[] _freed = new ulong[ChunkCount][];
-#endif
 
     internal ArenaSlab(int lane, int depth)
     {
@@ -201,11 +225,11 @@ sealed class ArenaSlab<TSlot> where TSlot : unmanaged
         _markLen = new uint[n];
         _markFree = new uint[n];
         Array.Fill(_markFree, Arena<TSlot>.None);
-        _depth = depth;   // a lane born inside regions is empty at each of their entries
+        _depth = depth;   // a lane born inside regions is empty at each of their entries (RegionBase 0)
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    static void Locate(uint i, out int chunk, out uint offset)
+    internal static void Locate(uint i, out int chunk, out uint offset)
     {
         uint q = (i >> FirstBits) + 1;
         if (q < 1u << Doublings)
@@ -225,14 +249,6 @@ sealed class ArenaSlab<TSlot> where TSlot : unmanaged
 
     static int SizeOf(int chunk) => 1 << (FirstBits + Math.Min(chunk, Doublings - 1));
 
-    /// <summary>Slot i, i below Len (callers check); array accesses stay bounds-checked.</summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal ref TSlot Ref(uint i)
-    {
-        Locate(i, out int c, out uint off);
-        return ref _chunks[c]![off];
-    }
-
     /// <summary>Len reached CurEnd: fail-stop at the slot limit, else move the cursor into the next chunk.</summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     internal void Grow()
@@ -246,18 +262,29 @@ sealed class ArenaSlab<TSlot> where TSlot : unmanaged
     void SetCursor(uint i, bool allocate)
     {
         Locate(i, out int c, out _);
-        var chunk = _chunks[c];
+        var chunk = Chunks[c];
         if (chunk is null)
         {
-            if (!allocate) { Cur = []; CurBase = CurEnd = i; return; }
-            chunk = _chunks[c] = GC.AllocateUninitializedArray<TSlot>(SizeOf(c));
-#if DEBUG
-            _freed[c] = new ulong[(chunk.Length + 63) / 64];
-#endif
+            if (!allocate) { Cur = []; CurFreed = []; CurBase = CurEnd = i; return; }
+            chunk = Chunks[c] = GC.AllocateUninitializedArray<TSlot>(SizeOf(c));
+            Freed[c] = new ulong[chunk.Length / 64];
         }
         Cur = chunk;
+        CurFreed = Freed[c]!;
         CurBase = BaseOf(c);
         CurEnd = (uint)Math.Min((ulong)CurBase + (ulong)chunk.Length, Arena<TSlot>.SlotLimit);
+    }
+
+    /// <summary>Slot <paramref name="i"/>, below <see cref="RegionBase"/>, was Taken inside a region: link it into
+    /// the free list of the level that allocated it (saved in the mark stack), so the region's reset keeps it.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal void FreeOuter(uint i)
+    {
+        int j = _depth - 1;
+        while (j > 0 && i < _markLen[j - 1]) j--;
+        Locate(i, out int c, out uint off);
+        Unsafe.As<TSlot, uint>(ref Chunks[c]![off]) = _markFree[j];
+        _markFree[j] = i;
     }
 
     internal void PushMark()
@@ -270,38 +297,17 @@ sealed class ArenaSlab<TSlot> where TSlot : unmanaged
         _markLen[_depth] = Len;
         _markFree[_depth] = Free;
         _depth++;
+        RegionBase = Len;
         Free = Arena<TSlot>.None;   // the region starts with an empty free list, so the outer one stays intact
     }
 
     internal void PopMark()
     {
         _depth--;
+        if (Len > Dirty) Dirty = Len;
         Len = _markLen[_depth];
         Free = _markFree[_depth];
+        RegionBase = _depth > 0 ? _markLen[_depth - 1] : 0;
         SetCursor(Len, allocate: false);
     }
-
-#if DEBUG
-    internal void MarkLive(uint i)
-    {
-        Locate(i, out int c, out uint off);
-        _freed[c]![off >> 6] &= ~(1UL << (int)(off & 63));
-    }
-
-    internal void MarkFreed(uint i, Term term)
-    {
-        Locate(i, out int c, out uint off);
-        ref ulong w = ref _freed[c]![off >> 6];
-        ulong bit = 1UL << (int)(off & 63);
-        if ((w & bit) != 0) throw new InvalidOperationException($"Arena<{typeof(TSlot).Name}>: double free of {term}");
-        w |= bit;
-    }
-
-    internal void CheckLive(uint i, Term term)
-    {
-        Locate(i, out int c, out uint off);
-        if ((_freed[c]![off >> 6] & (1UL << (int)(off & 63))) != 0)
-            throw new InvalidOperationException($"Arena<{typeof(TSlot).Name}>: read of freed {term}");
-    }
-#endif
 }

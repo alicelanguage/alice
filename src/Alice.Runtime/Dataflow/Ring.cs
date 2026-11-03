@@ -179,10 +179,13 @@ public sealed class Ring<T>
         return new ReadOnlySpan<T>(buf, start, n);
     }
 
-    /// <summary>Consumer: frees the first <paramref name="n"/> items returned by <see cref="Peek"/>.</summary>
+    /// <summary>Consumer: frees the first <paramref name="n"/> items returned by <see cref="Peek"/>. Releasing more
+    /// than is published (more than Peek could have returned) throws instead of corrupting the ring's count.</summary>
     public void Release(int n)
     {
         long h = idx.Head;
+        if ((ulong)n > (ulong)(idx.CachedTail - h) && (ulong)n > (ulong)Available())
+            throw new ArgumentOutOfRangeException(nameof(n), n, $"Ring.Release: only {idx.CachedTail - h} published items to release");
         if (RuntimeHelpers.IsReferenceOrContainsReferences<T>()) Array.Clear(buf, (int)h & mask, n);
         Release(h + n);
     }

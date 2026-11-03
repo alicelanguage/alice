@@ -113,7 +113,8 @@ public static unsafe partial class Cm
 /// <summary>An associative operator with its identity, scalar and vector forms (monomorphized per type).</summary>
 internal interface ICmOp<T> where T : unmanaged, IBinaryNumber<T>, IMinMaxValue<T>
 {
-    /// <summary>op(Identity, x) == x bit for bit (float addition uses -0.0).</summary>
+    /// <summary>The start of every fold: op(Identity, x) == x, except float addition, whose identity is +0.0 (the
+    /// documented serial fold from 0), so an empty or all -0.0 input sums to +0.0 exactly as `0.0 + -0.0` does.</summary>
     static abstract T Identity { get; }
     static abstract T Apply(T a, T b);
     static abstract Vector128<T> Apply(Vector128<T> a, Vector128<T> b);
@@ -123,7 +124,7 @@ internal interface ICmOp<T> where T : unmanaged, IBinaryNumber<T>, IMinMaxValue<
 
 internal struct AddOp<T> : ICmOp<T> where T : unmanaged, IBinaryNumber<T>, IMinMaxValue<T>
 {
-    public static T Identity { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => T.CreateTruncating(-0.0); }
+    public static T Identity { [MethodImpl(MethodImplOptions.AggressiveInlining)] get => T.Zero; }   // +0.0 for floats (review F15)
     [MethodImpl(MethodImplOptions.AggressiveInlining)] public static T Apply(T a, T b) => a + b;
     [MethodImpl(MethodImplOptions.AggressiveInlining)] public static Vector128<T> Apply(Vector128<T> a, Vector128<T> b) => a + b;
     [MethodImpl(MethodImplOptions.AggressiveInlining)] public static Vector256<T> Apply(Vector256<T> a, Vector256<T> b) => a + b;

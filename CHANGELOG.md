@@ -173,6 +173,12 @@ are published as GitHub prereleases. Every guarantee the toolchain makes is list
 - `require_relative "x"` loads the sibling file in single-file builds.
 
 ### Safety
+- Arena (review F4, F10, F16): Release builds detect a double `Take` and a `Take`/`Borrow` of a freed slot (one freed bit per slot, fail-stop; a stale term whose slot was already reused is still the affine checker's job); lanes start at 2^12 slots and double; an exited thread's lane and slabs go to the next new thread; a node allocated before a region and taken inside it returns to its own free list. Cost: +2-16% on the tree(23) arena micro-benchmark.
+- FFI callbacks (F5, F17): every `fun` of a `lib` that declares a `Callback` parameter rethrows what a stored callback raised during that call (it no longer resurfaces from a later unrelated call); several raises keep the first, later ones in `Data[NativeCallback.SuppressedKey]`; a raise on a thread C created fails fast. IL callback trampolines honour the declared calling convention.
+- Dataflow (F11, F14): `Replicate` rejects a state that is or holds a reference (it was shared by all workers) and gains factory overloads (`Replicate(() => new S(), ...)`, one state per batch); `Ring.Release(n)` past the published items throws.
+- ClosureConvert (F12): an unresolvable local inside a closure is reported as unsupported instead of being treated as free.
+- Cm (F13, F15): `Permute` with `dst == src` throws; float `Reduce`/scans start from +0.0 (an empty or all -0.0 sum is +0.0).
+- Dyn (F18): generic methods are callable through `Any` (type arguments inferred from runtime types); `&`, `|`, `^` and comparisons on one enum type; `==` semantics documented (Ruby/Crystal, never raises).
 
 - AL0221: a declared non-nilable field or getter that no `initialize` assigns is a compile error (audit F17).
 - AL0202 follows copies of shared references inside concurrent blocks, and writes through ivars make a method mutating for `pure def` (AL0210) and concurrent callers (audit F9, F10).

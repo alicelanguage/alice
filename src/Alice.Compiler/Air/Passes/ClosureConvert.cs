@@ -251,6 +251,15 @@ public sealed class ClosureConvert : IMirPass
         return e;
     }
 
+    /// <summary>A local or parameter reference inside a closure that no scope declares (a method parameter missing
+    /// from the <see cref="ClosureContext"/>, say) cannot be treated as free: the lambda would become a capture-free
+    /// static method reading a local that does not exist there. The body is left unconverted with a reason.</summary>
+    void CheckResolved(string name)
+    {
+        if (!rewrite && cur != root && Lookup(name) == null)
+            Unsupported.Add($"`{name}` in a closure is no local, parameter or capture in scope (missing from the closure context?), so it cannot be captured");
+    }
+
     /// <summary>Inside a lambda the lowerer marked `static` (it cannot reach `this`).</summary>
     bool InStaticLambda()
     {
@@ -420,10 +429,13 @@ public sealed class ClosureConvert : IMirPass
         {
             case AirLocalRef l:
                 {
+                    CheckResolved(l.Name);
                     var r = Ref(l.Name, write, l.Narrowed ? null : l.Type, bare: false);
                     return r == null ? l : l.Narrowed ? new MMember { Target = r, Name = "Value", Type = l.Type } : r;
                 }
-            case AirParamRef pr: return Ref(pr.Name, write, pr.Type, bare: false) ?? pr;
+            case AirParamRef pr:
+                CheckResolved(pr.Name);
+                return Ref(pr.Name, write, pr.Type, bare: false) ?? pr;
             case AirThis th: return Ref(th.Extension ? "self" : "this", false, th.Type, bare: false) ?? th;
             case AirFieldRef fr:
                 {
@@ -433,6 +445,7 @@ public sealed class ClosureConvert : IMirPass
                 }
             case AirArrayLength al:
                 {
+                    CheckResolved(al.Array);
                     var r = Ref(al.Array, false, null, bare: false);
                     return r == null ? al : new AirLength { Target = r, Type = al.Type };
                 }

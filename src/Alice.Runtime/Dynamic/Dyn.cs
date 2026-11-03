@@ -406,7 +406,8 @@ internal static class Candidates
         if (!methods.TryGetValue((t, name), out var found))
         {
             found = t.GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .Where(m => m.Name == name && !m.ContainsGenericParameters && !m.IsSpecialName).ToArray();
+                // generic method definitions too: Overloads infers their type arguments from the runtime arguments
+                .Where(m => m.Name == name && (!m.ContainsGenericParameters || m.IsGenericMethodDefinition && !m.DeclaringType!.ContainsGenericParameters) && !m.IsSpecialName).ToArray();
             methods.TryAdd((t, name), found);
         }
         if (found.Length == 0 && dotnet != name) return Methods(t, dotnet, dotnet);
