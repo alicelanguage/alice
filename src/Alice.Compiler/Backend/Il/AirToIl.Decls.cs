@@ -206,6 +206,7 @@ public sealed partial class AirToIl
 
                 case TypeDecl { RefineScope: not null }: throw new IlUnsupportedException("Decl:refinement", Sp(it));
             }
+            if (it is EnumDecl { IsAdt: true } && it.Sym is TypeSym arenaSym && binder.Affine.IsArena(arenaSym)) continue;   // ADR 0037: a term word, no classes
             if (outer?.Sym is TypeSym { TypeParams.Count: > 0 }) throw new IlUnsupportedException("Decl:type-nested-in-generic", Sp(it));
             if (it is TypeDecl or EnumDecl && it.Sym is TypeSym { TypeParams.Count: > 0 }) { RegisterGenericDef(it, ns); continue; } // D1.10 il-emit2
             var sym = (TypeSym)it.Sym!;

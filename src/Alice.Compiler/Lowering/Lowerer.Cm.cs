@@ -434,7 +434,7 @@ public sealed partial class Lowerer
         // when the kernels apply: long enough (inferred), and the written arrays are not read through another name
         var guard = new List<MExpr> { Cmp(f.Cm ? AirBinOp.Gt : AirBinOp.Ge, N(), AirConst.Int(f.Cm ? 0 : CmThreshold)) };
         // inferred: only with the parallel runtime on (ALICE_PAR=0, one core: the loop as written is faster)
-        if (!f.Cm) guard.Add(Cmp(AirBinOp.Gt, new MMember { Target = new MCode("global::Alice.Runtime.Par"), Name = "Workers", Type = AirLeaf.Int }, AirConst.Int(1)));
+        if (!f.Cm) guard.Add(Cmp(AirBinOp.Gt, new MMember { Target = AirTypeRef.Named("global::Alice.Runtime.Par"), Name = "Workers", Type = AirLeaf.Int }, AirConst.Int(1)));
         var reads = Walk(f.Body).Select(e => IsLocal(e, out var l) && l.Type.Kind == "array" && !p.DefLocals.Contains(l) ? l : null).OfType<LocalSym>().Distinct().ToList();
         foreach (var w in p.Written)
             foreach (var rd in reads)
