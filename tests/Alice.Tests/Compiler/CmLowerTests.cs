@@ -346,10 +346,10 @@ public class CmLowerTests
         Assert.Equal("global::Alice.Runtime.Cm.Compact<int>(xs, new global::System.ReadOnlySpan<bool>(f, 0, n), o)", Printer.E(new AirCompact { Src = N("xs"), Flags = N("f"), Dst = N("o"), Count = N("n") }));
         Assert.Equal("global::Alice.Runtime.Cm.Permute<int>(xs, new global::System.ReadOnlySpan<int>(p, 0, n), o)", Printer.E(new AirPermute { Src = N("xs"), Perm = N("p"), Dst = N("o"), Count = N("n") }));
         Assert.Equal("!global::System.Object.ReferenceEquals(a, b)", Printer.E(new AirCmDistinct { W = N("a"), R = N("b") }));
-        Assert.Equal("expr (cm-scan add inclusive int chunked fused `o` `o` `n`)\n",
+        Assert.Equal("expr (cm-scan add inclusive int chunked fused (local o) (local o) (local n))\n",
             MirDump.Of([new MExprStmt { E = new AirScan { Op = AirCmOp.Add, Src = N("o"), Dst = N("o"), Count = N("n"), Ordered = false, Fused = true } }]));
-        Assert.Equal("expr (cm-combine histogram uint idx int `h` `k` `n`)\n", MirDump.Of([new MExprStmt { E = new AirCombine { Target = N("h"), Idx = N("k"), Count = N("n"), Elem = ui } }]));
-        Assert.Equal("expr (cm-permute int proof runtime `xs` `p` `o` `n`)\n", MirDump.Of([new MExprStmt { E = new AirPermute { Src = N("xs"), Perm = N("p"), Dst = N("o"), Count = N("n") } }]));
+        Assert.Equal("expr (cm-combine histogram uint idx int (local h) (local k) (local n))\n", MirDump.Of([new MExprStmt { E = new AirCombine { Target = N("h"), Idx = N("k"), Count = N("n"), Elem = ui } }]));
+        Assert.Equal("expr (cm-permute int proof runtime (local xs) (local p) (local o) (local n))\n", MirDump.Of([new MExprStmt { E = new AirPermute { Src = N("xs"), Perm = N("p"), Dst = N("o"), Count = N("n") } }]));
         // analyses see the operands
         var comb = new AirCombine { Target = N("h"), Idx = N("k"), Vals = N("v"), Count = N("n") };
         Assert.Equal(4, MirFacts.Children(comb).Count());
@@ -620,5 +620,41 @@ public class CmLowerTests
             for (int i = 0; i < 50; i++) f(xs, arr);
             Assert.True(GC.GetAllocatedBytesForCurrentThread() - before == 0, name + " allocates");
         }
+    }
+
+    [Fact]
+    public void Fmt_indents_cm_for_bodies()
+    {
+        var src = """
+            def f(xs : Array(Int32), o : Array(Int32)) : Int32
+            acc = 0
+            cm for i in 0...xs.size
+            acc = acc &+ xs[i]
+            o[i] = acc
+            end
+            cm ordered for i in 0...xs.size
+            o[i] = acc
+            end
+            acc
+            end
+
+            """;
+        var want = """
+            def f(xs : Array(Int32), o : Array(Int32)) : Int32
+              acc = 0
+              cm for i in 0...xs.size
+                acc = acc &+ xs[i]
+                o[i] = acc
+              end
+              cm ordered for i in 0...xs.size
+                o[i] = acc
+              end
+              acc
+            end
+
+            """;
+        var once = Alice.Compiler.Syntax.Formatter.Format(src.ReplaceLineEndings("\n"));
+        Assert.Equal(want.ReplaceLineEndings("\n"), once.ReplaceLineEndings("\n"));
+        Assert.Equal(once, Alice.Compiler.Syntax.Formatter.Format(once));
     }
 }

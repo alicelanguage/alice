@@ -1,0 +1,13 @@
+date,region,product,quantity,unit_price
+2026-01-04,North,Assam tea,3,4.50
+2026-01-09,South,Sencha tea,1,12.50
+2026-01-15,North,"Tea pot, glass",1,24.00
+2026-01-21,West,Assam tea,10,4.50
+2026-01-30,South,"Rooibos ""red"" tea",2,6.25
+2026-02-02,North,Sencha tea,2,12.50
+2026-02-11,West,"Tea pot, glass",2,24.00
+2026-02-14,South,Assam tea,4,4.50
+2026-02-20,North,Rooibos tea,1,6.25
+2026-02-27,West,Sencha tea,3,12.50
+2026-03-03,South,"Tea pot, glass",1,24.00
+2026-03-08,North,Assam tea,6,4.50

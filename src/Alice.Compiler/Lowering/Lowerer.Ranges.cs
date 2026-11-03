@@ -220,7 +220,7 @@ public sealed partial class Lowerer
         string? narrow = span == 256 ? "sbyte" : span == 65536 ? "short" : span == 4294967296 ? "int" : null;
         if (narrow == null || c.L is not NameExpr { Sym: LocalSym x } || !Same(sub.L, x) || !Same(pos, x) || x.Type.Cs is not ("int" or "long")) return null;
         if (RangeOf(c.L) is not { } r || r.Lo < 0 || r.Hi >= span) return null;
-        return new MCast { TypeCs = x.Type.Cs, E = new MCall { Name = "unchecked", Args = { new MCast { TypeCs = narrow, E = new MCode(x.CsName) } } } };
+        return new MCast { TypeCs = x.Type.Cs, E = new MCall { Name = "unchecked", Args = { new MCast { TypeCs = narrow, E = new AirLocalRef(x.CsName, x.Type.ToAir()) } } } };
 
         static bool Same(Syntax.Expr e, LocalSym l) => e is NameExpr { Sym: LocalSym s } && s == l;
     }

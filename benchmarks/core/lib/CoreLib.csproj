@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Alice Core library modules (Text, Csv, Crypto, Fs, Time, Net) against the BCL and the current Prelude.
+       Not part of Alice.sln. Workstation GC (the Alice default), TieredPGO on (default). Run: run.sh (this folder). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Optimize>true</Optimize>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredPGO>true</TieredPGO>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <AssemblyName>core-lib-bench</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Alice.Runtime/Alice.Runtime.csproj" />
+  </ItemGroup>
+</Project>

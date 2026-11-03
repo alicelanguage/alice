@@ -492,6 +492,15 @@ public sealed partial class Parser
             case "spawn":
                 Next();
                 return At(new SpawnExpr { Body = LambdaBody(new List<Param>()) }, c);
+            case "dataflow" when !IsLocal(n) && (Peek(1).Kind == "id" && Peek(1).Text == "do" || Peek(1).Kind == "op" && Peek(1).Text == "(" && !Peek(1).Space):   // ADR 0038 network
+                {
+                    Next();
+                    var df = At(new DataflowExpr(), c);
+                    if (IsOp("(")) { Next(); df.Args = Args(")"); }
+                    if (!IsKw("do")) throw Err("expected 'do' after `dataflow(...)`");
+                    df.Body = LambdaBody(new List<Param>());
+                    return df;
+                }
             case "lambda":
             case "proc":
                 Next();

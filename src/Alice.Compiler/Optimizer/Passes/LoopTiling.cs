@@ -222,7 +222,7 @@ public sealed class LoopTiling : IMirPass
                 End = tile > 0
                     ? new MCall { Target = new MCode("global::System.Math"), Name = "Min", Args = { Unchecked(Bin(AirBinOp.Add, new MCode(l.Var + "_t"), Lit(tile))), Clone(l.End) } }
                     : Clone(l.End),
-                Step = $" = unchecked({l.Var} + 1)",
+                Step = AirForStep.UncheckedAdd(l.Var, Lit(1)),
                 Body = body,
             }];
         }
@@ -234,7 +234,7 @@ public sealed class LoopTiling : IMirPass
                 body = [new MFor
                 {
                     Line = line, Var = tv, VarType = "int", Start = Clone(l.Start), End = Clone(l.End),
-                    Step = $" = unchecked({tv} + {tile.ToString(CultureInfo.InvariantCulture)})", Body = body,
+                    Step = AirForStep.UncheckedAdd(tv, Lit(tile)), Body = body,
                 }];
             }
         return body[0];

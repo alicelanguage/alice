@@ -55,6 +55,7 @@ public sealed partial class Binder
         finalPass = true;   // types are settled: checks that must not guess (AL0230 on unknown types) decide now
         BindAll();
         CheckBorrowsAndLifetimes();
+        CheckAffine();
         CheckFieldInitialization();
     }
 

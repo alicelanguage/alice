@@ -95,49 +95,91 @@ public sealed partial class Lowerer
         body.InsertRange(0, pre);
         pre = savedPre;
         inParallelGen = saved;
-        var kp = new Backend.Printer("", 2);
-        foreach (var st in body) kp.Root(st);
-        string ps = string.Join(", ", new[] { "int __ga", "int __gn" }.Concat(acc != null ? [$"{AccView()} __gacc"] : [])
-            .Concat(arrays.Select(a => $"{View(a)} {a.CsName}")).Concat(scalars.Select(s => $"{s.Type.Cs} {s.CsName}")));
+        foreach (var st in body) Optimizer.Pipeline.Run([st]);   // statement by statement, as the kernel always was
         // explicitly grouped: a grid-stride loop over the launch's range, so a grid capped at the device's width covers
         // any count. A reduction adds into a register; the group then reduces (warp shuffles, then shared memory over
         // the warps' partials) and its first thread does the one atomic add of the group
-        var kb = new System.Text.StringBuilder();
-        kb.Append($"private static void {kernel}({ps})\n{{\n");
-        if (acc != null) kb.Append($"    {acc.Type.Cs} __gr = 0;\n");
-        kb.Append("    int __gs = global::ILGPU.Grid.DimX * global::ILGPU.Group.DimX;\n");
-        kb.Append("    for (int __gt = global::ILGPU.Grid.GlobalIndex.X; __gt < __gn; __gt = __gn - __gt > __gs ? __gt + __gs : __gn)\n    {\n");
-        kb.Append($"        int {plan.LoopVar.CsName} = __gt + __ga;\n        unchecked\n        {{\n{kp}        }}\n    }}\n");
+        var intT = AirLeaf.Int;
+        MExpr G(string type, params string[] members)
+        {
+            MExpr e = AirTypeRef.Named("global::ILGPU." + type);
+            foreach (var m in members) e = new MMember { Target = e, Name = m };
+            return e;
+        }
+        static AirLocalRef K(string n, AirType? t = null) => new(n, t);
+        static MBinary B(AirBinOp op, MExpr l, MExpr r) => new() { Op = op, L = l, R = r };
+        var kbody = new List<MStmt>();
+        var accT = acc != null ? new AirType.ClrRef(acc.Type.Cs, null, []) : null;
+        if (acc != null) kbody.Add(new MDecl { Name = "__gr", TypeCs = acc.Type.Cs, Init = AirConst.Int(0) });
+        kbody.Add(new MDecl { Name = "__gs", TypeCs = "int", Init = B(AirBinOp.Mul, G("Grid", "DimX"), G("Group", "DimX")) });
+        kbody.Add(new MFor
+        {
+            VarType = "int", Var = "__gt", Start = G("Grid", "GlobalIndex", "X"), Cmp = "<", End = K("__gn", intT),
+            // the step never overflows Int32
+            Step = AirForStep.By("=", new AirGridStep { Index = K("__gt", intT), Count = K("__gn", intT), Stride = K("__gs", intT), Type = intT }),
+            Body =
+            {
+                new MDecl { Name = plan.LoopVar.CsName, TypeCs = "int", Init = B(AirBinOp.Add, K("__gt", intT), K("__ga", intT)) },
+                new MBlock { Unchecked = true, Body = body },
+            },
+        });
         if (acc != null)
-            kb.Append($$"""
-                    unchecked
+        {
+            MExpr Gsh(MExpr ix) => new MIndex { Target = K("__gsh"), Args = { ix } };
+            kbody.Add(new MBlock
+            {
+                Unchecked = true,
+                Body =
+                {
+                    new MFor
                     {
-                        for (int __gd = global::ILGPU.Warp.WarpSize / 2; __gd > 0; __gd >>= 1) __gr += global::ILGPU.Warp.ShuffleDown(__gr, __gd);
-                        var __gsh = global::ILGPU.SharedMemory.GetDynamic<{{acc.Type.Cs}}>();
-                        if (global::ILGPU.Warp.IsFirstLane) __gsh[global::ILGPU.Warp.WarpIdx] = __gr;
-                        global::ILGPU.Group.Barrier();
-                        for (int __gw = global::ILGPU.Group.DimX / global::ILGPU.Warp.WarpSize / 2; __gw > 0; __gw >>= 1)
+                        VarType = "int", Var = "__gd", Start = B(AirBinOp.Div, G("Warp", "WarpSize"), AirConst.Int(2)), Cmp = ">", End = AirConst.Int(0), Step = AirForStep.By(">>=", AirConst.Int(1)),
+                        Body = { new MAssign { Target = K("__gr", accT), Op = "+=", Value = new MCall { Target = G("Warp"), Name = "ShuffleDown", Args = { K("__gr", accT), K("__gd", intT) } } } },
+                    },
+                    new MDecl { Name = "__gsh", Init = new MCall { Target = G("SharedMemory"), Name = $"GetDynamic<{acc.Type.Cs}>" } },
+                    new MIf { Cond = G("Warp", "IsFirstLane"), Then = { new MAssign { Target = Gsh(G("Warp", "WarpIdx")), Value = K("__gr", accT) } } },
+                    new MExprStmt { E = new MCall { Target = G("Group"), Name = "Barrier" } },
+                    new MFor
+                    {
+                        VarType = "int", Var = "__gw", Start = B(AirBinOp.Div, B(AirBinOp.Div, G("Group", "DimX"), G("Warp", "WarpSize")), AirConst.Int(2)), Cmp = ">", End = AirConst.Int(0), Step = AirForStep.By(">>=", AirConst.Int(1)),
+                        Body =
                         {
-                            if (global::ILGPU.Group.IdxX < __gw) __gsh[global::ILGPU.Group.IdxX] += __gsh[global::ILGPU.Group.IdxX + __gw];
-                            global::ILGPU.Group.Barrier();
-                        }
-                        if (global::ILGPU.Group.IdxX == 0) global::ILGPU.Atomic.Add(ref __gacc[0], __gsh[0]);
-                    }
-
-                """);
-        kb.Append("}\n");
-        kb.Append($"private static global::System.Action<global::ILGPU.KernelConfig, {string.Join(", ", ptypes)}>? {field};\n");
-        kb.Append($"private static int {group}, {cap};\n");
+                            new MIf { Cond = B(AirBinOp.Lt, G("Group", "IdxX"), K("__gw", intT)), Then = { new MAssign { Target = Gsh(G("Group", "IdxX")), Op = "+=", Value = Gsh(B(AirBinOp.Add, G("Group", "IdxX"), K("__gw", intT))) } } },
+                            new MExprStmt { E = new MCall { Target = G("Group"), Name = "Barrier" } },
+                        },
+                    },
+                    new MIf
+                    {
+                        Cond = B(AirBinOp.Eq, G("Group", "IdxX"), AirConst.Int(0)),
+                        Then = { new MExprStmt { E = new MCall { Target = G("Atomic"), Name = "Add", Args = { new MArg { Prefix = "ref ", E = new MIndex { Target = K("__gacc"), Args = { AirConst.Int(0) } } }, Gsh(AirConst.Int(0)) } } } },
+                    },
+                },
+            });
+        }
+        static AirType Named(string cs) => new AirType.ClrRef(cs, null, []);
+        var kps = new List<AirParamDecl> { new("__ga", intT), new("__gn", intT) };
+        if (acc != null) kps.Add(new("__gacc", Named(AccView())));
+        kps.AddRange(arrays.Select(a => new AirParamDecl(a.CsName, Named(View(a)))));
+        kps.AddRange(scalars.Select(sc => new AirParamDecl(sc.CsName, Named(sc.Type.Cs))));
+        AddHelper(new AirHelperDecl { Method = new AirMethodDecl { Name = kernel, Vis = AirVis.Private, Flags = AirMethodFlags.Static, Params = kps, Ret = AirLeaf.Void, Body = kbody } });
+        var launcher = new AirType.ClrRef("global::System.Action", null, [Named("global::ILGPU.KernelConfig"), .. ptypes.Select(Named)]) { Nullable = true };
+        AddHelper(new AirHelperDecl { Field = new AirFieldDecl { Name = field, Type = launcher, Vis = AirVis.Private, Static = true } });
+        AddHelper(new AirHelperDecl { Field = new AirFieldDecl { Name = group, Type = intT, Vis = AirVis.Private, Static = true } });
+        AddHelper(new AirHelperDecl { Field = new AirFieldDecl { Name = cap, Type = intT, Vis = AirVis.Private, Static = true } });
         // the device accumulator, allocated once per thread (two threads may launch the same loop at once)
-        if (acc != null) kb.Append($"[global::System.ThreadStatic] private static global::ILGPU.Runtime.MemoryBuffer1D<{acc.Type.Cs}, global::ILGPU.Stride1D.Dense>? {scalar};\n");
-        Extra.Add(kb.ToString());
+        if (acc != null)
+            AddHelper(new AirHelperDecl
+            {
+                Field = new AirFieldDecl { Name = scalar, Type = Named($"global::ILGPU.Runtime.MemoryBuffer1D<{acc.Type.Cs}, global::ILGPU.Stride1D.Dense>?"), Vis = AirVis.Private, Static = true },
+                Attributes = { new AirAttribute { Type = Named("global::System.ThreadStatic") } },
+            });
         UsesGpu = true;
 
         // the host: bounds, upload, launch (kernel compiled once per process), copy back what the body wrote
         var host = new List<MStmt>
         {
             new MDecl { Name = start, TypeCs = "int", Init = Expr(r.A) },
-            new MDecl { Name = count, TypeCs = "int", Init = new MCode($"{Backend.Printer.E(Expr(r.B))} - {start}{(r.Excl ? "" : " + 1")}") },
+            new MDecl { Name = count, TypeCs = "int", Init = new AirTripCount { End = Expr(r.B), Start = new AirLocalRef(start, AirLeaf.Int), Inclusive = !r.Excl, Type = AirLeaf.Int } },
         };
         // ILGPU's extension classes, found by reflection at compile time: fully qualified calls need no imports
         var accType = binder.Clr.Find("ILGPU.Runtime.Accelerator", 0, []);
@@ -148,42 +190,65 @@ public sealed partial class Lowerer
         string? zero = viewType == null ? null : binder.Clr.ExtensionHost("MemSetToZero", viewType);
         if (alloc == null || copy == null || load == null || zero == null || binder.Clr.Find("ILGPU.Runtime.KernelUtil", 0, []) == null)
             throw No("this ILGPU version lacks Allocate1D / CopyToCPU / MemSetToZero / LoadStreamKernel / KernelUtil (ILGPU 1.x is supported)");
-        static MStmt Line(string code) => new MExprStmt { E = new MCode(code) };
+        // the ILGPU host statements, through the extension hosts found above
+        static AirLocalRef L(string name) => new(name);
+        static MMember ViewOf(string buffer) => new() { Target = L(buffer), Name = "View" };
+        static MStmt Do(MExpr e) => new MExprStmt { E = e };
+        var gpuApi = AirTypeRef.Named("global::__AliceGpu");
         var launch = new List<MStmt>
         {
-            Line("var __acc = global::__AliceGpu.Accelerator"),
-            Line($"{field} ??= {load}.LoadStreamKernel<{string.Join(", ", ptypes)}>(__acc, {kernel})"),
-            Line($"int __gg = global::__AliceGpu.Grid({field}, ref {group}, ref {cap}, {count})"),
+            new MDecl { Name = "__acc", Init = new MMember { Target = gpuApi, Name = "Accelerator" } },
+            new MAssign { Target = new AirFieldRef(field), Op = "??=", Value = new MCall { Target = AirTypeRef.Named(load), Name = $"LoadStreamKernel<{string.Join(", ", ptypes)}>", Args = { L("__acc"), new AirMethodGroup(null, kernel) } } },
+            new MDecl { Name = "__gg", TypeCs = "int", Init = new MCall { Target = AirTypeRef.Named("global::__AliceGpu"), Name = "Grid", Args = { new AirFieldRef(field), new MArg { Prefix = "ref ", E = new AirFieldRef(group) }, new MArg { Prefix = "ref ", E = new AirFieldRef(cap) }, new AirLocalRef(count, AirLeaf.Int) } } },
         };
         gpuAlloc = alloc;
         gpuCopy = copy;
         foreach (var a in arrays)
-            launch.Add(Line(gpuRegion != null
-                ? $"var __gb_{a.CsName.TrimStart('@')} = {gpuRegion}.Get({a.CsName}, {(overwritten.Contains(a) && Whole(a) ? "false" : "true")}, {(written.Contains(a) ? "true" : "false")})"   // resident until the region ends
-                : overwritten.Contains(a)
-                    ? $"using var __gb_{a.CsName.TrimStart('@')} = __acc.Allocate1D<{a.Type.Elem!.Cs}>({a.CsName}.Length)"   // write-only: no upload
-                    : $"using var __gb_{a.CsName.TrimStart('@')} = {alloc}.Allocate1D(__acc, {a.CsName})"));
+        {
+            string gb = "__gb_" + a.CsName.TrimStart('@');
+            var arr = new AirLocalRef(a.CsName, a.Type.ToAir());
+            if (gpuRegion != null)   // resident until the region ends
+                launch.Add(new MDecl { Name = gb, Init = new MCall { Target = L(gpuRegion), Name = "Get", Args = { arr, AirConst.Bool(!(overwritten.Contains(a) && Whole(a))), AirConst.Bool(written.Contains(a)) } } });
+            else if (overwritten.Contains(a))   // write-only: no upload
+                launch.Add(new MDecl { Using = true, Name = gb, Init = new MCall { Target = L("__acc"), Name = $"Allocate1D<{a.Type.Elem!.Cs}>", Args = { new MMember { Target = arr, Name = "Length" } } } });
+            else
+                launch.Add(new MDecl { Using = true, Name = gb, Init = new MCall { Target = AirTypeRef.Named(alloc), Name = "Allocate1D", Args = { L("__acc"), arr } } });
+        }
         if (acc != null)
         {
-            launch.Add(Line($"var __gb_acc = {scalar} ??= __acc.Allocate1D<{acc.Type.Cs}>(1)"));
-            launch.Add(Line($"{zero}.MemSetToZero(__gb_acc.View)"));
+            launch.Add(new MDecl { Name = "__gb_acc", Init = new AirAssignExpr { Target = new AirFieldRef(scalar), Op = "??=", Value = new MCall { Target = L("__acc"), Name = $"Allocate1D<{acc.Type.Cs}>", Args = { AirConst.Int(1) } } } });
+            launch.Add(Do(new MCall { Target = AirTypeRef.Named(zero), Name = "MemSetToZero", Args = { ViewOf("__gb_acc") } }));
         }
         // the reduction's shared memory holds one partial per warp
-        string shared = acc != null ? $", global::ILGPU.SharedMemoryConfig.RequestDynamic<{acc.Type.Cs}>({group} / __acc.WarpSize)" : "";
-        launch.Add(Line($"{field}(new global::ILGPU.KernelConfig(__gg, {group}{shared}), {start}, {count}{(acc != null ? ", __gb_acc.View" : "")}{string.Concat(arrays.Select(a => $", __gb_{a.CsName.TrimStart('@')}.View"))}{string.Concat(scalars.Select(sc => ", " + sc.CsName))})"));
-        if (gpuRegion == null || acc != null) launch.Add(Line("__acc.Synchronize()"));   // in a region, launches queue on one stream
+        var config = new MNew { TypeCs = "global::ILGPU.KernelConfig", Args = { L("__gg"), new AirFieldRef(group) } };
+        if (acc != null)
+            config.Args.Add(new MCall { Target = AirTypeRef.Named("global::ILGPU.SharedMemoryConfig"), Name = $"RequestDynamic<{acc.Type.Cs}>", Args = { new MBinary { Op = AirBinOp.Div, L = new AirFieldRef(group), R = new MMember { Target = L("__acc"), Name = "WarpSize" } } } });
+        var run = new MInvoke { Target = new AirFieldRef(field), Args = { config, new AirLocalRef(start, AirLeaf.Int), new AirLocalRef(count, AirLeaf.Int) } };
+        if (acc != null) run.Args.Add(ViewOf("__gb_acc"));
+        run.Args.AddRange(arrays.Select(a => (MExpr)ViewOf("__gb_" + a.CsName.TrimStart('@'))));
+        run.Args.AddRange(scalars.Select(sc => (MExpr)new AirLocalRef(sc.CsName, sc.Type.ToAir())));
+        launch.Add(Do(run));
+        if (gpuRegion == null || acc != null) launch.Add(Do(new MCall { Target = L("__acc"), Name = "Synchronize" }));   // in a region, launches queue on one stream
         if (gpuRegion == null)
             foreach (var a in arrays.Where(written.Contains))
-                launch.Add(Line(overwritten.Contains(a)
-                    ? $"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View.SubView({start}, {count}), ref {a.CsName}[{start}], {count})"   // only the range came from the device
-                    : $"{copy}.CopyToCPU(__gb_{a.CsName.TrimStart('@')}.View, {a.CsName})"));
+            {
+                string gb = "__gb_" + a.CsName.TrimStart('@');
+                var arr = new AirLocalRef(a.CsName, a.Type.ToAir());
+                launch.Add(Do(overwritten.Contains(a)
+                    ? new MCall   // only the range came from the device
+                    {
+                        Target = AirTypeRef.Named(copy), Name = "CopyToCPU",
+                        Args = { new MCall { Target = ViewOf(gb), Name = "SubView", Args = { new AirLocalRef(start, AirLeaf.Int), new AirLocalRef(count, AirLeaf.Int) } }, new MArg { Prefix = "ref ", E = new MIndex { Target = arr, Args = { new AirLocalRef(start, AirLeaf.Int) } } }, new AirLocalRef(count, AirLeaf.Int) },
+                    }
+                    : new MCall { Target = AirTypeRef.Named(copy), Name = "CopyToCPU", Args = { ViewOf(gb), arr } }));
+            }
         if (acc != null)
         {
-            launch.Add(Line($"{acc.Type.Cs} __gsum = 0"));
-            launch.Add(Line($"{copy}.CopyToCPU(__gb_acc.View, ref __gsum, 1)"));
-            launch.Add(Line($"{acc.CsName} += __gsum"));
+            launch.Add(new MDecl { Name = "__gsum", TypeCs = acc.Type.Cs, Init = AirConst.Int(0) });
+            launch.Add(Do(new MCall { Target = AirTypeRef.Named(copy), Name = "CopyToCPU", Args = { ViewOf("__gb_acc"), new MArg { Prefix = "ref ", E = L("__gsum") }, AirConst.Int(1) } }));
+            launch.Add(new MAssign { Target = new AirLocalRef(acc.CsName, acc.Type.ToAir()), Op = "+=", Value = L("__gsum") });
         }
-        host.Add(new MIf { Cond = new MCode($"{count} > 0"), Then = { new MBlock { Body = launch } } });
+        host.Add(new MIf { Cond = new MBinary { Op = AirBinOp.Gt, L = new AirLocalRef(count, AirLeaf.Int), R = AirConst.Int(0), Type = AirLeaf.Bool }, Then = { new MBlock { Body = launch } } });
         return new MBlock { Body = host };
     }
 
@@ -239,7 +304,7 @@ public sealed partial class Lowerer
         List<MStmt> body;
         try { body = Stmts(region.Body, tail, target); }
         finally { gpuRegion = saved; }
-        return new MUsing { Name = r, Value = new MCode("new global::__AliceGpu.Region()"), Body = body };
+        return new MUsing { Name = r, Value = new MNew { TypeCs = "global::__AliceGpu.Region" }, Body = body };
     }
 
     readonly HashSet<NameExpr> regionLengthReads = new(ReferenceEqualityComparer.Instance);

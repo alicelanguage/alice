@@ -58,12 +58,17 @@ public static partial class Explain
 
     static void Add(List<string> list, string f) { if (!list.Contains(f)) list.Add(f); }
 
+    /// <summary>One row per sum type (ADR 0037): `enum Tree` -> `arena` or `record (demoted: ... at file:line: why)`.</summary>
+    public static List<(string Enum, string Form)> EnumRows(List<SourceFile> files, List<string> refs) =>
+        AliceCompiler.AffineReport(files, refs).Select(l => l.Split(": ", 2)).Select(p => ("enum " + p[0], p[1])).ToList();
+
     public static int Run(List<SourceFile> files, List<string> refs)
     {
         var cs = string.Join("\n", AliceCompiler.TranspileAll(files, refs));
         var table = new Table().Border(TableBorder.Rounded).AddColumn("method").AddColumn("optimizations");
         foreach (var (m, f) in Report(cs).OrderBy(kv => kv.Key))
             table.AddRow(Markup.Escape(m), f.Count == 0 ? "[grey]none[/]" : Markup.Escape(string.Join("\n", f)));
+        foreach (var (e, form) in EnumRows(files, refs)) table.AddRow(Markup.Escape(e), Markup.Escape(form));
         AnsiConsole.Write(table);
         return 0;
     }

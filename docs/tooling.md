@@ -116,6 +116,36 @@ end
 
 In a package, `alice test` first builds it, then compiles each test file with the package sources against the package's resolved references (NuGet, project refs, e.g. MonoGame). Prints `test result: ok. N passed; 0 failed`.
 
+## Fuzzing
+
+Three fuzzers share one engine (`tests/Alice.Tests/Fuzz/Engine`): a short deterministic seed set runs with
+`dotnet test` (`tests/Alice.Tests/Fuzz`, about 30 s), long runs use the standalone `tools/fuzz` console (not in
+`Alice.sln`, not part of the test run).
+
+| Fuzzer | Input | Oracles |
+|---|---|---|
+| parser (`parse`) | grammar-based programs (`SyntaxGen`: expressions, statements, defs, classes, records, enums, `case`/`when`/`in`, blocks, lambdas, strings, heredocs, percent literals, rescue forms, loops) and mutations of `examples/`, `benchmarks/`, `samples/`, `guide/` (`Mutator`) | the lexer/parser fail only with an AL diagnostic (no internal exception, no hang); `alice fmt` never throws, is idempotent, and its output parses to the same AST (positions ignored) |
+| binder/lowering (`typed`) | well-typed terminating programs (`TypedGen`: numeric kernels, arrays, lists, hashes, records, sum types, recursive and `affine` enums, blocks, `par for` over owned arrays, `par a, b =`, `own`/`borrow`, `pure`/`safe` defs, classes, strings, rescue) | compiles without an internal error or an AL diagnostic; the emitted C# compiles under Roslyn; compiling and `alice check` are deterministic; strict mode (AL0220) accepts the program and runs it the same |
+| differential (`diff`) | the typed programs | C# backend vs `--backend il`: same stdout and same escaping exception, IL image ILVerify-clean; in child processes `ALICE_DISABLE_PASSES` (all passes, then one random pass) and `ALICE_PAR=0` against the parallel default, bit-identical |
+
+```bash
+dotnet build tools/fuzz -c Release
+tools/fuzz/run.sh parse 30 1000          # mode, minutes, first seed [, findings dir]
+tools/fuzz/run.sh typed 30 2000
+tools/fuzz/run.sh diff 30 3000
+tools/fuzz/bin/Release/net10.0/alice-fuzz minimize tools/fuzz/findings/x.al --mode typed
+```
+
+A failing case is minimized (delta debugging over lines, then whole blocks, then single lines, keeping the same
+category and, for rejected programs, the same diagnostics; typed candidates must stay statically typed and terminate)
+and written to `tools/fuzz/findings/<category>-<hash>.al` with the divergence as a comment header (the unminimized
+program goes to `findings/orig/`). Triaged bugs are listed in `Known.Issues` (`Engine/Minimizer.cs`): later
+occurrences are counted, not written again, and each has a skipped regression test in
+`tests/Alice.Tests/Fuzz/Regressions/` that asserts the fixed behavior. The typed fuzzer alternates an avoid-known mode
+(no constructs of known bugs) so the differential fuzzer keeps comparing programs. A run prints `STATS` lines (programs,
+outcomes, findings per category), `FEATURES` (generator coverage) and `IL-UNSUPPORTED` (nodes the IL backend does not
+lower yet, counted, not findings). Exit code 3 means hung calls leaked threads; `run.sh` restarts with the next seed.
+
 ## MSBuild SDK
 
 | File | Role |
@@ -299,7 +329,9 @@ arithmetic with Alice's semantics (checked overflow, floored `/` and `%`, wrappi
 wrapping `to_X!` conversions), `if`/ternaries, early `return`, locals, `divmod`, `Math.Min/Max` and inlined
 non-recursive pure methods. Rules with loops, recursion, objects or floats fall back to enumeration. Every Z3
 counterexample is run again through the compiled rule before it is printed: it must return false or raise there,
-otherwise the rule is reported `not proven` with the disagreement (a bug to report), never as a failure or a proof.
+otherwise the rule FAILS there with `internal error: solver verdict contradicted by compiled rule` (a bug to report).
+Every Z3 proof is cross-checked the same way on 64 points of the domain (bounds, then seeded random points); a point
+where the compiled rule returns false or raises makes the rule FAIL with the same internal error, never proven.
 
 How `alice prove --smt` finds Z3: it loads Z3's C library at run time (no NuGet package, any CPU architecture), and
 tries in order:

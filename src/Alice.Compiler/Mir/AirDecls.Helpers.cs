@@ -14,4 +14,18 @@ public sealed class AirHelperDecl
     /// <summary>A static field, initialized by <see cref="FieldInit"/> (already optimized).</summary>
     public AirFieldDecl? Field;
     public MExpr? FieldInit;
+    /// <summary>Attributes of the helper method (`[MethodImpl(AggressiveInlining)]`, `[UnmanagedCallersOnly]`).</summary>
+    public List<AirAttribute> Attributes = new();
+    /// <summary>The method needs an `unsafe` context (pointers, a function's address).</summary>
+    public bool Unsafe;
+    /// <summary>An expression body (`=> e;`) instead of <see cref="AirMethodDecl.Body"/>, printed as lowered.</summary>
+    public MExpr? ExprBody;
+}
+
+/// <summary>A custom attribute: constructor arguments and named arguments (`CallConvs = ...`).</summary>
+public sealed class AirAttribute
+{
+    public AirType Type = AirType.Unknown;
+    public List<MExpr> Args = new();
+    public List<(string Name, MExpr Value)> Named = new();
 }

@@ -13,8 +13,11 @@
 
 ---
 
+> **Status: 1.0 release candidate** (`1.0.0-rc.1`). The language, the guarantees in [INVARIANTS.md](INVARIANTS.md)
+> and the CLI are what 1.0 will ship; what is left is listed in the [1.0 checklist](docs/releases.md#10-release-checklist).
+
 Alice is a programming language for .NET. You write blocks, `case/in` and DSLs; the compiler infers static
-types, rejects data races, and turns your loops into vectorized, parallel, allocation-free code. Every .NET
+types, turns whole classes of bugs into compile errors, and makes your loops fast without you asking. Every .NET
 library and NuGet package works as is.
 
 ```ruby
@@ -28,20 +31,26 @@ puts "total=#{total}"
 
 ## Why Alice
 
-**1. It runs fast.** `map/select/sum` chains fuse into one loop, loops vectorize, and proven-pure work spreads
-across cores. Arrays the compiler owns go back to a pool instead of the GC. Alice beats idiomatic C# on 6 of 7
-benchmarks in the repo suite and matches C on the 5 C benchmarks ([benchmarks](benchmarks/README.md)).
+**1. Your bugs don't compile.** Nil where a value must be, reassigning a `val`, and **two threads touching the
+same data** (AL0202) are compile errors, not crashes in production. Integer overflow raises instead of wrapping
+silently, and an out-of-range index raises (or traps, in `@[Native]` C). When you want more, say so and the compiler holds
+you to it: `pure def` (no side effects), `safe def` (no file, network or process access), `own` and `borrow`
+(no buffer is shared or used after it is gone). Write the properties your code must never break in `RULES.al`;
+Alice checks every case, or the whole Int32/Int64 range with Z3:
 
-| benchmark | Alice | idiomatic C# | hand-optimized C# |
-|---|---:|---:|---:|
-| pipeline | 2.0 ms | 37.7 ms | 2.1 ms |
-| mandelbrot | 9.7 ms | 104.5 ms | 8.7 ms |
-| wordfreq | 6.9 ms | 80.5 ms | 5.3 ms |
-| nbody | 47.8 ms | 53.3 ms | 48.9 ms |
+```ruby
+rule clamp_stays_in_range(x in -1000..1000, lo in -50..50)
+  c = clamp(x, lo, lo + 10)
+  c >= lo && c <= lo + 10
+end
+```
 
-**2. It's parallel, without threads.** No locks or thread pools to manage. Independent recursive calls fork,
-independent loop iterations run in chunks, `gpu for` compiles to ILGPU kernels. The compiler parallelizes
-only code it has proven pure.
+`alice prove --check` fails CI when a rule breaks and prints the input that breaks it.
+
+**2. Fast without trying.** `map/select/sum` chains fuse into one loop with no intermediate arrays, loops
+vectorize, independent recursive calls and loop iterations spread across cores, and scratch arrays go back to a
+pool instead of the GC. No threads or locks to manage, and nothing runs in parallel unless the compiler has
+checked it is safe; when it cannot, the code stays serial (or, with `par for`, you get AL0209 telling you why).
 
 ```ruby
 a, b = sum_tree(n - 1), sum_tree(n - 1)   # forks near the root, plain calls deeper down
@@ -53,26 +62,29 @@ par for y in 0...h                         # parallel, or compile error AL0209
 end
 ```
 
-**3. It blocks mistakes.** Nil-safety, immutable `val`, and **data races are compile errors** (AL0202).
-When you want a guarantee, state it and the compiler proves it or stops: `pure def`, `safe def`, `own`,
-`borrow`. Write the properties your code must never break in `RULES.al` and `alice prove` checks every case,
-or the whole Int32/Int64 range with `--smt`:
+Repo suite, median of 15, ms (12th Gen Intel Core i5-1235U laptop, Linux, .NET 10.0.4;
+[benchmarks/README.md](benchmarks/README.md#results)):
 
-```ruby
-rule clamp_stays_in_range(x in -1000..1000, lo in -50..50)
-  c = clamp(x, lo, lo + 10)
-  c >= lo && c <= lo + 10
-end
-```
+| benchmark | Alice | idiomatic C# | hand-optimized C# |
+|---|---:|---:|---:|
+| pipeline | 6.9 ms | 26.0 ms | 7.0 ms |
+| expr | 8.9 ms | 11.9 ms | - |
+| mandelbrot | 116.6 ms | 117.7 ms | - |
+| nbody | 50.9 ms | 50.5 ms | - |
 
-`alice prove --check` fails CI when a rule breaks and prints the counterexample.
+Alice is not faster everywhere: the full tables, including the workloads where it is slower, are in
+[benchmarks/README.md](benchmarks/README.md#results) and, against C and Bend on a 32-core Linux machine, in
+[benchmarks/bend2/results](benchmarks/bend2/results/summary.md) and [benchmarks/bend-vs/results](benchmarks/bend-vs/results/summary.md).
 
-**4. It's all of .NET.** Generics, interfaces, `async/await`, LINQ, spans, ASP.NET, MonoGame, raylib, EF Core,
-Avalonia, WebAssembly. C# projects reference Alice libraries and the other way round. Alice compiles to C#,
-then Roslyn compiles that to IL; errors still point at your `.al` lines.
+**3. AI can't break it.** The same checks that stop your bugs stop an agent's: code that races, leaks a buffer or
+breaks a rule does not compile or fails `alice prove --check`. `alice guide` ships the language reference inside
+the CLI, and `alice agents --write` adds Alice rules to your `AGENTS.md`, so an agent checks its own changes and
+gets a concrete counterexample when it is wrong. Every guarantee is written down in [INVARIANTS.md](INVARIANTS.md)
+with the tests that pin it.
 
-**5. It's built for agents too.** `alice guide` ships the language reference inside the CLI, and
-`alice agents --write` adds Alice rules to your `AGENTS.md`, so an AI agent checks and proves its changes.
+**4. Nothing to give up.** Generics, interfaces, `async/await`, LINQ, spans, ASP.NET, MonoGame, raylib, EF Core,
+Avalonia, WebAssembly. C# projects reference Alice libraries and the other way round. Alice compiles to
+.NET assemblies with debug info, and errors point at your `.al` lines.
 
 ## Made with Alice
 
@@ -85,6 +97,18 @@ then Roslyn compiles that to IL; errors still point at your `.al` lines.
 All 100% Alice. Celeste Classic is an unofficial educational rewrite of the game by Maddy Thorson and Noel
 Berry ([credits](samples/celeste/README.md)). More in [`samples/`](samples) and [`examples/`](examples).
 
+Starting points by kind of program, each one built, run and tested by `examples/verify.sh` and `SampleTests`:
+
+| Kind | Sample | Shows |
+|---|---|---|
+| Web API | [examples/web/aspnet](examples/web/aspnet/README.md) | ASP.NET Core minimal API, JSON, DI, EF Core, WebSocket, `WebApplicationFactory` checks |
+| Network | [samples/netchat](samples/netchat/README.md) | TCP chat server and client with `spawn` and `Channel` |
+| Desktop | [examples/ui/avalonia](examples/ui/avalonia/README.md) | Avalonia app: MVVM, two views, saved settings, headless run |
+| Games | [samples/raylib-pong](samples/raylib-pong/README.md), [Breakout](samples/Breakout), [celeste](samples/celeste) | raylib and MonoGame; rules tested headless and proven |
+| CLI | [samples/alice-grep](samples/alice-grep/README.md) | flags, globs, parallel scan, NativeAOT (3.3 ms start) |
+| Data | [examples/data/pipeline](examples/data/pipeline/README.md) | CSV to totals to JSON, in integer cents |
+| Low level | [samples/lowlevel](samples/lowlevel/README.md) | libc calls, `@[Native]` kernel, `unsafe` pointers, an index-based tree |
+
 ## Get started
 
 ```bash
@@ -92,7 +116,8 @@ curl -fsSL https://alice-lang.org/install.sh | sh     # Linux, macOS
 irm https://alice-lang.org/install.ps1 | iex          # Windows PowerShell
 ```
 
-The installer verifies its SHA-256 and fetches the .NET 10 SDK if you need it. Then:
+The installer verifies its SHA-256 and fetches the .NET 10 SDK if you need it. It installs the latest stable
+release; for the release candidate add `--version 1.0.0-rc.1` (or set `ALICE_VERSION=1.0.0-rc.1`). Then:
 
 ```bash
 alice                      # REPL
@@ -111,13 +136,14 @@ Toolchains, nightly and building from source: [docs/tooling.md](docs/tooling.md)
 
 [Language](https://alice-lang.org/documentation) ·
 [Performance](https://alice-lang.org/documentation/guides/max-performance/) ·
-[Rules and proofs](https://alice-lang.org/documentation/guides/rules-and-proofs/) ·
+[Rules](https://alice-lang.org/documentation/guides/rules-and-proofs/) ·
 [Docs index](docs/README.md) ·
 [Production readiness](docs/production.md) ·
+[Guarantees](INVARIANTS.md) ·
 [Architecture](archicture/) ·
 [Changelog](CHANGELOG.md)
 
-Alice is young. It is tested heavily, but expect rough edges, and please report bugs.
+Alice is a release candidate: please report bugs, and report anything that breaks [INVARIANTS.md](INVARIANTS.md) privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

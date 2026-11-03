@@ -55,6 +55,7 @@ public sealed class EnumDecl : Item
     public List<string> Names = new();
     public List<Expr?> Values = new();
     public List<List<Param>?> Fields = new();   // sum type: Circle(r : Float64); null for unit variants
+    public bool Affine;                          // `affine enum T`: arena form or a compile error (ADR 0037)
     public bool IsAdt => Fields.Any(f => f != null);
 }
 
@@ -108,6 +109,7 @@ public sealed class MethodDecl : Item
     public bool IsPartial;   // `partial def f : T` (no body): a source generator writes it ([GeneratedRegex], [LibraryImport])   // `unsafe def`: pointers allowed in the whole method (C# unsafe)
     public string? RuleName;      // `rule name(...)` (RULES.al): a pure Bool method checked over Domains by `alice prove`
     public List<RuleDomain> Domains = new();           // `pure def`: proven free of effects, or AL0210
+    public bool IsStream;         // `stream def` (ADR 0038): an iterator whose consumer may run concurrently; its body follows the stage capture rule
     public bool IsSafe;           // `safe def`: only Alice code, no interop, native or unchecked escape, or AL0212
     public List<string> TypeParams = new();
     public List<Param> Params = new();

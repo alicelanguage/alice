@@ -5,3 +5,4 @@ kind = "exe"
 
 [dependencies]
 Pricing = { workspace = true }
+Catalog = { workspace = true }

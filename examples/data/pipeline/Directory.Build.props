@@ -1,0 +1,7 @@
+<Project>
+  <Import Project="../../Directory.Build.props" />
+  <ItemGroup>
+    <!-- the bundled input file ships next to the program -->
+    <None Include="$(MSBuildThisFileDirectory)data/*.csv" LinkBase="data" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

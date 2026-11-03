@@ -136,6 +136,24 @@ real try. What `AirToIl` must honour:
   spilled operands and `var` locals that live across a suspension need a type. Tests:
   `tests/Alice.Tests/Compiler/StateMachinesTests` (dumps, and an MIR evaluator driven by the real BCL builders).
 
+`Backend/Il` wiring of the passes above (D1.6/1.8/1.9/1.10, ADR 0033; `alice run --backend il` and `emit --il` now run them,
+`AirToIl.{Synth,StateMachines,Dyn,Interop}.cs` are the partials, the hooks in the other files are tagged `il-emit2`).
+Order per method body (`AirToIl.Decls.cs` `MethodBody`, same in `Main`/`Init`): `Optimizer.Pipeline.Run` -> `DynLower`
+(`DynSites`: `Any` operations become `AirDynCall` on `Alice.Runtime.Dyn` site fields, AL0232 when an operand cannot be
+bound) -> `IlLower` -> closure conversion -> `SmLower` (`StateMachines`: builds and emits the nested `<M>d__N` and leaves
+the kickoff as the body) -> emit. Around the bodies: `SynthDeclareMembers` replaces the mirrored `DeclareMembers`
+(records, struct records, sum types, operators and `to_s` come from `Synthesize`), `SynthBodies` emits the synthesized
+method bodies, `SynthCtorPrologue` the field-initializer prologue of user constructors, `SmReturn` types async/iterator
+methods (`Task<T>`, `IEnumerable<T>`, ...), `EmitDynSites` adds the site fields after the bodies, `DeclareLibs`
+declares `lib` blocks as P/Invokes. `RawExt`/`StmtExt` handle the jump nodes and `AirDynCall`.
+Still `IlUnsupportedException` (each names its kind, see `Decl:*` in `AirToIl.Decls.cs`): delegates, refinement types,
+generic types, SoA, ref structs, `__class_body`, enumerable bridges, events, interface properties, default interface
+methods, attributes on fields/methods/params, `block`/`ref` parameters, C# helper text from the lowerer (`Lowerer.Extra`,
+specializations, GPU). `ALICE_IL_SYNTH=0` keeps the old mirrored declarations for A/B comparison; it is a temporary
+switch and goes away with the mirror (`DeclareMembers`, `SyntheticCtor`, `CtorPrologue`). Differential tests (C# stdout
+== IL stdout): `StateMachinesTests.Il_*`, `DynSitesTests`, `SynthesizeTests.Il_backend_prints_...`,
+`AirToIlInteropTests`.
+
 `Optimizer/` (ADR 0014): `Pipeline` runs `Passes/` over MIR with `MirRewriter`/`MirFacts`. `Backend/CEmitter`:
 `@[Native]` functions -> C for clang. `Backend/Emitter` also lowers `rule` declarations for `alice prove` (AL0214).
 

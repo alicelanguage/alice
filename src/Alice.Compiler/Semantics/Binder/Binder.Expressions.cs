@@ -148,6 +148,8 @@ public sealed partial class Binder
                         ? Builtins.Generic(typeof(Task<>), sp.Body.Result)
                         : ClrTypes.FromClr(typeof(Task));
                 }
+            case DataflowExpr df:
+                return BindDataflow(df);   // ADR 0038 (Binder.Dataflow.cs)
             case YieldExpr y:
                 {
                     BindArgs(y.Args);

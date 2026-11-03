@@ -59,7 +59,7 @@ public sealed partial class Lowerer
                     return new MCall { Target = recv, Name = CallName(m), Args = args, Safe = c.Safe };
                 }
             case "field" when soa != null && c.Recv is NameExpr { Sym: LocalSym ps } && soa.Ps.Contains(ps):
-                return new MIndex { Target = new MMember { Target = new AirName(soa.Store), Name = ((FieldSym)c.Sym!).CsName }, Args = { new AirLocalRef(soa.Idx, AirInt) } };
+                return new MIndex { Target = new MMember { Target = soa.StoreLeaf, Name = ((FieldSym)c.Sym!).CsName }, Args = { soa.IdxRef() } };
             case "field":
                 return new MMember { Target = recv!, Name = c.Sym is FieldSym f ? f.CsName : c.Name, Safe = c.Safe };
             case "clr":

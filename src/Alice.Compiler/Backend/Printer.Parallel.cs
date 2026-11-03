@@ -41,6 +41,8 @@ public sealed partial class Printer
                 return r.PoolCs + ".Release(" + E(r.Target) + ")";
             case AirLength l:
                 return E(l.Target) + "." + l.Member;
+            case AirGridStep gs:
+                return $"{E(gs.Count)} - {E(gs.Index)} > {E(gs.Stride)} ? {E(gs.Index)} + {E(gs.Stride)} : {E(gs.Count)}";
             case AirTripCount t:
                 return TripEnd(t.End) + " - " + E(t.Start) + (t.Inclusive ? " + 1" : "");
             case AirOffset o:
@@ -62,13 +64,17 @@ public sealed partial class Printer
     /// </summary>
     public static string Helper(AirHelperDecl d)
     {
+        string attrs = string.Concat(d.Attributes.Select(a => "[" + a.Type.ToCs()
+            + (a.Args.Count + a.Named.Count > 0 ? "(" + string.Join(", ", a.Args.Select(E).Concat(a.Named.Select(nv => nv.Name + " = " + E(nv.Value)))) + ")" : "") + "]\n"));
         if (d.Field is { } f)
-            return $"{Vis(f.Vis)} {(f.Static ? "static " : "")}{(f.ReadOnly ? "readonly " : "")}{f.Type.ToCs()} {f.Name} = {E(d.FieldInit!)};\n";
+            return $"{attrs}{Vis(f.Vis)} {(f.Static ? "static " : "")}{(f.ReadOnly ? "readonly " : "")}{f.Type.ToCs()} {f.Name}{(d.FieldInit != null ? " = " + E(d.FieldInit) : "")};\n";
         var m = d.Method!;
+        string ps = string.Join(", ", m.Params.Select(x => x.Type.ToCs() + " " + x.Name));
+        string head = $"{attrs}{Vis(m.Vis)} {(m.Is(AirMethodFlags.Static) ? "static " : "")}{(d.Unsafe ? "unsafe " : "")}{m.Ret.ToCs()} {m.Name}({ps})";
+        if (d.ExprBody != null) return head + " => " + E(d.ExprBody) + ";\n";
         var p = new Printer("", 1);
         p.Stmts(m.Body!);
-        string ps = string.Join(", ", m.Params.Select(x => x.Type.ToCs() + " " + x.Name));
-        return $"{Vis(m.Vis)} {(m.Is(AirMethodFlags.Static) ? "static " : "")}{m.Ret.ToCs()} {m.Name}({ps})\n{{\n{p}}}\n";
+        return $"{head}\n{{\n{p}}}\n";
     }
 
     static string Vis(AirVis v) => v.ToString().ToLowerInvariant();

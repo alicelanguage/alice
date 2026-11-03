@@ -70,7 +70,7 @@ public sealed partial class Printer
         switch (s)
         {
             case MDecl d:
-                Line($"{d.TypeCs ?? "var"} {d.Name}{(d.Init != null ? " = " + E(d.Init) : "")};");
+                Line($"{(d.Using ? "using " : "")}{d.TypeCs ?? "var"} {d.Name}{(d.Init != null ? " = " + E(d.Init) : "")};");
                 break;
             case MDeconstruct dc:
                 Line(dc.Declare ? $"var ({string.Join(", ", dc.Names)}) = {E(dc.Value)};" : $"({string.Join(", ", dc.Names)}) = {E(dc.Value)};");
@@ -95,7 +95,7 @@ public sealed partial class Printer
                 Block(w.Body);
                 break;
             case MFor f:
-                Line($"for ({f.VarType ?? "var"} {f.Var} = {E(f.Start)}; {f.Var} {f.Cmp} {E(f.End)}; {f.Var}{f.Step})");
+                Line($"for ({f.VarType ?? "var"} {f.Var} = {E(f.Start)}; {f.Var} {f.Cmp} {E(f.End)}; {f.Var}{Step(f.Step)})");
                 Block(f.Body);
                 break;
             case MForeach fe:
@@ -142,14 +142,21 @@ public sealed partial class Printer
     }
 
     // a negative literal (`-5`) is not atomic: `-5.abs()` in C# is `-(5.abs())`
-    static bool Atomic(MExpr e) => e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr || AtomicIterators(e) || AtomicVector(e);
+    static bool Atomic(MExpr e) => e is AirFrozen fz ? Atomic(fz.E) : e is not AirAssignExpr && e is MCode { Text: not ['-', ..] } or MCall or MMember or MInvoke or MIndex or MNew or MNewArray or MTuple or MInterp or AirParExpr || AtomicIterators(e) || AtomicVector(e);
 
     static string P(MExpr e) => Atomic(e) ? E(e) : "(" + E(e) + ")";
+
+    /// <summary>The C# after the loop variable in a `for` header: `++`, ` += 2`, ` = unchecked(i + 1)`.</summary>
+    public static string Step(AirForStep s) => s.Value == null ? s.Op : " " + s.Op + " " + E(s.Value);
 
     public static string E(MExpr e)
     {
         switch (e)
         {
+            case AirFrozen fz:
+                return E(fz.E);
+            case AirAssignExpr ae:
+                return E(ae.Target) + " " + ae.Op + " " + E(ae.Value);
             case MCode c:   // also every typed leaf (AirConst, AirLocalRef, AirTypeRef...): Text is its C# spelling
                 return c.Text;
             case MCall c:
@@ -160,6 +167,7 @@ public sealed partial class Printer
                 return P(i.Target) + "(" + Join(i.Args) + ")";
             case MNew n:
                 string init = n.Init == null ? "" : n.Init.Count == 0 ? " { }" : " { " + Join(n.Init) + " }";
+                if (n.TypeCs == "") return $"new({Join(n.Args)}){init}";   // target-typed
                 return n.Init != null && n.Args.Count == 0 ? $"new {n.TypeCs}(){init}" : $"new {n.TypeCs}({Join(n.Args)}){init}";
             case MNewArray a:
                 if (a.Items != null) return a.ElemCs == "" ? "new[] { " + Join(a.Items) + " }" : $"new {a.ElemCs}[] {{ {Join(a.Items)} }}";
@@ -176,8 +184,9 @@ public sealed partial class Printer
             case MLambda l:
                 {
                     string head = (l.Hot ? "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)] " : "")
-                        + (l.Static ? "static " : "") + "(" + string.Join(", ", l.Params) + ") => ";
+                        + (l.Static ? "static " : "") + (l.BareParam ? l.Params[0] : "(" + string.Join(", ", l.Params) + ")") + " => ";
                     if (l.ExprBody != null) return head + E(l.ExprBody);
+                    if (l.InlineBody) return head + "{ " + string.Concat(l.Body!.Select(s => E(((MExprStmt)s).E) + "; ")) + "}";
                     // block bodies map back to Alice lines too (stack traces, CallerLineNumber, debugger)
                     var pr = new Printer(ambientFile ?? "", 0) { lastLine = int.MaxValue };
                     pr.Line("{");
@@ -188,6 +197,8 @@ public sealed partial class Printer
                     lineDirty = true;   // the rest of the enclosing statement maps to the lambda's last line: re-emit ours next
                     return head + "\n" + pr.sb;
                 }
+            case MCast { Bare: true } bc:
+                return "(" + bc.TypeCs + ")" + (bc.E is MCast { Bare: true } or MUnary { Postfix: false } ? E(bc.E) : P(bc.E));
             case MCast c:
                 return "((" + c.TypeCs + ")" + P(c.E) + ")";
             case MIs i:
@@ -213,7 +224,9 @@ public sealed partial class Printer
         if (EIterators(e) is { } iter) return iter;
         if (EParallel(e) is { } par) return par;
         if (ECm(e) is { } cm) return cm;
+        if (EArena(e) is { } arena) return arena;
         if (EClosures(e) is { } clo) return clo;
+        if (EDataflow(e) is { } dfl) return dfl;   // ADR 0038 (Printer.Dataflow.cs)
         throw new InvalidOperationException(e.GetType().Name);
     }
 

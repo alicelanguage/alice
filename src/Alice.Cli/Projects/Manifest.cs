@@ -14,7 +14,7 @@ public static class Manifest
 
     static string Sync(string dir, HashSet<string> visiting)
     {
-        var toml = TomlLite.Parse(File.ReadAllText(Path.Combine(dir, FileName)));
+        var toml = ManifestToml.Parse(File.ReadAllText(Path.Combine(dir, FileName)));   // TOML 1.0 via Alice.Core.Toml
         var pkg = toml.GetValueOrDefault("package") ?? new Dictionary<string, object>();
         string name = pkg.TryGetValue("name", out var n) ? (string)n : Path.GetFileName(dir);
         // the name is a file name (.alice/NAME.alproj) and the assembly name: no separators, no `..`, no markup

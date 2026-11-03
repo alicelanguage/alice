@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Alice.Core.Json benchmarks (ADR 0036): validate / DOM / on-demand / typed / serialize, with the
+       System.Text.Json comparators of baselines/dotnet in the same process. Not part of Alice.sln. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Optimize>true</Optimize>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredPGO>true</TieredPGO>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>alice-json-bench</AssemblyName>
+    <RootNamespace>AliceJsonBench</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../../src/Alice.Runtime/Alice.Runtime.csproj" />
+    <Compile Include="../baselines/dotnet/Typed.cs" Link="Typed.cs" />
+  </ItemGroup>
+</Project>

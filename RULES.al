@@ -17,11 +17,13 @@ rule divmod_matches(a in -200..200, b in -50..50)
   q == a / b && r == a % b
 end
 
-# Wrapping arithmetic on Int8 covers every value: &+ then &- is the identity
+# Int8 operands promote to Int32 (as in C#), so `&+` on two Int8 values is exact (it wraps at Int32);
+# narrowing back with `to_i8!` wraps into Int8, and there &+ then &- is the identity
 rule wrapping_roundtrip(a in -128..127, b in -128..127)
   x = a.to_i8
   y = b.to_i8
-  (x &+ y) &- y == x
+  s = x &+ y
+  s == a + b && (s.to_i8! &- y).to_i8! == x
 end
 
 # min / max / clamp are consistent

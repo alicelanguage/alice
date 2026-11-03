@@ -101,6 +101,7 @@ public sealed partial class Parser
     bool IsTypeStart()
     {
         if (IsKw("abstract") && Peek(1).Kind == "id" && Peek(1).Text != "def") return true;
+        if (IsKw("affine") && Peek(1).Kind == "id" && Peek(1).Text == "enum") return true;
         return t[p].Kind == "id" && (" class struct module interface enum lib record ".Contains(" " + t[p].Text + " ")
             || t[p].Text == "delegate" && Peek(1).Kind == "const");
     }
@@ -169,7 +170,8 @@ public sealed partial class Parser
         return neg ? -v : v;
     }
 
-    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"));
+    bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"))
+        || IsKw("stream") && Peek(1).Text == "def";   // `stream def` (ADR 0038)
 
     bool IsStructNew() => t[p].Kind == "const" && Peek(1).Text == "=" && Peek(2).Text == "Struct" && Peek(3).Text == "." && Peek(4).Text == "new";
 
@@ -235,6 +237,8 @@ public sealed partial class Parser
         Token tok = Cur;
         bool isAbstract = false;
         if (IsKw("abstract")) { Next(); isAbstract = true; }
+        bool affine = IsKw("affine") && Peek(1).Text == "enum";
+        if (affine) Next();
         string kw = Next().Text;
         if (kw == "record" && IsKw("struct")) { Next(); kw = "record struct"; }
         if (kw == "lib") return Lib(tok);
@@ -258,7 +262,7 @@ public sealed partial class Parser
             EndStmt();
             return dg;
         }
-        if (kw == "enum") return Enum(tok);
+        if (kw == "enum") { var en = Enum(tok); en.Affine = affine; return en; }
         if (t[p].Kind != "const") throw Err("expected type name");
         var d = At(new TypeDecl { Kind = kw, Name = Next().Text, IsAbstract = isAbstract }, tok);
         d.Attrs = TakeAttrs();
@@ -660,10 +664,12 @@ public sealed partial class Parser
         var m = At(new MethodDecl(), Cur);
         bool inline = false;
         bool explicitVis = false;
-        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline"))
+        while (IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline")
+            || IsKw("stream") && Peek(1).Text == "def")
         {
             string mod = Next().Text;
             if (mod == "abstract") m.IsAbstract = true;
+            else if (mod == "stream") m.IsStream = true;
             else if (mod == "async") m.IsAsync = true;
             else if (mod == "pure") m.IsPure = true;
             else if (mod == "safe") m.IsSafe = true;
@@ -784,7 +790,7 @@ public sealed partial class Parser
         if (k == p) return false;   // `def f : T` followed by something on the same line
         var x = t[k];
         if (x.Kind == "eof" || x.Kind == "op" && x.Text == "@[") return false;
-        return !(x.Kind == "id" && x.Text is "def" or "end" or "getter" or "property" or "setter" or "event" or "abstract" or "private" or "protected" or "async" or "pure" or "safe" or "unsafe" or "inline");
+        return !(x.Kind == "id" && x.Text is "def" or "end" or "getter" or "property" or "setter" or "event" or "abstract" or "private" or "protected" or "async" or "pure" or "safe" or "unsafe" or "inline" or "stream");
     }
 
     Param Param()

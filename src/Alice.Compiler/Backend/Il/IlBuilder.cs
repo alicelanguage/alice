@@ -720,8 +720,6 @@ public sealed class IlBuilder
         return p >= 0 ? p : throw new InvalidOperationException("label " + labelId + " is used but never marked");
     }
 
-    static bool FitsR4(double v) => !double.IsNaN(v) && (double)(float)v == v;
-
     static int SizeI4(long v) => v is >= -1 and <= 8 ? 1 : v is >= sbyte.MinValue and <= sbyte.MaxValue ? 2 : 5;
 
     static int Size(in Instr x, bool longBranch)
@@ -736,7 +734,7 @@ public sealed class IlBuilder
             Operand.I4 => SizeI4(v),
             Operand.I8 => v is >= int.MinValue and <= int.MaxValue ? SizeI4(v) + 1 : 9,
             Operand.R4 => 5,
-            Operand.R8 => FitsR4(x.R) ? 5 : 9,
+            Operand.R8 => 9, // never shrunk to ldc.r4: the JIT would type the operand float (review-r1 F2)
             Operand.Branch => longBranch ? 5 : 2,
             Operand.Switch => 5 + 4 * ((IlLabel[])x.Obj!).Length,
             Operand.Byte => opSize + 1,
@@ -810,9 +808,7 @@ public sealed class IlBuilder
                     else enc.LoadConstantI8(x.I);
                     break;
                 case Operand.R4: enc.LoadConstantR4((float)x.R); break;
-                case Operand.R8:
-                    if (FitsR4(x.R)) enc.LoadConstantR4((float)x.R); else enc.LoadConstantR8(x.R);
-                    break;
+                case Operand.R8: enc.LoadConstantR8(x.R); break;
                 case Operand.Branch: Target(x.I); enc.Branch(longBr[i] ? x.Op : x.Op.GetShortBranch(), handles[(int)x.I]); break;
                 case Operand.Switch:
                     var sw = enc.Switch(((IlLabel[])x.Obj!).Length);

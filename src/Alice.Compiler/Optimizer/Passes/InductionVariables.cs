@@ -19,12 +19,12 @@ public sealed class InductionVariables : MirRewriter, IMirPass
 
     protected override void Visit(MStmt s)
     {
-        if (s is not MFor { Step: "++", Cmp: "<" or "<=", VarType: "int" or "long" } f || MirFacts.WritesNumber(f.Body, f.Var)) return;
+        if (s is not MFor { Step.Op: "++", Cmp: "<" or "<=", VarType: "int" or "long" } f || MirFacts.WritesNumber(f.Body, f.Var)) return;
         long min = f.VarType == "int" ? int.MinValue : long.MinValue, max = f.VarType == "int" ? int.MaxValue : long.MaxValue;
         long? lo = MirFacts.IntLiteral(f.Start, out long st) ? st : f.MinStart;
         long? bound = MirFacts.IntLiteral(f.End, out long en) ? en : f.End is MMember { Name: "Length" or "Count" } ? MaxLength : null;
         long hi = f.Cmp == "<" ? (bound ?? max) - 1 : bound ?? max;
-        if (hi < max) f.Step = $" = unchecked({f.Var} + 1)";
+        if (hi < max) f.Step = AirForStep.UncheckedAdd(f.Var, new AirConst(AirConstKind.Int, "1"));
         new Offsets(f.Var, lo ?? min, hi, min, max, f.VarType == "long").Run(f.Body);
     }
 
