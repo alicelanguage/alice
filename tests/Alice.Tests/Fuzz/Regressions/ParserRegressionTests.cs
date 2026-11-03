@@ -65,4 +65,21 @@ public class ParserRegressionTests
     {
         Assert.Null(ParseError("def f\n  1\nend\nwhile f do\n  break\nend\n"));
     }
+
+    [Fact]
+    public void P8_incomplete_hex_literal_in_rule_range_is_a_diagnostic()
+    {
+        var e = ParseError("rule r(y in 0x");
+        Assert.IsType<CompileException>(e);
+    }
+
+    [Fact]
+    public void P9_fmt_with_LINE_is_idempotent_even_if_line_numbers_change()
+    {
+        const string src = "begin\n  until s =~ /[a-z]*/i\n    puts xs.map { |x4| __LINE__ && (%i(x y z)) }  \n  end\nend\n";
+        // The formatted version may have different line numbers, but formatting should be stable
+        var once = Formatter.Format(src);
+        var twice = Formatter.Format(once);
+        Assert.Equal(once, twice);
+    }
 }
