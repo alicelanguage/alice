@@ -45,7 +45,7 @@ public static class AliceCompiler
             if (f.LibraryOnly) ast.Items.RemoveAll(i => i is Syntax.StmtItem);
             return ast;
         }).ToList();
-        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs)) { DotnetNames = dotnetNames, Strict = strict, FlowShadow = true };
+        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs)) { DotnetNames = dotnetNames, Strict = strict, FlowShadow = Diagnostics.FlowOracle.On };
         binder.Bind();
         Diagnostics.FlowOracle.Binder(binder.FlowErrors, files);
         var emitter = new Backend.Emitter(binder, sequential) { NativeLib = nativeLib };
@@ -160,8 +160,22 @@ public static class AliceCompiler
 
     static readonly Lazy<List<MetadataReference>> Refs = new(() => References().ToList());
 
-    // Null-safety diagnostics are errors in Alice (ADR 0004).
+    // Null safety is a compile error in Alice (ADR 0004), reported by the binder (AL0310, Binder.Flow.Nil.cs) on every
+    // backend. Roslyn's nullable warnings on the generated C# are an internal assertion: one that fires is a gap in
+    // the binder's flow analysis, logged (not a user error).
     static readonly string[] NullErrors = ["CS8600", "CS8601", "CS8602", "CS8603", "CS8604", "CS8625"];
+
+    static Dictionary<string, ReportDiagnostic> NullAsserts() => NullErrors.ToDictionary(x => x, _ => ReportDiagnostic.Warn);
+
+    static void FlowGaps(IEnumerable<Microsoft.CodeAnalysis.Diagnostic> ds)
+    {
+        foreach (var d in ds)
+            if (Array.IndexOf(NullErrors, d.Id) >= 0 && d.Severity == DiagnosticSeverity.Warning)
+            {
+                var span = d.Location.GetMappedLineSpan();
+                Console.Error.WriteLine($"alice: flow analysis gap ({d.Id}) at {span.Path}:{span.StartLinePosition.Line + 1}; please report it with this program");
+            }
+    }
 
     /// <summary>Compiles lowered C# to an IL image. Throws CompileException with Alice file:line diagnostics.</summary>
     /// <summary>
@@ -237,7 +251,7 @@ public static class AliceCompiler
     public static byte[] Emit(IReadOnlyList<string> csharp, string assemblyName, bool exe, IEnumerable<string>? extraRefs = null, IEnumerable<string>? analyzers = null)
     {
         var trees = csharp.Select((c, i) => CSharpSyntaxTree.ParseText(c, Parse, path: $"{assemblyName}.{i}.g.cs")).ToList();
-        var diag = NullErrors.ToDictionary(x => x, _ => ReportDiagnostic.Error);
+        var diag = NullAsserts();
         var opts = new CSharpCompilationOptions(exe ? OutputKind.ConsoleApplication : OutputKind.DynamicallyLinkedLibrary)
             .WithOptimizationLevel(OptimizationLevel.Release)
             .WithAllowUnsafe(true)
@@ -250,6 +264,7 @@ public static class AliceCompiler
         using var ms = new MemoryStream();
         var res = comp.Emit(ms);
         Diagnostics.FlowOracle.Roslyn(res.Diagnostics);
+        if (!Diagnostics.FlowOracle.On) FlowGaps(res.Diagnostics);
         if (!res.Success)
         {
             var errs = res.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(20).Select(d =>
@@ -274,12 +289,13 @@ public static class AliceCompiler
             .WithAllowUnsafe(true)
             .WithOverflowChecks(true)   // Int32::MAX + 1 raises (ADR 0013); `&+ &- &*` wrap
             .WithNullableContextOptions(NullableContextOptions.Enable)
-            .WithSpecificDiagnosticOptions(NullErrors.ToDictionary(x => x, _ => ReportDiagnostic.Error));
+            .WithSpecificDiagnosticOptions(NullAsserts());
         var runtimeNames = Refs.Value.OfType<PortableExecutableReference>().Select(r => Path.GetFileName(r.FilePath)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var refs = Refs.Value.Concat((extraRefs ?? []).Where(File.Exists).Where(r => !runtimeNames.Contains(Path.GetFileName(r)))
             .Select(r => (MetadataReference)MetadataReference.CreateFromImage(File.ReadAllBytes(r), filePath: Path.GetFullPath(r))));
         var comp = CSharpCompilation.Create("check", trees, refs, opts);
         if (Diagnostics.FlowOracle.On) Diagnostics.FlowOracle.Roslyn(comp.GetDiagnostics());
+        else FlowGaps(comp.GetDiagnostics());
         return comp.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Take(50).Select(d =>
         {
             var span = d.Location.GetMappedLineSpan();
