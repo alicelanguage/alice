@@ -223,6 +223,7 @@ public sealed partial class Printer
         if (EVector(e) is { } vec) return vec;
         if (EIterators(e) is { } iter) return iter;
         if (EParallel(e) is { } par) return par;
+        if (ECm(e) is { } cm) return cm;
         if (EArena(e) is { } arena) return arena;
         if (EClosures(e) is { } clo) return clo;
         if (EDataflow(e) is { } dfl) return dfl;   // ADR 0038 (Printer.Dataflow.cs)
