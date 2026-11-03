@@ -664,17 +664,6 @@ internal sealed partial class IlBody
                     {
                         var et = at.GetElementType()!;
                         var iet = T.Il(et);
-                        if (Opt.UncheckedIndex.Proven(ix))
-                        {
-                            Raw(ix.Target);
-                            Opt.UncheckedIndex.Head(il, c.Module, iet);
-                            Emit(ix.Args[0], typeof(int));
-                            Opt.UncheckedIndex.Tail(il, c.Module, iet);
-                            if (compound) { il.EmitDup(); il.EmitLoadObj(iet); BinTail(et, op, value, chk); }
-                            else Emit(value, et);
-                            il.EmitStoreObj(iet);
-                            return;
-                        }
                         if (compound || et.IsValueType && !IlTypes.IsNumeric(et) && et != typeof(bool) && !et.IsEnum && !et.IsPointer)
                         {
                             Raw(ix.Target);

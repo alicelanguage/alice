@@ -76,7 +76,7 @@ internal sealed record IlEncodedBody(int Offset, StandaloneSignatureHandle Local
 /// <see cref="EmitBinary"/>, <see cref="EmitConvert"/>...) are the surface the AIR emitter uses; <see cref="Emit(ILOpCode)"/>
 /// and its overloads accept any opcode with the matching operand kind.
 /// </summary>
-public sealed partial class IlBuilder
+public sealed class IlBuilder
 {
     enum IK : byte { Op, Label, Seq, ScopeOpen, ScopeClose }
 
@@ -927,11 +927,7 @@ public sealed partial class IlBuilder
             if ((Peephole & IlPeephole.Branches) != 0) changed |= Branches();
             if (!changed) break;
         }
-        OptimizeExtra();
     }
-
-    /// <summary>Extra instruction-level passes (Backend/Il/Opt/IlBuilder.Opt.cs, il-opt); a no-op without that part.</summary>
-    partial void OptimizeExtra();
 
     /// <summary>The next instruction after <paramref name="i"/> if nothing (label, sequence point, scope) separates them.</summary>
     int NextOp(int i) => i + 1 < code.Count && code[i + 1].Kind == IK.Op ? i + 1 : -1;

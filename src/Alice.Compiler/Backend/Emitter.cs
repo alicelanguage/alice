@@ -579,7 +579,7 @@ public sealed class Emitter
     /// from its first call instead of spending its hottest frames in tier 0 and OSR. With no reference parameters it
     /// has no virtual call sites, so tiered PGO has nothing to devirtualize.
     /// </summary>
-    internal static bool Kernel(MethodDecl d, MethodSym m, Instance? inst, List<MStmt> body)
+    static bool Kernel(MethodDecl d, MethodSym m, Instance? inst, List<MStmt> body)
     {
         var ret = inst?.Ret ?? m.Ret;
         if (!(ret.IsVoid || Primitive(ret) || ret.Kind == "array" && ret.Elem != null && Primitive(ret.Elem))) return false;   // object-building recursion gains from tier-1 PGO
@@ -597,7 +597,7 @@ public sealed class Emitter
     /// runs it until on-stack replacement (suite nbody: 151 ms -> 78 ms, C# 78 ms). Compiled fully optimized instead;
     /// steady-state benchmarks measured within noise.
     /// </summary>
-    internal static bool LoopNest(List<MStmt> body, int depth) => body.Any(s => s switch
+    static bool LoopNest(List<MStmt> body, int depth) => body.Any(s => s switch
     {
         MFor f => depth >= 1 || LoopNest(f.Body, depth + 1),
         MWhile w => depth >= 1 || LoopNest(w.Body, depth + 1),
@@ -618,7 +618,7 @@ public sealed class Emitter
     /// kmeans `chunk`, mandelbrot and nbody were within 3% either way on the core pair; the earlier 20% kmeans gain
     /// was measured on one cpu, where tier 1 never arrives (R0).
     /// </summary>
-    internal bool PrimitiveLoop(List<MStmt> body)
+    bool PrimitiveLoop(List<MStmt> body)
     {
         if (!Owned(body)) return false;
         var leaves = LoopLeaves().Select(m => m.CsName).ToHashSet();
@@ -682,7 +682,7 @@ public sealed class Emitter
     /// function: `noise(x, y)` in a pixel loop, `lattice` inside it. Short programs end before tiering promotes them,
     /// and with no reference values there is nothing for PGO to devirtualize, so they compile fully optimized at once.
     /// </summary>
-    internal HashSet<MethodSym> LoopLeaves()
+    HashSet<MethodSym> LoopLeaves()
     {
         if (loopLeaves != null) return loopLeaves;
         static bool Leaf(MethodSym m) => m.IsStatic && !m.IsAsync && !m.IsCtor && !m.UsesYield && m.Decl is { HasBody: true } d
