@@ -13,11 +13,10 @@ default), and credit you in the release notes unless you prefer otherwise.
 
 | Version | Security fixes |
 |---|---|
-| latest stable release (0.14.x) | yes |
+| latest 1.x minor (1.0.x, 1.1.x, ...) | yes |
+| 1.0.0-rc.N | fixed in the next rc |
 | nightly | fixed in the next nightly |
-| older releases | no: update with `alice self update` |
-
-Before 1.0 only the newest stable minor release gets fixes.
+| older stable releases | no: update with `alice self update` |
 
 ## Workspace trust: what runs repo content
 

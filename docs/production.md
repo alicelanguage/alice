@@ -59,6 +59,9 @@ same commit as any change that moves a row.
 | Null safety of branch-hoisted locals | a local first assigned inside some branches of an `if`/`case` is hoisted with `default!`; reading it after a branch that did not assign it gives nil (reference types) or 0, with no diagnostic. Fields are checked (AL0221) | assign the local before the `if`, or in every branch |
 | Null safety of inferred ivars | an ivar created by `@x = v` outside `initialize` is nil until that method runs, as in Ruby (declared fields and getters are checked, AL0221; `property`/`setter` accessors stay exempt so frameworks can fill them) | declare it (`@x : T`) and assign it in `initialize`, or make it `T?` |
 | Rules with loops or recursion under `--smt` | `alice prove --smt` (Z3) proves straight-line integer rules over full Int32/Int64 ranges; others fall back to enumeration | keep such rules finite |
+| IL backend: tree-matmul/tree-bitonic ~7% slower than C# backend | arena-heavy parallel benchmarks run 1.06-1.08x slower under `--backend il` ([`benchmarks/bend2/results/arena.md`](../benchmarks/bend2/results/arena.md)) | use default C# backend for these workloads |
+| Alice.Core.Regex: unicode-upper 0.92x of .NET Compiled, UTF-16 short-literal cases slower | some regex patterns slower than `System.Text.RegularExpressions` compiled mode ([`benchmarks/core/regex/results.md`](../benchmarks/core/regex/results.md)) | use .NET regex for these specific patterns |
+| Compile-time regex emission deferred to 1.1 | regex patterns compiled at runtime; no compile-time validation or code generation yet (ADR 0036 amendment 2) | validate patterns in tests |
 
 ## Security limits
 
@@ -66,6 +69,7 @@ Known limits of the toolchain and supply chain; see [SECURITY.md](../SECURITY.md
 
 | Limit | Impact | Workaround |
 |---|---|---|
+| Release archives: SHA-256 only, no publisher signing, no macOS notarization (1.0) | integrity against corruption; no code-sign authenticity verification on Windows/macOS | verify archive hash from a separate source; future releases will be signed |
 | Release archives are checked by SHA-256 from the same release, not signed | integrity against corruption, no authenticity if the release itself is replaced | install a pinned version over https; compare the archive with a checksum obtained separately |
 | `alice publish --api-key KEY` and `--dotnet-push` put the key in a process's arguments | other local users can read it from the process list while the command runs | set `NUGET_API_KEY` and use the default push; use a short-lived key scoped to the package |
 | `@[Native]` builds look up `clang`/`cc`/`gcc` by bare name | in an untrusted checkout a compiler planted in the working directory can run | do not build `@[Native]` code from untrusted checkouts |
