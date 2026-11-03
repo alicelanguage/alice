@@ -49,7 +49,7 @@ public sealed partial class Binder
                         _ => ("", null, it),
                     };
                     if (name == "" || init != null || s.FieldOrder.Contains(name)) continue;
-                    if (!s.Fields.TryGetValue(name, out var fs) || fs.IsStatic || !NeedsValue(fs.Type)) continue;
+                    if (!s.Fields.TryGetValue(name, out var fs) || fs.IsStatic || !NeedsValue(fs.Type, td)) continue;
                     if (ctors.Count > 0 && ctors.All(c => CtorAssigns(c, name))) continue;
                     throw Unassigned(path, at, name, fs.Type, ctors.Count == 0);
                 }
@@ -67,6 +67,12 @@ public sealed partial class Binder
         return new([new Diagnostic("error", UnassignedFieldCode, path, at.Line, Math.Max(1, at.Col),
             $"field `@{name}` ({ty}) is never assigned{(noCtor ? " (the class has no `initialize`)" : " by every `initialize`")} and has no initializer, so it would be nil; assign it in every `initialize`, give it a default (`@{name} : {ty} = ...`) or make it nilable (`{ty}?`)")]);
     }
+
+    /// <summary>Also a type parameter field (`@v : T`): nil for every reference type argument unless `T` is
+    /// constrained to values (`struct`, `unmanaged`); C# CS8618 says the same and the generated code disables it.</summary>
+    static bool NeedsValue(AType t, TypeDecl td) =>
+        NeedsValue(t) || t.Kind == "param" && !t.Nullable && !t.Cs.EndsWith('?')
+            && !td.Constraints.Any(c => c.Param == t.Cs && c.Keywords.Any(k => k is "struct" or "unmanaged"));
 
     /// <summary>A reference type that may not hold nil (numbers, structs, enums, type parameters and `T?` may).</summary>
     static bool NeedsValue(AType t)

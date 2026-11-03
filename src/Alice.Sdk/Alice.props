@@ -16,7 +16,7 @@
     <!-- .alproj is unknown to MSBuild: compile through the C# targets (Alice lowers to C# then IL) -->
     <LanguageTargets Condition="'$(MSBuildProjectExtension)' == '.alproj'">$(MSBuildToolsPath)\Microsoft.CSharp.targets</LanguageTargets>
     <EnableDefaultCompileItems Condition="'$(MSBuildProjectExtension)' == '.alproj'">false</EnableDefaultCompileItems>
-    <!-- Alice null safety: these are compile errors, not warnings (ADR 0004) -->
-    <WarningsAsErrors>$(WarningsAsErrors);CS8600;CS8601;CS8602;CS8603;CS8604;CS8625</WarningsAsErrors>
+    <!-- Alice null safety (ADR 0004) is reported by the binder (AL0310, D1.12); Roslyn's CS8600-CS8625 on the
+         generated C# stay warnings, an assertion as in the CLI. CS0165/CS0220 are C# errors already. -->
   </PropertyGroup>
 </Project>

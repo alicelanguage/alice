@@ -16,13 +16,18 @@ public class SdkPackageTests
 
     static string Dotnet(string dir, string cache, params string[] args)
     {
+        var (code, o) = DotnetRun(dir, cache, args);
+        Assert.True(code == 0, o);
+        return o;
+    }
+
+    static (int Code, string Output) DotnetRun(string dir, string cache, params string[] args)
+    {
         var psi = new ProcessStartInfo("dotnet") { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = dir };
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en-US";
         psi.Environment["NUGET_PACKAGES"] = cache;   // fresh cache outside the repo: the package must be self-contained
-        var (code, o) = ChildProcess.Run(psi);   // async reads, no build servers: the suite never hangs on a pipe
-        Assert.True(code == 0, o);
-        return o;
+        return ChildProcess.Run(psi);   // async reads, no build servers: the suite never hangs on a pipe
     }
 
     [Fact]
@@ -48,5 +53,17 @@ public class SdkPackageTests
         File.WriteAllText(Path.Combine(app, "greet.al"), "module Greeter\n  def self.greet(who : String) : String\n    \"Hello, #{who}!\"\n  end\nend\n");
         File.WriteAllText(Path.Combine(app, "Entry.cs"), "public static class Entry { public static void Main() => System.Console.WriteLine(Greeter.greet(\"C#\")); }\n");
         Assert.Contains("Hello, C#!", Dotnet(app, cache, "run"));
+
+        // null safety in a package build comes from the binder (AL0310), as in the CLI: Roslyn's CS86xx are no
+        // longer build errors there (D1.12)
+        var bad = Path.Combine(work, "bad");
+        Directory.CreateDirectory(bad);
+        File.Copy(Path.Combine(app, "nuget.config"), Path.Combine(bad, "nuget.config"));
+        File.WriteAllText(Path.Combine(bad, "Bad.csproj"), $"<Project Sdk=\"Alice.Sdk/{version}\"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup></Project>");
+        File.WriteAllText(Path.Combine(bad, "main.al"), "def pick(f : Bool) : String?\n  f ? \"a\" : nil\nend\ns = pick(false)\nputs s.size\n");
+        var (code, output) = DotnetRun(bad, cache, "build", "-nologo");
+        Assert.NotEqual(0, code);
+        Assert.Contains("AL0310", output);
+        Assert.DoesNotContain("CS8602", output);
     }
 }
