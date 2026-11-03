@@ -164,6 +164,8 @@ public static class Oracles
         public int Programs, IlUnsupported, Compared, Hangs;
         /// <summary>Outputs of the last compared program (C# backend, IL backend).</summary>
         public string? LastCs, LastIl;
+        /// <summary>Unsupported node kinds of the last program the IL backend could not compile (names and lines dropped).</summary>
+        public List<string> LastUnsupported = [];
         public readonly SortedDictionary<string, int> Unsupported = new(StringComparer.Ordinal);
     }
 
@@ -178,7 +180,8 @@ public static class Oracles
         if (!res!.Ok)
         {
             stats.IlUnsupported++;
-            foreach (var e in res.Errors) { var k = e.Message.Split('\n')[0]; k = k.Length > 90 ? k[..90] : k; stats.Unsupported[k] = stats.Unsupported.GetValueOrDefault(k) + 1; }
+            stats.LastUnsupported = res.Errors.Select(e => UnsupportedKind(e.Message)).Distinct().ToList();
+            foreach (var e in res.Errors) { var k = UnsupportedKind(e.Message); stats.Unsupported[k] = stats.Unsupported.GetValueOrDefault(k) + 1; }
             return null;
         }
         if (verify)
@@ -199,6 +202,16 @@ public static class Oracles
         stats.LastIl = b.Output;
         if (a.Output != b.Output) return new Finding(Category("diff-il", a.Output, b.Output), "C# backend:\n" + Short(a.Output) + "\nIL backend:\n" + Short(b.Output), src);
         return null;
+    }
+
+    /// <summary>`Decl:iterator (D1.8): app0 (:1)` -> `Decl:iterator (D1.8)`: the node kind, without names and lines.</summary>
+    public static string UnsupportedKind(string message)
+    {
+        var first = message.Split((char)10)[0];
+        var parts = first.Split(": ");
+        var k = parts[0];
+        k = System.Text.RegularExpressions.Regex.Replace(k, "[(]main[.]al:[0-9]+[)]|[(]:[0-9]+[)]", "").Trim();
+        return k.Length > 80 ? k[..80] : k;
     }
 
     /// <summary>`diff-X:stdout` when the printed text differs before any raise, `diff-X:raise` when only the escaping
