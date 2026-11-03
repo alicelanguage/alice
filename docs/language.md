@@ -903,7 +903,7 @@ Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`
 | `AMath` | MatMul, Mean, Variance, Norm, Axpy |
 | `CsrMatrix<T>`, `SparseVector<T>` | sparse linear algebra |
 | `Nn`, `Tensor<T>`, `QuantizedMatrix`, `MappedFile` | tensor kernels: dot, GEMV/GEMM, softmax, norms, activations; aligned strided tensors; int8/int4 blocks; mapped files (ADR 0030) |
-| `Cm` | Connection-Machine primitives (ADR 0039): `InclusiveScan`/`ExclusiveScan`/`Reduce` (`CmOp` `+ * & \| ^ min max`), `SegmentedScan`/`SegmentedReduce`, `Histogram`, `ScatterAdd`, `Compact`, `Permute`, `SortByKey`; chunked by length only, so floats are bit-identical for any worker count |
+| `Cm` | Connection-Machine primitives (ADR 0039): `InclusiveScan`/`ExclusiveScan`/`Reduce` (`CmOp` `+ * & \| ^ min max`), `SegmentedScan`/`SegmentedReduce`, `Histogram`, `ScatterAdd`, `Compact`, `Permute`, `SortByKey`; chunked by length only, so floats are bit-identical for any worker count on one machine (float scans follow the SIMD tier: AVX-512, AVX2, Vector128 or scalar hardware may round differently) |
 | `Prelude` | Ruby helpers: `puts`, `each`, `map`, `sum`, `size`, `even?`, `to_s`, `to_i`, `send`, ... |
 
 ### Rules and proofs
