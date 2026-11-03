@@ -57,6 +57,9 @@ public sealed partial class Binder
         CheckBorrowsAndLifetimes();
         CheckAffine();
         CheckFieldInitialization();
+        CheckFlow();   // nullable flow, definite assignment, constant overflow (Binder.Flow.cs, D1.12)
+        if (FlowErrors.Count > 0 && !FlowShadow)
+            throw new CompileException(FlowErrors.OrderBy(d => d.File, StringComparer.Ordinal).ThenBy(d => d.Line).ThenBy(d => d.Col).ToList());
     }
 
     CompileException Err(Node n, string msg) => new($"{file}:{n.Line}:{Math.Max(1, n.Col)}: {msg}");
