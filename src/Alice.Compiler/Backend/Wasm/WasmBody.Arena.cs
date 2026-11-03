@@ -190,7 +190,7 @@ public sealed partial class WasmBody
         {
             code.Get(i); code.GGet(rt); code.Mem(Op.I32Load, st + 4); code.Emit(Op.I32GeU);
             var stale = code.If();
-            code.I32(AirToWasm.ErrState); code.Call(c.ThrowCodeFunc); code.Emit(Op.Unreachable);
+            code.I32(AirToWasm.ErrStaleTerm); code.Call(c.ThrowCodeFunc); code.Emit(Op.Unreachable);
             code.End(stale);
         }
         SlotBase(n, i); code.Set(p);

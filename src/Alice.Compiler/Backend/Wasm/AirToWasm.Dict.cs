@@ -1,7 +1,11 @@
 namespace Alice.Compiler.Backend.Wasm;
 
-// Dictionary<K, V> for value-hashed keys: [header][count @8][capacity @12][keys @16][values @20][states @24],
-// open addressing with linear probing (state 0 empty, 1 full, 2 deleted), capacity a power of two, grown at 3/4.
+// Dictionary<K, V> for value-hashed keys, enumerated in insertion order as .NET does. Object (40 bytes): [header]
+// [count @8][capacity @12][keys @16][values @20][slots @24][order @28][used @32][free @36]. Open addressing with
+// linear probing over capacity (a power of two, grown at 3/4): keys/values/slots are per hash slot, a slot word is 0
+// empty, -1 deleted, or p+1 for the entry at order position p. order[p] is the hash slot of entry p, or -1-next for a
+// removed entry (a free list of positions, head @36 as p+1, 0 none): a removed position is reused first, as .NET
+// reuses a freed entry, and enumeration walks positions 0..used-1 skipping removed ones.
 public sealed partial class AirToWasm
 {
     internal const int DictType = 8;
@@ -12,21 +16,28 @@ public sealed partial class AirToWasm
     {
         int o = c.Local(ValType.I32, "o"), fr = c.Local(ValType.I32, "frame");
         c.I32(8); c.Call(Rt.Func("frame_enter")); c.Set(fr);
-        c.I32(32); c.I32(DictType); c.Call(Rt.Func("alloc")); c.Set(o);
+        c.I32(40); c.I32(DictType); c.Call(Rt.Func("alloc")); c.Set(o);
         c.Get(fr); c.Get(o); c.Mem(Op.I32Store);
         DictArrays(c, d, o, () => c.I32(8));
+        c.Get(o); c.I32(8); c.I32(4); c.I32(NumArrayType); c.Call(Rt.Func("array_new")); c.Mem(Op.I32Store, 28);
         c.Get(fr); c.I32(8); c.Emit(Op.I32Add); c.GSet(Rt.Global("sp"));
         c.Get(o);
     });
 
-    /// <summary>Fresh key, value and state arrays of the capacity <paramref name="cap"/> pushes, stored into <paramref name="o"/>.</summary>
+    /// <summary>Fresh key, value and slot arrays of the capacity <paramref name="cap"/> pushes, stored into <paramref name="o"/>.</summary>
     void DictArrays(WasmCode c, WT d, int o, Action cap)
     {
         c.Get(o); cap(); c.Mem(Op.I32Store, 12);
         c.Get(o); cap(); c.I32(Math.Max(1, d.KeyT!.Size)); c.I32(d.KeyT.ArrayKind); c.Call(Rt.Func("array_new")); c.Mem(Op.I32Store, 16);
         c.Get(o); cap(); c.I32(Math.Max(1, d.Elem!.Size)); c.I32(d.Elem.ArrayKind); c.Call(Rt.Func("array_new")); c.Mem(Op.I32Store, 20);
-        c.Get(o); cap(); c.I32(1); c.I32(NumArrayType); c.Call(Rt.Func("array_new")); c.Mem(Op.I32Store, 24);
+        c.Get(o); cap(); c.I32(4); c.I32(NumArrayType); c.Call(Rt.Func("array_new")); c.Mem(Op.I32Store, 24);
     }
+
+    /// <summary>Pushes the address of slot word h (`slots + 8 + 4h`) of dictionary local <paramref name="dl"/>.</summary>
+    static void DictSlot(WasmCode c, int dl, int h) { c.Get(dl); c.Mem(Op.I32Load, 24); c.Get(h); c.I32(2); c.Emit(Op.I32Shl); c.Emit(Op.I32Add); }
+
+    /// <summary>Pushes the address of order word p (`order + 8 + 4p`).</summary>
+    static void DictOrder(WasmCode c, int dl, int p) { c.Get(dl); c.Mem(Op.I32Load, 28); c.Get(p); c.I32(2); c.Emit(Op.I32Shl); c.Emit(Op.I32Add); }
 
     /// <summary>The hash of the key on the stack (an i32).</summary>
     void Hash(WasmCode c, WT k)
@@ -50,7 +61,7 @@ public sealed partial class AirToWasm
         c.Emit(k.Val switch { ValType.I64 => Op.I64Eq, ValType.F64 => Op.F64Eq, ValType.F32 => Op.F32Eq, _ => Op.I32Eq });
     }
 
-    /// <summary>`(dict, key) -> slot`, -1 when absent.</summary>
+    /// <summary>(dict, key) to slot, -1 when absent.</summary>
     internal WasmFunc DictFind(WT d) => Helper("Dictionary<" + DKey(d) + ">.find", new FuncSig([ValType.I32, d.KeyT!.Val], [ValType.I32]), ["d", "key"], c =>
     {
         var k = d.KeyT!;
@@ -61,9 +72,9 @@ public sealed partial class AirToWasm
         c.Get(1); Hash(c, k); c.Get(mask); c.Emit(Op.I32And); c.Set(h);
         var done = c.Block();
         var loop = c.Loop();
-        c.Get(0); c.Mem(Op.I32Load, 24); c.Get(h); c.Emit(Op.I32Add); c.Mem(Op.I32Load8U, 8); c.Tee(st);
+        DictSlot(c, 0, h); c.Mem(Op.I32Load, 8); c.Tee(st);
         c.Emit(Op.I32Eqz); c.BrIf(done);
-        c.Get(st); c.I32(1); c.Emit(Op.I32Eq);
+        c.Get(st); c.I32(0); c.Emit(Op.I32GtS);
         var full = c.If();
         c.Get(0); c.Mem(Op.I32Load, 16); c.Get(h); c.I32(k.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add); c.Mem(k.Load, 8);
         c.Get(1);
@@ -77,12 +88,37 @@ public sealed partial class AirToWasm
         c.I32(-1);
     });
 
-    /// <summary>`(dict, key, value)`: insert or replace; grows (rehash) at 3/4 load.</summary>
+    /// <summary>Stores the key and value locals into hash slot h of the dictionary in local 0.</summary>
+    void DictStoreKv(WasmCode c, WT d, int h, int key, int value)
+    {
+        var k = d.KeyT!;
+        var v = d.Elem!;
+        c.Get(0); c.Mem(Op.I32Load, 16); c.Get(h); c.I32(k.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add); c.Get(key); c.Mem(k.Store, 8);
+        c.Get(0); c.Mem(Op.I32Load, 20); c.Get(h); c.I32(v.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add);
+        if (v.IsStruct) { c.I32(8); c.Emit(Op.I32Add); c.Get(value); c.I32(v.Size); c.Call(Rt.Func("memcpy")); } else { c.Get(value); c.Mem(v.Store, 8); }
+    }
+
+    /// <summary>The first empty or deleted hash slot of the key in local 1, into h.</summary>
+    void DictProbe(WasmCode c, WT d, int h, int mask)
+    {
+        c.Get(0); c.Mem(Op.I32Load, 12); c.I32(1); c.Emit(Op.I32Sub); c.Set(mask);
+        c.Get(1); Hash(c, d.KeyT!); c.Get(mask); c.Emit(Op.I32And); c.Set(h);
+        var done = c.Block();
+        var loop = c.Loop();
+        DictSlot(c, 0, h); c.Mem(Op.I32Load, 8); c.I32(0); c.Emit(Op.I32LeS); c.BrIf(done);
+        c.Get(h); c.I32(1); c.Emit(Op.I32Add); c.Get(mask); c.Emit(Op.I32And); c.Set(h);
+        c.Br(loop);
+        c.End(loop);
+        c.End(done);
+    }
+
+    /// <summary>(dict, key, value): insert or replace; grows (rehash) at 3/4 load. A new key takes the most recently
+    /// freed order position, else the next one.</summary>
     internal WasmFunc DictSet(WT d) => Helper("Dictionary<" + DKey(d) + ">.set", new FuncSig([ValType.I32, d.KeyT!.Val, d.Elem!.IsStruct ? ValType.I32 : d.Elem.Val], []), ["d", "key", "value"], c =>
     {
         var k = d.KeyT!;
         var v = d.Elem!;
-        int slot = c.Local(ValType.I32, "slot"), mask = c.Local(ValType.I32, "mask"), h = c.Local(ValType.I32, "h"), st = c.Local(ValType.I32, "st"), fr = c.Local(ValType.I32, "frame");
+        int slot = c.Local(ValType.I32, "slot"), mask = c.Local(ValType.I32, "mask"), h = c.Local(ValType.I32, "h"), p = c.Local(ValType.I32, "p"), fr = c.Local(ValType.I32, "frame");
         c.Get(0); c.Get(1); c.Call(DictFind(d)); c.Tee(slot);
         c.I32(0); c.Emit(Op.I32GeS);
         var found = c.If();
@@ -90,7 +126,7 @@ public sealed partial class AirToWasm
         if (v.IsStruct) { c.I32(8); c.Emit(Op.I32Add); c.Get(2); c.I32(v.Size); c.Call(Rt.Func("memcpy")); } else { c.Get(2); c.Mem(v.Store, 8); }
         c.Emit(Op.Return);
         c.End(found);
-        // grow when (count + 1) * 4 > capacity * 3 (deleted slots count as used: rehash drops them)
+        // grow when (count + 1) * 4 > capacity * 3
         c.Get(0); c.Mem(Op.I32Load, 8); c.I32(1); c.Emit(Op.I32Add); c.I32(2); c.Emit(Op.I32Shl);
         c.Get(0); c.Mem(Op.I32Load, 12); c.I32(3); c.Emit(Op.I32Mul);
         c.Emit(Op.I32GtU);
@@ -102,53 +138,69 @@ public sealed partial class AirToWasm
         c.Get(0); c.Call(DictRehash(d));
         c.Get(fr); c.I32(16); c.Emit(Op.I32Add); c.GSet(Rt.Global("sp"));
         c.End(grow);
-        // first empty or deleted slot
-        c.Get(0); c.Mem(Op.I32Load, 12); c.I32(1); c.Emit(Op.I32Sub); c.Set(mask);
-        c.Get(1); Hash(c, k); c.Get(mask); c.Emit(Op.I32And); c.Set(h);
-        var done = c.Block();
-        var loop = c.Loop();
-        c.Get(0); c.Mem(Op.I32Load, 24); c.Get(h); c.Emit(Op.I32Add); c.Mem(Op.I32Load8U, 8); c.I32(1); c.Emit(Op.I32Ne); c.BrIf(done);
-        c.Get(h); c.I32(1); c.Emit(Op.I32Add); c.Get(mask); c.Emit(Op.I32And); c.Set(h);
-        c.Br(loop);
-        c.End(loop);
-        c.End(done);
-        c.Get(0); c.Mem(Op.I32Load, 24); c.Get(h); c.Emit(Op.I32Add); c.I32(1); c.Mem(Op.I32Store8, 8);
-        c.Get(0); c.Mem(Op.I32Load, 16); c.Get(h); c.I32(k.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add); c.Get(1); c.Mem(k.Store, 8);
-        c.Get(0); c.Mem(Op.I32Load, 20); c.Get(h); c.I32(v.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add);
-        if (v.IsStruct) { c.I32(8); c.Emit(Op.I32Add); c.Get(2); c.I32(v.Size); c.Call(Rt.Func("memcpy")); } else { c.Get(2); c.Mem(v.Store, 8); }
+        DictProbe(c, d, h, mask);
+        // the order position: the free list head, else used++
+        c.Get(0); c.Mem(Op.I32Load, 36);
+        var reuse = c.If();
+        c.Get(0); c.Mem(Op.I32Load, 36); c.I32(1); c.Emit(Op.I32Sub); c.Set(p);
+        c.Get(0); c.I32(-1); DictOrder(c, 0, p); c.Mem(Op.I32Load, 8); c.Emit(Op.I32Sub); c.Mem(Op.I32Store, 36);
+        c.Else();
+        c.Get(0); c.Mem(Op.I32Load, 32); c.Set(p);
+        c.Get(0); c.Get(p); c.I32(1); c.Emit(Op.I32Add); c.Mem(Op.I32Store, 32);
+        c.End(reuse);
+        DictOrder(c, 0, p); c.Get(h); c.Mem(Op.I32Store, 8);
+        DictSlot(c, 0, h); c.Get(p); c.I32(1); c.Emit(Op.I32Add); c.Mem(Op.I32Store, 8);
+        DictStoreKv(c, d, h, 1, 2);
         c.Get(0); c.Get(0); c.Mem(Op.I32Load, 8); c.I32(1); c.Emit(Op.I32Add); c.Mem(Op.I32Store, 8);
-        _ = st;
     });
 
-    /// <summary>Doubles the capacity and reinserts every full slot (the dictionary is rooted by the caller).</summary>
+    /// <summary>Doubles the capacity and reinserts every entry at its order position (removed positions and the free
+    /// list stay, as .NET keeps its entries array); the dictionary is rooted by the caller.</summary>
     WasmFunc DictRehash(WT d) => Helper("Dictionary<" + DKey(d) + ">.rehash", new FuncSig([ValType.I32], []), ["d"], c =>
     {
         var k = d.KeyT!;
         var v = d.Elem!;
-        int ok = c.Local(ValType.I32, "keys"), ov = c.Local(ValType.I32, "vals"), os = c.Local(ValType.I32, "states"), cap = c.Local(ValType.I32, "cap"), i = c.Local(ValType.I32, "i"), fr = c.Local(ValType.I32, "frame");
+        int ok = c.Local(ValType.I32, "keys"), ov = c.Local(ValType.I32, "vals"), oo = c.Local(ValType.I32, "order"), cap = c.Local(ValType.I32, "cap"),
+            p = c.Local(ValType.I32, "p"), s = c.Local(ValType.I32, "s"), h = c.Local(ValType.I32, "h"), mask = c.Local(ValType.I32, "mask"), fr = c.Local(ValType.I32, "frame"),
+            key = c.Local(k.Val, "key"), val = c.Local(v.IsStruct ? ValType.I32 : v.Val, "val");
         c.Get(0); c.Mem(Op.I32Load, 16); c.Set(ok);
         c.Get(0); c.Mem(Op.I32Load, 20); c.Set(ov);
-        c.Get(0); c.Mem(Op.I32Load, 24); c.Set(os);
+        c.Get(0); c.Mem(Op.I32Load, 28); c.Set(oo);
         c.Get(0); c.Mem(Op.I32Load, 12); c.Set(cap);
         // the old arrays stay rooted in a frame while the new ones are allocated
         c.I32(16); c.Call(Rt.Func("frame_enter")); c.Set(fr);
         c.Get(fr); c.Get(ok); c.Mem(Op.I32Store);
         c.Get(fr); c.Get(ov); c.Mem(Op.I32Store, 4);
-        c.Get(fr); c.Get(os); c.Mem(Op.I32Store, 8);
+        c.Get(fr); c.Get(oo); c.Mem(Op.I32Store, 8);
         DictArrays(c, d, 0, () => { c.Get(cap); c.I32(1); c.Emit(Op.I32Shl); });
-        c.Get(0); c.I32(0); c.Mem(Op.I32Store, 8);
+        c.Get(0); c.Get(cap); c.I32(1); c.Emit(Op.I32Shl); c.I32(4); c.I32(NumArrayType); c.Call(Rt.Func("array_new")); c.Mem(Op.I32Store, 28);
+        c.Get(0); c.Mem(Op.I32Load, 12); c.I32(1); c.Emit(Op.I32Sub); c.Set(mask);
         var done = c.Block();
         var loop = c.Loop();
-        c.Get(i); c.Get(cap); c.Emit(Op.I32GeU); c.BrIf(done);
-        c.Get(os); c.Get(i); c.Emit(Op.I32Add); c.Mem(Op.I32Load8U, 8); c.I32(1); c.Emit(Op.I32Eq);
-        var full = c.If();
-        c.Get(0);
-        c.Get(ok); c.Get(i); c.I32(k.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add); c.Mem(k.Load, 8);
-        c.Get(ov); c.Get(i); c.I32(v.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add);
+        c.Get(p); c.Get(0); c.Mem(Op.I32Load, 32); c.Emit(Op.I32GeU); c.BrIf(done);
+        c.Get(oo); c.Get(p); c.I32(2); c.Emit(Op.I32Shl); c.Emit(Op.I32Add); c.Mem(Op.I32Load, 8); c.Set(s);
+        c.Get(s); c.I32(0); c.Emit(Op.I32LtS);
+        var free = c.If();
+        DictOrder(c, 0, p); c.Get(s); c.Mem(Op.I32Store, 8);
+        c.Else();
+        c.Get(ok); c.Get(s); c.I32(k.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add); c.Mem(k.Load, 8); c.Set(key);
+        c.Get(ov); c.Get(s); c.I32(v.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add);
         if (v.IsStruct) { c.I32(8); c.Emit(Op.I32Add); } else c.Mem(v.Load, 8);
-        c.Call(DictSet(d));
-        c.End(full);
-        c.Get(i); c.I32(1); c.Emit(Op.I32Add); c.Set(i);
+        c.Set(val);
+        // the new table has no deleted slots: the first empty one
+        c.Get(key); Hash(c, k); c.Get(mask); c.Emit(Op.I32And); c.Set(h);
+        var pdone = c.Block();
+        var probe = c.Loop();
+        DictSlot(c, 0, h); c.Mem(Op.I32Load, 8); c.Emit(Op.I32Eqz); c.BrIf(pdone);
+        c.Get(h); c.I32(1); c.Emit(Op.I32Add); c.Get(mask); c.Emit(Op.I32And); c.Set(h);
+        c.Br(probe);
+        c.End(probe);
+        c.End(pdone);
+        DictOrder(c, 0, p); c.Get(h); c.Mem(Op.I32Store, 8);
+        DictSlot(c, 0, h); c.Get(p); c.I32(1); c.Emit(Op.I32Add); c.Mem(Op.I32Store, 8);
+        DictStoreKv(c, d, h, key, val);
+        c.End(free);
+        c.Get(p); c.I32(1); c.Emit(Op.I32Add); c.Set(p);
         c.Br(loop);
         c.End(loop);
         c.End(done);
@@ -165,19 +217,38 @@ public sealed partial class AirToWasm
         c.Get(0); c.Mem(Op.I32Load, 20); c.Get(slot); c.I32(d.Elem!.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add); c.I32(8); c.Emit(Op.I32Add);
     });
 
-    /// <summary>`(dict, key) -> removed?`: the slot becomes deleted, its key and value are cleared.</summary>
+    /// <summary>(dict, key) to removed?: the slot becomes deleted, its key and value are cleared, and its order position
+    /// goes on the free list.</summary>
     internal WasmFunc DictRemove(WT d) => Helper("Dictionary<" + DKey(d) + ">.remove", new FuncSig([ValType.I32, d.KeyT!.Val], [ValType.I32]), ["d", "key"], c =>
     {
         var k = d.KeyT!;
         var v = d.Elem!;
-        int slot = c.Local(ValType.I32, "slot");
+        int slot = c.Local(ValType.I32, "slot"), p = c.Local(ValType.I32, "p");
         c.Get(0); c.Get(1); c.Call(DictFind(d)); c.Tee(slot);
         c.I32(0); c.Emit(Op.I32LtS);
         var miss = c.If(); c.I32(0); c.Emit(Op.Return); c.End(miss);
-        c.Get(0); c.Mem(Op.I32Load, 24); c.Get(slot); c.Emit(Op.I32Add); c.I32(2); c.Mem(Op.I32Store8, 8);
+        DictSlot(c, 0, slot); c.Mem(Op.I32Load, 8); c.I32(1); c.Emit(Op.I32Sub); c.Set(p);
+        DictSlot(c, 0, slot); c.I32(-1); c.Mem(Op.I32Store, 8);
+        DictOrder(c, 0, p); c.I32(-1); c.Get(0); c.Mem(Op.I32Load, 36); c.Emit(Op.I32Sub); c.Mem(Op.I32Store, 8);
+        c.Get(0); c.Get(p); c.I32(1); c.Emit(Op.I32Add); c.Mem(Op.I32Store, 36);
         c.Get(0); c.Mem(Op.I32Load, 16); c.Get(slot); c.I32(k.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add); c.I32(8); c.Emit(Op.I32Add); c.I32(0); c.I32(k.Size); c.Prefixed(Op.MemoryFill); c.B(0);
         c.Get(0); c.Mem(Op.I32Load, 20); c.Get(slot); c.I32(v.Size); c.Emit(Op.I32Mul); c.Emit(Op.I32Add); c.I32(8); c.Emit(Op.I32Add); c.I32(0); c.I32(v.Size); c.Prefixed(Op.MemoryFill); c.B(0);
         c.Get(0); c.Get(0); c.Mem(Op.I32Load, 8); c.I32(1); c.Emit(Op.I32Sub); c.Mem(Op.I32Store, 8);
         c.I32(1);
+    });
+
+    /// <summary>Dictionary enumerator MoveNext over the dictionary d and position local i: the next live order
+    /// position after i (stored back), and whether there is one.</summary>
+    internal WasmFunc DictNext(WT d) => Helper("Dictionary<" + DKey(d) + ">.next", new FuncSig([ValType.I32, ValType.I32], [ValType.I32]), ["d", "i"], c =>
+    {
+        var done = c.Block();
+        var loop = c.Loop();
+        c.Get(1); c.I32(1); c.Emit(Op.I32Add); c.Set(1);
+        c.Get(1); c.Get(0); c.Mem(Op.I32Load, 32); c.Emit(Op.I32GeS); c.BrIf(done);
+        DictOrder(c, 0, 1); c.Mem(Op.I32Load, 8); c.I32(0); c.Emit(Op.I32GeS); c.BrIf(done);
+        c.Br(loop);
+        c.End(loop);
+        c.End(done);
+        c.Get(1);
     });
 }

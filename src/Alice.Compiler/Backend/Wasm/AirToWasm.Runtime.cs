@@ -118,6 +118,39 @@ public sealed partial class AirToWasm
     }
 
     internal bool IsListEnumerator(WClass k) => listEnums.Values.Any(x => x.C == k);
+
+    readonly Dictionary<string, (WClass C, WT Dict)> dictEnums = new(StringComparer.Ordinal);
+    readonly Dictionary<string, (WClass C, WT Key, WT Value)> kvps = new(StringComparer.Ordinal);
+
+    /// <summary>Dictionary enumerator: a struct [dict, order position] (AirToWasm.Dict.cs).</summary>
+    internal WClass DictEnumerator(WT d)
+    {
+        string key = d.KeyT!.Key + "," + d.Elem!.Key;
+        if (dictEnums.TryGetValue(key, out var e)) return e.C;
+        var k = new WClass { Name = d.Name + ".Enumerator", IsStruct = true };
+        k.AddField("dict", d);
+        k.AddField("index", WT.I32);
+        k.Lay();
+        dictEnums[key] = (k, d);
+        return k;
+    }
+
+    internal WT? DictEnumeratorDict(WClass k) => dictEnums.Values.FirstOrDefault(x => x.C == k).Dict;
+
+    /// <summary>KeyValuePair of K and V: a struct [Key, Value].</summary>
+    internal WClass Kvp(WT key, WT value)
+    {
+        string id = key.Key + "," + value.Key;
+        if (kvps.TryGetValue(id, out var e)) return e.C;
+        var k = new WClass { Name = "System.Collections.Generic.KeyValuePair<" + key.Name + ", " + value.Name + ">", IsStruct = true };
+        k.AddField("Key", key);
+        k.AddField("Value", value);
+        k.Lay();
+        kvps[id] = (k, key, value);
+        return k;
+    }
+
+    internal bool IsKvp(WClass k) => kvps.Values.Any(x => x.C == k);
     internal WT ListEnumeratorElem(WClass k) => listEnums.Values.First(x => x.C == k).Elem;
 
     // ------------------------------------------------------------------ arrays

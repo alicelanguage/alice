@@ -67,6 +67,7 @@ public sealed partial class AirToWasm
             case "System.TimeSpan": return WT.TimeSpan;
             case "System.ValueTuple" when args.Count is >= 2 and <= 7 && args.All(a => a.K == WK.U64): return SlotClass(args.Count).Type;
             case "Alice.Runtime.ArenaRegion": return WT.I32;
+            case "System.Collections.Generic.KeyValuePair" when args.Count == 2: return Kvp(args[0], args[1]).Type;
             case "System.String": return WT.Str;
             case "System.Int32": return WT.I32;
             case "System.Int64": return WT.I64;
@@ -109,6 +110,7 @@ public sealed partial class AirToWasm
         string bare = cs.StartsWith("global::") ? cs[8..] : cs;
         if (byCs.TryGetValue(bare, out c)) return c.Type;
         if (bare.EndsWith(">.Enumerator") && Parse(bare[..^".Enumerator".Length], sp) is { K: WK.List } listT) return ListEnumerator(listT.Elem!).Type;
+        if (bare.EndsWith(">.Enumerator") && Parse(bare[..^".Enumerator".Length], sp) is { K: WK.Dict } dictT) return DictEnumerator(dictT).Type;
         int lt = bare.IndexOf('<');
         if (lt > 0 && bare.EndsWith('>'))
         {
