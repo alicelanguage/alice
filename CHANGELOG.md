@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.0.0-rc.1 - 2026-11-02
+
 - dataflow (ADR 0038, P3.2/P3.3): `dataflow do` with `source`/`stage(state:, par:)`/`sink`, `stream def`; binder checks AL0244-AL0246; lowered to AirDataflow/AirStage/AirRing and static stage methods over the runtime function-pointer overloads (one `Graph.Run`); `benchmarks/dataflow/alice/dataflow.al` matches the hand C# graph.
 - perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
   earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
@@ -154,7 +156,7 @@
 - `require_relative "x"` loads the sibling file in single-file builds (`alice run/build/check`), like `require`.
 - Integration tests read child-process output asynchronously and turn off MSBuild node reuse and the compiler server
   for the child, so the suite no longer hangs on inherited pipes (SdkPackageTests, SampleTests).
-## 1.0.0-rc.1 - 2026-11-02
+
 
 First release candidate for 1.0. Versions are `MAJOR.MINOR.PATCH` from now on (no more 0.x); release candidates
 are published as GitHub prereleases. Every guarantee the toolchain makes is listed in [INVARIANTS.md](INVARIANTS.md).
