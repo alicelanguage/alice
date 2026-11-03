@@ -19,6 +19,15 @@
   connections). Docs: `docs/stdlib.md`, `docs/language.md`,
   "Alice Core modules".
 - Affine arena lowering P1.3 (ADR 0037 step 2, ADR 0040 section 2), driven by `Binder.Affine`: arena sum types are 64-bit terms over per-type lane slabs (packed variants in the term, slot variants as `ulong` words of the binder's slot union); AIR nodes `AirTermPack`, `AirTermTag`, `AirTermPayload`, `AirArenaAlloc`, `AirArenaTake`, `AirArenaBorrow`, `AirArenaDrop` (recursive by default: Bend's free of an unconsumed subtree; `ALICE_ARENA_DEEP=0` for slot-only), `AirSlotWord`, `AirArenaRegion` (`scope` in the main body), `AirLane` (`Mir/MExpr.Arena.cs`). The C# printer calls the public `Arena` API (`Backend/Printer.Arena.cs`); the IL backend inlines slot access through the lane cursor (`Backend/Il/AirToIl.Arena.cs`); `Arena`/`ArenaSlab` gain an `[EditorBrowsable(Never)]` raw-access surface and `Arena.DropDeep`. `ALICE_NO_ARENA=1` keeps records. Results in `benchmarks/bend2/results/arena.md`; tests in `tests/Alice.Tests/Compiler/AffineLowerTests.cs`.
+- samples (ROADMAP-1.0 stream H): a verified, documented starting point per domain, each in `examples/verify.sh`
+  and `Integration/SampleTests`: `samples/netchat` (TCP chat, `spawn` + `Channel`), `examples/web/aspnet` grown
+  into a minimal API (products, JSON bodies, DI, EF Core in memory, WebSocket echo, 14 `WebApplicationFactory`
+  checks; `/health` and `/quote` unchanged), `examples/ui/avalonia` as an MVVM app (two views, JSON settings,
+  headless run), `samples/raylib-pong` (rules tested and proven), `samples/alice-grep` (globs, `Par.For` scan,
+  NativeAOT: 2.7 MB, 3.3 ms start), `examples/data/pipeline` (CSV to JSON), `samples/lowlevel` (libc, `@[Native]`,
+  pointers, index tree, safety story). Compiler gaps found on the way: /work/reports/domain-compiler-issues.md;
+  new "Not ready" rows in docs/production.md.
+
 - perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
   earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
   helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays

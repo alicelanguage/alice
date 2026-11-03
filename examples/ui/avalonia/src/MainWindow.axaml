@@ -1,8 +1,18 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        x:Class="Ava.MainWindow" Title="Alice">
-  <StackPanel>
-    <TextBlock x:Name="Greeting" Text="hello" />
-    <Button x:Name="Bump" Content="bump" />
-  </StackPanel>
+        xmlns:notes="using:Notes"
+        x:Class="Notes.MainWindow" Title="{Binding title}" Width="420" Height="360">
+  <!-- Each view model type is shown by its view: navigation only changes MainViewModel.current. -->
+  <Window.DataTemplates>
+    <DataTemplate DataType="notes:NotesViewModel"><notes:NotesView /></DataTemplate>
+    <DataTemplate DataType="notes:SettingsViewModel"><notes:SettingsView /></DataTemplate>
+  </Window.DataTemplates>
+  <DockPanel Margin="8">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8">
+      <Button x:Name="NotesTab" Content="Notes" Command="{Binding show_notes_command}" />
+      <Button x:Name="SettingsTab" Content="Settings" Command="{Binding show_settings_command}" />
+      <TextBlock x:Name="Heading" Text="{Binding title}" VerticalAlignment="Center" />
+    </StackPanel>
+    <ContentControl x:Name="Page" Content="{Binding current}" Margin="0,8,0,0" />
+  </DockPanel>
 </Window>
