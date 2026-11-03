@@ -1082,7 +1082,7 @@ rule percent_in_range FAILS: part = 0, total = 0 -> raised DivideByZeroException
 
 `alice prove --check` (or `alice build --prove`, or `[build] prove = true`) exits 1 when a rule fails or `PROOF.al`
 is stale, so CI and agents gate on the rules; `--format json` and `--timeout` are for scripts. See
-[guide/PROOFS.md](../guide/PROOFS.md) (a worked example) and [tooling.md](tooling.md#rules-and-proofs-alice-prove).
+[guide/PROOFS.md](../guide/PROOFS.md) (a worked example) and [tooling.md](tooling.md#rules-and-proofs-alice-prove), [proofs.md](proofs.md) (trusted computing base, certificates).
 
 ## 13. Performance model
 

@@ -137,6 +137,7 @@ Toolchains, nightly and building from source: [docs/tooling.md](docs/tooling.md)
 [Language](https://alice-lang.org/documentation) ·
 [Performance](https://alice-lang.org/documentation/guides/max-performance/) ·
 [Rules](https://alice-lang.org/documentation/guides/rules-and-proofs/) ·
+[Proofs](docs/proofs.md) ·
 [Docs index](docs/README.md) ·
 [Production readiness](docs/production.md) ·
 [Guarantees](INVARIANTS.md) ·

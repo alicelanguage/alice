@@ -55,6 +55,10 @@ jobs:
           echo "$Z3_SHA256  $RUNNER_TEMP/z3.zip" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/z3.zip" -d "$RUNNER_TEMP/z3"
           echo "ALICE_Z3=$(cygpath -w "$RUNNER_TEMP/z3/z3-5.3.3-x64-win/bin/libz3.dll")" >> "$GITHUB_ENV"
+      # CaDiCaL for checkable proof certificates (ADR 0042): Linux only, ALICE_REQUIRE_SAT=1 makes a missing solver fail tests
+      - name: Install CaDiCaL (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -q && sudo apt-get install -y -q cadical
       - name: Restore
         run: dotnet restore Alice.sln
       - name: Build
@@ -62,6 +66,7 @@ jobs:
       - name: Test full suite (including allocation and integration tests)
         env:
           ALICE_REQUIRE_Z3: '1'
+          ALICE_REQUIRE_SAT: '1'
         run: dotnet test Alice.sln --configuration Release --no-build --no-restore --logger trx --results-directory artifacts/test-results
       - name: Verify examples and ASP.NET HTTP routes
         shell: bash
