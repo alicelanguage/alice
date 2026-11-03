@@ -146,10 +146,19 @@ the kickoff as the body) -> emit. Around the bodies: `SynthDeclareMembers` repla
 method bodies, `SynthCtorPrologue` the field-initializer prologue of user constructors, `SmReturn` types async/iterator
 methods (`Task<T>`, `IEnumerable<T>`, ...), `EmitDynSites` adds the site fields after the bodies, `DeclareLibs`
 declares `lib` blocks as P/Invokes. `RawExt`/`StmtExt` handle the jump nodes and `AirDynCall`.
-Still `IlUnsupportedException` (each names its kind, see `Decl:*` in `AirToIl.Decls.cs`): delegates, refinement types,
-generic types, SoA, ref structs, `__class_body`, enumerable bridges, events, interface properties, default interface
-methods, attributes on fields/methods/params, `block`/`ref` parameters, C# helper text from the lowerer (`Lowerer.Extra`,
-specializations, GPU). `ALICE_IL_SYNTH=0` keeps the old mirrored declarations for A/B comparison; it is a temporary
+Declaration kinds (D1.10, `AirToIl.{Generics,Delegates,Attrs,Events}.cs`): generic types and generic methods are
+monomorphized (one TypeDef per instantiation, one MethodDef per inferred argument list; type parameters are bound in
+`IlTypes.Scope` while a body or declaration is processed, so constraints need no modelling; a generic base class is an
+instance too); delegates are sealed `MulticastDelegate` TypeDefs with runtime-implemented `.ctor`/`Invoke` and accept method
+groups (`->add`; lambdas wait for closure conversion); non-literal enum values are folded (`FoldEnumValue`); default
+interface methods and interface properties; `@[Stack]` structs (`IsByRefLikeAttribute`); `block` parameters; user
+attributes on methods/fields as custom-attribute blobs (literal arguments, named arguments); events (field plus
+`add_`/`remove_` with `Interlocked.CompareExchange`, `+=`/`-=` on Alice and CLR events).
+Still `IlUnsupportedException` (each names its kind, see `Decl:*` in `AirToIl.Decls.cs`): refinement types, SoA,
+`__class_body`, enumerable bridges, generic types nested in generic types or over a generic method's parameter, generic
+interfaces and abstract/constructor generic methods, generic sum types (no front-end syntax yet), `ref`/`out` parameters
+of non-FFI methods, attributes with non-literal arguments or `param:`/`return:` targets, `MLambda` (closure conversion is
+not wired), C# helper text from the lowerer (`Lowerer.Extra`, specializations, GPU). `ALICE_IL_SYNTH=0` keeps the old mirrored declarations for A/B comparison; it is a temporary
 switch and goes away with the mirror (`DeclareMembers`, `SyntheticCtor`, `CtorPrologue`). Differential tests (C# stdout
 == IL stdout): `StateMachinesTests.Il_*`, `DynSitesTests`, `SynthesizeTests.Il_backend_prints_...`,
 `AirToIlInteropTests`.

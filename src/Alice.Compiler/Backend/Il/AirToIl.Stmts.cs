@@ -626,6 +626,7 @@ internal sealed partial class IlBody
                     }
                     var rt = Infer(m.Target);
                     string name = Bare(m.Name);
+                    if (EventAssign(m, rt, name, op, value)) return;   // D1.10 il-emit2
                     if (T.Alice(rt)?.FindField(name) is { IsStatic: false } af)
                     {
                         Receiver(m.Target, rt);

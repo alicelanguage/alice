@@ -128,7 +128,6 @@ public sealed partial class AirToIl
             if (!a.IsInterface && !a.IsAdt) a.Def.AddCustomAttribute(Module.Import(typeof(Alice.Runtime.AliceTypeAttribute).GetConstructor(Type.EmptyTypes)!));
         }
         finally { Types.Scope = prevScope; }
-        decls.Add((genericItems[def][0], a));
         pendingInst.Enqueue(a);
         if (declaring == 0) DrainInstances();
         return a;

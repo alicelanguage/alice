@@ -46,7 +46,7 @@ internal sealed class AliceT
     public Type Proxy = null!;
     public AliceT? Base;
     public Type? ClrBase;
-    public bool IsValueType, IsInterface, IsEnum, IsStatic, IsRecord, IsAdt, IsVariant, IsDelegate;
+    public bool IsValueType, IsInterface, IsEnum, IsStatic, IsRecord, IsAdt, IsVariant, IsDelegate, IsRefStruct;
     public Type? EnumUnderlying;
     public readonly Dictionary<TypeSym, AliceT> InstVariants = new();   // a generic sum type's instance: its nested variants
     public readonly Dictionary<string, AField> Fields = new(StringComparer.Ordinal);
@@ -80,6 +80,7 @@ internal sealed class AField
     public AliceT Owner = null!;
     public IlFieldDef? Field;            // the storage (backing field of a property)
     public IlMethodDef? Getter, Setter;  // property accessors (null: plain field)
+    public IlMethodDef? Adder, Remover;  // event accessors (the field is the delegate storage)
     public object? Literal;              // enum member value
     public bool ReadOnly;
 }

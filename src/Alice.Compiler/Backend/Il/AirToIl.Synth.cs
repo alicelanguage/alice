@@ -74,11 +74,12 @@ public sealed partial class AirToIl
         {
             switch (it)
             {
-                case AccessorDecl { Kind: "event" } ev: throw new IlUnsupportedException("Decl:event", Sp(ev), ((FieldSym)ev.Sym!).Name);
+                case AccessorDecl { Kind: "event" } ev: DeclareEvent(a, ev); break;
                 case FieldDecl fd:
                     {
-                        if (fd.Attrs.Count > 0) throw new IlUnsupportedException("Decl:field-attribute", Sp(fd), string.Join(",", fd.Attrs));
-                        Field(a, (FieldSym)fd.Sym!, FieldAttributes.Private);
+                        var af = Field(a, (FieldSym)fd.Sym!, FieldAttributes.Private);
+                        if (fd.Attrs.Count > 0 && (af.Field == null || !TryApplyAttributes(af.Field.CustomAttributes, fd.Attrs, out var badAttr)))
+                            throw new IlUnsupportedException("Decl:field-attribute", Sp(fd), string.Join(",", fd.Attrs));
                         break;
                     }
                 case ConstDecl k: SynthConst(k, a); break;
@@ -159,11 +160,13 @@ public sealed partial class AirToIl
         else
         {
             bool virt = md.Is(AirMethodFlags.Virtual) || md.Is(AirMethodFlags.Override) || md.Is(AirMethodFlags.Abstract);
+            bool implicitImpl = !virt && !st && md.Is(AirMethodFlags.SpecialName) && md.Vis == AirVis.Public && ImplementsInterface(a, md.Name, ps.Length);   // property accessor implementing an interface property
+            virt |= implicitImpl;
             var attrs = Vis(md.Vis) | MethodAttributes.HideBySig
                 | (st ? MethodAttributes.Static : 0)
                 | (virt ? MethodAttributes.Virtual : 0)
                 | (virt && !md.Is(AirMethodFlags.Override) ? MethodAttributes.NewSlot : 0)
-                | (md.Is(AirMethodFlags.Final) ? MethodAttributes.Final : 0)
+                | (md.Is(AirMethodFlags.Final) || implicitImpl ? MethodAttributes.Final : 0)
                 | (md.Is(AirMethodFlags.Abstract) ? MethodAttributes.Abstract : 0)
                 | (md.Is(AirMethodFlags.SpecialName) ? MethodAttributes.SpecialName : 0);
             var rt = Types.Il(ret);
