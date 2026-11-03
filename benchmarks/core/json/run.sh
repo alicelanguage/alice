@@ -9,6 +9,8 @@ PIN=${PIN:-taskset -c 7,23}
 DATA=../data
 [[ -s $DATA/twitter.json ]] || ../fetch-corpus.sh
 OUT=${OUT:-/tmp/alice-json-bench}
+ALICE=${ALICE:-dotnet ../../../src/Alice.Cli/bin/Release/net10.0/alice.dll}
+$ALICE emit alice/typed.al | sed 's/\bProgram\b/AlGenProgram/g' > alice/AliceTyped.g.cs   # C2.5 generated mapping
 dotnet build -c Release -o "$OUT" >/dev/null
 mkdir -p results
 RAW=results/raw-$(date -u +%Y%m%dT%H%M%SZ).txt

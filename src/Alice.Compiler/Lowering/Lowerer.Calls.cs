@@ -10,6 +10,7 @@ public sealed partial class Lowerer
     {
         if (c.Res == "fused") return At(new AirLocalRef((string)c.Sym!), c);   // the fused reduction's result temp
         if (c.Res == "asnew") return Expr((NewExpr)c.Sym!);
+        if (c.Res == "json") return JsonCall(c);   // typed JSON mapping (Lowerer.Json.cs)
         if (c.Res == "asexpr") return Expr((Expr)c.Sym!);   // Binder.RewriteCall: `===`, named-tuple names
         if (c.Res == "inline") return Expr((StmtExpr)c.Sym!);
         if (c.Res == "defmethod")

@@ -103,7 +103,12 @@ public class JsonAllocationTests(ITestOutputHelper output)
             w.Flush();
         }
         Assert.Equal(0, Measure(Body));
-        byte[] span = new byte[Doc.Length * 2];
+        // the span holds exactly the indented text (indentation can exceed 2x the input: the synthetic document does)
+        var probe = new ArrayBufferWriter<byte>();
+        var pw = new JsonWriter(probe, indented: true);
+        root.WriteTo(ref pw);
+        pw.Flush();
+        byte[] span = new byte[probe.WrittenCount];
         Assert.Equal(0, Measure(() =>
         {
             var w = new JsonWriter(span, indented: true);

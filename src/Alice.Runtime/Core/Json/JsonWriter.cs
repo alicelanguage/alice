@@ -122,9 +122,9 @@ public ref partial struct JsonWriter
         afterName = false;
     }
 
-    public partial void WritePropertyName(ReadOnlySpan<byte> utf8Name) => WriteRawPropertyName(utf8Name);
+    public partial void WritePropertyName(scoped ReadOnlySpan<byte> utf8Name) => WriteRawPropertyName(utf8Name);
 
-    public partial void WritePropertyName(ReadOnlySpan<char> name)
+    public partial void WritePropertyName(scoped ReadOnlySpan<char> name)
     {
         WriteString(name);
         EndName();
@@ -138,7 +138,7 @@ public ref partial struct JsonWriter
     }
 
     /// <summary>A property name whose bytes are valid JSON string contents (copied between quotes).</summary>
-    internal void WriteRawPropertyName(ReadOnlySpan<byte> raw)
+    internal void WriteRawPropertyName(scoped ReadOnlySpan<byte> raw)
     {
         if (Begin(raw.Length + (indented ? 4 : 3)))
         {
@@ -216,7 +216,7 @@ public ref partial struct JsonWriter
         Number(tmp.Slice(0, n));
     }
 
-    public partial void WriteString(ReadOnlySpan<char> value)
+    public partial void WriteString(scoped ReadOnlySpan<char> value)
     {
         int max = 3 * value.Length;
         if (output is null && buf.Length - pos < max + 3)
@@ -252,7 +252,7 @@ public ref partial struct JsonWriter
         needComma = true;
     }
 
-    public partial void WriteString(ReadOnlySpan<byte> utf8Value)
+    public partial void WriteString(scoped ReadOnlySpan<byte> utf8Value)
     {
         int k = utf8Value.IndexOfAny(Strings.NeedsEscape);
         if (k < 0)
@@ -271,7 +271,7 @@ public ref partial struct JsonWriter
     }
 
     /// <summary>Escapes <paramref name="rest"/> and closes the string.</summary>
-    void EscapedTail(ReadOnlySpan<byte> rest)
+    void EscapedTail(scoped ReadOnlySpan<byte> rest)
     {
         int need = output is null && buf.Length - pos < Strings.MaxEscaped(rest.Length) + 1 ? Strings.EscapedLength(rest) : Strings.MaxEscaped(rest.Length);
         if (!Reserve(need + 1)) return;
@@ -280,7 +280,7 @@ public ref partial struct JsonWriter
     }
 
     /// <summary>A string whose bytes are valid JSON string contents (copied between quotes).</summary>
-    internal void WriteRawString(ReadOnlySpan<byte> raw)
+    internal void WriteRawString(scoped ReadOnlySpan<byte> raw)
     {
         if (Begin(raw.Length + 2))
         {
@@ -295,7 +295,7 @@ public ref partial struct JsonWriter
     /// <summary>A number token copied as is.</summary>
     internal void WriteRawNumber(ReadOnlySpan<byte> text) => WriteRawValue(text);
 
-    public partial void WriteRawValue(ReadOnlySpan<byte> utf8Json)
+    public partial void WriteRawValue(scoped ReadOnlySpan<byte> utf8Json)
     {
         if (Begin(utf8Json.Length))
         {
