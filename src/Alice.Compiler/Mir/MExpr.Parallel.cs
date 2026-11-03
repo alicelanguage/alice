@@ -122,47 +122,6 @@ public sealed class AirRelease : AirParExpr
     public override IEnumerable<MExpr> Children() => [Target];
 }
 
-// TODO merge into MExpr.cs (common nodes, air-b1)
-/// <summary>
-/// `x.Length` / `x.Count` of an array, list or SoA store. Deliberately not an <see cref="MMember"/>: the
-/// InductionVariables pass bounds a counter by an MMember `.Length` and would rewrite the loop step, changing C#
-/// that used to be opaque text. Frozen.
-/// </summary>
-public sealed class AirLength : AirParExpr
-{
-    public MExpr Target = null!;
-    public string Member = "Length";
-
-    public override IEnumerable<MExpr> Children() => [Target];
-}
-
-// TODO merge into MExpr.cs (common nodes, air-b1)
-/// <summary>
-/// `end - start[ + 1]`, the trip count of a range loop. <see cref="End"/> is parenthesized unless it is atomic or an
-/// additive or multiplicative operation (`(c ? a : b) - start`); frozen.
-/// </summary>
-public sealed class AirTripCount : AirParExpr
-{
-    public MExpr End = null!;
-    public MExpr Start = null!;
-    public bool Inclusive;
-
-    public override IEnumerable<MExpr> Children() => [End, Start];
-}
-
-// TODO merge into MExpr.cs (common nodes, air-b1)
-/// <summary>
-/// `base + offset`, a chunk bound (`start + lo`) known to lie in range. Not an <see cref="MBinary"/>: the loop
-/// passes would derive affine bounds from it and change the chunk loop. Frozen.
-/// </summary>
-public sealed class AirOffset : AirParExpr
-{
-    public MExpr Base = null!;
-    public MExpr Offset = null!;
-
-    public override IEnumerable<MExpr> Children() => [Base, Offset];
-}
-
 /// <summary>
 /// `Math.Max(0, (to) - (from)[ + 1])`: the capacity a fill loop needs (Lowerer.Presize). The bounds are optimized
 /// standalone when lowered, as the text form was, and frozen.
@@ -174,30 +133,4 @@ public sealed class AirPresizeCount : AirParExpr
     public bool Inclusive;
 
     public override IEnumerable<MExpr> Children() => [To, From];
-}
-
-// TODO merge into MExpr.cs (common leaves, air-b1)
-/// <summary>
-/// Typed leaves (locals, literals, type names, `default`). They stay <see cref="MCode"/> instances until the passes
-/// are ported (ADR 0032 step 4): the passes and several lowerings match leaves as `MCode { Text: ... }`, so a new leaf
-/// class would change the emitted C#. The factory is the one place that spells them.
-/// </summary>
-public static class AirLeaf
-{
-    public static readonly AirType Int = new AirType.Prim(PrimKind.Int);
-    public static readonly AirType Long = new AirType.Prim(PrimKind.Long);
-    public static readonly AirType Bool = new AirType.Prim(PrimKind.Bool);
-    public static readonly AirType Void = new AirType.Prim(PrimKind.Void);
-
-    /// <summary>A local, parameter, temporary or static field read by name.</summary>
-    public static MCode Name(string name, AirType? type = null) => new(name) { Type = type };
-
-    /// <summary>A literal as C# spells it (`0`, `1L`).</summary>
-    public static MCode Lit(string text, AirType? type = null) => new(text) { Type = type };
-
-    /// <summary>A type used as a member-access target (`global::System.Math`).</summary>
-    public static MCode TypeName(string cs) => new(cs);
-
-    /// <summary>`default` of the given type.</summary>
-    public static MCode Default(AirType? type) => new("default") { Type = type };
 }

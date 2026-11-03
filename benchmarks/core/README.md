@@ -61,3 +61,22 @@ read differences below about 10 % as noise. Never compare numbers across machine
 | json | `json-serialize` (records to UTF-8) | twitter, canada, citm_catalog | STJ source-gen (into a reused `ArrayBufferWriter`) |
 | regex | `regex-redux` | fasta 5M | .NET interpreted, Compiled, NonBacktracking; Rust `regex` |
 | regex | `count:<case>` (literal, literal-alt, literal-i, words, ing-suffix, aws-keys, bounded-repeat, unicode-upper, time) | rebar en-sampled, sherlock | same |
+
+## Library modules
+
+`lib/` (`core-lib-bench`, same RESULT protocol) measures the other Core modules against the BCL and the current
+Prelude: `cd benchmarks/core && dotnet build lib -c Release && taskset -c 3,19 dotnet
+lib/bin/Release/net10.0/core-lib-bench.dll data [text format hash csv lines echo collections toml hmac]` (the 100 MB CSV is generated into
+`data/` on first use). Results: [`results/core-lib.md`](results/core-lib.md).
+
+| Suite | Case | Input | Comparator | Target |
+|---|---|---|---|---|
+| text | `count tr squeeze delete` with a set, character count | 1 MB words (some non-ASCII) | Prelude String methods; `Encoding.UTF8` | >= 4x the Prelude, 0 bytes |
+| format | `Format.try_format` 5 specs, `Time#try_strftime` | x 1000 | Prelude `format`; `DateTimeOffset.TryFormat` | 0 bytes into a span |
+| collections | `Deque` FIFO and both ends, `Set` add/include | 1 M `long` | `Queue`, `LinkedList`, `HashSet` | Deque faster, Set parity |
+| hmac | `Hmac.Sha256` x 1000 | 64 B | `HMACSHA256.HashData` | parity |
+| toml | parse, parse + write | 5000 `[[package]]` tables | none in the BCL | baseline only; toml-test is the gate |
+| hash | CRC-32C, XXH3-64, SHA-256 | 100 MB random | `SHA256.HashData` | CRC-32C >= 10 GB/s; SHA-256 within 1.05x |
+| csv | rows with every field, two typed fields, row count | 100 MB generated CSV | - | >= 1.5 GB/s, 0 bytes per row |
+| lines | `Fs.each_line`, `Fs.count_lines` | the same file | `File.ReadLines` | 0 bytes per line |
+| echo | 256 connections x 64 B messages, `TcpServer.serve_async` | loopback | raw `Socket` accept loop with the same handler | 0 bytes per message, within 1.1x |

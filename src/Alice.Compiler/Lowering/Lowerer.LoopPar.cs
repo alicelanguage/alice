@@ -428,10 +428,11 @@ public sealed partial class Lowerer
         IndexExpr ix => PureRead(ix.Target, plan) && ix.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         CallExpr { Res: "field" } f => f.Recv != null && PureRead(f.Recv, plan),
         CallExpr m when IsClrMath(m) => m.Block == null && m.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
-        CallExpr { Res: "ext" } x => PureExt.Contains(Binder.Mangle(x.Name)) && x.Block == null && x.Recv != null && PureRead(x.Recv, plan) && x.Args.All(a => PureRead(a.Value!, plan)),
+        CallExpr { Res: "ext" } x => PureExtCall(x) && x.Block == null && x.Recv != null && PureRead(x.Recv, plan) && x.Args.All(a => PureRead(a.Value!, plan)),
+        ConstExpr ce when LiteralConst(ce) => true,   // `Int32::MAX`, `Math::PI`
         CallExpr { Res: "alice", Sym: MethodSym m, Block: null } c => MarkHeavy(plan) && MethodPure(m) && (c.Recv == null || PureRead(c.Recv, plan)) && c.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         NameExpr { Res: "call", Sym: MethodSym m } => MarkHeavy(plan) && MethodPure(m),
-        NewExpr { AsCall: null, Block: null } n => n.Type.Sym is { Kind: "class" or "struct" or "record" or "record struct" or "variant" } ts && CtorPure(ts, n.Args.Count) && n.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
+        NewExpr { AsCall: null, Block: null } n => (n.Type.Sym is { Kind: "class" or "struct" or "record" or "record struct" or "variant" } ts && CtorPure(ts, n.Args.Count) || AffineNewPure(n)) && n.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         NewExpr { AsCall: { } ac } => PureRead(ac, plan),
         StmtExpr { Stmt: var st } => PureMethodBody([st], plan, false),   // if / case used as a value
         _ => false,

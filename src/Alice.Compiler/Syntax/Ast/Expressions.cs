@@ -64,6 +64,8 @@ public sealed class NewExpr : Expr
 public sealed class IndexExpr : Expr
 {
     public string? TupleElement;   // `t[:a]` on a named tuple: the element name
+    public string? Slice;          // "range" (`xs[1..]`, `s[1..3]`) or "len" (`s[1, 3]`): a Ruby slice (Prelude.slice_range / slice_len)
+    public int FromEnd;            // `xs[-k]` on an array/list/string: k (read as `xs[xs.Length - k]`)
     public Expr Target = null!;
     public List<Arg> Args = new();
 }
@@ -148,6 +150,8 @@ public sealed class ArrayPatternExpr : Expr
 {
     public List<string> Names = new();
     public List<Expr?> Literals = new();   // per element: a value to compare (`["go", dir]`), null for a binding / `_`
+    public HashSet<int> Pins = new();      // elements written `^name`
+    public HashSet<int> Late = new();      // pins of a name bound earlier in this pattern (`[a, ^a]`): compared after the binds
     public string? Rest;
     public List<Semantics.LocalSym> Binds = new();
     public Semantics.LocalSym? RestSym;
@@ -177,6 +181,19 @@ public sealed class RegexExpr : Expr
 public sealed class AwaitExpr : Expr { public Expr E = null!; }
 
 public sealed class SpawnExpr : Expr { public LambdaExpr Body = null!; }
+
+/// <summary>
+/// `dataflow do ... end` (ADR 0038): a static network. Its body holds `source { |out| }`, `pipe.stage(state:, par:)
+/// { |st, x, out| }` and `pipe.sink { |x| }` nodes; the binder checks it and fills <see cref="Graph"/>
+/// (Semantics/Binder/Binder.Dataflow.cs).
+/// </summary>
+public sealed class DataflowExpr : Expr
+{
+    public LambdaExpr Body = null!;
+    /// <summary>`dataflow(capacity: 16384, batch: 512) do`: the graph's default ring capacity and batch.</summary>
+    public List<Arg> Args = new();
+    public Semantics.DataflowGraph? Graph;
+}
 public sealed class YieldExpr : Expr { public List<Arg> Args = new(); }
 
 /// <summary>if/case/begin used as a value.</summary>

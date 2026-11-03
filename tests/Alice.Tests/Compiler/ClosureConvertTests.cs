@@ -466,7 +466,7 @@ public class ClosureConvertTests
         Assert.Contains("  decl <>d__0 <>c__DisplayClass_f_0 = (display-new struct reduce <>c__DisplayClass_f_0 (xs (local xs)))\n", dump);
         Assert.Contains("(delegate-create <>c__DisplayClass_f_0.<f>b__0 ref (local <>d__0) (method static (ref <>c__DisplayClass_f_0 <>d, __lo", dump);
         Assert.Contains("(display-field (local <>d) xs):double[]", dump);
-        Assert.Contains("(delegate-create <>c.<f>b__1 cached <>9__f_1 (method static (a, b) (Add `a` `b`)))", dump);
+        Assert.Contains("(delegate-create <>c.<f>b__1 cached <>9__f_1 (method static (a, b) (Add (param a) (param b))))", dump);
         Assert.DoesNotContain("(lambda", dump);
     }
 

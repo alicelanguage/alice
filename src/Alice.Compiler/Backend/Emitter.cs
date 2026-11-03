@@ -174,7 +174,7 @@ public sealed class Emitter
         var sb = new StringBuilder();
         foreach (var a in attrs)
         {
-            if (a is "Stack" or "Open" or "SoA" or "StrictMath" or "Native" || a.StartsWith("Native(") || a.StartsWith("__enumerable:")) continue;
+            if (a is "Stack" or "Open" or "SoA" or "StrictMath" or "Strict" or "Native" || a.StartsWith("Native(") || a.StartsWith("__enumerable:")) continue;
             if (a == "Inline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n");
             else if (a == "NoInline") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]\n");
             else if (a == "Hot") sb.Append("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n");
@@ -466,9 +466,12 @@ public sealed class Emitter
     const long MaxRuleCases = 1L << 32;
 
     /// <summary>
-    /// `__prove_rule()`: every case of the rule's domain, outer variable in parallel. Returns the case count and the
+    /// `__prove_rule()` / `__provect_rule(ct)`: every case of the rule's domain, outer variable in parallel. Returns the case count and the
     /// first counterexample in domain order (a `false` result or an exception), or null when the rule holds on every
-    /// case. The first, not any: PROOF.al must not depend on thread timing.
+    /// case. The first, not any: PROOF.al must not depend on thread timing. Each variable counts an offset 0..size-1
+    /// from its Lo, so a range ending at Int32::MAX or Int64::MAX never steps a counter past Hi (that checked overflow
+    /// escaped the per-case try and crashed `alice prove`). `ct` is `alice prove --timeout`: once cancelled, the method
+    /// throws OperationCanceledException instead of returning a partial verdict.
     /// </summary>
     string Prover(MethodDecl d)
     {
@@ -479,9 +482,9 @@ public sealed class Emitter
             throw new CompileException($"{file}:{d.Line}:{Math.Max(1, d.Col)}: rule domain of `{d.RuleName}` has {cases:0} cases, more than the {MaxRuleCases} `alice prove` checks exhaustively; narrow the ranges, or prove it for every input with `alice prove --smt`");
         string Var(int i) => m.Params[i].CsName;
         string Ty(RuleDomain x) => x.IsBool ? "bool" : x.Lo < int.MinValue || x.Hi > int.MaxValue ? "long" : "int";
-        string Loop(RuleDomain x, int i) => x.IsBool
-            ? $"foreach (var {Var(i)} in new[] {{ false, true }})"
-            : $"for ({Ty(x)} {Var(i)} = {x.Lo}; {Var(i)} <= {x.Hi}; {Var(i)}++)";
+        string Lit(long v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L";
+        string Bind(RuleDomain x, int i, string k) => x.IsBool ? $"bool {Var(i)} = {k} == 1;" : $"{Ty(x)} {Var(i)} = ({Ty(x)})({Lit(x.Lo)} + {k});";
+        string Loop(RuleDomain x, int i) => $"for (long __k{i} = 0; __k{i} < {Lit(x.Size)}; __k{i}++)\n{{\nif (__ct.IsCancellationRequested) return;\n{Bind(x, i, "__k" + i)}";
         string args = string.Join(", ", d.Domains.Select((_, i) => Var(i)));
         string show = string.Join(", ", d.Domains.Select((x, i) => $"{x.Name} = {{{Var(i)}}}"));
         // the first failure in domain order: inner variables run in order within one outer value, and Break() lets every
@@ -489,19 +492,19 @@ public sealed class Emitter
         string fail(string msg) => $"lock (__gate) {{ if (__k < __first) {{ __first = __k; __cex = {msg}; }} }} __st.Break(); return;";
         string check = $"bool __ok; try {{ __ok = {m.CsName}({args}); }} catch (global::System.Exception __e) {{ {fail($"$\"{show}: raised {{__e.GetType().Name}}\"")} }}\nif (!__ok) {{ {fail($"$\"{show}\"")} }}";
         string body = check;
-        for (int i = d.Domains.Count - 1; i >= 1; i--) body = Loop(d.Domains[i], i) + "\n{\n" + body + "\n}";
+        for (int i = d.Domains.Count - 1; i >= 1; i--) body = Loop(d.Domains[i], i) + "\n" + body + "\n}";
         var sb = new StringBuilder();
-        sb.Append($"public static (long, string?) __prove_{d.RuleName}()\n{{\n    string? __cex = null;\n    long __first = long.MaxValue;\n    var __gate = new object();\n");
+        sb.Append($"public static (long, string?) __provect_{d.RuleName}(global::System.Threading.CancellationToken __ct)\n{{\n    string? __cex = null;\n    long __first = long.MaxValue;\n    var __gate = new object();\n");
         if (d.Domains.Count == 0)
             sb.Append($"    try {{ if (!{m.CsName}()) __cex = \"(no variables)\"; }} catch (global::System.Exception __e) {{ __cex = \"raised \" + __e.GetType().Name; }}\n");
         else
         {
             var outer = d.Domains[0];
-            string range = outer.IsBool ? "0, 2" : $"{outer.Lo}L, {outer.Hi}L + 1";
-            string bind = outer.IsBool ? $"bool {Var(0)} = __k == 1;" : $"{Ty(outer)} {Var(0)} = ({Ty(outer)})__k;";
-            sb.Append($"    global::System.Threading.Tasks.Parallel.For({range}, (__k, __st) =>\n    {{\n        {bind}\n{body}\n    }});\n");
+            sb.Append($"    global::System.Threading.Tasks.Parallel.For(0L, {Lit(outer.Size)}, new global::System.Threading.Tasks.ParallelOptions {{ CancellationToken = __ct }}, (__k, __st) =>\n    {{\n        {Bind(outer, 0, "__k")}\n{body}\n    }});\n");
+            sb.Append("    __ct.ThrowIfCancellationRequested();\n");
         }
         sb.Append($"    return ({(long)cases}L, __cex);\n}}\n");
+        sb.Append($"public static (long, string?) __prove_{d.RuleName}() => __provect_{d.RuleName}(default);\n");
         return sb.ToString();
     }
 
@@ -561,11 +564,22 @@ public sealed class Emitter
     const string Hot = "[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]\n";
 
     /// <summary>
+    /// `ALICE_NO_AO=1` (or `all`) stops the inferred AggressiveOptimization below; `ALICE_NO_AO=loop,nest` stops only
+    /// the named rules (`kernel`, `leaves`, `nest`, `loop`). A written `@[Hot]` is always honoured. For A/B
+    /// measurements on a core pair (benchmarks/README.md, R0): on one cpu tier 1 never arrives, so AO looks better
+    /// there than it is.
+    /// </summary>
+    static readonly HashSet<string> NoAo = (Environment.GetEnvironmentVariable("ALICE_NO_AO") ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet();
+
+    static bool Ao(string rule) => !NoAo.Contains(rule) && !NoAo.Contains("1") && !NoAo.Contains("all");
+
+    /// <summary>
     /// A self-recursive static function over primitives and primitive arrays, returning one of them, is a compute kernel: fully optimized
     /// from its first call instead of spending its hottest frames in tier 0 and OSR. With no reference parameters it
     /// has no virtual call sites, so tiered PGO has nothing to devirtualize.
     /// </summary>
-    static bool Kernel(MethodDecl d, MethodSym m, Instance? inst, List<MStmt> body)
+    internal static bool Kernel(MethodDecl d, MethodSym m, Instance? inst, List<MStmt> body)
     {
         var ret = inst?.Ret ?? m.Ret;
         if (!(ret.IsVoid || Primitive(ret) || ret.Kind == "array" && ret.Elem != null && Primitive(ret.Elem))) return false;   // object-building recursion gains from tier-1 PGO
@@ -583,7 +597,7 @@ public sealed class Emitter
     /// runs it until on-stack replacement (suite nbody: 151 ms -> 78 ms, C# 78 ms). Compiled fully optimized instead;
     /// steady-state benchmarks measured within noise.
     /// </summary>
-    static bool LoopNest(List<MStmt> body, int depth) => body.Any(s => s switch
+    internal static bool LoopNest(List<MStmt> body, int depth) => body.Any(s => s switch
     {
         MFor f => depth >= 1 || LoopNest(f.Body, depth + 1),
         MWhile w => depth >= 1 || LoopNest(w.Body, depth + 1),
@@ -597,18 +611,17 @@ public sealed class Emitter
     static readonly HashSet<string> Conversions = ["to_i", "to_f", "to_i8", "to_i16", "to_i32", "to_i64", "to_u8", "to_u16", "to_u32", "to_u64", "to_f32", "to_f64"];
 
     /// <summary>
-    /// A loop over primitives that calls primitive helpers (<see cref="LoopLeaves"/>) or works on an owned array
-    /// (ADR 0016): its body reads and writes only locals and array elements and calls only those helpers,
-    /// conversions, `Math` and the branchless selects. Tier 0 does not inline, so every helper call is a real call
-    /// until the method is promoted, and PGO learns nothing there (no virtual call, cast or allocation site): bfs
-    /// `maze` spent 31% of its samples in tier-0 and OSR code at 2^17 mazes, kmeans `chunk` (64 iterations a call,
-    /// too few for OSR) 7-16% in tier 0. Such a method is compiled fully optimized at its first call. A plain loop
-    /// over its own locals keeps tiered PGO (OSR promotes it quickly).
+    /// A loop over an owned array (ADR 0016) whose body reads and writes only locals and array elements and calls
+    /// only primitive helpers (<see cref="LoopLeaves"/>), conversions, `Math` and the branchless selects: bfs `maze`
+    /// spent 31% of its samples in tier-0 and OSR code. Compiled fully optimized at its first call: bfs 3-8% faster
+    /// cold on a serial core pair (bend2 NOTES, perf2). A primitive loop that only calls helpers keeps tiered PGO:
+    /// kmeans `chunk`, mandelbrot and nbody were within 3% either way on the core pair; the earlier 20% kmeans gain
+    /// was measured on one cpu, where tier 1 never arrives (R0).
     /// </summary>
-    bool PrimitiveLoop(List<MStmt> body)
+    internal bool PrimitiveLoop(List<MStmt> body)
     {
+        if (!Owned(body)) return false;
         var leaves = LoopLeaves().Select(m => m.CsName).ToHashSet();
-        bool owned = Owned(body), leafCall = false;
         bool Expr(MExpr e)
         {
             switch (e)
@@ -616,8 +629,8 @@ public sealed class Emitter
                 case MCode { Text: var t }: return !t.Contains('(') && !t.Contains("new ");   // a name or literal, not opaque code with a call
                 case MCast { TypeCs: "int" or "long" or "double" or "float" or "short" or "sbyte" or "byte" or "ushort" or "uint" or "ulong" } c: return Expr(c.E);
                 case MBinary or MUnary or MCond or MIndex: return MirFacts.Children(e).All(Expr);
-                case MCall { Name: "unchecked", Target: null, Args: [var x] }: return Expr(x);
-                case MCall { Target: null } c when leaves.Contains(c.Name): leafCall = true; return c.Args.All(Expr);
+                case MCall { Name: "unchecked" or "checked", Target: null, Args: [var x] }: return Expr(x);
+                case MCall { Target: null } c when leaves.Contains(c.Name): return c.Args.All(Expr);
                 case MCall { Target: MCode { Text: "global::Alice.Runtime.Branchless" or "global::System.Math" or "Math" or "MathF" } } c: return c.Args.All(Expr);
                 case MCall { Args.Count: 0, Target: { } t } c when Conversions.Contains(c.Name): return Expr(t);
                 default: return false;
@@ -635,15 +648,10 @@ public sealed class Emitter
             MBreak or MContinue => true,
             _ => false,
         };
-        bool Hot(MStmt loop)
-        {
-            leafCall = false;
-            return Stmt(loop) && (leafCall || owned);
-        }
         bool Any(List<MStmt> b) => b.Any(s => s switch
         {
-            MWhile w => Hot(w) || Any(w.Body),
-            MFor f => Hot(f) || Any(f.Body),
+            MWhile w => Stmt(w) || Any(w.Body),
+            MFor f => Stmt(f) || Any(f.Body),
             MIf i => Any(i.Then) || (i.Else != null && Any(i.Else)),
             MBlock bl => Any(bl.Body),
             MForeach fe => Any(fe.Body),
@@ -674,7 +682,7 @@ public sealed class Emitter
     /// function: `noise(x, y)` in a pixel loop, `lattice` inside it. Short programs end before tiering promotes them,
     /// and with no reference values there is nothing for PGO to devirtualize, so they compile fully optimized at once.
     /// </summary>
-    HashSet<MethodSym> LoopLeaves()
+    internal HashSet<MethodSym> LoopLeaves()
     {
         if (loopLeaves != null) return loopLeaves;
         static bool Leaf(MethodSym m) => m.IsStatic && !m.IsAsync && !m.IsCtor && !m.UsesYield && m.Decl is { HasBody: true } d
@@ -759,7 +767,8 @@ public sealed class Emitter
         if (lowerer.Forked) extra += SerialClone(d, m, owner, ret, ps, returns);
         extra += lowerer.FlushSpecializations();   // ADR 0026
         lowerer.CloneOk = false;
-        string attrs = extra + Attrs(d.Attrs) + (Kernel(d, m, inst, body) || LoopLeaves().Contains(m) || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && (LoopNest(body, 0) || !m.IsAsync && !m.UsesYield && PrimitiveLoop(body)) ? Hot : "");
+        string attrs = extra + Attrs(d.Attrs) + (Ao("kernel") && Kernel(d, m, inst, body) || Ao("leaves") && LoopLeaves().Contains(m)
+            || !d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline") && (Ao("nest") && LoopNest(body, 0) || Ao("loop") && !m.IsAsync && !m.UsesYield && PrimitiveLoop(body)) ? Hot : "");
         if (m.IsCtor)
         {
             string baseInit = "";

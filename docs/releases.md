@@ -5,7 +5,7 @@
 ```bash
 # Linux, macOS
 curl -fsSL https://alice-lang.org/install.sh | sh
-curl -fsSL .../install.sh | sh -s -- --nightly       # or --version 0.10.1, --home DIR, --no-modify-path
+curl -fsSL .../install.sh | sh -s -- --nightly       # or --version 1.0.0-rc.1, --home DIR, --no-modify-path
 ```
 
 ```powershell
@@ -67,19 +67,39 @@ Actions are pinned to commit SHAs. The SDK follows the latest stable `10.0.x` pa
 ## Nightly builds
 
 **Release → Run workflow** with `channel: nightly`, or the daily schedule (03:17 UTC), builds `main` as
-`X.Y.(Z+1)-nightly.YYYYMMDD` (`release-version.ps1 -Channel nightly`), runs the same gates and package smoke tests,
+`X.Y.(Z+1)-nightly.YYYYMMDD` (`release-version.ps1 -Channel nightly`; during a release candidate `X.Y.Z-rc.N` it is `X.Y.Z-nightly.YYYYMMDD`), runs the same gates and package smoke tests,
 and replaces the rolling `nightly` prerelease and its tag. A scheduled run is skipped when `main` has not moved
 since the last nightly. Users get it with `alice toolchain install nightly`.
 
+## 1.0 release checklist
+
+1.0 ships as `1.0.0-rc.N` candidates first; `1.0.0` is cut from the last candidate with no changes other than the
+version and the CHANGELOG heading. Every gate below is checked off, with a link to its evidence, before the
+`v1.0.0` tag is pushed.
+
+| Gate | Evidence | Owner |
+|---|---|---|
+| Full suite green on Linux, macOS and Windows (`dotnet test`, no skipped SMT tests: `ALICE_REQUIRE_Z3=1`) | CI run of the release commit | CTO |
+| `bend2` and the repo benchmark suite re-run on the release commit and published, with machine and date | `benchmarks/bend2/results/summary.md`, `benchmarks/README.md#results` | CTO |
+| `bend-vs` re-run and published | `benchmarks/bend-vs/results/summary.md` | CTO |
+| IL backend is the default target; the C# printer remains as the differential oracle (`alice emit` shows AIR/IL) | ADR 0033 status, `AirToIlTests` differential tests | CTO |
+| Fuzzers clean for 24 h on the release commit (today: the prove differential fuzz, `ProveDifferentialTests`; plus any fuzz target added before release) | fuzz log with commit and duration | CTO |
+| All review rounds closed (security audit findings fixed or listed as known limits in `docs/production.md`) | review reports, CHANGELOG `Security` section | CTO |
+| Every entry in [INVARIANTS.md](../INVARIANTS.md) names tests that exist and pass | `ReleaseMetadataTests` | CTO |
+| `SECURITY.md` supported-versions table and contact address current for 1.x | `SECURITY.md` | lead |
+| Signed archives (publisher identity, macOS notarization) | **TODO lead**: signing identity and certificate not chosen yet; until then archives are SHA-256 only (`docs/production.md#security-limits`) | lead |
+| Bug bounty terms published for the guarantees in INVARIANTS.md | **TODO lead** | lead |
+| `CHANGELOG.md` section for the version, empty `## Unreleased` above it | `CHANGELOG.md` | CTO |
+
 ## Cut a release
 
-1. Set `Version` in `Directory.Build.props` to an unused `0.10.x`–`0.19.x` version. Update `CHANGELOG.md`, run `dotnet build Alice.sln` and `dotnet test`, and commit the release changes.
+1. Set `Version` in `Directory.Build.props` to an unused `MAJOR.MINOR.PATCH` version (1.0.0 or later), or a release candidate `MAJOR.MINOR.PATCH-rc.N` (`.github/scripts/release-version.ps1` rejects anything else). A release candidate is published as a GitHub prerelease, so `stable` installs and `alice self update` skip it. Update `CHANGELOG.md`, run `dotnet build Alice.sln` and `dotnet test`, and commit the release changes.
 2. Run **Release → Run workflow** for that commit. Select **Skip the full test stage** to reuse earlier CI validation. After all four package smoke checks pass, the workflow publishes a GitHub release named `v<Version>` with the archives and checksums. If the tag does not exist, it is created at the selected commit; an existing tag is reused without moving it. Release notes record the exact build commit and workflow run.
 3. Alternatively, tag the reviewed commit and push the tag to start a release:
 
    ```bash
-   git tag -a v0.10.0 <reviewed-commit> -m "Alice 0.10.0"
-   git push origin v0.10.0
+   git tag -a v1.0.0-rc.1 <reviewed-commit> -m "Alice 1.0.0-rc.1"
+   git push origin v1.0.0-rc.1
    ```
 
 4. A tag-triggered run repeats the gates (unless `RELEASE_SKIP_TESTS=true` skips the full test stage) and publishes the four archives plus four `.sha256` files with generated release notes. Choose either manual dispatch or a tag push for a release. Review the release page and add highlights from the changelog.

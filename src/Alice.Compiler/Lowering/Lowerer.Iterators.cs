@@ -88,8 +88,8 @@ public sealed partial class Lowerer
         {
             case "times": loop.Start = LoopStart0(); loop.Cmp = "<"; loop.End = recv; break;
             case "upto": loop.Start = recv; loop.Cmp = "<="; loop.End = Expr(c.Args[0].Value!); break;
-            case "step": loop.Start = recv; loop.Cmp = by > 0 ? "<=" : ">="; loop.End = Expr(c.Args[0].Value!); loop.Step = by > 0 ? $" += {by}" : $" -= {-by}"; break;
-            default: loop.Start = recv; loop.Cmp = ">="; loop.End = Expr(c.Args[0].Value!); loop.Step = "--"; break;
+            case "step": loop.Start = recv; loop.Cmp = by > 0 ? "<=" : ">="; loop.End = Expr(c.Args[0].Value!); loop.Step = by > 0 ? AirForStep.By("+=", new AirConst(AirConstKind.Int, by.ToString(System.Globalization.CultureInfo.InvariantCulture))) : AirForStep.By("-=", new AirConst(AirConstKind.Int, (-by).ToString(System.Globalization.CultureInfo.InvariantCulture))); break;
+            default: loop.Start = recv; loop.Cmp = ">="; loop.End = Expr(c.Args[0].Value!); loop.Step = AirForStep.Dec(); break;
         }
         ctx.Add("loop");
         loop.Body = Stmts(b.Body, Tail.None, null);

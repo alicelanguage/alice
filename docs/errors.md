@@ -26,25 +26,25 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0217 | conflicting borrow | `def copy_into(dst : Array(Int32), src : Array(Int32))` writes `dst`<br>`copy_into(a, a)` | `conflicting borrow: \`a\` is passed as both ...` | pass a copy (`a.dup`) or a different value |
 | AL0218 | stack value escapes | `p = P.new(1)` (`@[Stack] struct P`)<br>`f = ->() { p.x }` | `stack value \`p\` ... cannot be captured` | pass the fields it needs; a `@[Stack]` value may not be captured, stored in a heap type's field, or put in a collection |
 | AL0219 | use after send | `ch.send(xs)`<br>`xs[0] = 9` | `\`xs\` was sent to another thread ...` | send `xs.dup`, or rebind `xs` before using it again |
-| AL0240 | affine payload (planned, ADR 0037) | `affine enum T`<br>`  A(s : String)` | `affine enum \`T\`: field ... is a reference type` | use unmanaged fields or other affine enums, or drop `affine` |
-| AL0241 | affine value escapes (planned, ADR 0037) | `affine enum Tree ...`<br>`puts t` | `affine value \`t\` escapes: ...` | consume it with `case`, move it to an Alice call or return it; or drop `affine` (the type becomes records) |
-| AL0242 | use after consume (planned, ADR 0037) | `case t ... end`<br>`total(t)` | `affine value \`t\` read after it was consumed` | read the fields inside the `case`, or pass it as `borrow` |
-| AL0243 | borrow consumed (planned, ADR 0037) | `def f(borrow t : Tree)`<br>`  case t ...` that frees `t` | `borrowed affine value \`t\` is consumed` | drop `borrow`, or only read `t` |
-| AL0244 | stage not isolated (planned, ADR 0038) | `xs = List(Int32).new`<br>`dataflow do ... stage { \|v\| xs << v }` | `dataflow stage captures ...` | build state with `stage(state: ...)` or send it through the stream |
-| AL0245 | replicated stage not pure (planned, ADR 0038) | `stage(par: true) { \|t\| puts t }` | `stage(par: true) is not pure: ...` | remove the effect, or drop `par: true` |
-| AL0246 | not a static network (planned, ADR 0038) | two `stage`s reading `lines`, or a cycle | `dataflow edge ... has more than one consumer` / `cycle` | split the stream explicitly, or use actors for feedback |
-| AL0247 | not CM-admissible (planned, ADR 0039) | `cm for i in 0...n`<br>`  a[i] = a[i - 1] + 1` | `cannot lower \`cm for\`: ...` | write a scan, combine, compaction or permute shape, or use a plain `for` |
-| AL0248 | non-associative combine (planned, ADR 0039) | `cm for ... h[k[i]] += x[i]` with Float64 `h` | `combine on floats needs \`ordered\`` | use integers, mark it `ordered`, or use a plain `for` |
-| AL0249 | unproven permutation (planned, ADR 0039) | `cm for i ... out[p[i]] = a[i]` | `permutation \`p\` not provably in range and distinct` | produce `p` with `sort_by_key`/`compact`, or mark it `@[Permutation]` |
 | AL0220 | not statically typed (strict mode) | `v * 2.0_f32` on a `System.Numerics.Vector2` under `--strict` | `strict: \`*\` on \`Vector2\` and \`Float32\` has no static type; ...` | annotate it (`w : Vector2 = ...`, `def f : T`), cast it (`x.as(T)`), or declare it `Any` on purpose; only with `[build] strict = true`, `--strict` or `@[Strict]` |
-| AL0230 | message not sendable | `Actor(List(Int32)).new(->(m : List(Int32)) { })` | `message type ... is not sendable between actors` | send numbers, String, enums, records/structs of sendable fields, tuples, `System.Collections.Immutable` types or actor handles |
 | AL0221 | unassigned field | `class P`<br>`  @name : String`<br>`  def initialize`<br>`  end` | `field \`@name\` (String) is never assigned by every \`initialize\` ...` | assign it in every `initialize`, give it a default (`@name : String = ""`) or make it `String?` |
 | AL0230 | message not sendable | `Actor(List(Int32)).new(->(m : List(Int32)) { })`; `Actor(Box(Array(Int32)))`; `Actor(T)` in a generic class | `message type ... is not sendable between actors` | send numbers, String, enums, records/structs of sendable fields, tuples, `System.Collections.Immutable` types or actor handles |
 | AL0231 | actor not isolated | `xs = List(Int32).new`<br>`Actor(Int32).new(->(m : Int32) { puts xs.Count })` | `actor is not isolated: it captures ...` | build the state in `init` (`Actor(S, T)`), send it as a message, or share it through `Mutex(T)`, `Atomic` or another actor |
 | AL0232 | dynamic dispatch under NativeAOT or wasm (IL backend) | `n : Any = 4`<br>`puts n.abs` with `[build] native = true` or the wasm target | `` `.abs` on an `Any` value needs dynamic dispatch, which `native = true` (NativeAOT) does not support; ... `` | give the value a static type (`n : Int32 = 4`, `def f(x : T)`) or convert it (`n.as(Int32)`); `Any` works on the JIT (`alice run`, `alice build` without `native`) |
+| AL0240 | affine payload | `affine enum T`<br>`  A(s : String)` | `affine enum \`T\`: field \`s\` of A is a reference type (string) that is not an affine enum` | use unmanaged fields or other affine enums, or drop `affine` (the type stays records) |
+| AL0241 | affine value escapes | `affine enum Tree ...`<br>`puts t` | `affine value \`t\` escapes: passed to .NET \`puts\`` (also: stored in a field, collection or nullable, captured by a block, compared with `==`, `.hash`/`.to_s`, interpolated, reaches `rescue`) | consume it with `case`, move it to an Alice call or return it; or drop `affine` (the type becomes records) |
+| AL0242 | use after consume | `a = swap(t)`<br>`b = swap(t)` (`swap` consumes its argument) | `affine value \`t\` read after it was consumed (moved at main.al:12)` | read the fields inside the `case`, or take it as `borrow` in the reading method (a read after a move becomes a Keep) |
+| AL0243 | borrow consumed | `def f(borrow t : Tree)`<br>`  case t ... total(l)` | `borrowed affine value \`l\` (a field of borrowed \`t\`) is consumed` | drop `borrow`, or only read `t` (lend it on with `borrow`) |
+| AL0244 | stage not isolated (ADR 0038) | `xs = List(Int32).new`<br>`dataflow do ... stage { \|v\| xs << v }` | `dataflow stage captures ...` | build state with `stage(state: ...)` or send it through the stream |
+| AL0245 | replicated stage not pure (ADR 0038) | `stage(par: true) { \|t\| puts t }` | `stage(par: true) is not pure: ...` | remove the effect, or drop `par: true` |
+| AL0246 | not a static network (ADR 0038) | two `stage`s reading `lines`, or a cycle | `dataflow edge ... has more than one consumer` / `cycle` | split the stream explicitly, or use actors for feedback |
+| AL0247 | not CM-admissible (ADR 0039) | `cm for i in 0...n`<br>`  a[i] = a[i - 1] + 1` | `cannot lower \`cm for\`: ...` | write a scan, combine, compaction or permute shape, or use a plain `for` |
+| AL0248 | non-associative combine (ADR 0039) | `cm for ... h[k[i]] += x[i]` with Float64 `h` | `combine on floats needs \`ordered\`` | use integers, mark it `ordered`, or use a plain `for` |
+| AL0249 | unproven permutation (ADR 0039) | `cm for i ... out[p[i]] = a[i]` | `permutation \`p\` not provably in range and distinct` | produce `p` with `sort_by_key`/`compact`, or mark it `@[Permutation]` |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 
-Codes marked *planned* are reserved by an accepted ADR and are not reported by the compiler yet.
+Codes marked *planned* are reserved by an accepted ADR and are not reported by the compiler yet. AL0222-AL0229 are unassigned (the
+planned paradigm codes were drafted there and moved to AL0240-AL0249, clear of the live AL0220/AL0221).
 
 Output format (CLI):
 
@@ -59,6 +59,10 @@ Language: `ALICE_LANG=pt|es|en` or `--lang pt`. Default: OS UI culture.
 ## Errors from type checking (AL03xx)
 
 The generated C# is type-checked by Roslyn; its errors are reported in Alice terms (Alice type names, no C# ids).
+
+AL0309 (use before assignment), AL0310 (possible nil) and AL0300 constant overflow (`The operation overflows at compile time in checked mode`, `Constant value ... cannot be converted`) come from the binder, so every backend reports them (IL included).
+
+Two cases are errors although Roslyn never saw them (the generated C# initializes every declared local with `default!`): a reference-typed local declared without a value and read before every path assigns it (`x : String` then `puts x.size`) is AL0309, and a nilable local declared without a value holds nil (`x : String?` then `x.size` is AL0310).
 
 | Code | Meaning | Example message |
 |---|---|---|

@@ -126,20 +126,65 @@ public static class MirFacts
 
     /// <summary>
     /// Clears <see cref="MBinary.Checked"/> / <see cref="MUnary.Checked"/> on every operator textually inside
-    /// <paramref name="e"/>, as C# `unchecked(e)` does; returns <paramref name="e"/> for wrapping.
+    /// <paramref name="e"/>, as C# `unchecked(e)` does; returns <paramref name="e"/> for wrapping. A `checked(...)`
+    /// inside (<see cref="KeepChecked"/>) is a boundary, as in C#: the operators under it keep their flags.
     /// </summary>
     public static MExpr Unchecked(MExpr e)
     {
-        new UncheckedMarker().Mark(e);
+        var keep = new HashSet<MExpr>(ReferenceEqualityComparer.Instance);
+        void Collect(MExpr x, bool inside)
+        {
+            if (inside) keep.Add(x);
+            bool boundary = x is MCall { Target: null, Name: "checked", Args.Count: 1 };
+            foreach (var c in Children(x)) Collect(c, inside || boundary);
+        }
+        Collect(e, false);
+        new UncheckedMarker(keep).Mark(e);
         return e;
     }
 
-    sealed class UncheckedMarker : MirRewriter
+    /// <summary>
+    /// An operand of a wrapping operator (`a &amp;+ b` prints as `unchecked(a + b)`): wrapped in `checked(...)` when
+    /// it holds arithmetic that traps in a checked context, so only the wrapping operator itself wraps. Without it
+    /// `1 &amp;* (b * c)` wrapped the inner `*` too, against ADR 0013 (found by `alice prove`'s differential fuzz).
+    /// </summary>
+    public static MExpr KeepChecked(MExpr e) => Traps(e) ? new MCall { Name = "checked", Args = { e } } : e;
+
+    /// <summary>Whether <paramref name="e"/> has an operator a checked context makes trap (`+ - *`, negation,
+    /// `++`/`--`), outside a nested `unchecked(...)`/`checked(...)`.</summary>
+    static bool Traps(MExpr e) => e switch
+    {
+        MCall { Target: null, Name: "unchecked" or "checked", Args.Count: 1 } => false,
+        // floating-point and decimal arithmetic never depends on the context
+        MBinary { Checked: true, Op: AirBinOp.Add or AirBinOp.Sub or AirBinOp.Mul } b when b.Type?.ToCs() is not ("float" or "double" or "decimal") => true,
+        MUnary { Checked: true, Op: AirUnOp.Neg or AirUnOp.Inc or AirUnOp.Dec } => true,
+        // opaque text: anything with an arithmetic operator but a plain (negative) literal
+        _ when e.GetType() == typeof(MCode) => WithoutUnchecked(((MCode)e).Text).IndexOfAny(['+', '-', '*']) >= 0 && !IntLiteral(e, out _),
+        _ => Children(e).Any(Traps),
+    };
+
+    /// <summary>The text with every balanced `unchecked(...)` removed: arithmetic in there wraps already.</summary>
+    static string WithoutUnchecked(string t)
+    {
+        for (int at = t.IndexOf("unchecked(", StringComparison.Ordinal); at >= 0; at = t.IndexOf("unchecked(", StringComparison.Ordinal))
+        {
+            int depth = 0, end = at + "unchecked".Length;
+            for (; end < t.Length; end++)
+                if (t[end] == '(') depth++;
+                else if (t[end] == ')' && --depth == 0) break;
+            if (end >= t.Length) return t;   // unbalanced: keep it, conservatively
+            t = t[..at] + t[(end + 1)..];
+        }
+        return t;
+    }
+
+    sealed class UncheckedMarker(HashSet<MExpr> keep) : MirRewriter
     {
         public void Mark(MExpr e) => Expr(e);
 
         protected override MExpr Rewrite(MExpr e)
         {
+            if (keep.Contains(e)) return e;
             if (e is MBinary b) b.Checked = false;
             else if (e is MUnary u) u.Checked = false;
             return e;

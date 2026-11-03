@@ -80,6 +80,18 @@ public class GpuLoopTests
         Assert.Equal(9999f, o[4999]);
     }
 
+    /// <summary>The host's trip count parenthesizes a ternary end: `(c ? b : a) - start + 1`, not `c ? b : a - start + 1`.</summary>
+    [Fact]
+    public void A_conditional_range_end_bounds_the_launch()
+    {
+        var f = Program(Cs("def fill(xs : Array(Int32), a : Int32, b : Int32)\n  gpu for i in a..(b > a ? b : a)\n    xs[i] = i\n  end\nend\n")).GetMethod("fill")!;
+        var xs = Enumerable.Repeat(-1, 100).ToArray();
+        f.Invoke(null, [xs, 10, 20]);
+        Assert.Equal(-1, xs[9]);
+        Assert.Equal(20, xs[20]);
+        Assert.Equal(-1, xs[21]);
+    }
+
     [Fact]
     public void A_partial_range_write_keeps_the_rest_of_the_array()
     {

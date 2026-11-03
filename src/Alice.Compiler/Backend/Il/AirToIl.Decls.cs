@@ -31,6 +31,8 @@ public sealed partial class AirToIl
     internal readonly IlStats Stats = new();
     internal AliceT ProgramT = null!;
     internal string File = "";
+    /// <summary>Source lines per file path: sequence point columns and lengths (review-r1 F19).</summary>
+    internal readonly Dictionary<string, string[]> SourceLines = [];
     internal readonly List<AMethod> Extensions = [];
     readonly List<IlUnsupportedException> errors = [];
     Binder binder = null!;
@@ -48,11 +50,15 @@ public sealed partial class AirToIl
     public static IlCompileResult Compile(IReadOnlyList<SourceFile> files, string name, bool exe = true, IEnumerable<string>? refs = null)
     {
         var c = new AirToIl();
-        return c.Run(files, name, exe, refs);
+        var saved = Optimizer.Pipeline.Backend;
+        Optimizer.Pipeline.Backend = Optimizer.AirBackend.Il;
+        try { return c.Run(files, name, exe, refs); }
+        finally { Optimizer.Pipeline.Backend = saved; }
     }
 
     IlCompileResult Run(IReadOnlyList<SourceFile> files, string name, bool exe, IEnumerable<string>? refs)
     {
+        foreach (var f in files) SourceLines[f.Path] = f.Text.Split('\n');
         var asts = files.Select(f =>
         {
             var ast = Parser.ParseFile(f.Text, f.Path);
@@ -61,9 +67,13 @@ public sealed partial class AirToIl
         }).ToList();
         binder = new Binder(asts, new ClrTypes(refs));
         binder.Bind();
-        lowerer = new Lowerer(binder) { Sequential = true };
+        lowerer = new Lowerer(binder) { Sequential = !ParallelOn };
         Module = new IlModule(name);
         Types = new IlTypes(binder, Module);
+        Types.InstantiateType = InstantiateTypeImpl; // D1.10 il-emit2
+        Types.InstantiateMethod = InstantiateMethodImpl;
+        allAsts = asts;
+        declaring = 1;
         hot = new HotPolicy(binder);
         foreach (var f in files) Module.AddDocument(f.Path, f.Text);
 
@@ -71,25 +81,22 @@ public sealed partial class AirToIl
         try
         {
             DeclareTypes(asts);
-            DeclareMembers(asts);
+            SynthDeclareMembers(asts); // S2 il-emit2 (Synthesize is the only declaration path)
             main = EmitBodies(asts, exe);
+            EmitDynSites(); // H4b il-emit2
         }
         catch (IlUnsupportedException e) { Fail(e); }
         if (errors.Count > 0) return new IlCompileResult(null, null, Stats, errors);
         Module.EntryPoint = main;
+        foreach (var hook in IlPipeline.BeforeEncode)
+            foreach (var m in Module.TypeDefOrder().SelectMany(t => t.Methods))
+                if (m.Body is { } b) hook(m, b);
         try
         {
             var (pe, pdb) = Module.Emit();
-            // the serialized short-branch fixup can drop a byte (Backend/IlSpike/README.md "Framework bug"): decode every
-            // body and re-encode the corrupt ones with long branches only
-            var bad = CorruptBodies(pe);
-            if (bad.Count > 0)
-            {
-                var defs = Module.TypeDefOrder().SelectMany(t => t.Methods).ToList();
-                foreach (int row in bad) { defs[row - 1].Il.LongBranches = true; Stats.Seen("Encode:long-branch-fallback"); }
-                (pe, pdb) = Module.Emit();
-                if (CorruptBodies(pe).Count > 0) throw new InvalidOperationException("corrupt IL even with long branches");
-            }
+            // every body must decode cleanly (the old short-branch corruption is fixed in IlBuilder.Encode; a hit here is a bug)
+            if (CorruptBodies(pe) is { Count: > 0 } bad)
+                throw new InvalidOperationException("corrupt IL in MethodDef rows " + string.Join(", ", bad));
             return new IlCompileResult(pe, pdb, Stats, errors) { Module = Module };
         }
         catch (Exception e) when (e is InvalidOperationException or ArgumentException or NotSupportedException or BadImageFormatException)
@@ -198,23 +205,27 @@ public sealed partial class AirToIl
         {
             switch (it)
             {
-                case LibDecl: throw new IlUnsupportedException("Decl:lib (FFI, D1.10)", Sp(it));
-                case DelegateDecl: throw new IlUnsupportedException("Decl:delegate", Sp(it));
+                case LibDecl: continue; // H5 il-emit2: DeclareLibs below
+
                 case TypeDecl { RefineScope: not null }: throw new IlUnsupportedException("Decl:refinement", Sp(it));
             }
+            if (outer?.Sym is TypeSym { TypeParams.Count: > 0 }) throw new IlUnsupportedException("Decl:type-nested-in-generic", Sp(it));
+            if (it is TypeDecl or EnumDecl && it.Sym is TypeSym { TypeParams.Count: > 0 }) { RegisterGenericDef(it, ns); continue; } // D1.10 il-emit2
             var sym = (TypeSym)it.Sym!;
             if (Types.BySym.TryGetValue(sym, out var existing)) { byItem[it] = existing; decls.Add((it, existing)); continue; }
             var a = new AliceT { Sym = sym };
             if (it is TypeDecl td)
             {
-                if (sym.TypeParams.Count > 0) throw new IlUnsupportedException("Decl:generic-type", Sp(it), sym.Name);
+
                 if (sym.SoaStore != null || sym.SoaOf != null) throw new IlUnsupportedException("Decl:soa", Sp(it), sym.Name);
                 a.IsValueType = td.Kind is "struct" or "record struct";
                 a.IsInterface = td.Kind == "interface";
                 a.IsStatic = td.Kind is "module" || sym.Kind == "extension";
                 a.IsRecord = td.Kind.StartsWith("record");
-                if (sym.IsStack) throw new IlUnsupportedException("Decl:ref-struct", Sp(it), sym.Name);
+                a.IsRefStruct = sym.IsStack && a.IsValueType;
+                if (sym.IsStack && !a.IsValueType) throw new IlUnsupportedException("Decl:ref-struct (not a struct)", Sp(it), sym.Name);
             }
+            else if (it is DelegateDecl) a.IsDelegate = true;
             else if (it is EnumDecl ed)
             {
                 if (ed.IsAdt) a.IsAdt = true;
@@ -250,8 +261,11 @@ public sealed partial class AirToIl
         void Make(AliceT a, Item? it, string ns, AliceT? outer)
         {
             if (made.Contains(a)) return;
+            if (a.IsDelegate) return;   // after every other proxy: its signature needs them (MakeDelegate)
             if (outer != null) MakeOf(outer);
             if (a.Sym.BaseClass is { } bc && Types.BySym.TryGetValue(bc, out var ba)) { MakeOf(ba); a.Base = ba; }
+            else if (a.Sym.BaseClass is { } gbc && genericBySym.ContainsKey(gbc) && a.Sym.Bases.FirstOrDefault(b => b.Sym == gbc) is { } gbt
+                && Types.Alice(Types.FromAType(gbt)) is { } gi) a.Base = gi;   // class IntBox < Box(Int32): the generic instance (D1.10 il-emit2)
             if (!made.Add(a)) return;
             foreach (var b in a.Sym.Bases)
                 if (b.Sym == null && b.Clr is { IsClass: true } clr && clr != typeof(object)) a.ClrBase = clr;
@@ -282,6 +296,8 @@ public sealed partial class AirToIl
             }
         }
         foreach (var (_, a) in decls) MakeOf(a);
+        foreach (var (it, a) in decls)
+            if (it is DelegateDecl dg) MakeDelegate(a, dg, outers[it].Ns);
         foreach (var a in made)
         {
             if (a.IsEnum || a.IsInterface) continue;
@@ -294,7 +310,9 @@ public sealed partial class AirToIl
                 else if (b.Sym == null && b.Clr is { IsInterface: true }) a.Def.Interfaces.Add(Types.Il(Types.FromAType(b)));
             }
             if (!a.IsStatic && !a.IsVariant && !a.IsAdt) a.Def.AddCustomAttribute(Module.Import(typeof(Alice.Runtime.AliceTypeAttribute).GetConstructor(Type.EmptyTypes)!));
+            if (a.IsRefStruct) a.Def.AddCustomAttribute(Module.Import(typeof(System.Runtime.CompilerServices.IsByRefLikeAttribute).GetConstructor(Type.EmptyTypes)!));
         }
+        DeclareLibs(all); // H5 il-emit2
     }
 
     static Span? Sp(Node n) => n.Line > 0 ? new Span("", n.Line, Math.Max(1, n.Col), 0) : null;
@@ -322,10 +340,9 @@ public sealed partial class AirToIl
             if (e.Values[i] is { } ex)
             {
                 var me = Init(ex, binder.Program);
-                if (me is AirConst { Value: int iv }) v = iv;
-                else if (me is AirConst { Value: long lv }) v = lv;
-                else if (me is MCode mc && IlTypes.TryLiteral(mc.Text, out _, out var lit) && lit is int or long or uint or ulong) v = System.Convert.ToInt64(lit);
-                else throw new IlUnsupportedException("Decl:enum-value", Sp(e), e.Names[i]);
+                var known = new Dictionary<string, long>();
+                for (int j = 0; j < r.Count; j++) known[r[j].Item1] = System.Convert.ToInt64(r[j].Item2);
+                v = FoldEnumValue(me, known, e.Name) ?? throw new IlUnsupportedException("Decl:enum-value", Sp(e), e.Names[i] + " (" + me.GetType().Name + (me is MCode fc ? ": " + fc.Text : "") + ")");
             }
             r.Add((e.Names[i], System.Convert.ChangeType(v, under)));
             next = v + 1;
@@ -334,30 +351,6 @@ public sealed partial class AirToIl
     }
 
     // ------------------------------------------------------------------ members
-
-    void DeclareMembers(List<FileNode> asts)
-    {
-        foreach (var (it, a) in decls)
-        {
-            File = FileOf(asts, it);
-            switch (it)
-            {
-                case TypeDecl td: TypeMembers(td, a); break;
-                case EnumDecl { IsAdt: true } ed: Variants(ed, a); break;
-            }
-        }
-        foreach (var ast in asts)
-        {
-            File = ast.Path;
-            foreach (var it in ast.Items.Concat(ast.Items.OfType<NamespaceItem>().SelectMany(n => n.Items)))
-                switch (it)
-                {
-                    case MethodDecl m: DeclareMethod(m, ProgramT); break;
-                    case ConstDecl k: Const(k, ProgramT); break;
-                }
-        }
-        foreach (var a in decls.Select(d => d.T).Distinct()) AutoMembers(a);
-    }
 
     static string FileOf(List<FileNode> asts, Item it)
     {
@@ -600,6 +593,7 @@ public sealed partial class AirToIl
         lowerer.File = File;
         var tmp = lowerer.LowerBody([new ExprStmt { Expr = e, Line = e.Line }], Tail.Return, [], e.Line);
         Optimizer.Pipeline.Run(tmp);
+        DynLower(tmp); // H4a il-emit2
         if (tmp.Count != 1) throw new IlUnsupportedException("Init:statements", Sp(e));
         CheckLowerer(Sp(e));
         return ((MReturn)tmp[^1]).Value!;
@@ -617,6 +611,7 @@ public sealed partial class AirToIl
         if (!IlLoweringOn) return;
         var ctx = Air.Passes.IlLowering.Run(body);
         foreach (var u in ctx.Unsupported) Stats.Seen("IlLowering.left:" + u.Split(':')[0]);
+        foreach (var make in IlPipeline.AfterLowering) make(ctx).Run(body);
     }
 
     void CheckLowerer(Span? sp)
@@ -656,11 +651,9 @@ public sealed partial class AirToIl
     {
         var m = (MethodSym)d.Sym!;
         if (d.IsPartial) throw new IlUnsupportedException("Decl:partial-method (source generator)", Sp(d), m.Name);
-        if (m.IsAsync || m.IsIterator || m.UsesYield) throw new IlUnsupportedException(m.IsAsync ? "Decl:async (D1.8)" : "Decl:iterator (D1.8)", Sp(d), m.Name);
-        if (m.TypeParams.Count > 0 && !m.HasInferredGenerics) throw new IlUnsupportedException("Decl:generic-method", Sp(d), m.Name);
-        if (d.Attrs.Any(x => x is not ("Inline" or "NoInline" or "Hot" or "StrictMath" or "Native" or "Open" or "Stack") && !x.StartsWith("Native(") && !x.StartsWith("__enumerable:")))
-            throw new IlUnsupportedException("Decl:attribute", Sp(d), string.Join(",", d.Attrs));
-        if (m.Params.Any(p => p.Block || p.Mod != "")) throw new IlUnsupportedException("Decl:param-kind", Sp(d), m.Name);
+        if (m.TypeParams.Count > 0 && !m.HasInferredGenerics) { DeclareTemplate(d, a, m); return; } // D1.10 il-emit2
+
+        if (m.Params.Any(p => p.Mod != "")) throw new IlUnsupportedException("Decl:param-kind", Sp(d), m.Name);
         if (!m.HasInferredGenerics || !d.HasBody) { DeclareVariant(d, a, m, null); return; }
         int n = 0;
         foreach (var inst in m.Instances.Values.Where(i => i.Seen)) { DeclareVariant(d, a, m, inst); n++; }
@@ -672,7 +665,7 @@ public sealed partial class AirToIl
         var sp = Sp(d);
         var retA = inst?.Ret ?? m.Ret;
         if (inst != null && retA.IsUnknown) throw new IlUnsupportedException("Decl:dynamic-return", sp, m.Name);
-        var retT = m.IsCtor ? typeof(void) : Types.FromAType(retA, sp);
+        var retT = m.IsCtor ? typeof(void) : SmReturn(m, inst) ?? Types.FromAType(retA, sp); // H3a il-emit2
         var ps = new List<Type>();
         var names = new List<string>();
         bool ext = a.Sym.Kind == "extension";
@@ -688,12 +681,13 @@ public sealed partial class AirToIl
             names.Add(Bare(m.Params[i].CsName));
         }
         bool isStatic = m.IsStatic || a.IsStatic || ext;
-        string name = m.CsName;
+        string name = Bare(m.CsName);   // `double` is `@double` in C# text
         bool special = false;
         bool isToString = d.Name == "to_s" && m.Params.Count == 0;
         if (m.IsCtor) name = ".ctor";
         else if (isToString) name = "ToString";
         else if (d.Name == "[]") { name = "get_Item"; special = true; }
+        else if (d.Name == "[]=") { name = "set_Item"; special = true; } // C#: the indexer setter (review-r1 F7 follow-up)
         else if (AliceOps.TryGetValue(d.Name, out var on)) name = m.Params.Count == 0 && AliceUnary.TryGetValue(d.Name, out var un) ? un : on;
         var (vis, virt) = Virtual(m, a, d.Vis);
         var attrs = (vis == "private" ? MethodAttributes.Private : vis == "protected" ? MethodAttributes.Family : MethodAttributes.Public) | MethodAttributes.HideBySig;
@@ -705,7 +699,7 @@ public sealed partial class AirToIl
         bool abstractM = d.IsAbstract || a.IsInterface && !d.HasBody;
         if (abstractM) attrs |= MethodAttributes.Abstract | MethodAttributes.Virtual | (virt == " override" ? 0 : MethodAttributes.NewSlot);
         if (!isStatic && !m.IsCtor && ImplementsInterface(a, name, ps.Count)) attrs |= MethodAttributes.Virtual | MethodAttributes.Final | MethodAttributes.NewSlot;
-        if (a.IsInterface && d.HasBody) throw new IlUnsupportedException("Decl:default-interface-method", sp, m.Name);
+        if (a.IsInterface && d.HasBody) attrs |= MethodAttributes.Virtual | MethodAttributes.NewSlot;   // default interface method (D1.10 il-emit2)
         var ilps = ps.Select(Types.Il).ToArray();
         var md = m.IsCtor
             ? a.Def.DefineConstructor((vis == "private" ? MethodAttributes.Private : MethodAttributes.Public) | MethodAttributes.HideBySig, ilps)
@@ -716,6 +710,7 @@ public sealed partial class AirToIl
             if (ext ? i > 0 && m.Params[i - 1].Splat : m.Params[i].Splat)
                 p.CustomAttributes.Add(new IlCustomAttribute(Module.Import(typeof(ParamArrayAttribute).GetConstructor(Type.EmptyTypes)!), []));
         }
+        if (!TryApplyAttributes(md.CustomAttributes, d.Attrs, out var badAttr)) throw new IlUnsupportedException("Decl:attribute", sp, badAttr);   // D1.10 il-emit2
         if (d.Attrs.Contains("Inline")) md.ImplAttributes |= MethodImplAttributes.AggressiveInlining;
         if (d.Attrs.Contains("NoInline")) md.ImplAttributes |= MethodImplAttributes.NoInlining;
         if (d.Attrs.Contains("Hot")) md.ImplAttributes |= MethodImplAttributes.AggressiveOptimization;
@@ -727,7 +722,7 @@ public sealed partial class AirToIl
         var am = new AMethod
         {
             Name = name, Owner = a, Ret = retT, Params = [.. ps], ParamNames = [.. names], IsStatic = isStatic, IsCtor = m.IsCtor,
-            IsVirtual = (attrs & MethodAttributes.Virtual) != 0, IsAbstract = abstractM, IsExtension = ext, Def = md, Sym = m, Inst = inst, Decl = d,
+            IsVirtual = (attrs & MethodAttributes.Virtual) != 0, IsAbstract = abstractM, IsExtension = ext, Def = md, Sym = m, Inst = inst, Decl = d, Scope = Types.Scope,
             Defaults = defaults, HasDefault = hasDefault, ParamsArray = m.Params.Count > 0 && m.Params[^1].Splat,
         };
         if (m.IsCtor) a.Ctors.Add(am); else a.Methods.Add(am);
@@ -762,6 +757,9 @@ public sealed partial class AirToIl
         foreach (var b in a.Sym.Bases)
         {
             if (b.Sym != null && Types.BySym.TryGetValue(b.Sym, out var bi) && bi.IsInterface && bi.Sym.Methods.Values.SelectMany(x => x).Any(x => x.CsName == name && x.Params.Count == argc)) return true;
+            if (b.Sym != null && Types.BySym.TryGetValue(b.Sym, out var pi) && pi.IsInterface && name.Length > 4 && name[3] == '_' && name[..3] is "get" or "set"
+                && pi.Sym.Fields.Values.Any(f => f.Kind is "property" or "getter" or "setter" && Bare(f.CsName).Equals(name[4..], StringComparison.OrdinalIgnoreCase)
+                    && (name[0] == 'g' ? f.Kind != "setter" : f.Kind != "getter"))) return true;   // interface property accessors
             if (b.Sym == null && b.Clr is { IsInterface: true } ci && ci.GetMethods().Concat(ci.GetInterfaces().SelectMany(i => i.GetMethods())).Any(x => x.Name == name && x.GetParameters().Length == argc)) return true;
         }
         return false;
@@ -789,11 +787,7 @@ public sealed partial class AirToIl
 
     IlMethodDef? EmitBodies(List<FileNode> asts, bool exe)
     {
-        foreach (var am in toEmit) Guard(am.ToString(), () => MethodBody(am, asts));
-        foreach (var a in Types.BySym.Values.Distinct())
-            foreach (var ctor in a.Ctors.Where(x => x.Decl == null && x.Owner == a).ToList())
-                if (!ctor.Def.Attributes.HasFlag(MethodAttributes.Private) || !a.IsAdt) Guard(a + "::.ctor", () => SyntheticCtor(ctor));
-        foreach (var (owner, inits) in staticInits) Guard(owner + "::.cctor", () => StaticCtor(owner, inits));
+        EmitPending(asts);
         IlMethodDef? main = null;
         var mains = asts.Where(f => f.Items.OfType<StmtItem>().Any()).ToList();
         if (mains.Count > 1) Fail(new IlUnsupportedException("Main:several-files"));
@@ -811,9 +805,10 @@ public sealed partial class AirToIl
                 lowerer.Method = null;
                 var body = lowerer.LowerBody(stmts, Tail.None, f.HoistedLocals, stmts[0].Line);
                 Optimizer.Pipeline.Run(body);
+                var helpers = TakeHelpers(ProgramT, Sp(stmts[0]));
                 CheckLowerer(Sp(stmts[0]));
-                IlLower(body);
                 var self = new AMethod { Name = "Main", Owner = ProgramT, IsStatic = true, Def = md, Params = [typeof(string[])], ParamNames = ["ARGV"] };
+                Passes(ref body, self, [("ARGV", typeof(string[]))]);
                 var b = new IlBody(this, ProgramT, self, Body(md), typeof(void), true, [("ARGV", typeof(string[]))]);
                 b.Body(body, () =>
                 {
@@ -822,10 +817,29 @@ public sealed partial class AirToIl
                     il.EmitLoadArg(0);
                     il.EmitCall(Module.Import(typeof(Alice.Runtime.Prelude).GetProperty("ARGV")!.GetSetMethod()!));
                 });
+                FlushClosures();
+                EmitHelpers(helpers);
             });
             if (exe) main = md;
         }
+        EmitPending(asts);   // instances reached from Main
         return main;
+    }
+
+    int emittedT, emittedS;
+
+    /// <summary>The user bodies and synthesized bodies declared so far; repeated until no instance (D1.10) adds more.</summary>
+    void EmitPending(List<FileNode> asts)
+    {
+        do
+        {
+            while (emittedT < toEmit.Count)
+            {
+                var am = toEmit[emittedT++];
+                Guard(am.ToString(), () => { Types.Scope = am.Scope; try { MethodBody(am, asts); } finally { Types.Scope = null; } });
+            }
+            SynthBodies(); // S3 il-emit2
+        } while (emittedT < toEmit.Count || emittedS < synthBodies.Count);
     }
 
     void Guard(string where, Action a)
@@ -861,67 +875,25 @@ public sealed partial class AirToIl
         try { body = lowerer.LowerBody(d.Body, returns ? Tail.Return : Tail.None, d.HoistedLocals, d.Line); }
         finally { lowerer.CloneOk = false; }
         Optimizer.Pipeline.Run(body);
+        var helpers = TakeHelpers(am.Owner, Sp(d));
         CheckLowerer(Sp(d));
-        IlLower(body);
-        if (lowerer.Forked) throw new IlUnsupportedException("Lowerer.Forked", Sp(d), m.Name);
-        if (!m.IsCtor && hot.IsHot(d, m, am.Inst, body)) am.Def.ImplAttributes |= MethodImplAttributes.AggressiveOptimization;
+        var serial = lowerer.Forked ? SerialClone(am, d, returns) : null;
         var ps = am.ParamNames.Select((n, i) => (n, am.Params[i])).ToList();
+        Passes(ref body, am, ps);
+        if (!m.IsCtor && hot.IsHot(d, m, am.Inst, body)) am.Def.ImplAttributes |= MethodImplAttributes.AggressiveOptimization;
         var il = Body(am.Def);
         var b = new IlBody(this, am.Owner, am, il, am.Ret, am.IsStatic, ps);
-        b.Body(body, m.IsCtor ? () => CtorPrologue(b, am, d) : null);
-    }
-
-    /// <summary>Field initializers, the base constructor call (`super` arguments), then `initialize(@x)` auto assignments.</summary>
-    void CtorPrologue(IlBody b, AMethod ctor, MethodDecl? d)
-    {
-        var a = ctor.Owner;
-        var il = ctor.Def.Il;
-        if (instanceInits.TryGetValue(a, out var inits))
-            foreach (var (init, f, file) in inits)
-            {
-                File = file;
-                var v = Init(init, a.Sym);
-                il.EmitLoadArg(0);
-                b.Emit(v, f.Type);
-                il.EmitStoreField(f.Field!);
-            }
-        if (!a.IsValueType)
+        b.Body(body, m.IsCtor ? () => SynthCtorPrologue(b, am, d) : null); // S4 il-emit2
+        FlushClosures();
+        EmitHelpers(helpers);
+        if (serial is var (sam, sbody, shelpers))
         {
-            il.EmitLoadArg(0);
-            if (d?.SuperInit is { } sup)
-            {
-                var args = sup.Select(x => Init(x.Value!, a.Sym)).ToList();
-                if (a.Base != null)
-                {
-                    var infos = args.Select(x => new ArgInfo(b.Infer(x), null, false, "")).ToList();
-                    var cand = Types.Pick(a.Base.Ctors.Select(IlTypes.FromAlice), infos) ?? throw new IlUnsupportedException("Ctor:super", Sp(d), a.ToString());
-                    for (int i = 0; i < args.Count; i++) b.Emit(args[i], cand.Params[i]);
-                    il.EmitCall(cand.Alice!.Def);
-                }
-                else
-                {
-                    var bt = a.ClrBase ?? typeof(object);
-                    var infos = args.Select(x => new ArgInfo(b.Infer(x), null, false, "")).ToList();
-                    var cand = Types.Pick(bt.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Where(x => !x.IsPrivate).Select(x => IlTypes.FromClr(x)), infos)
-                        ?? throw new IlUnsupportedException("Ctor:super", Sp(d), bt.Name);
-                    for (int i = 0; i < args.Count; i++) b.Emit(args[i], cand.Params[i]);
-                    il.EmitCall(Types.Method(cand.Clr!));
-                }
-            }
-            else BaseDefaultCtor(a, il);
+            Passes(ref sbody, sam, ps);
+            new IlBody(this, sam.Owner, sam, Body(sam.Def), sam.Ret, sam.IsStatic, ps).Body(sbody);
+            FlushClosures();
+            EmitHelpers(shelpers);
         }
-        if (d != null && ctor.Sym != null)
-            for (int i = 0; i < ctor.Sym.Params.Count; i++)
-            {
-                var p = ctor.Sym.Params[i];
-                if (!p.Auto) continue;
-                var f = a.FindField(Bare(Binder.Mangle(p.Name))) ?? throw new IlUnsupportedException("Ctor:auto-field", Sp(d), p.Name);
-                il.EmitLoadArg(0);
-                il.EmitLoadArg(i + 1);
-                il.EmitStoreField(f.Field!);
-            }
     }
-
     void BaseDefaultCtor(AliceT a, IlBuilder il)
     {
         if (a.Base != null)
@@ -937,74 +909,37 @@ public sealed partial class AirToIl
         il.EmitCall(Types.Method(ci));
     }
 
-    void SyntheticCtor(AMethod ctor)
-    {
-        var a = ctor.Owner;
-        var il = Body(ctor.Def);
-        var b = new IlBody(this, a, ctor, il, typeof(void), false, ctor.ParamNames.Select((n, i) => (n, ctor.Params[i])).ToList());
-        if (recordCtors.TryGetValue(ctor, out var fields))
-        {
-            b.Body([], () =>
-            {
-                if (!a.IsValueType) { il.EmitLoadArg(0); BaseDefaultCtor(a, il); }
-                for (int i = 0; i < fields.Count; i++)
-                {
-                    il.EmitLoadArg(0);
-                    il.EmitLoadArg(i + 1);
-                    il.EmitStoreField(fields[i].Field!);
-                }
-            });
-            return;
-        }
-        b.Body([], () => CtorPrologue(b, ctor, null));
-    }
+}
 
-    void StaticCtor(AliceT a, List<(MExpr? Value, AField F, string File)> inits)
-    {
-        var cctor = a.Def.DefineConstructor(MethodAttributes.Private | MethodAttributes.HideBySig, isStatic: true);
-        var il = Body(cctor);
-        var b = new IlBody(this, a, null, il, typeof(void), true, []);
-        b.Body([], () =>
-        {
-            foreach (var (v, f, file) in inits)
-            {
-                File = file;
-                if (v == null) continue;
-                b.Emit(v, f.Type);
-                il.EmitStoreField(f.Field!);
-            }
-        });
-    }
+/// <summary>
+/// Extension points of the IL pipeline for the IL-side optimizer (il-opt, Air/Passes/IlOpt, Backend/Il/Opt):
+/// <see cref="AfterLowering"/> MIR passes run per body after IlLowering (before emission);
+/// <see cref="BeforeEncode"/> runs over every emitted body before the module is encoded. Both empty by default.
+/// </summary>
+public static class IlPipeline
+{
+    public static readonly List<Func<Air.Passes.IlLowerContext, Optimizer.IMirPass>> AfterLowering = [];
+    public static readonly List<Action<IlMethodDef, IlBuilder>> BeforeEncode = [];
 }
 
 /// <summary>
 /// Which methods get [MethodImpl(AggressiveOptimization)]: the C# backend's own policy (Emitter.Kernel, LoopLeaves,
-/// LoopNest, PrimitiveLoop), invoked by reflection so the two backends cannot drift.
+/// LoopNest, PrimitiveLoop, internal for this), so the two backends cannot drift.
 /// </summary>
 internal sealed class HotPolicy
 {
     readonly Emitter emitter;
-    static readonly MethodInfo? Kernel = typeof(Emitter).GetMethod("Kernel", BindingFlags.NonPublic | BindingFlags.Static);
-    static readonly MethodInfo? LoopLeaves = typeof(Emitter).GetMethod("LoopLeaves", BindingFlags.NonPublic | BindingFlags.Instance);
-    static readonly MethodInfo? LoopNest = typeof(Emitter).GetMethod("LoopNest", BindingFlags.NonPublic | BindingFlags.Static);
-    static readonly MethodInfo? PrimitiveLoop = typeof(Emitter).GetMethod("PrimitiveLoop", BindingFlags.NonPublic | BindingFlags.Instance);
 
-    /// <summary>True when every Emitter policy method was found (a test guards it).</summary>
-    public static bool Available => Kernel != null && LoopLeaves != null && LoopNest != null && PrimitiveLoop != null;
+    /// <summary>The policy is shared by direct calls now; kept for the guard test.</summary>
+    public static bool Available => true;
 
     public HotPolicy(Binder binder) => emitter = new Emitter(binder, sequential: true);
 
     public bool IsHot(MethodDecl? d, MethodSym? m, Instance? inst, List<MStmt> body)
     {
-        if (!Available) return false;
-        try
-        {
-            if (d == null || m == null) return (bool)LoopNest!.Invoke(null, [body, 0])! || (bool)PrimitiveLoop!.Invoke(emitter, [body])!;
-            if ((bool)Kernel!.Invoke(null, [d, m, inst, body])!) return true;
-            if (((HashSet<MethodSym>)LoopLeaves!.Invoke(emitter, [])!).Contains(m)) return true;
-            if (d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline")) return false;
-            return (bool)LoopNest!.Invoke(null, [body, 0])! || !m.IsAsync && !m.UsesYield && (bool)PrimitiveLoop!.Invoke(emitter, [body])!;
-        }
-        catch (TargetInvocationException) { return false; }
+        if (d == null || m == null) return Emitter.LoopNest(body, 0) || emitter.PrimitiveLoop(body);
+        if (Emitter.Kernel(d, m, inst, body) || emitter.LoopLeaves().Contains(m)) return true;
+        if (d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline")) return false;
+        return Emitter.LoopNest(body, 0) || !m.IsAsync && !m.UsesYield && emitter.PrimitiveLoop(body);
     }
 }

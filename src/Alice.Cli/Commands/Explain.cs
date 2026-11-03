@@ -23,6 +23,12 @@ public static partial class Explain
         (new(@"\.(reserve|EnsureCapacity)\(global::System\.Math\.Max"), "collection presized for its fill loop"),
         (new(@"Vector(256|512|128)?<"), "SIMD"),
         (new(@"SuppressGCTransition"), "native call without GC transition"),
+        (new(@"Cm\.(Inclusive|Exclusive)Scan<(float|double)>"), "data-parallel scan over floats: fixed chunking by n, bit-identical for any core count, not the serial fold"),
+        (new(@"Cm\.(Inclusive|Exclusive)Scan<(int|uint|long|ulong)>"), "data-parallel scan (exact)"),
+        (new(@"Cm\.SegmentedScan<"), "data-parallel segmented scan"),
+        (new(@"Cm\.(Histogram|ScatterAdd)<"), "data-parallel histogram/combine: private tables up to 256 KiB merged in order, atomics above"),
+        (new(@"Cm\.Compact<"), "data-parallel compaction"),
+        (new(@"Cm\.Permute<"), "data-parallel permutation (checked at run time, the loop on a repeated target)"),
     ];
 
     [GeneratedRegex(@"^(?:(?:\[[^\n]*\]|#line[^\n]*)\n)*(?:public|private|internal)(?: static)?(?: unsafe)? [\w<>\[\]?, ().:]+ @?(\w+)\(", RegexOptions.Multiline)]
@@ -36,9 +42,11 @@ public static partial class Explain
         for (int i = 0; i < heads.Count; i++)
         {
             string name = heads[i].Groups[1].Value;
-            var h = Regex.Match(name, @"^__(?:fork|parfor|fused|parwords|managed)_(\w+?)_?\d*$");
+            var h = Regex.Match(name, @"^__(?:fork|parfor|par|fused|parwords|managed)_(\w+?)_?\d*$");
             if (name.StartsWith("__") && !h.Success) continue;
             string owner = h.Success ? h.Groups[1].Value : name;
+            // helpers of top-level code are named after `main` (Lowerer: Method?.CsName ?? "main"): they belong to Main
+            if (h.Success && owner == "main" && !heads.Any(x => x.Groups[1].Value == "main")) owner = "Main";
             int end = i + 1 < heads.Count ? heads[i + 1].Index : cs.Length;
             string body = cs[heads[i].Index..end];
             var list = report.TryGetValue(owner, out var l) ? l : report[owner] = new List<string>();
@@ -50,12 +58,17 @@ public static partial class Explain
 
     static void Add(List<string> list, string f) { if (!list.Contains(f)) list.Add(f); }
 
+    /// <summary>One row per sum type (ADR 0037): `enum Tree` -> `arena` or `record (demoted: ... at file:line: why)`.</summary>
+    public static List<(string Enum, string Form)> EnumRows(List<SourceFile> files, List<string> refs) =>
+        AliceCompiler.AffineReport(files, refs).Select(l => l.Split(": ", 2)).Select(p => ("enum " + p[0], p[1])).ToList();
+
     public static int Run(List<SourceFile> files, List<string> refs)
     {
         var cs = string.Join("\n", AliceCompiler.TranspileAll(files, refs));
         var table = new Table().Border(TableBorder.Rounded).AddColumn("method").AddColumn("optimizations");
         foreach (var (m, f) in Report(cs).OrderBy(kv => kv.Key))
             table.AddRow(Markup.Escape(m), f.Count == 0 ? "[grey]none[/]" : Markup.Escape(string.Join("\n", f)));
+        foreach (var (e, form) in EnumRows(files, refs)) table.AddRow(Markup.Escape(e), Markup.Escape(form));
         AnsiConsole.Write(table);
         return 0;
     }

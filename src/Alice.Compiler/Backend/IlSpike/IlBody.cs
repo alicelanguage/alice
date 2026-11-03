@@ -294,7 +294,7 @@ public sealed class IlBody
             case MUnary { Op: AirUnOp.NotNull or AirUnOp.Not or AirUnOp.BitNot } u: return First(u.E);
             case MUnary { Op: AirUnOp.Neg } u when !(u.Checked && Checked && IsIntegral(Widen(Infer(u.E)))) && !Literal(u, out _): return First(u.E);
             case MCast c when !Literal(c.E, out _): return First(c.E);
-            case MCall { Target: null, Name: "unchecked", Args: [var a] }: return First(a);
+            case MCall { Target: null, Name: "unchecked" or "checked", Args: [var a] }: return First(a);
             case MCall c when c.Args.All(x => x is not MArg) && !c.Safe:
                 {
                     var rs = Resolve(c);
@@ -453,12 +453,12 @@ public sealed class IlBody
         loops.Pop();
         Mark(cont);
         var name = new MCode(f.Var);
-        switch (f.Step.Replace(" ", ""))
+        switch (f.Step)
         {
-            case "++": Assign(name, "+=", new MCode("1")); break;
-            case "--": Assign(name, "-=", new MCode("1")); break;
-            case var st when st.Length > 2 && st[1] == '=' && st[0] is '+' or '-': Assign(name, st[..2], new MCode(st[2..])); break;
-            default: throw new SpikeUnsupported("MFor:step", f.Step);
+            case { Op: "++" }: Assign(name, "+=", AirConst.Of(1)); break;
+            case { Op: "--" }: Assign(name, "-=", AirConst.Of(1)); break;
+            case { Op: "+=" or "-=", Value: { } sv }: Assign(name, f.Step.Op, sv); break;
+            default: throw new SpikeUnsupported("MFor:step", f.Step.Op);
         }
         Mark(cond);
         var cmp = new MBinary { Op = AirOps.ParseBin(f.Cmp), L = name, R = f.End };
@@ -712,10 +712,7 @@ public sealed class IlBody
         switch (c)
         {
             case AirLocalRef { Narrowed: true }: throw new SpikeUnsupported("AirLocalRef:narrowed");
-            // unresolved by the binder (ADR 0032 says reject); Main's ARGV arrives this way, so names of parameters/locals and
-            // CLR static paths are still accepted, anything else is reported as AirName
-            case AirName n: return FindLocalOrArg(n.Path) || StaticPath(n.Path) != null ? Code(n.Path) : throw new SpikeUnsupported("AirName", n.Path);
-            case AirRawCs: throw new SpikeUnsupported("AirRawCs", c.Text);
+            // names the binder left unresolved lower as by-name AirTypeRef/AirLocalRef/AirMemberPath (air-b1 D0.7b): read by name below
             case AirThis or AirBase: throw new SpikeUnsupported("AirThis");
             case AirFieldRef f: throw new SpikeUnsupported("AirFieldRef", f.Name);
             case AirNull: il.Emit(OpCodes.Ldnull); return typeof(object);
@@ -1061,6 +1058,15 @@ public sealed class IlBody
             uncheckedDepth--;
             return t;
         }
+        if (c.Target == null && c.Name == "checked" && c.Args.Count == 1)
+        {
+            // an operand of a wrapping operator (MirFacts.KeepChecked): checked again, as C# `checked(...)`
+            int saved = uncheckedDepth;
+            uncheckedDepth = 0;
+            var t = Raw(c.Args[0]);
+            uncheckedDepth = saved;
+            return t;
+        }
         if (c.Safe) throw new SpikeUnsupported("MCall:null-safe");
         if (c.Args.Any(a => a is MArg)) throw new SpikeUnsupported("MArg");
         var rs = Resolve(c);
@@ -1311,7 +1317,7 @@ public sealed class IlBody
                 }
             case MCast c: return r.Type(c.TypeCs);
             case MCall c:
-                if (c.Target == null && c.Name == "unchecked" && c.Args.Count == 1) return Infer(c.Args[0]);
+                if (c.Target == null && c.Name is "unchecked" or "checked" && c.Args.Count == 1) return Infer(c.Args[0]);
                 return Resolve(c).Ret;
             case MMember m:
                 {

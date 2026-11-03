@@ -120,8 +120,8 @@ public sealed partial class Lowerer
         Static = true,
         Params = { x, y },
         ExprBody = op == "+"
-            ? new MBinary { Op = AirBinOp.Add, L = AirLeaf.Name(x), R = AirLeaf.Name(y) }
-            : new MCall { Target = AirLeaf.TypeName("global::System.Math"), Name = op, Args = { AirLeaf.Name(x), AirLeaf.Name(y) } },
+            ? new MBinary { Op = AirBinOp.Add, L = new AirParamRef(x), R = new AirParamRef(y) }
+            : new MCall { Target = AirLeaf.TypeName("global::System.Math"), Name = op, Args = { new AirParamRef(x), new AirParamRef(y) } },
     };
 
     /// <summary>Locals the kernel reads from the enclosing method (passed by value to the helper); null if unsupported.</summary>

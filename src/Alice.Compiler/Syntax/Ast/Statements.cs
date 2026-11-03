@@ -56,6 +56,8 @@ public sealed class ForStmt : Stmt
     public bool Await;           // `for await x in stream` (IAsyncEnumerable)
     public bool Par;             // `par for`: parallel at any trip count, or AL0209
     public bool Gpu;             // `gpu for`: the body runs as an ILGPU kernel (ADR 0021); also Par, so races are checked
+    public bool Cm;              // `cm for`: a Connection-Machine shape (ADR 0039), or AL0247
+    public bool CmOrdered;       // `cm ordered for`: float combines and scans in index order (AL0248)
 }
 
 public sealed class When : Node

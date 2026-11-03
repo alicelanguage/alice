@@ -2,7 +2,9 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks.Sources;
+using Alice.Compiler;
 using Alice.Compiler.Air.Passes;
+using Alice.Compiler.Backend.Il;
 using Alice.Compiler.Mir;
 using Alice.Compiler.Semantics;
 using Alice.Compiler.Syntax;
@@ -13,9 +15,10 @@ namespace Alice.Tests.Compiler;
 /// The IL backend's state-machine pass (Air/Passes/StateMachines*.cs, backend plan D1.8). For each shape: the dump of
 /// the generated machine (fields, MoveNext, Dispose...) and the kickoff body, then a run of the generated MIR with a
 /// small evaluator (<see cref="SmEval"/>) driven by the real BCL builders, awaiters and ManualResetValueTaskSourceCore,
-/// compared with what C# does for the same method. The runs through the IL emitter are Pending until AirToIl
-/// (D1.4) consumes AirTypeDecl and the jump nodes.
+/// compared with what C# does for the same method. Then whole programs through the IL emitter (Il_*), compared with
+/// the C# backend.
 /// </summary>
+[Collection("console")]
 public class StateMachinesTests
 {
     // ---------------------------------------------------------------- types and builders
@@ -183,7 +186,7 @@ public class StateMachinesTests
         Decl("total", I, K(0)),
         new MFor
         {
-            Var = "i", VarType = "int", Start = K(0), Cmp = "<", End = L("n", I), Step = "++",
+            Var = "i", VarType = "int", Start = K(0), Cmp = "<", End = L("n", I),
             Body =
             [
                 Do(Delay()),
@@ -629,7 +632,7 @@ public class StateMachinesTests
             [
                 new MFor
                 {
-                    Var = "i", VarType = "int", Start = K(0), Cmp = "<", End = L("n", I), Step = "= unchecked(i + 1)",
+                    Var = "i", VarType = "int", Start = K(0), Cmp = "<", End = L("n", I), Step = AirForStep.UncheckedAdd("i", new AirConst(AirConstKind.Int, "1")),
                     Body = [Do(Delay()), Yield(L("i", I))],
                 },
             ],
@@ -872,16 +875,235 @@ public class StateMachinesTests
 
     // ================================================================ through the IL emitter
 
-    const string PendingIl = "pending: AirToIl (backend plan D1.4) does not consume AirTypeDecl / AirLabel / AirGoto / AirGotoTable yet; un-skip when it does";
+    // Alice programs compiled by both backends: Roslyn's state machines (C#) against this pass's machines emitted by
+    // AirToIl (Backend/Il/AirToIl.StateMachines.cs). Same stdout, ILVerify clean, and the machine is really there.
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
-    public void Il_async_matches_csharp() { }
+    const string IlAsyncSrc = """
+        class Counter
+          def initialize(@start : Int32)
+          end
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
-    public void Il_iterator_matches_csharp() { }
+          async def slow_sum(n : Int32) : Int32
+            total = @start
+            for i in 0...n
+              await Task.Delay(1)
+              next if i == 1
+              total += await Task.FromResult(i)
+            end
+            total
+          end
+        end
 
-    [Fact(Skip = PendingIl), Trait("Category", "Pending")]
-    public void Il_async_iterator_matches_csharp() { }
+        async def step(log : List(String), s : String) : Int32
+          await Task.Delay(1)
+          log.Add(s)
+          s.Length
+        end
+
+        async def flow(log : List(String)) : Int32
+          n = 0
+          begin
+            n += await step(log, "a")
+            begin
+              n += await step(log, "bb")
+              raise "x" if n > 2
+            ensure
+              log.Add("ensure1")
+              await Task.Delay(1)
+            end
+          rescue e
+            log.Add("rescued #{e.Message}")
+            n += await step(log, "ccc")
+          ensure
+            log.Add("ensure2")
+          end
+          n
+        end
+
+        async def failing : Int32
+          await Task.Yield()
+          raise "boom"
+          1
+        end
+
+        async def quiet(log : List(String))
+          await Task.Delay(1)
+          log.Add("quiet")
+        end
+
+        async def main_flow : Int32
+          log = List(String).new
+          r = await flow(log)
+          await quiet(log)
+          puts log.join(",")
+          begin
+            await failing
+          rescue e
+            puts "caught #{e.Message}"
+          end
+          r
+        end
+
+        puts Counter.new(10).slow_sum(5).Result
+        puts main_flow.Result
+        """;
+
+    const string IlIteratorSrc = """
+        class Counter
+          def initialize(@start : Int32)
+          end
+
+          def upto(n : Int32) : IEnumerable(Int32)
+            i = @start
+            while i <= n
+              yield i
+              i += 1
+            end
+          end
+        end
+
+        def guarded(log : List(String)) : IEnumerable(Int32)
+          begin
+            yield 1
+            begin
+              yield 2
+              yield 3
+            ensure
+              log.Add("inner")
+            end
+          ensure
+            log.Add("outer")
+          end
+        end
+
+        def evens : IEnumerable(Int32)
+          i = 0
+          loop do
+            yield i
+            i += 2
+          end
+        end
+
+        def words(ws : List(String)) : IEnumerable(String)
+          for w in ws
+            yield w.upcase if w.Length > 2
+          end
+        end
+
+        c = Counter.new(3)
+        puts c.upto(6).to_a.join(",")
+        seq = c.upto(4)
+        puts seq.to_a.join(",") + "|" + seq.to_a.join(",")
+        log = List(String).new
+        for v in guarded(log)
+          puts v
+          break if v == 2
+        end
+        puts log.join(",")
+        log.Clear()
+        puts guarded(log).to_a.join(",") + " " + log.join(",")
+        puts evens.Take(5).to_a.join(" ")
+        ws = List(String).new
+        ws.Add("the")
+        ws.Add("quick")
+        ws.Add("ox")
+        puts words(ws).to_a.join(" ")
+        """;
+
+    const string IlAsyncIteratorSrc = """
+        async def ticks(n : Int32) : IAsyncEnumerable(Int32)
+          begin
+            for i in 0...n
+              await Task.Delay(1)
+              yield i * i
+            end
+          ensure
+            puts "ticks done"
+          end
+        end
+
+        async def first_two : Int32
+          s = 0
+          for await x in ticks(10)
+            s += x + 1
+            break if x == 1
+          end
+          s
+        end
+
+        async def all : Int32
+          s = 0
+          for await x in ticks(4)
+            s += x
+          end
+          s
+        end
+
+        puts first_two.Result
+        puts all.Result
+        """;
+
+    static void SameOnIl(string src, string machine, bool valueType)
+    {
+        var res = AirToIl.Compile([new SourceFile("main.al", src)], "sm", exe: true);
+        Assert.True(res.Ok, "IL backend: " + string.Join("\n", res.Errors.Select(e => e.Message)));
+        Assert.Empty(Alice.Tests.Backends.AirToIlTests.DecodeCheck(res.Pe!));
+        var verify = Alice.Tests.Backends.AirToIlTests.IlVerify(res.Pe!);
+        Assert.True(verify.Count == 0, "ILVerify:\n" + string.Join("\n", verify));
+        var asm = AliceCompiler.Load(res.Pe!);
+        var sm = asm.GetTypes().Where(t => t.IsNested && t.Name.StartsWith(machine, StringComparison.Ordinal)).ToList();
+        Assert.True(sm.Count == 1 && sm[0].IsValueType == valueType, machine + " machine: " + string.Join(", ", sm.Select(t => t.FullName)));
+        string cs = AliceCompiler.Invoke(AliceCompiler.Load(AliceCompiler.Emit([AliceCompiler.Transpile(src)], "cs", exe: true)), []);
+        string il = AliceCompiler.Invoke(asm, []);
+        Assert.Equal(cs, il);
+    }
+
+    [Fact]
+    public void Il_async_matches_csharp() =>
+        SameOnIl(IlAsyncSrc, "<slow_sum>d__", valueType: true);
+
+    [Fact]
+    public void Il_iterator_matches_csharp() =>
+        SameOnIl(IlIteratorSrc, "<guarded>d__", valueType: false);
+
+    /// <summary>Awaited operands and `for await` collections the pass cannot type from the MIR alone: the emitter's
+    /// inference types them (StateMachineOptions.TypeOf), hoisted locals included.</summary>
+    const string IlAsyncTypingSrc = """
+        async def work(n : Int32) : Int32
+          await Task.Delay(1)
+          n * 2
+        end
+
+        async def both : Int32
+          a = work(1)
+          b = work(2)
+          await Task.WhenAll(a, b)
+          a.Result + b.Result
+        end
+
+        async def total : Int32
+          sum = 0
+          ch = System.Threading.Channels.Channel.CreateUnbounded<Int32>()
+          ch.Writer.TryWrite(2)
+          ch.Writer.TryWrite(5)
+          ch.Writer.Complete
+          for await x in ch.Reader.ReadAllAsync
+            sum += x
+          end
+          sum
+        end
+
+        puts both.wait
+        puts total.wait
+        """;
+
+    [Fact]
+    public void Il_async_operands_typed_by_the_emitter() =>
+        SameOnIl(IlAsyncTypingSrc, "<total>d__", valueType: true);
+
+    [Fact]
+    public void Il_async_iterator_matches_csharp() =>
+        SameOnIl(IlAsyncIteratorSrc, "<ticks>d__", valueType: false);
 }
 
 public static class SmSources

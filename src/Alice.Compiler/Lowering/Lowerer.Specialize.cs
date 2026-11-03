@@ -76,7 +76,7 @@ public sealed partial class Lowerer
         // captured locals, and whether any of them must be shared by reference
         var req = new SpecRequest { Callee = m };
         var keys = new List<string>();
-        var lamDefs = new List<(ParamSym P, string Ret, string Ps, string Body, List<int> Caps)>();
+        var lamDefs = new List<(ParamSym P, AirHelperDecl Decl, List<int> Caps)>();
         foreach (var (_, p, lam, ml) in lams)
         {
             var caps = lam.Captures ? Captured(lam) : [];
@@ -99,10 +99,19 @@ public sealed partial class Lowerer
             else
             {
                 var hp = new Backend.Printer("", 1);
-                foreach (var s in ml.Body!) hp.Root(s);
+                foreach (var s in ml.Body!) hp.Root(s);   // optimized in place: the declaration reuses the statements
                 body = "\n{\n" + hp + "}\n";
             }
-            lamDefs.Add((p, ret.IsVoid ? "void" : TypeCs(ret), string.Join(", ", ps), body, idx));
+            var psA = ml.Params.Select((x, j) => x.Contains(' ') ? ParamOf(x) : new AirParamDecl(x, AirOf(lam.ParamSyms[j].Type, TypeCs(lam.ParamSyms[j].Type)))).ToList();
+            psA.AddRange(idx.Select(k => new AirParamDecl(req.Caps[k].L.CsName, req.Caps[k].Ref
+                ? new AirType.ByRef(AirOf(req.Caps[k].L.Type, LocalTypeCs(req.Caps[k].L)), RefKind.Ref)
+                : AirOf(req.Caps[k].L.Type, LocalTypeCs(req.Caps[k].L)))));
+            lamDefs.Add((p, new AirHelperDecl
+            {
+                Method = new AirMethodDecl { Vis = AirVis.Private, Flags = AirMethodFlags.Static, Params = psA, Ret = AirOf(ret, ret.IsVoid ? "void" : TypeCs(ret)), Body = ml.ExprBody == null ? ml.Body : null },
+                ExprBody = ml.ExprBody,
+                Attributes = { AggressiveInlining() },
+            }, idx));
             // the dedup key spells parameters and captures by position, so `{ |v| v * 2 }` twins match
             var names = lam.ParamSyms.Select(x => x.CsName).Concat(idx.Select(k => req.Caps[k].L.CsName)).ToList();
             string norm = (ret.IsVoid ? "void" : TypeCs(ret)) + "(" + string.Join(", ", ps) + ")" + body;
@@ -122,11 +131,11 @@ public sealed partial class Lowerer
             name = m.CsName.TrimStart('@') + SpecSuffix + n;
             specByKey[key] = name;
             req.Name = name;
-            foreach (var (p, ret, ps, body, idx) in lamDefs)
+            foreach (var (p, decl, idx) in lamDefs)
             {
                 string lamName = $"__lam_{name}_{p.CsName.TrimStart('@')}";
-                Extra.Add("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]\n"
-                    + $"private static {ret} {lamName}({ps})" + body);
+                decl.Method!.Name = lamName;
+                AddHelper(decl);
                 req.Fns[p] = (lamName, idx);
             }
             pendingSpecs.Add(req);
@@ -134,7 +143,7 @@ public sealed partial class Lowerer
         var call = new MCall { Name = name };
         for (int i = 0; i < args.Count; i++)
             if (!lams.Any(l => l.Index == i)) call.Args.Add(args[i]);
-        foreach (var (l, byRef) in req.Caps) call.Args.Add(byRef ? new MArg { Prefix = "ref ", E = new MCode(l.CsName) } : new MCode(l.CsName));
+        foreach (var (l, byRef) in req.Caps) call.Args.Add(byRef ? new MArg { Prefix = "ref ", E = new AirLocalRef(l.CsName, l.Type.ToAir()) } : new AirLocalRef(l.CsName, l.Type.ToAir()));
         return call;
     }
 
@@ -247,6 +256,20 @@ public sealed partial class Lowerer
         return hit;
     }
 
+    /// <summary>`[MethodImpl(MethodImplOptions.AggressiveInlining)]`.</summary>
+    static AirAttribute AggressiveInlining() => new()
+    {
+        Type = new AirType.ClrRef("global::System.Runtime.CompilerServices.MethodImpl", typeof(System.Runtime.CompilerServices.MethodImplAttribute), []),
+        Args = { new MMember { Target = AirTypeRef.Named("global::System.Runtime.CompilerServices.MethodImplOptions"), Name = "AggressiveInlining" } },
+    };
+
+    /// <summary>A parameter declared as C# `T name` (a typed lambda parameter).</summary>
+    static AirParamDecl ParamOf(string decl)
+    {
+        int sp = decl.LastIndexOf(' ');
+        return new AirParamDecl(decl[(sp + 1)..], new AirType.ClrRef(decl[..sp], null, []));
+    }
+
     /// <summary>`yield v` / `f.call(v)` inside a clone: a direct call of the lambda method, captures appended.</summary>
     MExpr? SpecializedInvoke(ParamSym? p, List<Arg> args)
     {
@@ -255,7 +278,7 @@ public sealed partial class Lowerer
         foreach (int k in fn.Caps)
         {
             var (_, byRef) = specializing.Caps[k];
-            MExpr v = new MCode("__cap" + k);
+            MExpr v = new AirParamRef("__cap" + k);   // the clone's capture parameter
             call.Args.Add(byRef ? new MArg { Prefix = "ref ", E = v } : v);
         }
         return call;

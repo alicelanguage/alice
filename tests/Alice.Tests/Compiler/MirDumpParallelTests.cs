@@ -45,9 +45,9 @@ public class MirDumpParallelTests
     public void Nodes_have_a_dump_form()
     {
         var guard = new AirParGuard { Count = AirLeaf.Name("n", AirLeaf.Int), Min = 2, Type = AirLeaf.Bool };
-        Assert.Equal("if (par-guard `n`:int 2):bool\n", MirDump.Of([new MIf { Cond = guard }]));
-        Assert.Equal("expr (release Own<int> `a`)\n", MirDump.Of([new MExprStmt { E = new AirRelease { PoolCs = "Own<int>", Target = N("a") } }]));
-        Assert.Equal("expr (fork (lambda () `x`))\n", MirDump.Of([new MExprStmt { E = new AirForkJoin { Branches = { new MLambda { ExprBody = N("x") } } } }]));
+        Assert.Equal("if (par-guard (local n):int 2):bool\n", MirDump.Of([new MIf { Cond = guard }]));
+        Assert.Equal("expr (release Own<int> (local a))\n", MirDump.Of([new MExprStmt { E = new AirRelease { PoolCs = "Own<int>", Target = N("a") } }]));
+        Assert.Equal("expr (fork (lambda () (local x)))\n", MirDump.Of([new MExprStmt { E = new AirForkJoin { Branches = { new MLambda { ExprBody = N("x") } } } }]));
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public class MirDumpParallelTests
         string own = MirDump.Collect(() => AliceCompiler.Transpile(
             "def fill(xs : Array(Float64), v : Float64)\n  for i in 0...xs.size\n    xs[i] = v\n  end\nend\ndef f(n : Int32) : Int32\n  t = Array(Float64).new(n)\n  fill(t, 2.0)\n  t[n - 1].to_i32\nend\n"));
         Assert.Contains("(rent global::Alice.Runtime.Own<double>", own);
-        Assert.Contains("(release global::Alice.Runtime.Own<double> `t`:double[])", own);
+        Assert.Contains("(release global::Alice.Runtime.Own<double> (local t):double[])", own);
     }
 
     [Fact]

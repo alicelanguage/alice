@@ -148,6 +148,8 @@ public sealed partial class Binder
                         ? Builtins.Generic(typeof(Task<>), sp.Body.Result)
                         : ClrTypes.FromClr(typeof(Task));
                 }
+            case DataflowExpr df:
+                return BindDataflow(df);   // ADR 0038 (Binder.Dataflow.cs)
             case YieldExpr y:
                 {
                     BindArgs(y.Args);
@@ -367,6 +369,18 @@ public sealed partial class Binder
                 return t.Args[pos];
             }
         }
+        // Ruby slices and negative indexes on arrays, lists and strings
+        bool list = t.Clr is { IsGenericType: true } lg && lg.GetGenericTypeDefinition() == typeof(List<>) || t.Clr == null && t.OpenClr == typeof(List<>);
+        if (t.Kind == "array" && t.Elem != null && t.Cs.EndsWith("[]") || t.IsString || list)
+        {
+            AType sliced = t.Kind == "array" ? AType.Array(t.Elem!) : t;
+            if (ix.Args is [{ Mod: "", Value: RangeExpr }]) { ix.Slice = "range"; return sliced; }
+            if (ix.Args is [{ Mod: "", Value: { Type.IsInteger: true } }, { Mod: "", Value: { Type.IsInteger: true } }]) { ix.Slice = "len"; return sliced; }
+            // a literal negative index counts from the end; the target is read twice, so only a plain local/field/@ivar
+            if (ix.Args is [{ Mod: "", Value: LitExpr { Kind: "int" } neg }] && int.TryParse(neg.Text, out int k) && k < 0
+                && ix.Target is NameExpr { Res: "local" or "field" } or IvarExpr or ConstExpr { Res: "const" })
+                ix.FromEnd = -k;
+        }
         if (t.Kind == "array" && t.Elem != null) return t.Elem;
         if (t.IsString) return AType.Char;
         if (t.Sym != null)
@@ -415,7 +429,8 @@ public sealed partial class Binder
         var l = BindExpr(b.L);
         var r = BindExpr(b.R);
         b.Res = "";
-        bool listy(AType t) => t.Kind == "array" || t.Clr is { IsGenericType: true } g && g.GetGenericTypeDefinition() == typeof(List<>);
+        // List(T) of a type parameter (`class Shelf(T)`) has only the open definition
+        bool listy(AType t) => t.Kind == "array" || t.Clr is { IsGenericType: true } g && g.GetGenericTypeDefinition() == typeof(List<>) || t.Clr == null && t.OpenClr == typeof(List<>);
         switch (b.Op)
         {
             case "||" when !l.IsBool && l.Kind is not ("unknown" or "dynamic"):

@@ -97,9 +97,9 @@ public sealed partial class Lowerer
     {
         string store = fs.Store.CsName;
         string? accT = fs.Reduce != null ? TypeCs(fs.Reduce.Block!.Result) : null;
-        if (accT != null) o.Add(new MDecl { Name = fs.ResultTemp, TypeCs = accT, Init = new MCode("default") });
+        var accA = fs.Reduce?.Block!.Result.ToAir();
+        if (accT != null) o.Add(new MDecl { Name = fs.ResultTemp, TypeCs = accT, Init = AirLeaf.Default(accA) });
         var ps = new HashSet<LocalSym>(fs.Blocks.Select(b => b.ParamSyms[0]));
-        string n = store + ".Count";
         var serial = new List<MStmt>();
         var savedPre = pre;
         pre = serial;
@@ -110,9 +110,9 @@ public sealed partial class Lowerer
         bool savedPar = inParallelGen;
         inParallelGen = true;
         string part = Temp("part");
-        if (accT != null) kernel.Add(new MDecl { Name = part, TypeCs = accT, Init = new MCode("default") });
+        if (accT != null) kernel.Add(new MDecl { Name = part, TypeCs = accT, Init = AirLeaf.Default(accA) });
         FusedKernel(kernel, fs, ps, store, lo, hi, part);
-        if (accT != null) kernel.Add(new MReturn { Value = new MCode(part) });
+        if (accT != null) kernel.Add(new MReturn { Value = LRef(part, accA) });
         inParallelGen = savedPar;
         pre = savedPre;
 
@@ -137,39 +137,39 @@ public sealed partial class Lowerer
             return;
         }
         string helper = $"__fused_{(Method?.CsName ?? "main").TrimStart('@')}_{++helperN}";
-        var hp = new Backend.Printer("", 1);
-        string sig = string.Join(", ", captured.Select(l => $"{LocalTypeCs(l)} {l.CsName}"));
-        string callText = $"{helper}({string.Join(", ", captured.Select(l => l.CsName))})";
+        var sig = captured.Select(HelperParam).ToList();
+        MCall CallHelper() => new() { Name = helper, Args = captured.Select(l => (MExpr)LRef(l.CsName, l.Type.ToAir())).ToList() };
         MStmt call;
         if (accT != null)
         {
-            hp.Root(new MReturn { Value = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = $"Reduce<{accT}>", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode("static (a, b) => a + b"), new MCode("4096") } } });
-            Extra.Add($"private static {accT} {helper}({sig})\n{{\n{hp}}}\n");
-            call = new MAssign { Target = new MCode(fs.ResultTemp), Value = new MCode(callText) };
+            var reduce = new MCall { Target = AirLeaf.TypeName("global::Alice.Runtime.Par"), Name = $"Reduce<{accT}>", Args = { new AirStoreCount(store), new MLambda { Params = { lo, hi }, Body = kernel }, Combine("+", "a", "b"), AirConst.Int(4096) } };
+            AddHelper(HelperMethod(helper, true, AirOf(fs.Reduce!.Block!.Result, accT), sig, new MReturn { Value = reduce }));
+            call = new MAssign { Target = LRef(fs.ResultTemp, accA), Value = CallHelper() };
         }
         else
         {
-            hp.Root(new MExprStmt { E = new MCall { Target = new MCode("global::Alice.Runtime.Par"), Name = "Range", Args = { new MCode(n), new MLambda { Params = { lo, hi }, Body = kernel }, new MCode("4096") } } });
-            Extra.Add($"private static void {helper}({sig})\n{{\n{hp}}}\n");
-            call = new MExprStmt { E = new MCode(callText) };
+            var range = new MCall { Target = AirLeaf.TypeName("global::Alice.Runtime.Par"), Name = "Range", Args = { new AirStoreCount(store), new MLambda { Params = { lo, hi }, Body = kernel }, AirConst.Int(4096) } };
+            AddHelper(HelperMethod(helper, true, AirLeaf.Void, sig, new MExprStmt { E = range }));
+            call = new MExprStmt { E = CallHelper() };
         }
-        o.Add(new MIf { Cond = new MCode($"{n} >= {Threshold} && global::Alice.Runtime.Par.Workers > 1"), Then = { call }, Else = new List<MStmt> { new MBlock { Body = serial } } });
+        o.Add(new MIf { Cond = new AirParGuard { Count = new AirStoreCount(store), Min = Threshold, Type = BoolT }, Then = { call }, Else = new List<MStmt> { new MBlock { Body = serial } } });
     }
 
     /// <summary>Vector sweep with register-promoted columns, then a scalar tail; rows [lo, hi) or the whole store.</summary>
     void FusedKernel(List<MStmt> o, FusedSoaStmt fs, HashSet<LocalSym> ps, string store, string? lo, string? hi, string acc)
     {
-        string end = hi ?? store + ".Count";
+        MCode End() => hi != null ? LRef(hi, IntT) : new AirStoreCount(store);
         string vi = Temp("vi");
-        o.Add(new MDecl { Name = vi, TypeCs = "int", Init = new MCode(lo ?? "0") });
+        o.Add(new MDecl { Name = vi, TypeCs = "int", Init = lo != null ? LRef(lo, IntT) : AirConst.Int(0) });
         var elem = fs.Blocks[0].ParamSyms[0].Type.Sym!;
         var types = elem.FieldOrder.Select(f => elem.Fields[f].Type.Cs).Distinct().ToList();
-        if (types.Count == 1 && VecElems.Contains(types[0]) && VectorFused(fs, ps, store, vi, end, types[0], acc) is { } vec) o.Add(vec);
+        if (types.Count == 1 && VecElems.Contains(types[0]) && VectorFused(fs, ps, store, vi, End(), types[0], acc) is { } vec) o.Add(vec);
 
         // scalar tail (and the whole loop when lanes do not apply)
         string idx = Temp("i");
         var saved = soa;
-        soa = new SoaCtx(ps, store, idx);
+        var storeLeaf = new AirLocalRef(store, fs.Store.Type.ToAir());
+        soa = new SoaCtx(ps, store, idx) { StoreLeaf = storeLeaf };
         ctx.Add("loop");
         var body = new List<MStmt>();
         var passes = new List<MStmt>();
@@ -180,22 +180,24 @@ public sealed partial class Lowerer
         if (fs.Reduce != null)
         {
             var rb = fs.Reduce.Block!;
-            soa = new SoaCtx(new HashSet<LocalSym>(ps) { rb.ParamSyms[0] }, store, idx);
+            soa = new SoaCtx(new HashSet<LocalSym>(ps) { rb.ParamSyms[0] }, store, idx) { StoreLeaf = storeLeaf };
             var (pre2, v) = BlockValue(rb);
             body.AddRange(pre2);
-            body.Add(new MAssign { Target = new MCode(acc), Op = "+=", Value = v });
+            body.Add(new MAssign { Target = LRef(acc, rb.Result.ToAir()), Op = "+=", Value = v });
         }
         ctx.RemoveAt(ctx.Count - 1);
         soa = saved;
-        o.Add(new MFor { VarType = "int", Var = idx, Start = new MCode(vi), Cmp = "<", End = new MCode(end), Body = body });
+        o.Add(new MFor { VarType = "int", Var = idx, Start = LRef(vi, IntT), Cmp = "<", End = End(), Body = body });
     }
 
-    MStmt? VectorFused(FusedSoaStmt fs, HashSet<LocalSym> ps, string store, string vi, string end, string T, string acc)
+    MStmt? VectorFused(FusedSoaStmt fs, HashSet<LocalSym> ps, string store, string vi, MCode end, string T, string acc)
     {
-        string vt = $"{V}<{T}>";
+        var vt = AirVector.Of(AirVector.Prim(T), V);
         var elem = fs.Blocks[0].ParamSyms[0].Type.Sym!;
         var regs = elem.FieldOrder.ToDictionary(f => elem.Fields[f].CsName, f => Temp("reg"));
-        var sc = new SoaCtx(ps, store, vi, regs);
+        var storeLeaf = new AirLocalRef(store, fs.Store.Type.ToAir());
+        var sc = new SoaCtx(ps, store, vi, regs) { StoreLeaf = storeLeaf };
+        MMember Col(string c) => new() { Target = storeLeaf, Name = c, Type = new AirType.Array(AirVector.Lane(vt)) };
         var env = new Dictionary<LocalSym, string>();
         var passes = new List<MStmt>();
         var written = new HashSet<string>();
@@ -204,25 +206,25 @@ public sealed partial class Lowerer
             {
                 if (s is not Assign { Target: CallExpr { Res: "field" } tc } a || tc.Recv is not NameExpr { Sym: LocalSym rp } || !ps.Contains(rp)) return null;
                 if (a.Op is not ("=" or "+=" or "-=" or "*=") && !(a.Op == "/=" && T is "float" or "double")) return null;
-                var v = Vec(a.Value, env, T, false, sc);
+                var v = VecE(a.Value, env, T, false, sc);
                 if (v == null) return null;
                 string col = ((FieldSym)tc.Sym!).CsName;
-                passes.Add(new MAssign { Target = new MCode(regs[col]), Op = a.Op, Value = new MCode(v) });
+                passes.Add(new MAssign { Target = LRef(regs[col], vt), Op = a.Op, Value = v });
                 written.Add(col);
             }
-        string? reduceV = null;
+        MExpr? reduceV = null;
         string vacc = Temp("vacc");
         if (fs.Reduce != null)
         {
             var rb = fs.Reduce.Block!;
             if (rb.Result.Cs != T) return null;
-            reduceV = Vec(((ExprStmt)rb.Body[0]).Expr, env, T, false, sc with { Ps = new HashSet<LocalSym>(ps) { rb.ParamSyms[0] } });
+            reduceV = VecE(((ExprStmt)rb.Body[0]).Expr, env, T, false, sc with { Ps = new HashSet<LocalSym>(ps) { rb.ParamSyms[0] } });
             if (reduceV == null) return null;
         }
         var body = new List<MStmt>();
-        var used = regs.Keys.Where(c => passes.Any(p => Backend.Printer.E(((MAssign)p).Value).Contains(regs[c])) || written.Contains(c) || (reduceV?.Contains(regs[c]) ?? false)).ToList();
+        var used = regs.Keys.Where(c => passes.Any(p => Backend.Printer.E(((MAssign)p).Value).Contains(regs[c])) || written.Contains(c) || (reduceV != null && Backend.Printer.E(reduceV).Contains(regs[c]))).ToList();
         foreach (var c in used)
-            body.Add(new MDecl { Name = regs[c], Init = new MCode($"{V}.LoadUnsafe(ref {MM}.GetArrayDataReference({store}.{c}), (nuint){vi})") });
+            body.Add(new MDecl { Name = regs[c], Init = new AirVectorLoad { Vec = vt, Array = Col(c), Index = LRef(vi, IntT), Type = vt } });
         if (fs.Outer != null && fs.Outer.Iter is RangeExpr r)
         {
             if (!PureExpr(r.A, new()) || !PureExpr(r.B, new())) return null;
@@ -230,13 +232,14 @@ public sealed partial class Lowerer
         }
         else body.AddRange(passes);
         foreach (var c in written)
-            body.Add(new MExprStmt { E = new MCode($"{V}.StoreUnsafe({regs[c]}, ref {MM}.GetArrayDataReference({store}.{c}), (nuint){vi})") });
-        if (reduceV != null) body.Add(new MAssign { Target = new MCode(vacc), Op = "+=", Value = new MCode(reduceV) });
-        body.Add(new MAssign { Target = new MCode(vi), Op = "+=", Value = new MCode($"{vt}.Count") });
-        var block = new MIf { Cond = new MCode($"{V}.IsHardwareAccelerated") };
-        if (reduceV != null) block.Then.Add(new MDecl { Name = vacc, Init = new MCode($"{vt}.Zero") });
-        block.Then.Add(new MWhile { Cond = new MCode($"{vi} <= {end} - {vt}.Count"), Body = body });
-        if (reduceV != null) block.Then.Add(new MAssign { Target = new MCode(acc), Op = "+=", Value = new MCode($"{V}.Sum({vacc})") });
+            body.Add(new MExprStmt { E = new AirVectorStore { Vec = vt, Value = LRef(regs[c], vt), Array = Col(c), Index = LRef(vi, IntT), Type = AirLeaf.Void } });
+        if (reduceV != null) body.Add(new MAssign { Target = LRef(vacc, vt), Op = "+=", Value = reduceV });
+        body.Add(new MAssign { Target = LRef(vi, IntT), Op = "+=", Value = VOp(AirVecOp.Count, vt) });
+        var block = new MIf { Cond = VOp(AirVecOp.IsAccelerated, vt) };
+        if (reduceV != null) block.Then.Add(new MDecl { Name = vacc, Init = VOp(AirVecOp.Zero, vt) });
+        block.Then.Add(new MWhile { Cond = Fits(AirFitsForm.Fits, vt, LRef(vi, IntT), end), Body = body });
+        var lane = AirVector.Lane(vt);
+        if (reduceV != null) block.Then.Add(new MAssign { Target = LRef(acc, lane), Op = "+=", Value = new AirVectorReduce { Op = AirVecReduce.Sum, Vec = vt, Arg = LRef(vacc, vt), Type = lane } });
         return block;
     }
 }

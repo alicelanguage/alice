@@ -198,6 +198,8 @@ public sealed class DynSites : MirRewriter, IMirPass
             case MWhile w: w.Cond = ToBool(w.Cond); FixList(w.Body); break;
             case MFor f: FixList(f.Body); break;
             case MForeach fe:
+                // the loop variables of a dynamic collection hold dynamic values (`s += x` is a BinaryOp site)
+                if (IsDynamic(fe.Coll)) foreach (var v in fe.Vars) dynLocals.Add(v);
                 if (IsDynamic(fe.Coll)) fe.Coll = Make(DynKind.Convert, "", 1, DynOp.None, false, fe.Coll, [], Enumerable, fe.Coll.Span ?? fe.Span);
                 FixList(fe.Body);
                 break;

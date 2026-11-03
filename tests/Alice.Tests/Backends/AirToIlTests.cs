@@ -167,6 +167,9 @@ public class AirToIlTests(ITestOutputHelper output)
         { "enums and sum types", "enum Color\n  Red\n  Green\nend\nenum Shape\n  Circle(r : Float64)\n  Square(s : Float64)\nend\ndef area(s : Shape) : Float64\n  case s\n  when Shape::Circle(r) then r * r * 3.0\n  when Shape::Square(x) then x * x\n  else 0.0\n  end\nend\nputs area(Shape::Circle.new(2.0))\nputs area(Shape::Square.new(3.0))\nputs Color::Green == Color::Green\n" },
         { "exceptions", "def risky(n : Int32) : Int32\n  raise \"bad #{n}\" if n > 2\n  n\nend\nbegin\n  puts risky(1)\n  puts risky(5)\nrescue e\n  puts e.message\nensure\n  puts \"done\"\nend\n" },
         { "hash and conversions", "h = Hash(String, Int32).new\nh[\"a\"] = 1\nh[\"b\"] = 2\nputs h[\"b\"]\nputs h.size\nputs 3.7.to_i32\nputs 65.to_u8\nputs \"12\".to_i + 1\n" },
+        { "closures and lambdas", "sq = ->(x : Int32) { x * x }\nputs sq.call(3)\nk = 5\nadd = ->(x : Int32) { x + k }\nk = 7\nputs add.call(1)\nxs = [1, 2, 3].map { |v| v * k }\nputs xs.sum\n" },
+        { "break out of a disposable foreach", "l = List(Int32).new\nl << 1\nl << 2\nl << 3\ns = 0\nfor v in l\n  break if v == 2\n  s += v\nend\nputs s\nh = Hash(String, Int32).new\nh[\"a\"] = 1\nh[\"b\"] = 2\nfor k, v in h\n  next if v == 1\n  puts k\nend\n" },
+        { "forks and parallel reductions", "def fib(n : Int32) : Int64\n  n < 2 ? n.to_i64 : fib(n - 1) + fib(n - 2)\nend\nputs fib(25)\nxs = Array(Float64).new(300000)\nfor i in 0...300000\n  xs[i] = i * 0.5\nend\nputs xs.par_sum { |x| x * 2.0 }\n" },
     };
 
     [Theory, MemberData(nameof(Programs))]
@@ -183,6 +186,19 @@ public class AirToIlTests(ITestOutputHelper output)
     [InlineData("benchmarks/bend2/alice/mandelbrot.al", "6")]
     [InlineData("benchmarks/bend2/alice/hashmap.al", "6")]
     [InlineData("benchmarks/bend2/alice/raytrace.al", "6")]
+    [InlineData("benchmarks/bend2/alice/bfs.al", "6")]
+    [InlineData("benchmarks/bend2/alice/gameoflife.al", "6")]
+    [InlineData("benchmarks/bend2/alice/kmeans.al", "6")]
+    [InlineData("benchmarks/bend2/alice/lexer.al", "6")]
+    [InlineData("benchmarks/bend2/alice/merkle.al", "6")]
+    [InlineData("benchmarks/bend2/alice/symreg.al", "6")]
+    [InlineData("benchmarks/bend2/alice/terrain.al", "6")]
+    [InlineData("benchmarks/bend2/alice/tree-bitonic.al", "6")]
+    [InlineData("benchmarks/bend2/alice/tree-matmul.al", "6")]
+    [InlineData("benchmarks/bend2/alice/tree-radix.al", "6")]
+    [InlineData("benchmarks/alice/binarytrees.al", "")]
+    [InlineData("benchmarks/alice/wordfreq.al", "")]
+    [InlineData("benchmarks/alice/parallel.al", "")]
     public void Benchmarks_run_identically(string file, string arg)
     {
         var path = Path.Combine(Root(), file);
@@ -191,7 +207,7 @@ public class AirToIlTests(ITestOutputHelper output)
         Assert.True(res.Ok, string.Join("\n", res.Errors.Select(e => e.Message)));
         Verified(res.Pe!);
         var cs = AliceCompiler.Invoke(AliceCompiler.Load(AliceCompiler.Emit(AliceCompiler.TranspileAll(files), "cs", exe: true)), [arg]);
-        Assert.Equal(cs, RunIl(res.Pe!, arg));
+        Assert.Equal(Normalize(cs), Normalize(RunIl(res.Pe!, arg)));   // RESULT lines carry timings
     }
 
     [Fact]
@@ -218,9 +234,9 @@ puts f(3)
     [Fact]
     public void Unsupported_nodes_are_reported_with_their_kind()
     {
-        var res = AirToIl.Compile([new SourceFile("main.al", "sq = ->(x : Int32) { x * x }\nputs sq.call(3)\n")], "u");
+        var res = AirToIl.Compile([new SourceFile("main.al", "@[SoA]\nrecord struct P(x : Float64)\nputs 1\n")], "u");
         Assert.False(res.Ok);
-        Assert.Contains(res.Errors, e => e.NodeKind.StartsWith("MLambda"));
+        Assert.Contains(res.Errors, e => e.NodeKind.StartsWith("Decl:"));
         Assert.True(res.Stats.Unsupported.Count > 0);
     }
 

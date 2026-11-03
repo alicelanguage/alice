@@ -14,4 +14,8 @@
     <ProjectReference Include="..\Alice.Runtime\Alice.Runtime.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- wasm runtime (ADR 0034), read by AirToWasm.RuntimeText -->
+    <EmbeddedResource Include="../Alice.Core.Wasm/rt.wat;../Alice.Core.Wasm/rt.al" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

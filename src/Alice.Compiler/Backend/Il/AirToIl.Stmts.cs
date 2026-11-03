@@ -7,7 +7,7 @@ namespace Alice.Compiler.Backend.Il;
 /// <summary>Statements, calls and assignments of <see cref="IlBody"/>.</summary>
 internal sealed partial class IlBody
 {
-    sealed record Loop(IlLabel Break, IlLabel Continue, int TryDepth);
+    sealed record Loop(IlLabel Break, IlLabel Continue, int TryDepth) { public int BreakDepth { get; init; } = TryDepth; }
 
     readonly Stack<Loop> loops = new();
     int tryDepth;
@@ -60,7 +60,20 @@ internal sealed partial class IlBody
         if (s.Span is { } sp) span = sp;
         else if (s.Line > 0) span = new Span(c.File, s.Line, 1, 0);
         if (s.Line > 0 && c.File.Length > 0 && s is not (MBlock or MTry))
-            il.MarkSequencePoint(span is { } x && x.Line == s.Line ? x with { File = x.File.Length > 0 ? x.File : c.File, Col = Math.Max(1, x.Col) } : new Span(c.File, s.Line, 1, 0));
+            il.MarkSequencePoint(Columns(s.Span is { } x && x.Line == s.Line ? x with { File = x.File.Length > 0 ? x.File : c.File } : new Span(c.File, s.Line, 0, 0)));
+    }
+
+    /// <summary>Real column and length for a statement's sequence point (review-r1 F19): a missing (or placeholder 1) column is the
+    /// line's first non-blank character, a missing length runs to the end of the line (trailing blanks dropped).</summary>
+    Span Columns(Span sp)
+    {
+        if (!c.SourceLines.TryGetValue(sp.File, out var lines) || sp.Line < 1 || sp.Line > lines.Length)
+            return sp with { Col = Math.Max(1, sp.Col) };
+        var text = lines[sp.Line - 1].TrimEnd();
+        int col = sp.Col;
+        if (col <= 1 || col > text.Length) { col = 1; while (col <= text.Length && char.IsWhiteSpace(text[col - 1])) col++; }
+        int len = sp.Len > 0 ? sp.Len : text.Length - col + 1;
+        return sp with { Col = col, Len = Math.Max(1, len) };
     }
 
     void Stmt(MStmt s)
@@ -116,7 +129,7 @@ internal sealed partial class IlBody
             case MDeconstruct dc: Deconstruct(dc); break;
             case MUsing u: Using(u); break;
             case AirSwitch sw: Switch(sw); break;
-            default: throw No(s.GetType().Name);
+            default: if (!StmtExt(s)) throw No(s.GetType().Name); break; // H2 il-emit2
         }
     }
 
@@ -157,7 +170,7 @@ internal sealed partial class IlBody
     void Branch(Loop l, bool brk)
     {
         var target = brk ? l.Break : l.Continue;
-        if (tryDepth > l.TryDepth) il.EmitLeave(target); else il.EmitBranch(target);
+        if (tryDepth > (brk ? l.BreakDepth : l.TryDepth)) il.EmitLeave(target); else il.EmitBranch(target);
     }
 
     void Return(MReturn r)
@@ -327,14 +340,12 @@ internal sealed partial class IlBody
         loops.Pop();
         il.MarkLabel(cont);
         var name = new AirLocalRef(f.Var);
-        string step = f.Step.Replace(" ", "");
-        switch (step)
+        switch (f.Step)
         {
-            case "++": Assign(name, "+=", AirConst.Of(1)); break;
-            case "--": Assign(name, "-=", AirConst.Of(1)); break;
-            case var st when st.Length > 2 && st[1] == '=' && st[0] is '+' or '-': Assign(name, st[..2], new MCode(st[2..])); break;
-            case var st when st.StartsWith('=') && CsText.Parse(f.Step.Trim()[1..], t => !IsVar(t) && T.TryParse(t) != null) is { } next: Assign(name, "=", next); break;
-            default: throw No("MFor:step", f.Step);
+            case { Op: "++" }: Assign(name, "+=", AirConst.Of(1)); break;
+            case { Op: "--" }: Assign(name, "-=", AirConst.Of(1)); break;
+            case { Op: "+=" or "-=" or "=", Value: { } sv }: Assign(name, f.Step.Op, sv); break;
+            default: throw No("MFor:step", f.Step.Op);
         }
         il.MarkLabel(cond);
         Jump(new MBinary { Op = AirOps.ParseBin(f.Cmp), L = name, R = f.End }, true, body);
@@ -405,7 +416,7 @@ internal sealed partial class IlBody
             EmitInstanceCall(en, cur.GetGetMethod()!);
             var et = Deref(cur.PropertyType);
             BindVars(fe.Vars, et);
-            loops.Push(new(brk, cont, tryDepth));
+            loops.Push(new(brk, cont, tryDepth) { BreakDepth = disposable ? tryDepth - 1 : tryDepth }); // il-emit2: brk lies after the try
             Stmts(fe.Body);
             loops.Pop();
             il.MarkLabel(cont);
@@ -585,6 +596,31 @@ internal sealed partial class IlBody
         bool chk = nodeChecked && Checked;
         switch (target)
         {
+            case AirDisplayField df: DisplayFieldStore(df, op, value, nodeChecked); return;
+            case AirRefOrAddDefault or AirRefOrNullRef or MCall { Name: "GetValueRefOrAddDefault" or "GetValueRefOrNullRef" }:
+                {
+                    // `CollectionsMarshal.GetValueRefOrAddDefault(d, k, out _) += v`: through the returned reference
+                    var bt = Call(target as MCall ?? (MCall)Spelled(target), keepRef: true);
+                    if (!bt.IsByRef) throw No("MAssign:ref-call", bt.Name);
+                    var el = bt.GetElementType()!;
+                    if (compound)
+                    {
+                        il.Emit(ILOpCode.Dup);
+                        il.EmitLoadObj(T.Il(el));
+                        Emit(value, el);
+                        bool ovf = chk && IlTypes.IsIntegral(el), un = IlTypes.IsUnsigned(el);
+                        il.Emit(CompoundOp(op, this) switch
+                        {
+                            AirBinOp.Add => ovf ? (un ? ILOpCode.Add_ovf_un : ILOpCode.Add_ovf) : ILOpCode.Add,
+                            AirBinOp.Sub => ovf ? (un ? ILOpCode.Sub_ovf_un : ILOpCode.Sub_ovf) : ILOpCode.Sub,
+                            AirBinOp.Mul => ovf ? (un ? ILOpCode.Mul_ovf_un : ILOpCode.Mul_ovf) : ILOpCode.Mul,
+                            _ => throw No("MAssign:ref-call-op", op),
+                        });
+                    }
+                    else Emit(value, el);
+                    il.EmitStoreObj(T.Il(el));
+                    return;
+                }
             case MCode or AirLocalRef:
                 {
                     string name = (target is MCode mc ? mc.Text : ((AirLocalRef)target).Name).Trim();
@@ -615,6 +651,7 @@ internal sealed partial class IlBody
                     }
                     var rt = Infer(m.Target);
                     string name = Bare(m.Name);
+                    if (EventAssign(m, rt, name, op, value)) return;   // D1.10 il-emit2
                     if (T.Alice(rt)?.FindField(name) is { IsStatic: false } af)
                     {
                         Receiver(m.Target, rt);
@@ -651,6 +688,9 @@ internal sealed partial class IlBody
                     var at = Infer(ix.Target);
                     if (at.IsSZArray && ix.Args.Count == 1)
                     {
+                        bool unc = false;
+                        IndexStoreExt(ix, at, op, value, nodeChecked, ref unc);   // il-opt: proven-in-bounds write
+                        if (unc) return;
                         var et = at.GetElementType()!;
                         var iet = T.Il(et);
                         if (compound || et.IsValueType && !IlTypes.IsNumeric(et) && et != typeof(bool) && !et.IsEnum && !et.IsPointer)
@@ -671,10 +711,13 @@ internal sealed partial class IlBody
                     }
                     if (compound)
                     {
-                        // indexer compound: evaluate target and index again for the read (side-effect free in lowered MIR)
+                        // indexer compound: `x[i] = (T)(x[i] op v)` reads target and index twice, so spill both to
+                        // temps first (review-r1 F7); a value-type receiver stays in place unless it is a ref struct
                         var cur = Infer(ix);
-                        var bin = new MBinary { Op = CompoundOp(op, this), L = ix, R = value, Checked = nodeChecked };
-                        Assign(ix, "=", new IlConv { To = cur, E = bin, Checked = chk });
+                        var six = new MIndex { Target = Spill(ix.Target, at, !at.IsValueType || at.IsByRefLike), Type = ix.Type, Span = ix.Span };
+                        foreach (var a in ix.Args) six.Args.Add(Spill(a, Infer(a), true));
+                        var bin = new MBinary { Op = CompoundOp(op, this), L = six, R = value, Checked = nodeChecked };
+                        Assign(six, "=", new IlConv { To = cur, E = bin, Checked = chk });
                         return;
                     }
                     if (at.IsArray)
@@ -701,6 +744,19 @@ internal sealed partial class IlBody
                 }
         }
         throw No("MAssign:target:" + target.GetType().Name, Printer.E(target));
+    }
+
+    int spillN;
+
+    /// <summary>Evaluates <paramref name="e"/> once into a fresh named local and returns a reference to it; literals,
+    /// locals and arguments are returned unchanged (review-r1 F7).</summary>
+    MExpr Spill(MExpr e, Type t, bool allowed)
+    {
+        if (!allowed || Literal(e, out _) || e is AirLocalRef || e is MCode c && (IsVar(c.Text) || c.Text.Trim() == "this")) return e;
+        var name = "__spill" + spillN++;
+        Emit(e, t);
+        il.EmitStoreLocal(Declare(name, t));
+        return new AirLocalRef(name, e.Type);
     }
 
     MethodInfo? FindIndexer(Type t, int argc, string name)
@@ -804,8 +860,15 @@ internal sealed partial class IlBody
                 else r.Add(new ArgInfo(Infer(ma.E), null, false, pre + " "));
                 continue;
             }
-            if (IsNullLit(x) || IsDefaultLit(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }
+            if (IsNullLit(x) || IsDefaultLit(x) || IsMethodGroup(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }
             if (x is MLambda) throw No("MLambda");
+            if (x is AirDelegateCreate dc)
+            {
+                PrepareDisplay(dc.Target);
+                T.LambdaReturn = LambdaReturn;
+                r.Add(new ArgInfo(IlTypes.LambdaArg, dc, false, ""));
+                continue;
+            }
             Literal(x, out var lit);
             r.Add(new ArgInfo(Infer(x), lit, false, ""));
         }
@@ -843,7 +906,7 @@ internal sealed partial class IlBody
     {
         if (rt.IsValueType)
         {
-            if (m.DeclaringType == rt && !m.IsVirtual || m.DeclaringType == rt && m.IsFinal) il.EmitCall(T.Method(m));
+            if (m.DeclaringType == rt) il.EmitCall(T.Method(m)); // il-emit2: a struct method cannot be overridden (ILVerify CallVirtOnValueType)
             else { il.EmitConstrainedPrefix(T.Il(rt)); il.EmitCall(T.Method(m), virtualCall: true); }
             return;
         }
@@ -859,6 +922,14 @@ internal sealed partial class IlBody
             uncheckedDepth++;
             try { return Raw(call.Args[0]); }
             finally { uncheckedDepth--; }
+        }
+        if (call.Target == null && call.Name == "checked" && call.Args.Count == 1)
+        {
+            // an operand of a wrapping operator (MirFacts.KeepChecked): checked again, as C# `checked(...)`
+            int saved = uncheckedDepth;
+            uncheckedDepth = 0;
+            try { return Raw(call.Args[0]); }
+            finally { uncheckedDepth = saved; }
         }
         if (call.Safe && call.Target != null)
             return SafeAccess(call.Target, new MCall { Target = new MCode("__safe_recv"), Name = call.Name, Args = call.Args, Span = call.Span }, call.Name);
@@ -879,6 +950,7 @@ internal sealed partial class IlBody
         if (call.Target == null)
         {
             foreach (var m in owner.FindMethods(name)) if (m.IsStatic || !isStatic) cands.Add(IlTypes.FromAlice(m));
+            if (owner.Host is { } host) cands.AddRange(host.FindMethods(name).Where(m => m.IsStatic).Select(IlTypes.FromAlice));
             for (var o = owner.Sym.Parent; o != null; o = o.Parent)
                 if (T.BySym.TryGetValue(o, out var ot)) cands.AddRange(ot.FindMethods(name).Where(m => m.IsStatic).Select(IlTypes.FromAlice));
             pick = T.Pick(cands, infos);
@@ -956,7 +1028,7 @@ internal sealed partial class IlBody
             var ownerT = recv == null || baseCall ? (owner.ClrBase ?? typeof(object)) : rt!;
             if (!mi.IsStatic && rt != null && rt.IsValueType && !pick.Extension && !baseCall)
             {
-                if (mi.DeclaringType == rt && (!mi.IsVirtual || mi.IsFinal)) il.EmitCall(T.Method(mi));
+                if (mi.DeclaringType == rt) il.EmitCall(T.Method(mi)); // il-emit2: a struct method cannot be overridden (ILVerify CallVirtOnValueType)
                 else { il.EmitConstrainedPrefix(T.Il(rt)); il.EmitCall(T.Method(mi), virtualCall: true); }
             }
             else il.EmitCall(T.Method(mi), virtualCall: !mi.IsStatic && !baseCall && !(recv == null && owner.IsValueType));

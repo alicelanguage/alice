@@ -50,6 +50,8 @@ file.al -> Syntax (AST) -> Semantics (HIR) -> Lowering (MIR) -> Backend (C# + #l
 | `{"a" => 1}` | `Hash(String, Int32)` |
 | `0...n` / `1..n` | range (exclusive / inclusive) |
 | `xs[1..]`, `xs[..2]`, `xs[...2]` | open index range: `xs[1..-1]`, `xs[0..2]`, `xs[0...2]` |
+| `xs[1..3]`, `s[1...3]`, `s[1, 3]` | slice of an Array, List or String (a new Array/List/String); negative bounds count from the end; a start past the end gives an empty slice (Ruby: `nil`) |
+| `xs[-1]` | literal negative index on an Array, List or String counts from the end (`xs[xs.size - 1]`); a computed negative index (`xs[i]`, `i < 0`) raises `IndexOutOfRangeException`, as in Crystal: counting from the end at run time would add a sign check to every index |
 | `(1..)` | endless range, counts up lazily (to `Int32::MAX`) |
 | `when 4..`, `in ..3` | open range in a pattern (bounded by `Int32::MIN`/`MAX`); `..b` elsewhere is an error |
 | `%w[a b]` / `%i[a b]` | `Array(String)` of words / symbols; also `%w{}`, `%w()`, `%w<>`, `%w\|\|` |
@@ -104,7 +106,8 @@ puts s.Length      # error CS8602
 Conditions use Ruby truthiness: only `nil` and `false` are falsy, so `if s`, `unless s`, `while s`, `s ? a : b`
 and `!s` are nil checks on a nullable. Inside `if n`, and after a guard clause (`return unless n`, `break unless n`,
 `next unless n`, `raise ... unless n`), a nullable number such as `n : Int32?` reads as `Int32` (narrowing stops
-where the branch reassigns `n`). An assignment can be the condition, as in Ruby:
+where the branch reassigns `n`). A .NET generic method whose result is `T?` (`JsonSerializer.Deserialize<Array(Tea)>(text)`)
+returns a nullable, checked the same way (`if loaded`, `loaded || fallback`). An assignment can be the condition, as in Ruby:
 
 ```crystal
 if user = find(id)        # user : User? here, non-nil inside the branch
@@ -266,7 +269,7 @@ parameters), `[]` (indexer) and `[]=` (its setter: `g[i] = v`). `def <<(x)` used
 works too. `def ===` compiles (method `op_CaseEq`) but `when`/`===` do not dispatch to it yet; `def call` is an
 ordinary method, `obj.call(x)` / `obj.(x)` on a user class are not supported yet.
 
-Integer `/` on ints is integer division; `a/2` is division, not a regex. Signed `/` and `%` are floored (`-7 / 2 == -4`, `-7 % 3 == 2`, like `divmod`); `tdiv`/`remainder` truncate. Integer overflow raises `OverflowException`; `&+ &- &*` wrap. Floats print as `2.0`, `1.0e-07`, `1.0e+16` (ADR 0013). Limits: `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`. User operators: `def +(o : V2) : V2`.
+Integer `/` on ints is integer division; `a/2` is division, not a regex. Signed `/` and `%` are floored (`-7 / 2 == -4`, `-7 % 3 == 2`, like `divmod`); `tdiv`/`remainder` truncate. Integer overflow raises `OverflowException`; `&+ &- &*` wrap. `Int8`/`UInt8`/`Int16`/`UInt16` operands promote to `Int32` before any arithmetic (as in C#), so wrapping happens at the operator's type: `12.to_i8 &* 12.to_i8` is the `Int32` 144, and only an explicit narrowing wraps into the small type (`144.to_i8!` is -112; `144.to_i8` raises). Floats print as `2.0`, `1.0e-07`, `1.0e+16` (ADR 0013). Limits: `Int32::MAX`, `UInt8::MIN`, `Float64::INFINITY`, `Float64::NAN`. User operators: `def +(o : V2) : V2`.
 
 ## 5. Methods
 
@@ -465,7 +468,7 @@ end
 | `getter a, b : Int32` | several at once (without a type: inferred from `@a = ...`) |
 | `getter? ok : Bool` / `property? ok : Bool` | reader `ok?` (property also writes `a.ok = v`) |
 | `getter! v : T` / `property! v : T` | field `@v : T?`; `v` raises when nil, `v?` may be nil |
-| `class_getter n : Int32 = 0` / `class_property` / `class_setter` | class variable `@@n` (needs a value) with class methods `A.n`, `A.n = v` |
+| `class_getter n : Int32 = 0` / `class_property` / `class_setter` | class variable `@@n` (needs a value) with class methods `A.n`, `A.n = v`, `A.n += 1` |
 | `attr_reader :x` / `attr_accessor :x, :y` / `attr_writer :x` | Ruby forms of `getter` / `property` / `setter`; type inferred from `@x = ...` |
 | `@x = v` in a method | declares field `@x`, type inferred (Ruby style) |
 | `alias hi hello` | `hi` calls `hello` |
@@ -509,6 +512,82 @@ puts Shape::Rect(1.0, 2.0) == Shape::Rect(1.0, 2.0)   # true
 ```
 
 Variants are constructed with `Type::Variant(args)` (lowered to sealed nested records). `Type(args)` also constructs ordinary classes and records (`Point(1, 2)` is `Point.new(1, 2)`); with type arguments it names a generic type (`List(Int32).new`).
+
+#### `affine enum`: sum types in an arena (ADR 0037)
+
+A sum type whose payload fields are all unmanaged (numbers, `Bool`, `Char`, plain enums, records of those) or other
+such sum types (recursion allowed) is **arena-eligible**: the compiler can keep its values in a per-type struct arena
+instead of one GC object per node. A variant with no fields or one field of at most 32 bits (`Leaf(v : UInt32)`,
+`Emp`) is **packed** into the 64-bit term itself and never allocates.
+
+The proof is whole-program and silent. Every value must be used **affinely**: consumed by one `case`, passed once to
+an Alice method, returned, assigned, or built into another node. Per `case` arm the compiler decides:
+
+| Decision | When | Effect |
+|---|---|---|
+| Take | the scrutinee is owned, not used again on any path from the arm, and the arm has no guard | fields are read, the node is freed |
+| Borrow | the scrutinee is used later on some path, or it is a `borrow` parameter | fields are read in place; they stay borrowed until the scrutinee dies, when its slot is dropped and the fields own their nodes |
+| Keep | `affine enum` only: the value was moved into a call, node or local and is read again | Bend 2's counted redirect: the receiver and the local each hold a count; the local's last read releases its count |
+
+A local that holds a packed value is copied, not moved, so `Tree::Node(leaf, leaf)` is fine. A `borrow p`
+parameter (ADR 0017) only reads: its `case` arms Borrow and the caller keeps ownership. The compiler also **infers**
+`borrow` (Bend 2's borrow inference): a parameter whose body only reads it (every `case` arm on it Borrows, it is not
+moved, returned or built into a node, and no field read from it is consumed) lends instead of moving, to a
+whole-program fixpoint. So `total(t)` twice is fine when `total` only reads `t`; the caller still owns `t` and drops it
+after its last read. Written `borrow` stays a contract (AL0243); an inferred one silently becomes owned.
+
+Any escape **demotes the type** to sealed records everywhere in the program: storing a value in a field, a
+collection, a nullable (`Tree?`) or a generic type; capturing it in a block or lambda; passing it to .NET (`puts t`);
+`==`, `hash`, `to_s` or string interpolation; using it in `rescue`/`ensure`; or using it after it was moved. The
+program still runs, at record speed. `affine enum` makes the same sites compile errors:
+
+```crystal
+affine enum Tree               # arena form, or a compile error
+  Leaf(v : UInt32)
+  Node(l : Tree, r : Tree)
+end
+
+def total(t : Tree) : UInt32
+  case t                       # Take: t is not used again, its node is freed
+  when Tree::Leaf(v) then v
+  when Tree::Node(l, r) then total(l) &+ total(r)
+  end
+end
+
+def size(borrow t : Tree) : UInt32
+  case t                       # Borrow: the caller still owns t
+  when Tree::Leaf(v) then 1_u32
+  when Tree::Node(l, r) then size(l) &+ size(r)
+  end
+end
+
+t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))
+n = size(t)                    # lends t
+puts total(t) &+ n             # consumes t
+```
+
+| Code | Under `affine enum` |
+|---|---|
+| AL0240 | a payload field is a reference type that is not an affine enum (`A(s : String)`) |
+| AL0241 | an affine value escapes (the list above) |
+| AL0242 | an affine value is used after a `case` consumed it or it was moved into a call (`swap(t)` twice, where `swap` consumes); a read after a move is a Keep instead |
+| AL0243 | a `borrow` parameter, or a field read from it, is consumed |
+
+Calls move their arguments unless the parameter is written or inferred `borrow`.
+
+**Lowering** (`Lowering/Lowerer.Affine.cs`, ADR 0040). A value of an arena type is one 64-bit term: bit 63 packed,
+bits 56-62 the variant tag, bits 32-55 the lane (thread) that allocated it, bits 0-31 a packed payload or a slot
+index. A slot variant's fields live in its thread's slab as `ulong` words. `case` dispatches on the top byte of the
+term; a Take reads the fields and pushes the slot on the free list, so a constructor in the same arm reuses it; a
+Borrow only reads. Where an owned value dies unconsumed (the Drops of the analysis, and the fields a Take arm does
+not bind) its whole subtree is freed, except children a borrowing arm bound to locals (they own them now). Only the
+thread that allocated a node frees it; a node read on another thread returns when the enclosing region ends.
+`scope ... end` in the main program is a region: every slot allocated inside is reset at `end`. The C# backend calls
+`Arena<TSlot>.Alloc/Take/Borrow`; the IL backend inlines them (lane-cursor slot access without bounds checks).
+`ALICE_NO_ARENA=1` compiles sum types to records, `ALICE_ARENA_DEEP=0` frees only the dead node's own slot.
+A value passed straight from a call into a borrowing parameter (`total(build(n))`) is a temporary with no local, so
+nothing drops it: bind it to a local (`t = build(n)`, `total(t)`) to free it after the call. `alice explain` lists every sum type as `arena` or `record (demoted: ... at file:line: why)`. `affine` is a
+modifier only in front of `enum`; it stays an ordinary name elsewhere.
 
 ### Modules
 
@@ -801,6 +880,52 @@ If the iterations are not provably independent (a write outside `a[i]` / `a[i * 
 read such as `a[i - 1]` of the written array, an impure call) it is compile error AL0209 rather than a silent
 serial loop.
 
+### Data-parallel loop shapes and `cm for` (ADR 0039)
+
+A counted loop `for i in 0...n` that `par for` cannot prove independent may still be one of the
+Connection-Machine communication shapes. The compiler recognizes them after the `par for` check and lowers
+them to the runtime kernels of `Alice.Runtime.Cm` (chunked by `n` only, vectorized, dispatched on the kernel
+pool, no GC allocation once warm):
+
+| Body (after pure body-local definitions) | Kernel |
+|---|---|
+| `acc = acc &+ e(i)` then `out[i] = acc` (also `&*`, `&`, `\|`, `^`; `out[i] = acc` first is exclusive) | scan |
+| `if f(i) then acc = 0 end` before such a scan | segmented scan |
+| one or more `h[k(i)] = h[k(i)] &+ v(i)` (`&+=`), each on its own table `h` not read in the loop | combine (histogram / scatter-add) |
+| `if c(i) then out[m] = xs[i]; m += 1 end`, `m` written only there | compaction |
+| `out[p[i]] = xs[i]` | permutation |
+
+Inference never changes a result: it takes integer scans and combines only with wrapping or bitwise operators
+(checked `+` could raise where a kernel wraps), Int32/UInt32/Int64/UInt64 elements (Float32/Float64 for
+compaction and permutation, which copy), at least 16,384 iterations, and it keeps the plain loop for every
+case a kernel cannot reproduce: aliasing arrays (checked at run time), a compaction whose counter does not start
+at 0 or whose destination is too short, a permutation with a repeated or out-of-range target (the loop then
+runs as written: the last write wins, or it raises), a key of the form `base + i` (distinct cells, not a
+combine). An element `e(i)` that is not a plain array read is materialized first by a map pass, which itself
+runs as an ordinary (possibly parallel) loop. `alice explain` lists the kernels a method uses.
+
+`cm for` makes a shape a requirement, at any trip count, and widens it:
+
+```crystal
+cm for i in 0...n                 # a float scan: chunked, the same bits for any core count
+  acc += xs[i]
+  pre[i] = acc
+end
+
+cm for j in 0...keys.size         # histogram: private tables merged in order
+  row[keys[j].clamp(0, 255)] += 1_u32
+end
+```
+
+- Float scans run with the fixed-chunking contract: chunks of `max(4096, n / 1024)` elements, so results are
+  bit-identical for any `DOTNET_PROCESSOR_COUNT` on the same machine, and may differ from the serial left fold in
+  the last bits. Write a plain `for` when the serial bit pattern matters.
+- Integer `+` and `*` in a `cm for` scan or combine wrap, like `&+` and `&*`.
+- A float combine is AL0248 unless written `cm ordered for`, which runs it in index order (the plain loop).
+- A permutation is AL0249: the compiler has no proof that `p` is a permutation (use a plain `for`, checked at
+  run time).
+- Any other body is AL0247, which names the statement that is not a shape.
+
 ### Declared effects and explicit forks (0.12.2)
 
 Inference stays the default. These modifiers let a program say what it wants, so the compiler optimizes
@@ -862,7 +987,8 @@ Expressions fork too, HVM-style: when a statement is arithmetic over pure reads 
 ### Wrapping regions: `unchecked`
 
 Integer `+ - *` raise `OverflowException` on overflow (ADR 0013). Inside `unchecked ... end` they wrap, the
-region form of `&+ &- &*` for hashes and PRNGs:
+region form of `&+ &- &*` for hashes and PRNGs (inside the region the operands of `&+ &- &*` wrap too:
+`(a + 1) &+ 1` is `Int32::MIN + 1` for `a = Int32::MAX`; outside it, `a + 1` still raises):
 
 ```crystal
 h = 0
@@ -872,6 +998,31 @@ unchecked
   end
 end
 ```
+
+### Dataflow networks: `dataflow do` (ADR 0038)
+
+```crystal
+dataflow(capacity: 16384, batch: 512) do            # options: ring capacity, items per body call
+  lines  = source(state: idx) { |all, out|         # one producer; `out << v` emits
+    for k in 0...all.size
+      out << all[k]
+    end
+  }
+  hashes = lines.stage(state: text) { |t, l, out| out << hash(t, l) }   # stateful, 1:n
+  scores = hashes.stage(par: true, workers: 16, batch: 1024) { |h| score(h) }   # pure: replicated, ordered
+  scores.sink { |s| total += s }                   # sink writes are copied back after the run
+end
+```
+
+Each node is a static method over a batch, `(ref state, ReadOnlySpan(TIn), ref RingWriter(TOut))`, registered by
+function pointer: no delegate or lambda per item, no allocation per item. Edges are bounded SPSC rings; the
+output equals the serial program for every thread count (`ordered: false` lets a replicated stage merge batches as
+they finish). A stage block is `|x, out|`, `|x|` (its value is the output) or with `state:` `|st, x, out|`; a
+source is `|out|`/`|st, out|` and runs as an iterator (bounded memory), so `out << v` must be a statement of its
+body or of its loops. Errors: AL0244 (a node captures a non-sendable or written local; only the sink may write
+locals or own a mutable one; no `self`), AL0245 (`par: true` on a block that is not pure), AL0246 (two consumers or
+producers, a cycle, an edge without consumer, anything but nodes in the block). `stream def f(...) : Iterator(T)`
+declares an iterator whose consumer may run concurrently; today it runs as a plain iterator (same output).
 
 ### Race safety (AL0202)
 
@@ -900,7 +1051,7 @@ Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`
 | `AMath` | MatMul, Mean, Variance, Norm, Axpy |
 | `CsrMatrix<T>`, `SparseVector<T>` | sparse linear algebra |
 | `Nn`, `Tensor<T>`, `QuantizedMatrix`, `MappedFile` | tensor kernels: dot, GEMV/GEMM, softmax, norms, activations; aligned strided tensors; int8/int4 blocks; mapped files (ADR 0030) |
-| `Cm` | Connection-Machine primitives (ADR 0039): `InclusiveScan`/`ExclusiveScan`/`Reduce` (`CmOp` `+ * & \| ^ min max`), `SegmentedScan`/`SegmentedReduce`, `Histogram`, `ScatterAdd`, `Compact`, `Permute`, `SortByKey`; chunked by length only, so floats are bit-identical for any worker count |
+| `Cm` | Connection-Machine primitives (ADR 0039): `InclusiveScan`/`ExclusiveScan`/`Reduce` (`CmOp` `+ * & \| ^ min max`), `SegmentedScan`/`SegmentedReduce`, `Histogram`, `ScatterAdd`, `Compact`, `Permute`, `SortByKey`; chunked by length only, so floats are bit-identical for any worker count on one machine (float scans follow the SIMD tier: AVX-512, AVX2, Vector128 or scalar hardware may round differently) |
 | `Prelude` | Ruby helpers: `puts`, `each`, `map`, `sum`, `size`, `even?`, `to_s`, `to_i`, `send`, ... |
 
 ### Rules and proofs
@@ -914,8 +1065,16 @@ end
 
 A `rule` is a pure method returning `Bool` over finite domains (`x in lo..hi`, `x in lo...hi`, `b : Bool`; at most
 2^32 cases, AL0214). `alice prove` checks every case and writes `PROOF.al`; `alice prove --smt` proves rules over
-whole `Int32`/`Int64` ranges with Z3. See [guide/PROOFS.md](../guide/PROOFS.md) and
-[tooling.md](tooling.md#rules-and-proofs-alice-prove).
+whole `Int32`/`Int64` ranges with Z3. A rule fails when it returns `false` or raises (overflow, division by zero)
+on some input, and `alice prove` prints the first such input in domain order:
+
+```text
+rule percent_in_range FAILS: part = 0, total = 0 -> raised DivideByZeroException
+```
+
+`alice prove --check` (or `alice build --prove`, or `[build] prove = true`) exits 1 when a rule fails or `PROOF.al`
+is stale, so CI and agents gate on the rules; `--format json` and `--timeout` are for scripts. See
+[guide/PROOFS.md](../guide/PROOFS.md) (a worked example) and [tooling.md](tooling.md#rules-and-proofs-alice-prove).
 
 ## 13. Performance model
 
@@ -946,12 +1105,34 @@ Prelude (`Alice.Runtime.Prelude`), Ruby/Crystal names. `name?` = C# `name_q`.
 | Int / Float | `gcd lcm digits divmod clamp between? round(n) floor(n) ceil(n) abs even? odd? zero? positive? negative? times upto downto step(limit, by) to_s(base) sqrt cbrt log log2 log10 truncate nan? infinite? finite? fdiv sign tdiv remainder popcount leading_zeros_count trailing_zeros_count bit_length to_i8..to_u64 to_i32 to_f64 to_f32 (checked) to_X! (wrapping)` |
 | Range | Enumerable methods plus `step size include? cover? to_a sum`; `("a".."e")` and `('a'..'d')` iterate with `succ`; a Range of another Comparable (`(1.0..2.0)`, dates) has `include? includes? cover? step(Float64)` and raises when iterated; `reverse_each` and `Int#step(limit, by)` without a block return an `IEnumerable` |
 | Free functions | `puts print p gets rand exit format(fmt, ...) read_file write_file file_exists? read_lines sleep(sec) now env(name) to_json(obj) parse_json(text)`; `p a, b` (returns the array), `p nil`, `pp`, `at_exit { }` (last registered runs first, also on `exit`) |
+| JSON (`Alice.Core.Json`, ADR 0036) | `JSON.parse(text)` (RFC 8259 strict; `JSON.parse(text, true)` also accepts `//` and `/* */` comments) returns `JSON::Any` (`JsonAny`): `any["key"]`, `any[0]`, `any[-1]` (missing key or index: an undefined value, `nil?` is true), `dig("a", 0, "b")`, `as_i as_f as_s as_bool as_a as_h nil? size keys each each_pair to_h to_a to_json`; integers are Int64, then UInt64, then Float64 on overflow; duplicate keys: the last wins. `JSON.generate(obj)` / `to_json(obj)` and `JSON.pretty_generate(obj)` write Ruby's shape (`1.0` stays `1.0`, only `"`, `\` and control characters are escaped). `parse_json(text)` parses with the same engine and returns a `JsonNode` tree. C# API: `JsonDocument.Parse`, `JsonIterator` (on-demand), `JsonWriter`, `JsonMap` (mapping pieces for generated `from_json`/`to_json`) |
 | Globals | `ENV` (a `Hash(String, String)` of the environment; `ENV[k] = v` also sets the process variable), `STDOUT STDERR STDIN` (`puts print write flush gets read read_lines each_line`) |
 | Range | Enumerable methods plus `step size include? cover? to_a sum` |
 | Array (CM, parallel) | `prefix_sum` `scan{\|a,b\|}` (associative block; one call per element, slower than `prefix_sum`) `segmented_sum(flags)` (one sum per segment) `segmented_prefix_sum(flags)` `histogram(k)` (Int32/UInt32 keys in `0...k`) `compact{\|x\| pred}` `scatter_add(idx, vals)` / `scatter_add(target, idx, vals)` (updates the target) `permute(perm)` (`out[perm[i]] = xs[i]`, checked) `sort_by_key(vals)` (stable radix, returns `{keys, values}`). Integers exact; floats bit-identical for any thread count, may differ from a serial loop in the last bits; blocks must be pure |
 | Free functions | `puts print p gets rand exit format(fmt, ...) read_file write_file file_exists? read_lines sleep(sec) now env(name) to_json(obj) parse_json(text)` |
 
 `format`: `%d %i %s %f %.Nf %e %x %X %o %b %c %%`, flags `-0+ `, width. A Hash prints as `{"a" => 1}`, a Tuple as `{1, "one"}`. Runtime halves of forms that still need a compiler lowering: `Prelude.hash_new` / `hash_get` (`Hash(K, V).new(default)`; until then write `DefaultHash(K, V).new(default)`), `arr_mul` (`[1, 2] * 2`, `[1, 2] * ","`), `String.build { |io| }` (a C# 14 static extension, waiting for the binder to keep the block). Tests: `Runtime/StdlibTests`, `Runtime/StdlibCompletionTests` (covers a subset of each row).
+
+### Alice Core modules (`Alice.Core.*`, ADR 0036)
+
+`using Alice.Core.Time` (one namespace per module) makes a module's types visible. Core is written with .NET names
+and read with Alice spelling through the binder (`Fs.exist?(p)` calls `Fs.Exist`, `Fs.mkdir_p` calls `MkdirP`), so C#
+and F# call the same API. Hot paths work on spans and struct enumerators and allocate nothing (allocation tests in
+`tests/Alice.Tests/Runtime/Core*Tests.cs`; numbers in `benchmarks/core/README.md`, "Library modules").
+
+| Module | Types and members |
+|---|---|
+| `Text` | `Utf8String` (immutable UTF-8: `count delete squeeze tr upcase downcase strip index rindex include? start_with? end_with? each_line split length bytesize +`; positions are byte offsets), `Utf8Text` (the same over spans: AVX-512/AVX2 kernels), `Utf8ByteSet` (`"a-z"`, `"^aeiou"`; ASCII specifications, Ruby results on UTF-8 text), `Utf8Translation`; `Format.sprintf / try_format / try_format_utf8(fmt, args...)` with `FormatArg` (no boxing): `%d %i %u %f %e %E %g %G %x %X %o %b %B %s %p %c %%`, flags `- + space 0 #`, width and precision as digits or `*`, `Inf`/`NaN`, two-digit exponents |
+| `Time` | `Time.now utc_now utc(y, m, d, h, mi, s) local at(sec) parse with_offset`, `strftime try_strftime(span) iso8601(digits) to_s to_i to_f year month day hour minute second usec nsec wday yday utc_offset zone utc? to_utc to_local add subtract since` (`+ - < ==` from C#); `Duration` (`5.minutes`, `1.5.seconds`, `2.hours.ago`, `from_now`, `total_seconds`, `to_s` as `1h2m3.5s`); `Clock.timestamp since monotonic`; `Time.measure { }`. `strftime`: `%Y %C %y %m %B %b %h %d %e %j %H %k %I %l %P %p %M %S %L %N %z %:z %::z %Z %A %a %u %w %G %g %V %U %W %s %Q %n %t %% %c %D %F %T %R %r %x %X %v %+`, flags `- _ 0 ^ #` and width (`%3N` = 3 fraction digits). `%Z` is `UTC` or the offset (.NET has no zone abbreviations) |
+| `Csv` | `CsvReader(bytes)` rows as views (`CsvRow`, `CsvField`: `raw quoted? has_escapes? to_s copy_to try_get_int64 try_get_double`), `CsvWriter(IBufferWriter)` (quotes only when needed), `Csv.parse read foreach count_rows generate generate_line`; RFC 4180, LF or CRLF, a UTF-8 BOM is skipped, `CsvOptions(separator, quote)`. Text after a closing quote is not decoded (malformed input) |
+| `Toml` | `Toml.parse(text or bytes) parse_file try_parse write` give a `TomlTable` of `TomlAny` (`[key] [i] dig exists? as_string as_table as_array get_string get_int64 get_double get_boolean get_date_time_offset get_date_time get_date get_time to_object`), `TomlArray`, `TomlParseException` (`line column reason`). TOML 1.0 with its table rules; passes the toml-test suite (208 valid, 509 invalid files); comments are not kept. `alice.toml` is read with it (`Projects/ManifestToml.cs`) |
+| `Fs` | `Fs.read read_bytes read_lines write append open(path, mode) { \|f\| } open_stream each_line(path, chomp) (struct enumerator of UTF-8 spans, 0 bytes per line) each_line(path) { \|line\| } count_lines map (a `MappedFile`) exist? file? directory? size zero? mtime basename(path, suffix) dirname extname join expand_path delete rename copy touch mkdir_p rm_rf children each_child glob match` (`glob`: `* ? [a-z] [!x] {a,b} **/`, dot files only for dot patterns) |
+| `Process` | `Shell.capture(cmd)` (backticks), `system(cmd)` / `system(program, args...)` (no shell), `spawn`, `wait(pid)`, `kill`, `run(program, args, input:, output:)`, `last_status` (`$?`: `exit_code pid success?`); `Open3.capture3(cmd, stdin_data) capture2e`; `Signals.trap("INT" \| "TERM" \| "HUP" \| "QUIT" \| "EXIT") { }` |
+| `Crypto` | `Crc32C.compute append combine hex_digest` (SSE4.2 or ARM64 instruction, three streams), `XxHash3.hash64(data, seed)` (bit-exact with xxHash 0.8), `Digests.sha256 sha512 hash hex_digest`, `Digester.sha256 / create_hmac` (`update`, `digest`, `hex_digest`, `try_finish`), `Hmac.compute sha256 hex_digest verify` (constant time), `SecureRandom.hex random_bytes base64 urlsafe_base64 uuid random_number alphanumeric fill` |
+| `Collections` | `Set(T)` (`\| & - ^ <= < >= include? add delete merge subset? disjoint? to_a`; prints `#<Set: {1, 2}>`), `Deque(T)` (`push pop shift unshift first last [i]`), `Ring(T)` (fixed capacity, overwrites the oldest), `BitSet` (`[i] set clear flip pop_count next_set_bit and or xor and_not set_all`; `each` gives the set bits) |
+| `Env` | `Env.get set fetch(name) fetch(name, default) has_key? delete fetch_int fetch_bool to_h keys` (the live environment), `Argv.values count at program_name`, `Platform.os arch cores linux? windows? mac_os? runtime hostname pid triple` |
+| `Net` | `TcpServer.listen(port, host)` then `serve { \|conn\| }` (one thread-pool handler per connection, closed when it returns) or `serve_async`; `TcpSocket.connect`, `UnixServer` / `UnixSocket`, `UdpSocket` (`bind send send_to receive last_sender`); connections are `StreamSocket` (`read write read_exactly read_async write_async puts gets try_read_line close_write close`, lines through an owned `RingBuffer`) |
+| `Net.Http` | `HttpSession.new(base_url, headers, timeout)` over `SocketsHttpHandler` (`get post put delete post_json put_json get_async post_async`, `retries` for idempotent requests), `HttpReply` (`status success? body text header content_type ensure_success json(reader)`: the body stays in a pooled buffer), `Http.get get_string post post_json` (shared session). `json(reader)` / `post_json(writer)` take the JSON reader and writer hooks of `Alice.Core.Json` |
 
 ## Ruby core mixins and `case ... in`
 
@@ -968,7 +1149,7 @@ Tests: `tests/Alice.Tests/Compiler/RubyMixinTests.cs`.
 | Form | Meaning |
 |---|---|
 | `in x` / `in _` | bind the subject / match anything (catch-all makes the case exhaustive) |
-| `in ^x` | pin: compare with the existing value of `x` |
+| `in ^x` | pin: compare with the existing value of `x`; inside an array or hash pattern too, also a name bound earlier in the same pattern (`in [a, ^a]`: two equal elements) |
 | `in 1 \| 2 \| 3` | alternatives |
 | `in Shape::Circle(r) if r > 10.0` | guard (bound names are visible in the guard) |
 | `in {"lang" => "pt", "name" => n}` | hash pattern: keys must exist, names bind, other values must be equal |

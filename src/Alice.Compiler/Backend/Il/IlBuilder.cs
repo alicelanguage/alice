@@ -136,8 +136,8 @@ public sealed class IlBuilder
     /// so every emitted instruction (and its sequence point) stays.</summary>
     public IlPeephole Peephole { get; set; } = IlPeephole.All;
 
-    /// <summary>Encode every branch in its long form (additive helper, D1.4): the fallback for a body whose
-    /// serialized bytes fail the decode check (short-branch fixup corruption, see Backend/IlSpike/README.md).</summary>
+    /// <summary>Encode every branch in its long form. A debug knob only: the short-branch corruption it used to work
+    /// around came from multi-chunk code buffers and is fixed in <see cref="Encode"/>.</summary>
     public bool LongBranches { get; set; }
 
     public IReadOnlyList<IlLocal> Locals => locals;
@@ -720,8 +720,6 @@ public sealed class IlBuilder
         return p >= 0 ? p : throw new InvalidOperationException("label " + labelId + " is used but never marked");
     }
 
-    static bool FitsR4(double v) => !double.IsNaN(v) && (double)(float)v == v;
-
     static int SizeI4(long v) => v is >= -1 and <= 8 ? 1 : v is >= sbyte.MinValue and <= sbyte.MaxValue ? 2 : 5;
 
     static int Size(in Instr x, bool longBranch)
@@ -736,7 +734,7 @@ public sealed class IlBuilder
             Operand.I4 => SizeI4(v),
             Operand.I8 => v is >= int.MinValue and <= int.MaxValue ? SizeI4(v) + 1 : 9,
             Operand.R4 => 5,
-            Operand.R8 => FitsR4(x.R) ? 5 : 9,
+            Operand.R8 => 9, // never shrunk to ldc.r4: the JIT would type the operand float (review-r1 F2)
             Operand.Branch => longBranch ? 5 : 2,
             Operand.Switch => 5 + 4 * ((IlLabel[])x.Obj!).Length,
             Operand.Byte => opSize + 1,
@@ -770,7 +768,9 @@ public sealed class IlBuilder
             }
         }
 
-        var enc = new InstructionEncoder(new BlobBuilder(), new ControlFlowBuilder());
+        // one chunk for the whole body: the ControlFlowBuilder branch fixup of SRM drops the byte after a short-branch
+        // operand that ends a BlobBuilder chunk (256 bytes by default), as in kmeans `chunk`
+        var enc = new InstructionEncoder(new BlobBuilder(Math.Max(off[n], 16)), new ControlFlowBuilder());
         var handles = new LabelHandle[labelPos.Count];
         for (int i = 0; i < handles.Length; i++) handles[i] = enc.DefineLabel();
         var seq = new List<IlSequencePoint>();
@@ -808,9 +808,7 @@ public sealed class IlBuilder
                     else enc.LoadConstantI8(x.I);
                     break;
                 case Operand.R4: enc.LoadConstantR4((float)x.R); break;
-                case Operand.R8:
-                    if (FitsR4(x.R)) enc.LoadConstantR4((float)x.R); else enc.LoadConstantR8(x.R);
-                    break;
+                case Operand.R8: enc.LoadConstantR8(x.R); break;
                 case Operand.Branch: Target(x.I); enc.Branch(longBr[i] ? x.Op : x.Op.GetShortBranch(), handles[(int)x.I]); break;
                 case Operand.Switch:
                     var sw = enc.Switch(((IlLabel[])x.Obj!).Length);

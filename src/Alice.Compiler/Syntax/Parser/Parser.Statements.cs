@@ -95,6 +95,7 @@ public sealed partial class Parser
             gf.Gpu = true;
             s = gf;
         }
+        else if (IsKw("cm") && Peek(1).Kind == "id" && (Peek(1).Text == "for" || Peek(1).Text == "ordered" && Peek(2).Text == "for")) { Next(); bool ord = IsKw("ordered") && Next() != null; var cf = For(); cf.Cm = true; cf.CmOrdered = ord; s = cf; }   // ADR 0039
         else if (IsKw("par") && Peek(1).Kind == "id" && Peek(1).Text == "for")
         {
             Next();
@@ -501,7 +502,14 @@ public sealed partial class Parser
             else
             {
                 if (ap.Rest != null) throw Err("the *rest element must be last");
-                if (t[p].Kind == "id" && !IsKeyword(Cur.Text))
+                if (IsOp("^") && Peek(1).Kind == "id")   // `^name` pins: compare with the value (also one bound earlier in this pattern)
+                {
+                    Next();
+                    ap.Pins.Add(ap.Literals.Count);
+                    ap.Literals.Add(Binary(5));
+                    ap.Names.Add("_");
+                }
+                else if (t[p].Kind == "id" && !IsKeyword(Cur.Text))
                 {
                     string n = Next().Text;
                     ap.Names.Add(n);
