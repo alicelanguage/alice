@@ -35,13 +35,6 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0241 | affine value escapes | `affine enum Tree ...`<br>`puts t` | `affine value \`t\` escapes: passed to .NET \`puts\`` (also: stored in a field, collection or nullable, captured by a block, compared with `==`, `.hash`/`.to_s`, interpolated, reaches `rescue`) | consume it with `case`, move it to an Alice call or return it; or drop `affine` (the type becomes records) |
 | AL0242 | use after consume | `a = swap(t)`<br>`b = swap(t)` (`swap` consumes its argument) | `affine value \`t\` read after it was consumed (moved at main.al:12)` | read the fields inside the `case`, or take it as `borrow` in the reading method (a read after a move becomes a Keep) |
 | AL0243 | borrow consumed | `def f(borrow t : Tree)`<br>`  case t ... total(l)` | `borrowed affine value \`l\` (a field of borrowed \`t\`) is consumed` | drop `borrow`, or only read `t` (lend it on with `borrow`) |
-| AL0244 | stage not isolated (planned, ADR 0038) | `xs = List(Int32).new`<br>`dataflow do ... stage { \|v\| xs << v }` | `dataflow stage captures ...` | build state with `stage(state: ...)` or send it through the stream |
-| AL0245 | replicated stage not pure (planned, ADR 0038) | `stage(par: true) { \|t\| puts t }` | `stage(par: true) is not pure: ...` | remove the effect, or drop `par: true` |
-| AL0246 | not a static network (planned, ADR 0038) | two `stage`s reading `lines`, or a cycle | `dataflow edge ... has more than one consumer` / `cycle` | split the stream explicitly, or use actors for feedback |
-| AL0240 | affine payload (planned, ADR 0037) | `affine enum T`<br>`  A(s : String)` | `affine enum \`T\`: field ... is a reference type` | use unmanaged fields or other affine enums, or drop `affine` |
-| AL0241 | affine value escapes (planned, ADR 0037) | `affine enum Tree ...`<br>`puts t` | `affine value \`t\` escapes: ...` | consume it with `case`, move it to an Alice call or return it; or drop `affine` (the type becomes records) |
-| AL0242 | use after consume (planned, ADR 0037) | `case t ... end`<br>`total(t)` | `affine value \`t\` read after it was consumed` | read the fields inside the `case`, or pass it as `borrow` |
-| AL0243 | borrow consumed (planned, ADR 0037) | `def f(borrow t : Tree)`<br>`  case t ...` that frees `t` | `borrowed affine value \`t\` is consumed` | drop `borrow`, or only read `t` |
 | AL0244 | stage not isolated (ADR 0038) | `xs = List(Int32).new`<br>`dataflow do ... stage { \|v\| xs << v }` | `dataflow stage captures ...` | build state with `stage(state: ...)` or send it through the stream |
 | AL0245 | replicated stage not pure (ADR 0038) | `stage(par: true) { \|t\| puts t }` | `stage(par: true) is not pure: ...` | remove the effect, or drop `par: true` |
 | AL0246 | not a static network (ADR 0038) | two `stage`s reading `lines`, or a cycle | `dataflow edge ... has more than one consumer` / `cycle` | split the stream explicitly, or use actors for feedback |
@@ -68,6 +61,8 @@ Language: `ALICE_LANG=pt|es|en` or `--lang pt`. Default: OS UI culture.
 The generated C# is type-checked by Roslyn; its errors are reported in Alice terms (Alice type names, no C# ids).
 
 AL0309 (use before assignment), AL0310 (possible nil) and AL0300 constant overflow (`The operation overflows at compile time in checked mode`, `Constant value ... cannot be converted`) come from the binder, so every backend reports them (IL included).
+
+Two cases are errors although Roslyn never saw them (the generated C# initializes every declared local with `default!`): a reference-typed local declared without a value and read before every path assigns it (`x : String` then `puts x.size`) is AL0309, and a nilable local declared without a value holds nil (`x : String?` then `x.size` is AL0310).
 
 | Code | Meaning | Example message |
 |---|---|---|

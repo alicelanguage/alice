@@ -755,7 +755,13 @@ public sealed partial class Binder
                     m = dt.GetGenericTypeDefinition().GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static)
                         .FirstOrDefault(x => x.MetadataToken == m.MetadataToken && x.Module == m.Module);
                 // a bare type parameter result (`T receive`): its nullability is the type argument's, not readable here
-                if (m is System.Reflection.MethodInfo { ReturnType.IsGenericParameter: true } or System.Reflection.PropertyInfo { PropertyType.IsGenericParameter: true }) return false;
+                // (`T receive`), unless the declaration itself says nilable (`T? GetValueOrDefault`, `[MaybeNull] T`)
+                // `[NotNullIfNotNull("path")] string? GetFileName(string? path)`: non-nil for a non-nil argument, which
+                // is how it is nearly always called; taken as non-nil (a nil argument is the caller's own check)
+                if (m is System.Reflection.MethodInfo nn && nn.ReturnParameter.CustomAttributes.Any(a => a.AttributeType.Name == "NotNullIfNotNullAttribute")) return false;
+                if (m is System.Reflection.PropertyInfo { PropertyType.IsGenericParameter: true, GetMethod: { } gm }) m = gm;
+                if (m is System.Reflection.MethodInfo { ReturnType.IsGenericParameter: true } gmi) return AnnotatedNilable(gmi);
+                if (m is System.Reflection.PropertyInfo { PropertyType.IsGenericParameter: true }) return false;
                 return m switch
                 {
                     System.Reflection.MethodInfo mi when !mi.ReturnType.IsValueType && mi.ReturnType != typeof(void) => nic.Create(mi.ReturnParameter).ReadState == System.Reflection.NullabilityState.Nullable,
@@ -765,6 +771,25 @@ public sealed partial class Binder
                 };
             }
             catch (Exception) { return false; }
+        }
+
+        /// <summary>The compiler-written annotation of a type-parameter result: `[MaybeNull]`, or NullableAttribute 2
+        /// on the return (or, absent, the NullableContextAttribute of the method or its enclosing types).</summary>
+        static bool AnnotatedNilable(System.Reflection.MethodInfo mi)
+        {
+            var ret = mi.ReturnParameter;
+            if (ret.CustomAttributes.Any(a => a.AttributeType.FullName == "System.Diagnostics.CodeAnalysis.MaybeNullAttribute")) return true;
+            static byte? Flag(IEnumerable<System.Reflection.CustomAttributeData> attrs, string name)
+            {
+                var a = attrs.FirstOrDefault(x => x.AttributeType.FullName == name);
+                if (a == null || a.ConstructorArguments.Count == 0) return null;
+                var v = a.ConstructorArguments[0].Value;
+                return v is byte b ? b : v is IReadOnlyCollection<System.Reflection.CustomAttributeTypedArgument> xs && xs.Count > 0 && xs.First().Value is byte f ? f : null;
+            }
+            if (Flag(ret.CustomAttributes, "System.Runtime.CompilerServices.NullableAttribute") is { } r) return r == 2;
+            for (System.Reflection.MemberInfo? at = mi; at != null; at = at.DeclaringType)
+                if (Flag(at.CustomAttributes, "System.Runtime.CompilerServices.NullableContextAttribute") is { } c) return c == 2;
+            return false;
         }
 
         /// <summary>A .NET parameter that rejects nil: a non-generic reference type annotated non-nullable.</summary>
