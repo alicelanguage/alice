@@ -2,238 +2,90 @@
 
 ## Unreleased
 
-- perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
-  earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
-  helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays
-  keep it (bfs 3-8% faster). New `ALICE_NO_AO=1|kernel,leaves,nest,loop` switch for A/B runs. bend2 serial
-  table re-measured (benchmarks/bend2/results/summary.md).
-- Affine arena analysis (ADR 0037, P1.2): `Semantics/Binder/Binder.Affine.cs` + `Binder.Affine.Flow.cs` decide per sum type arena vs records (payload rule, packing of 0-field and <=32-bit variants, slot layout), per `case` arm Take/Borrow/Keep, per use Move/Keep/BorrowArg and Drops, over a CFG with liveness and move states; Bend-style borrow inference (a parameter the body only reads lends, whole-program fixpoint; written `borrow` stays a contract); any escape (field, collection, nullable, block, .NET call, `==`/`hash`/`to_s`, `rescue`) or use after move demotes the type to records whole-program. `affine enum` (new modifier) makes those sites AL0240-AL0243 (now live in docs/errors.md; docs/language.md `affine enum`). Facts on `binder.Affine` and `TypeSym.Arena`; `alice explain` prints one row per sum type (`arena` / `record (demoted: ...)`); the ADR 0016 borrow check (AL0213) trusts the binder for arena parameters, so `borrow t : Tree` with a `case` on t compiles. No lowering change: emitted C# is unchanged. Tests `tests/Alice.Tests/Compiler/AffineTests.cs` (all 7 sum types of the bend2 ports tree-radix, tree-bitonic, tree-matmul, merkle, symreg are arena).
-- Book compiler issues (/work/reports/book-compiler-issues.md), tests in `tests/Alice.Tests/Compiler/BookIssuesTests.cs`:
-  - Syntax: `puts await f(x)` (`await` starts a command argument); `^name` pins inside array patterns, also of a name
-    bound earlier in the pattern (`in [a, ^a]`); `rescue A, B => e` no longer emits `--1` in the second catch (a
-    negative literal merged into its token is not merged again when the clause body is re-parsed per type).
-  - Semantics: `Counter.total += 1` on a `class_property`; `raise ... unless n` narrows `n` like `return unless n`;
-    a generic .NET method with an Alice type argument returns that type, nil-able when declared `T?`
-    (`JsonSerializer.Deserialize<Array(Tea)>(s)`: `if loaded`, `loaded || d`); `xs << v` on `List(T)` of a type
-    parameter; `format`/`puts` and the other Kernel functions inside a reopened .NET type call the Prelude function;
-    `sort_by_key` returns a named tuple, and `s.keys`/`s.values` read its elements (element names win over the
-    named-tuple helpers).
-  - Slices and negative indexes: `xs[a..b]`, `xs[a...b]`, `xs[a..]`, `xs[..b]`, `s[start, n]` on Array, List and
-    String (Prelude `slice_range`/`slice_len`, negative bounds from the end, a start past the end gives an empty
-    slice); a literal negative index `xs[-1]` reads `xs[xs.Length - 1]` (computed negative indexes still raise).
-  - Purity: `Int32::MAX`/`MIN` and other literal .NET constants are pure (in `pure def` and rules); a Prelude
-    extension call is pure when every overload for its receiver is `[Pure]`; `upcase`, `downcase`, `capitalize`,
-    `strip`, `reverse`, `includes?`, `starts_with?`, `ends_with?`, `ljust`, `rjust`, `center`, `chomp`, `chop`,
-    `squeeze`, `swapcase` on String are marked `[Pure]`.
-  - Diagnostics: `@[Strict]` is compiler-only (no `StrictAttribute` in the C#); a lowering error that names its code
-    keeps it (AL0215 was reported as AL0001).
-  - Tooling/docs: `alice explain` counts the `__par_` helper of a parallel pipeline for its method (and top-level
-    helpers for `Main`); `alice guide` prints the installed version in its header; guide/AGENTS.md: the rescue
-    modifier exists, `Hash(K, V).new(0)` for counters; docs/errors.md: one row per code (duplicate AL0230 removed,
-    live AL0220/AL0221 before the planned AL0240-AL0249); docs/language.md: slices, negative indexes, pins in
-    patterns, `class_property` writes, nil-able generic .NET results; README: the range pipeline is "one fused
-    loop" (it is serial; the parallel reduce applies to array sources of 65,536+ elements).
-- IL backend D1.4 (ADR 0033): `Backend/Il/AirToIl` emits IL + portable PDB from the post-optimizer MIR through `IlBuilder` (declarations as the C# backend makes them, typed expressions, checked arithmetic per node, EH, foreach, interpolation, vectors, sequence points and local names); `alice run --backend il`, `alice emit --il <file>` (writes `<name>.dll`/`.pdb`, prints the IL listing). Unsupported nodes are reported with their kind; differential, ILVerify, decode, allocation and corpus tests in `AirToIlTests`.
-- IL backend dynamic sites (backend plan D1.9, ADR 0033): `Alice.Runtime.Dyn` (`src/Alice.Runtime/Dynamic/`) dispatches
-  `Any` values without the C# runtime binder: one `DynSite` per call site with a monomorphic entry and a 4-entry
-  polymorphic inline cache keyed by receiver and argument runtime types, `MethodInvoker` thunks (allocation-free hit
-  path), overloads by runtime types with numeric widening, nil, Alice operator semantics (checked, floored `/` `%`), `define_method` /
-  `method_missing`, public members only. The IL-only pass `Air/Passes/DynSites.cs` rewrites dynamic operations into
-  `AirDynCall` (`Mir/MExpr.Dyn.cs`) and lists the site fields; AL0232 reports dynamic sites under `native = true` and
-  on wasm; `DynSites.Declaration()` declares the `<>DynSites` holder type (AirDecls). The C# backend is unchanged
-  (its C# `dynamic` still truncates `/` and `%`: docs/production.md).
-- IL closure conversion (backend plan D1.5, ADR 0033 closure ABI): `Air/Passes/ClosureConvert.cs` turns lambdas into static methods with a cached delegate (capture-free), display structs passed by ref (non-escaping: Par kernels, fork branches) or display classes with hoisted written captures (escaping); nodes `AirDelegateCreate`, `AirDisplayNew`, `AirDisplayField` (`Mir/MExpr.Closures.cs`, dump and debug C# forms). Kernels and fork branches use new struct overloads `Par.Range<TKernel>`, `Par.Reduce<T, TKernel>`, `Par.Fork<A, B, TA, TB>` (`IParKernel`, `IParKernel<T>`, `IForkBranch<T>`; reused jobs, 0 B in steady state); `ALICE_CLOSURE_STRUCTS=off` demotes structs to classes. Runs only under `Pipeline.Backend == AirBackend.Il` with a method context, after the IL lowerings; emitted C# is byte-identical.
-- IL backend Synthesize pass (backend plan D1.6, ADR 0032/0033): `Air/Passes/Synthesize.cs` builds, for the IL backend only, explicit declarations with MIR bodies (`Mir/AirDecls.cs`: `AirModuleDecl`/`AirTypeDecl`/`AirMethodDecl`/`AirFieldDecl`/`AirPropertyDecl`, on `TypeSym.Synth`) for what Roslyn synthesizes today: record and record struct members (backing fields, init accessors, primary/copy constructors, EqualityContract, Equals, GetHashCode, ToString/PrintMembers, Deconstruct, ==/!=, `<Clone>$`, `__With`), sum types (abstract base, sealed nested variants, `Tag`, `Is<Variant>`, unit `Value`), derived `!=`/`>`/`>=`, the IEnumerable bridge, auto-properties, field/constant initializers, default and struct constructors, `to_s` as ToString and the module initializer. Emitted C# is byte-identical on the corpus.
-- IL backend FFI (backend plan D1.10, ADR 0018/0033): `Backend/Il/AirToIl.Ffi.cs` emits `lib` funs as blittable P/Invoke
-  rows (ImplMap: EntryPoint, ExactSpelling, WinApi, no CharSet/SetLastError; `[SuppressGCTransition]` for `@[Fast]`)
-  behind inlined wrappers (UTF-8 strings on a `localloc` buffer via `Utf8Arg`, pinned arrays, out/ref byrefs, borrowed
-  string returns, Bool as byte), `[UnmanagedCallersOnly]` callback trampolines passed by `ldftn`, `@[Native]` `calli`
-  with the managed fallback, and pointer load/store/arithmetic/`sizeof`; `IlModule`/`MetadataWriter` gain P/Invoke
-  (`IlMethodDef.PInvoke`, ModuleRef + ImplMap rows). Not wired into AirToIl yet; the FfiTests calls, driven from an IL
-  `Main`, print what the C# backend prints, and NativeAOT publishes the emitted dll.
-- IL backend state machines (backend plan D1.8, ADR 0032/0033): `Air/Passes/StateMachines*.cs` rewrites async methods, iterators and async iterators, for the IL backend only, into C#-shaped state-machine types (`AirTypeDecl`: `<>1__state`, method builder, hoisted locals, awaiter fields, MoveNext with `AwaitUnsafeOnCompleted`, try/finally across awaits, awaits in finally, `await foreach`/`await using`; iterator `Dispose` running pending finally blocks, `GetEnumerator` thread fast path; `AsyncIteratorMethodBuilder` + `ManualResetValueTaskSourceCore<bool>`; awaits and yields inside rescue clauses, yields inside begin/rescue, async lambdas via `StateMachines.AsyncLambdas`) plus a kickoff body, with the jump nodes `AirLabel`/`AirGoto`/`AirGotoTable` (`Mir/MExpr.StateMachines.cs`). The C# backend never runs it: emitted C# is unchanged.
-- AIR D0.6: the vectorizer, SIMT loops, stack arrays and flat rows build typed AIR nodes instead of `MCode` text
-  (`Mir/MExpr.Vector.cs`: `AirVector.Of(elem, width)` vector types, `AirVectorOp`/`Load`/`Store`/`Reduce`/`Fits`,
-  `AirStackAlloc`; printed by `Backend/Printer.Vector.cs`, dumped by `Mir/MirDump.Vector.cs`). Emitted C# is
-  byte-identical on the corpus.
-- Fix (soundness, ADR 0013): a wrapping operator wrapped the checked arithmetic inside its operands too:
-  `1 &* (b * c)` returned 0 for b = c = 65536 instead of raising, `1 &+ (-b)` did not trap on `Int32::MIN`. Operands
-  with trapping arithmetic are now `checked(...)` (MirFacts.KeepChecked), so only the wrapping operator wraps. Found by
-  the prove differential fuzz. Emitted C# changes only where a wrapping operator has such an operand.
-- `alice prove` for CI and agents: `--format json` (machine-readable summary, rules in name order), `--timeout s` (per
-  rule; a rule that runs out is `not proven` and fails the check), failures print one line
-  `rule X FAILS: x = 7, lo = -3 -> false` (or `-> raised OverflowException`), exit 1 on any failing, unproven or stale
-  rule. `alice build --prove` / `[build] prove = true | "smt"` runs `alice prove --check` after the build when the package
-  has a RULES.al. `alice agents` tells agents to gate commits on it and explains the counterexample loop.
-- Fix: `alice prove` crashed on a rule domain ending at `Int32::MAX` (the loop counter overflowed), and treated a domain
-  near `Int64::MAX` as one case (its size went through double). Every variable now counts an exact offset from its Lo.
-- `alice prove --smt` replays every Z3 counterexample through the compiled rule (a disagreement is `not proven`, never a
-  verdict), translates `to_i!`, `to_u16!`, `to_u64!` and hex/binary/octal literals, and a differential fuzz test checks
-  enumeration and Z3 agree on random straight-line rules. CI installs Z3 on Linux, macOS and Windows and sets
-  `ALICE_REQUIRE_Z3=1`, so the SMT tests can no longer pass by skipping.
-- Docs: ADR 0040 (paradigms in IL, accepted as direction): how AirToIl lowers fork/join, affine arenas, CM primitives and dataflow, with the AirVerifier rules they add; IL-lowering paragraphs in ADRs 0015, 0037, 0038, 0039.
-- IL-only lowering passes (backend plan D1.7, ADR 0032/0033) in `Air/Passes/`, entry `IlLowering.Run`, called only by
-  the IL backend (C# output unchanged): ForeachLower (arrays, spans, strings as counted loops; struct enumerators kept
-  in a typed local, never boxed; other enumerables in try/finally with a null-checked Dispose), InterpLower
-  (`string.Concat` for up to 4 string parts, else an invariant-culture `DefaultInterpolatedStringHandler`),
-  PatternTemps (declaration and `var` patterns as explicit isinst into typed locals, with C# scopes), UsingLockLower
-  (try/finally Dispose, `Monitor.Enter(o, ref taken)`, `Lock.EnterScope()`), SwitchLower (dense int/char jump tables,
-  string cases as a length switch plus an ordinal `string.Equals` chain, no hashing), TupleLower (ValueTuple
-  construction, ItemN/Rest access, deconstruction, element names recorded for TupleElementNames) and NullableLift
-  (C# lifted-operator semantics with HasValue/GetValueOrDefault). Helper nodes `AirSeq`, `AirAs`, `AirSwitch` live in
-  `Mir/MExpr.Lower.cs`; what a pass cannot lower (`await foreach`/`await using`, untyped operands, `bool?` logic) is
-  left as is and listed in `IlLowerContext.Unsupported`.
-- Docs: ADR 0035 (bootstrap) withdrawn by lead decision 2026-11-02, compiler stays C#; ROADMAP-1.0 stream F is now IL backend quality (within 3% of C#, ILVerify, PDB, NativeAOT, deterministic) and ADR 0033 lists IL emission quality targets.
-- AIR helper declarations (backend plan D0.7c): the `__par_*`, `__parfor_*` and `__fork_*` helper methods and the
-  `__shared_*` constant fields are typed declarations (`AirHelperDecl` over `AirMethodDecl`/`AirFieldDecl`, MIR bodies) in
-  `Lowerer.TypedExtra`; their C# in `Lowerer.Extra` is printed from them (`Printer.Helper`), byte-identical on the corpus.
-- AIR parallel/ownership nodes (backend plan D0.7a): Parallel, LoopPar, Fork, Ownership, Sharing and Presize lowering
-  build typed nodes instead of C# text (`AirPar`, `AirParGuard`, `AirReferenceEqualsGuard`, `AirParProbe`, `AirForkJoin`,
-  `AirForkable`, `AirRent`, `AirRelease`, `AirLength`, `AirTripCount`, `AirOffset`, `AirPresizeCount` in
-  `Mir/MExpr.Parallel.cs`; leaves via `AirLeaf`), with C# printing and `--air` dump forms. Emitted C# is byte-identical
-  on the corpus.
-- IL backend infrastructure (backend plan D1.2, ADR 0033): `Backend/Il/` emits assemblies and portable PDBs directly with
-  System.Reflection.Metadata: `IlModule` facade, `IlBuilder` (labels, named/pinned locals, scopes, EH regions, max-stack,
-  short branches, prefixes, sequence points, peepholes), signature encoders, metadata writer with ref-pack AssemblyRefs
-  and deterministic MVID, PDB with Source Link and embedded sources. Not wired to the compiler yet (`AirToIl` is D1.4).
-- AIR foundation (backend plan D0.2/D0.3): MIR nodes gain an optional typed `AirType Type` and source `Span`
-  (`MStmt.Line` reads the span's line when one is set). `AirType` is a closed sum (Prim, ClrRef, AliceType,
-  TypeParam, Array, ByRef, Pointer, FnPtr, Tuple, Unknown, plus a nullable bit) whose `ToCs()` spells exactly what
-  `AType.Cs` spells; `AType.ToAir()` is the one conversion. `MBinary.Op`/`MUnary.Op` are enums (`AirBinOp`,
-  `AirUnOp`, `await` is `AirUnOp.Await`) with a `Checked` flag, cleared inside compiler-made `unchecked(...)`.
-  Emitted C# is byte-identical on the corpus (`tools/emit-corpus.sh`, reused by later AIR work). Hidden
-  `alice emit --air <file>` prints the MIR text dump (`MirDump`) for tests.
-- AIR typed leaves (backend plan D0.4, batch 1): `Lowerer.Expressions/Statements/Calls` no longer build opaque
-  `MCode` text; they build `AirConst`, `AirNull`, `AirThis`, `AirBase`, `AirLocalRef`, `AirParamRef`, `AirFieldRef`,
-  `AirArrayLength`, `AirTypeRef`, `AirMethodGroup`, `AirDefault`, `AirTypeOf`, `AirSizeOf`, `AirDiscard`,
-  `AirYieldBreak` and `AirName` (`Mir/MExpr.Core.cs`) with the binder's type and source span where the HIR has them.
-  They derive from `MCode` until the passes are ported (D0.9), and `alice emit --air` dumps them by kind; batch 2's
-  stand-in leaves are merged into them. Two
-  `AirRawCs` escape hatches remain (event-adapter lambda, `gpu for` reduction value). Emitted C# is byte-identical.
-- AIR MCode removal batch 2 (backend plan D0.5): the allocation-free iterators, stream fusion and idiom rewrites
-  (`Lowerer.Iterators/Fusion/Idioms`) build typed nodes instead of C# text: locals, literals, `default`, static
-  receivers, and `AirRangeLength`, `AirRefOrAddDefault`, `AirRefOrNullRef`, `AirAlternateLookup`, `AirSpanSplit`,
-  `AirStackBuffer`, with air-b4's `AirParGuard` for the parallel gate (Mir/MExpr.Iterators.cs, printed by Printer.Iterators.cs, dumped by
-  MirDump.Iterators.cs). Emitted C# is byte-identical on the corpus; loop starts the optimizer analyses stay its
-  literal form until the optimizer reads AIR leaves.
-- Ruby core behaviour that needed the compiler: `Hash(K, V).new(default)` and `Hash(K, V).new { |h, k| ... }` build an
-  `Alice.Runtime.DefaultHash` (missing keys read as the default, `h[k] += 1` counts from it; a block ending in `h[k] = v`
-  returns v; a field or parameter declared `Hash(K, V)` that is only ever given such hashes is typed DefaultHash too),
-  `Hash(K, V).new(capacity: n)` is the capacity; `to_i?`/`to_f?` are `Int32?`/`Float64?`, `match` is
-  `MatchData?`, `Hash#delete` is `V?`, `dup`/`clone` keep the receiver's type, multi-key `dig` is the leaf `V?`,
-  `max(n)`/`min(n)` are arrays, `each_char`/`reverse_each`/`step` without a block are sequences; `slice_when` blocks
-  get two elements; `filter_map` with a nilable value-type result compiles; `t[0]` on tuples and `kv[0]`/`kv[1]` on
-  pairs; `===` is Ruby case equality (range `include?`, regex match, type test, else `==`); `[1, 2] * 2` and
-  `[1, 2] * ","`; `String.build { |io| ... }`; named tuples print with their names (`{name: "ada", age: 36}`) and
-  have `keys`, `to_h`, `merge`, `to_s`, `inspect`.
-- Compiler fixes from the bend2 ports: `x &+= y` / `&-=` / `&*=`; integer literals keep their suffix type when they
-  first assign a hoisted local or fill a constant table (`w = 7_u32` in an `if`, `RK = [256_u32, 5394_u32]`); an enum
-  constructor call as another's argument parses (`T::N(T::L(a), T::L(a))`, `M::Node(M::Free, r)`); a local first given
-  a field-less variant is typed as its enum (`r = M::Free` then `r = M::Node(r, f)`); `UInt32 >> UInt32` (the count is
-  converted to Int32); `val CUT = 3` is a constant; `"7".to_u32` reports `undefined method 'to_u32' for String`
-  (AL0302) instead of a .NET constraint error; `nil = 3` is a reserved-word error.
-- `require_relative "x"` loads the sibling file in single-file builds (`alice run/build/check`), like `require`.
-- Integration tests read child-process output asynchronously and turn off MSBuild node reuse and the compiler server
-  for the child, so the suite no longer hangs on inherited pipes (SdkPackageTests, SampleTests).
+## 1.0.0-rc.1 - 2026-11-02
 
-- Runtime: `Arena/` (ADR 0037, P1.1): `Term`, `Arena<TSlot>` lane-local slabs with Take/Borrow/free list, `ArenaRegion` resets; tree(23) build+sum 145 ms serial (records 522 ms), 15 ms with forks on 32 cores (`benchmarks/arena`).
-- Runtime: `Alice.Runtime` dataflow networks (`Dataflow/`, ADR 0038 P3.1): bounded SPSC `Ring<T>`, `Graph` with
-  `Source`/`Stage`/`Replicate`/`Sink` on the thread pool (backpressure, completion, first exception rethrown at `Run`),
-  ordered or unordered replicated stages, 0 bytes per item; `benchmarks/dataflow` compares it with Task.Run + Channels.
-- Runtime: `Cm` data-parallel primitives (ADR 0039, P2.1/P2.2): inclusive/exclusive scan and reduce for 32/64-bit integers and floats with `+ * & | ^ min max` (AVX-512/AVX2/Vector128 lane-shift tiers), segmented scan/reduce, histogram and scatter-add (private tables merged in fixed order, `Interlocked` for large integer tables), compaction, checked permutation and a stable radix `SortByKey`. Chunking depends on the length only, so float results are bit-identical for any `DOTNET_PROCESSOR_COUNT`. Prelude: `prefix_sum`, `scan { }`, `segmented_sum`, `segmented_prefix_sum`, `histogram`, `compact { }`, `scatter_add`, `permute`, `sort_by_key`. `benchmarks/cm`: prefix_sum of 2^26 Int32 16 GB/s, 64K-bin histogram 6x a serial loop on 32 cores.
-- Security: `alice publish` pushes to NuGet feeds itself over https with the API key in a request header instead of
-  a `dotnet nuget push` argument; `--dotnet-push` keeps the old path.
-- Telemetry docs: https-only endpoints and `ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`.
-- Security: an `alice-toolchain` file must name an exact version or channel; paths and other text are rejected, and
-  only toolchains installed under `~/.alice/toolchains` are started.
-- Security: `dotnet`, `node` and `clang` are started from absolute `PATH` entries, never from the working directory.
-- Security: `alice.toml` package names, dependency ids and versions, and target frameworks are validated; other values
-  are XML- and MSBuild-escaped in the generated `.alproj`.
-- Security: `GITHUB_TOKEN` is sent only to `api.github.com`; release assets are downloaded only over https from GitHub.
-- Security: telemetry endpoints must be https (plain http only for loopback); the collector adds a global hourly cap
-  (`ALICE_TELEMETRY_RATE_GLOBAL_PER_HOUR`).
-- Security: `install.sh` refuses plain-http URLs and http redirects on the wget fallback.
-- Security: the `alice run` cache is owner-only and its images carry a per-install HMAC; other entries are misses.
-- Security: `SECURITY.md` (disclosure policy, supported versions, workspace trust) and a security limits table in
-  `docs/production.md`, including the NuGet API key still passed to `dotnet nuget push` as an argument.
-- Ownership: mentions inside `spawn`, `using`, `await` and if/case values are now checked; such buffers stay with the GC (audit F2).
-- Ownership: arguments to `method_missing` and dynamic calls escape instead of staying pooled (audit F3).
-- Ownership: `xs << v` keeps a list pooled only as a whole statement whose value is dropped (audit F7).
-- Purity checks: `xs << v` is a write, user-defined operators must be pure methods, and only System.Math/MathF (not a user `module Math`) counts as pure math.
-- Loop parallelization: `a[i] = f(a, i)` parallelizes when every override of f reads `a` only at index `i`.
-- `@[Native]` C: counters of exclusive ranges step unchecked (they cannot overflow), recovering the cost of the checks in loops.
-- Loop parallelization: a written array passed to a callee or read whole keeps the loop serial (AL0209 for `par for`) unless proven distinct (audit F8).
-- Range analysis: locals passed by `ref`/`out` lose their value range; their arithmetic stays checked (audit F15).
-- `@[Native]` C: bounds-checked indexing, trapping integer overflow and division, masked shifts, collision-free generated names (audit F16).
-- Ownership: borrows and owned results through virtual calls must hold for every override (audit F18, partial).
-  `docs/production.md`.
-- Prelude, Hash: `fetch(k) { }`, `delete`, `each_key`/`each_value`, `dig(a, b[, c])`, `include?`, `member?`,
-  `has_value?`, `key`, `store`, `length`, `update`, `merge` with a block, `filter_map`, `to_h` with a block, `values_at`,
-  `slice`, `except`, `clear`; a pair has `first`/`last`/`key`/`value`/`to_a`; `DefaultHash(K, V).new(default)` (or with
-  a `{ |h, k| }` block) is a Hash whose missing keys read as the default.
-- Prelude, Enum: `to_i`/`value` (was a C# constraint error), `@[Flags]` `includes?`/`has_flag`, and on the type
-  `Color.values`/`names`/`parse`/`parse?`/`from_value`/`from_value?` (C# 14 static extension members).
-- Prelude, String/Char: `lstrip`/`rstrip`, `bytesize`, `codepoints`, `blank?`, `camelcase`/`underscore`, `to_i(base)`,
-  `to_i?`, `each_char` without a block, String pads, `match` returning MatchData, `gsub`/`sub(/re/)` with a block; Char
-  `upcase`, `downcase`, `letter?`, `digit?`, `whitespace?` and the other predicates.
-- Prelude, Range/Array/Tuple: `("a".."e")`, `('a'..'d')`, Ranges of Comparables, `reverse_each`/`step` without a
-  block; `flatten(depth)`, `max(n)`, `slice_when`, `to_set`, `grep(/re/)`, `find_index(v)`, `transpose`, `to_h` on
-  pairs and with a block, `sum(init)`, `filter_map`, `dup`/`clone`; Tuple `size`/`to_a`.
-- Prelude, objects and names: `p a, b`, `p nil`, `pp`, `hash`/`eql?`/`equal?` on every value, `ENV`,
-  `STDOUT`/`STDERR`/`STDIN`, `at_exit`. Hashes print as `{"a" => 1}` (was `[[a, 1]]`), tuples as `{1, "one"}` (was
-  `(1, one)`).
-- Security: `instance_variable_get/set` reach every ivar of an Alice class but only public fields of other types; readonly fields are never written, and foreign or readonly arrays come back as copies (`[AliceType]`, audit F4).
-- Security: `safe def` (AL0212) is now an allow-list. Prelude I/O, environment and process functions, `lib` funs, reflection, `send`/`instance_variable_*`/`method_missing`, inherited .NET members and unknown receivers are rejected anywhere in the body (`using`, `spawn`, if-as-value included), and constructors are checked (audit F5).
-- Security: reflection and dynamic-dispatch Prelude entry points carry `[Ambient]`, which `safe def` rejects (audit F6).
-- `@items << x`, `@items[i] = v` and mutating calls on an ivar make a method mutating, so `pure def` (AL0210) and concurrent callers (AL0202) see them; `xs << v` on a shared list is AL0202 (audit F9).
-- AL0202 follows copies: a local assigned a shared reference inside a concurrent block (`ys = xs`, a conditional, a reference element, a `for` variable) is shared too (audit F10).
-- AL0230 checks generic messages with their type arguments (`Box(Array(Int32))` is not sendable); type parameters, pointers and types unknown after inference are not sendable (audit F11).
-- `alice prove --smt` evaluates every statement of a rule, so a discarded call that raises fails the rule as it does under enumeration (audit F14).
-- AL0221: a declared field or getter of a non-nilable reference type that no `initialize` assigns (and has no initializer) is a compile error instead of nil at runtime (audit F17).
+First release candidate for 1.0. Versions are `MAJOR.MINOR.PATCH` from now on (no more 0.x); release candidates
+are published as GitHub prereleases. Every guarantee the toolchain makes is listed in [INVARIANTS.md](INVARIANTS.md).
 
-- Ruby/Crystal syntax (lowered in the parser to existing constructs): string escapes `\u{1F600}`, octal `\101`,
-  `\xHH`, `\s`, unknown `\c`; char escapes `'\u{41}'`; single-quoted Ruby strings `'no #{interp}'`; adjacent
-  literals `"a" "b"`; `%q()` / `%Q[]` / `%()`, `%w{}`/`%i<>` delimiters; plain `<<EOT` and raw `<<~'EOT'` heredocs;
-  operator symbols `:+ :<=> :[]` (`inject(:+)`); `_1`/`_2`/`it` block parameters (was an internal compiler error);
-  `def name=(v)` writers (`obj.name = v`, `obj.name += v`); unary `-@`/`+@`, `<<`, `>>`, `&`, `|`, `^`, `[]=`
-  operators (`def <<` leaked a C# error); `private`/`protected`/`public` sections, `private :sym`,
-  `private_class_method :sym`; `getter?`, `getter!`, `property?`, `property!`, `class_getter`, `class_property`,
-  `class_setter`, `getter a, b : T`; `x = loop do ... break v end`, `begin ... end while c`, modifier `while`/`until`;
-  `rescue => e`, `rescue A, B => e`, `rescue e : A | B`, `else`, def-level and `do`-block `rescue`/`ensure`, bare
-  `raise`, `raise Klass, "msg"`, `expr rescue v`; open ranges `xs[1..]`, `xs[..2]`, `(1..)`, `when 4..`, `in ..3`;
-  `require_relative` (parsed); `__FILE__`, `__DIR__`, `__LINE__`, `__method__`. `break value` in a block, `_1`
-  outside a block and other unsupported forms are parse errors (AL0101) instead of C# errors.
-- `alice fmt` keeps heredoc bodies byte for byte and ignores the contents of `%w[]`/`%q()` literals.
-- ADRs 0032-0035 (AIR, direct IL backend, wasm `runtime = "alice"`, bootstrap) accepted as the 1.0 backend direction.
-- ADRs 0037-0039 (affine arena sum types, static dataflow networks, Connection-Machine primitives) accepted as direction; error codes AL0220-AL0229 reserved.
-- ADR 0036 (Alice Core standard library) accepted, with its frozen contracts in `Alice.Runtime/Core/Abstractions`
-  (regex AST, span inputs, JSON document/iterator/writer, HTTP request/response views) and `benchmarks/core/`
-  (corpus fetch, comparators, forge baselines). Alice spellings now bind to .NET names on `Alice.Core` types,
-  statics included: `empty?` -> `IsEmpty`, `save!` -> `Save`, `read_all` -> `ReadAll`.
-- Tests: the telemetry field test now checks the emitted JSON field names against the `## Fields` table in
-  docs/telemetry.md (including `crash` and `phases_ms`). It used to search the whole JSON for the user name, so it
-  failed for a user named `arch` (the `arch` field, documented in ADR 0031). No change to what telemetry sends.
-- Tests: the steady-state allocation tests for actors, channels and tensor kernels run alone (a collection with
-  parallelization disabled) and take the least of up to 3 windows (`AllocationProbe`). Under load the per-thread
-  counter moved without any allocation by the code under test: a background GC started by another thread can count
-  the unused tail of this thread's allocation context (about 8 KB), the thread pool's shared queue can grow once on
-  the sending thread, and other tests' pool work ran between actor turns. Runtime code is unchanged; the measured
-  paths allocate 0 B.
-- Strict typing mode (AL0220): `[build] strict = true` in `alice.toml`, `--strict` on `alice build/run/check/emit`, or
-  `@[Strict]` on a method, class, struct or module. Any expression, local, parameter or return the compiler cannot
-  type (today it silently becomes `dynamic`) is a compile error at its root cause, naming what could not be typed;
-  `Any` written by the user stays allowed. Groundwork for the IL and wasm backends, which need every expression
-  typed. Without strict mode nothing changes.
-- The binder now types more programs (their C# changes only where a value was untyped before): sum-type and record
-  pattern bindings (`when Shape::Circle(r)`), `.Length` on arrays of Alice types, .NET extension methods with generic
-  arguments inferred from the receiver and arguments (`bytes.Concat(px)`, `counts.GetValueOrDefault(w)`,
-  `db.blogs.Where(...)`, `FindControl<TextBlock>(...)`), `ARGV` and member chains on constants (`ARGV.Length`,
-  `MASK.Length`), block parameters of .NET and runtime delegate parameters (`Par.For(n) { |i| }`,
-  `Par.Map(xs) do |y|`, `m.lock { |l| }`, `Array(T).new(n) { |i| }`), Prelude functions called with implicit self
-  (`describe`, `it`, `expect`, `eq`...), `super` in an override of a .NET virtual, and the `@[Native]` probe
-  `__alice_native_loaded()`. An override of a .NET virtual without `: Type` keeps the base method's return type when
-  that is `void` or the tail is untyped, so a newly typed tail cannot change its signature. On samples/, benchmarks/, examples/ and the compiler test
-  corpus, strict mode rejects 56 of 995 programs (128 of 1003 before these fixes).
+### Language
+
+- Ruby/Crystal syntax lowered in the parser: string and char escapes (`\u{1F600}`, `\101`, `\xHH`), single-quoted strings, adjacent literals, `%q()`/`%Q[]`/`%w{}`/`%i<>`, plain and raw heredocs, operator symbols (`inject(:+)`), `_1`/`_2`/`it`, `def name=(v)` writers, unary `-@`/`+@` and `<<`/`[]=` operators, visibility sections, `getter?`/`property!`/`class_property` and friends, `loop do ... break v end`, `begin ... end while`, all `rescue`/`ensure` forms, open ranges, `__FILE__`/`__DIR__`/`__LINE__`/`__method__`; unsupported forms are AL0101 instead of C# errors.
+- Slices and negative indexes on Array, List and String: `xs[a..b]`, `xs[a...b]`, `xs[a..]`, `xs[..b]`, `s[start, n]`, literal `xs[-1]`.
+- `affine enum` modifier for sum types stored in an arena (ADR 0037); its rules are AL0240-AL0243 ([errors](docs/errors.md)).
+- Strict typing mode (AL0220): `[build] strict = true`, `--strict` or `@[Strict]` makes every untyped expression a compile error at its root cause.
+- The binder types more programs: sum-type pattern bindings, generic .NET extension methods, block parameters of .NET delegates, `super` in .NET overrides, member chains on constants, Prelude functions with implicit self.
+- Ruby core behaviour: `Hash(K, V).new(default)` and `.new { |h, k| ... }`, `===` case equality, `[1, 2] * 2`, `String.build`, named tuples with `keys`/`to_h`/`merge`, precise nilable result types (`to_i?`, `match`, `Hash#delete`, `dig`).
+- Compiler fixes from the Bend ports and the book: `&+=`/`&-=`/`&*=`, literal suffix types on hoisted locals and tables, nested enum constructors, `UInt32 >> UInt32`, `val CUT = 3` constants, `puts await f(x)`, pins in array patterns, `class_property` writes, `raise ... unless n` narrowing, generic .NET results typed `T?` ([BookIssuesTests](tests/Alice.Tests/Compiler/BookIssuesTests.cs)).
+- `require_relative "x"` loads the sibling file in single-file builds.
+
+### Safety
+
+- AL0221: a declared non-nilable field or getter that no `initialize` assigns is a compile error (audit F17).
+- AL0202 follows copies of shared references inside concurrent blocks, and writes through ivars make a method mutating for `pure def` (AL0210) and concurrent callers (audit F9, F10).
+- AL0230 checks generic message types with their type arguments; type parameters, pointers and unknown types are not sendable (audit F11).
+- Pooled buffers: more escape routes are checked (`spawn`, `using`, `await`, if/case values, dynamic calls, `xs << v`), and borrows through virtual calls must hold for every override (audit F2, F3, F7, F18 partial).
+- Loop parallelization stays serial when a written array is passed on or read whole, unless shown distinct (AL0209 for `par for`, audit F8); `a[i] = f(a, i)` parallelizes when every override of `f` reads `a` only at `i`.
+- Purity: `xs << v` is a write, user operators must be pure, only System.Math/MathF counts as pure math; literal .NET constants and `[Pure]` Prelude String methods are pure.
+- Range analysis: locals passed by `ref`/`out` lose their range, so their arithmetic stays checked (audit F15).
+- `@[Native]` C: bounds-checked indexing, trapping overflow and division, masked shifts, collision-free generated names (audit F16).
+- Fix (ADR 0013): a wrapping operator no longer wraps the checked arithmetic inside its operands; found by the prove differential fuzz.
+- `alice prove`: domains ending at `Int32::MAX` or near `Int64::MAX` are enumerated exactly; `--smt` replays every Z3 counterexample and evaluates every statement of a rule (audit F14).
+- Affine arena analysis (ADR 0037, P1.2) decides arena or records per sum type; any escape or use after move falls back to records ([AffineTests](tests/Alice.Tests/Compiler/AffineTests.cs)).
+
+### Performance
+
+- AggressiveOptimization re-measured on a serial core pair: loops that only call helpers no longer get it, loops over owned arrays keep it; `ALICE_NO_AO` switch for A/B runs ([bend2 results](benchmarks/bend2/results/summary.md)).
+- `@[Native]` C: counters of exclusive ranges step unchecked (they cannot overflow).
+- Runtime arenas (ADR 0037, P1.1): tree(23) build+sum 145 ms serial (records 522 ms), 15 ms with forks on 32 cores ([benchmarks/arena](benchmarks/arena)).
+- Runtime dataflow networks (ADR 0038, P3.1): bounded SPSC rings and stages, 0 bytes per item ([benchmarks/dataflow](benchmarks/dataflow)).
+- Runtime `Cm` data-parallel primitives (ADR 0039, P2.1/P2.2): scans, reductions, segmented forms, histogram, scatter-add, compaction, permutation and sort by key with SIMD tiers.
+
+### IL backend
+
+- Direct IL + portable PDB emission (ADR 0033, D1.2/D1.4): `alice run --backend il`, `alice emit --il`, deterministic MVID, Source Link, embedded sources, `.al` sequence points.
+- Closure conversion (D1.5), synthesized declarations for records and properties (D1.6), IL-only lowering of foreach, interpolation, patterns, using/lock, switch, tuples and nullable lifting (D1.7), async/iterator state machines (D1.8).
+- Dynamic sites (D1.9): `Alice.Runtime.Dyn` dispatches `Any` values with inline caches and Alice operator semantics; AL0232 reports dynamic sites under NativeAOT and wasm.
+- FFI (D1.10): `lib` funs as blittable P/Invoke, callback trampolines, `@[Native]` `calli` with the managed fallback.
+- AIR (ADR 0032, D0.2-D0.7): typed MIR nodes and spans replace C# text in lowering; emitted C# stays byte-identical on the corpus (`tools/emit-corpus.sh`); `alice emit --air` dumps it.
+
+### Standard library
+
+- Prelude Hash: `fetch` with a block, `delete`, `dig`, `each_key`/`each_value`, `store`, `update`, `merge` with a block, `values_at`, `slice`, `except`, `DefaultHash`.
+- Prelude Enum: `to_i`/`value`, `@[Flags]` helpers, `values`/`names`/`parse`/`from_value` on the type.
+- Prelude String/Char: `lstrip`/`rstrip`, `bytesize`, `codepoints`, `blank?`, `camelcase`/`underscore`, `to_i(base)`, `gsub`/`sub` with a block, Char predicates.
+- Prelude Range/Array/Tuple: string and char ranges, `flatten(depth)`, `max(n)`, `slice_when`, `to_set`, `grep`, `transpose`, `sum(init)`, `filter_map`, Tuple `size`/`to_a`.
+- Prelude objects: `p a, b`, `pp`, `hash`/`eql?`/`equal?`, `ENV`, `STDOUT`/`STDERR`/`STDIN`, `at_exit`; hashes print as `{"a" => 1}`, tuples as `{1, "one"}`.
+- Alice Core (ADR 0036): frozen contracts in `Alice.Runtime/Core/Abstractions`; Alice spellings bind to .NET names on `Alice.Core` types (`empty?` -> `IsEmpty`).
+
+### Tooling
+
+- `alice prove` for CI and agents: `--format json`, `--timeout`, one-line counterexamples, exit 1 on failing, unproven or stale rules; `alice build --prove` and `[build] prove = true | "smt"`.
+- `alice explain` prints one row per sum type (arena or records) and counts parallel helpers per method; `alice guide` shows the installed version.
+- `alice fmt` keeps heredoc bodies byte for byte and ignores `%w[]`/`%q()` contents.
+- CI installs Z3 on Linux, macOS and Windows and requires it (`ALICE_REQUIRE_Z3=1`).
+- Tests: integration tests no longer hang on inherited pipes; steady-state allocation tests run alone; the telemetry field test checks names against docs/telemetry.md.
+- Release: version validation accepts `MAJOR.MINOR.PATCH[-rc.N]` from 1.0.0 on; release candidates publish as prereleases.
+
+### Security
+
+- `SECURITY.md` (disclosure policy, supported versions, workspace trust) and a security limits table in [docs/production.md](docs/production.md#security-limits).
+- `safe def` (AL0212) is an allow-list; reflection and dynamic-dispatch Prelude entry points carry `[Ambient]` and are rejected (audit F5, F6).
+- `instance_variable_get/set` reach only Alice ivars and public foreign fields, never write readonly fields, and return copies of foreign or readonly arrays (audit F4).
+- `alice-toolchain` files must name an exact version or channel; only toolchains under `~/.alice/toolchains` start.
+- `dotnet`, `node` and `clang` start from absolute `PATH` entries only.
+- `alice.toml` names, ids, versions and frameworks are validated; other values are escaped in the generated `.alproj`.
+- `GITHUB_TOKEN` goes only to `api.github.com`; release assets download only over https from GitHub.
+- `alice publish` pushes to NuGet itself over https with the key in a header (`--dotnet-push` keeps the old path).
+- Telemetry endpoints must be https (loopback excepted); the collector has a global hourly cap.
+- `install.sh` refuses plain-http URLs and redirects on the wget fallback.
+- The `alice run` cache is owner-only and HMAC-checked.
+
+### Docs
+
+- [INVARIANTS.md](INVARIANTS.md): every guarantee, its scope, the tests that pin it and how to report a violation.
+- ADRs 0032-0034 (AIR, direct IL backend, wasm runtime) and 0036-0039 (Alice Core, affine arenas, dataflow, Connection-Machine primitives) accepted; ADR 0040 (paradigms in IL) accepted as direction; ADR 0035 (bootstrap) withdrawn, the compiler stays C#.
+- docs/errors.md has one row per code; docs/language.md covers slices, negative indexes, pattern pins, `class_property` writes, `affine enum`.
+- README: the range pipeline is one fused loop (serial); parallel reduces apply to large array sources.
 
 ## 0.14.0 - 2026-10-27
 

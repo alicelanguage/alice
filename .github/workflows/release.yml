@@ -165,8 +165,10 @@ jobs:
               --target "$RELEASE_COMMIT" --prerelease --title "Alice nightly $RELEASE_VERSION" \
               --notes "Nightly $RELEASE_VERSION built from $RELEASE_COMMIT. Not for production. Install: \`alice toolchain install nightly\`. Build: $RELEASE_RUN_URL"
           else
+            # a release candidate (X.Y.Z-rc.N) is a prerelease: `stable` installs and `alice self update` skip it
+            case "$RELEASE_VERSION" in *-rc.*) kind=--prerelease ;; *) kind=--latest ;; esac
             gh release create "$RELEASE_TAG" ./*.tar.gz ./*.zip ./*.sha256 ./install.sh ./install.ps1 \
-              --target "$RELEASE_COMMIT" --title "Alice $RELEASE_TAG" --latest --notes-file ../notes.md
+              --target "$RELEASE_COMMIT" --title "Alice $RELEASE_TAG" "$kind" --notes-file ../notes.md
           fi
 
   nuget:
