@@ -172,6 +172,13 @@ public class AirToIlTests(ITestOutputHelper output)
         { "forks and parallel reductions", "def fib(n : Int32) : Int64\n  n < 2 ? n.to_i64 : fib(n - 1) + fib(n - 2)\nend\nputs fib(25)\nxs = Array(Float64).new(300000)\nfor i in 0...300000\n  xs[i] = i * 0.5\nend\nputs xs.par_sum { |x| x * 2.0 }\n" },
     };
 
+    /// <summary>`h[k] += v` lowers to a `ref int` local over CollectionsMarshal.GetValueRefOrAddDefault; struct
+    /// receivers in arrays (`ss[i].x += 3`, index evaluated once). IL only: the wasm backend has no ref locals, so
+    /// this program is not in <see cref="Programs"/> (shared with WasmTests).</summary>
+    [Fact]
+    public void Ref_locals_and_struct_receivers() => Differential(
+        "h = Hash(String, Int32).new\nh[\"a\"] = 1\nh[\"a\"] += 5\nputs h[\"a\"]\nstruct S\n  property x : Int32\n  def initialize(@x : Int32)\n  end\nend\nss = Array(S).new(3)\ndef nx(i : Int32) : Int32\n  puts \"nx\"\n  i + 1\nend\nss[nx(0)].x = 4\nss[nx(0)].x += 3\nputs ss[1].x\nputs -300_i16\n");
+
     [Theory, MemberData(nameof(Programs))]
     public void Programs_run_identically_under_both_backends(string name, string src)
     {

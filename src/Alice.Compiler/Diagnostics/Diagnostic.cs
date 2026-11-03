@@ -33,6 +33,7 @@ public sealed record Diagnostic(string Severity, string Code, string File, int L
         ("is not safe", "AL0212"),
         ("borrowed value", "AL0213"),
         ("rule domain", "AL0214"),
+        ("JSON mapping", "AL0250"),
         ("expected", "AL0101"),
         ("unexpected", "AL0102"),
         ("unterminated", "AL0103"),

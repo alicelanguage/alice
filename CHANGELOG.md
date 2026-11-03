@@ -5,6 +5,21 @@
 ## 1.0.0-rc.1 - 2026-11-02
 
 - core: Alice's own regex engine (ADR 0036, `src/Alice.Runtime/Core/Text/Regex/`): Onigmo/Ruby front-end (`RegexSyntax` to `RegexNode` + `RegexFeatures`), Tier R = literal prefilters (memchr/`SearchValues`, Teddy over AVX-512/AVX2, inner literals, ASCII-caseless) + lazy DFA forward and reverse + Pike VM for captures, Tier B = own memoizing backtracker (look-around, backreferences, atomic/possessive, large repeats); UTF-16 and UTF-8 without transcoding; match-only calls allocate nothing. Regex literals are now `Alice.Core.Text.Regex` with Ruby semantics (`m` = dot-all, `^ $` line anchors, ASCII `\w`, named groups turn off unnamed captures, `\1` templates); `=~`, `match`, `scan`, `gsub`, `sub`, `split` run on it and record the last match (`Prelude.last_match`, lazy). Parity: 100k random patterns against the BCL oracle (Tier R and Tier B) and Tier R against Tier B, 0 divergences (`tests/Alice.Tests/Runtime/RegexParityTests.cs`). Internal users of `System.Text.RegularExpressions` (CLI, LSP, REPL, telemetry, compiler passes, `expect match`, `format`) run on it too. Forge, pinned: regex-redux 0.83 s on UTF-16 and 0.55 s on UTF-8 vs .NET Compiled 3.98 s and NonBacktracking 4.90 s; rebar-style counts on UTF-8 are faster than Compiled except `\p{Lu}\p{Ll}+` (0.87-0.92x), and on UTF-16 four rows are 0.78-0.97x with the causes given (`benchmarks/core/regex/results.md`). Search paths: end-only `Count`, a vectorized start-state skip in the lazy DFA, two-offset literal scans (UTF-16 packed to bytes), exact UTF-16 caseless literals by simple case folding (`tests/Alice.Tests/Runtime/RegexScanTests.cs`).
+- IL optimizer round 2 (IL backend only): loop-carried store-to-load forwarding (`Air/Passes/IlOpt/StoreForward.cs`,
+  switch `forward`): a load of the element the previous iteration stored reads a register instead of memory, for
+  fresh non-escaping arrays with one unconditional store per iteration and proven-in-bounds loads (editdist IL / C#
+  1.00 -> 0.75); forced inlining now bounds the size a body expands to with its `inline` callees (gameoflife 0.96 ->
+  0.92). bend2 serial geomean IL / C# 0.96 (0.94 without the arena tree ports), warm and parallel tables in
+  benchmarks/bend2/results/il-vs-csharp.md.
+- IL backend optimizer (il-opt; IL backend only, `ALICE_IL_OPT` switches, e.g. `0` or `-inline,-inbounds`): R9
+  `[AggressiveInlining]` on small loop-free bodies with at most 3 call sites (never fork dispatchers or `__fork_*`
+  helpers); proven-in-bounds array reads and writes (`Air/Passes/IlOpt/InBounds.cs`: interval analysis over
+  exact-length local arrays, emitted as `GetArrayDataReference` + `Unsafe.Add`, ILVerify clean) and overflow checks
+  whose exact result interval fits the type removed; peepholes (null tests, constant branches, compare-branch fusion,
+  type tests in Roslyn's `is T p` shape). Wired through main's IL hooks (`IlPipeline.AfterLowering` / `BeforeEncode`,
+  `IlBody.IndexLoadExt` / `IndexStoreExt`, `IlBuilder.OptimizeExtra`). bend2 serial, IL / C# wall geomean 0.98
+  (1.00 without il-opt; raytrace 1.18 -> 0.98, hashmap 1.03 -> 0.98); the arena tree benchmarks stay at 1.02-1.08.
+  Table: benchmarks/bend2/results/il-vs-csharp.md; docs/performance.md "IL backend optimizer".
 - CM loop shapes (ADR 0039, P2.3): counted loops that are a scan, segmented scan, combine (histogram / scatter-add),
   compaction or permutation lower to `Alice.Runtime.Cm` kernels in both backends (`Lowering/Lowerer.Cm.cs`, AIR nodes
   in `Mir/MExpr.Cm.cs`, `Backend/Printer.Cm.cs`, `Backend/Il/AirToIl.Cm.cs`); inferred only where the result equals the
@@ -14,6 +29,7 @@
 
 - IL backend wiring (backend plan D1.6/D1.8/D1.9/D1.10, ADR 0033): `alice run --backend il` / `alice emit --il` now compile async/iterator/async-iterator methods (own state machines, `Air/Passes/StateMachines`), `Any` operations (`Alice.Runtime.Dyn` call sites, AL0232), records, struct records and sum types (`Synthesize`), and `lib` P/Invokes; the three stub tests `Il_async/iterator/async_iterator_matches_csharp` are real C#-vs-IL differential tests. Fixes found on the way: `break` inside `for v in <IEnumerable>` left the try with `br`, `String == String` was a reference compare under IL.
 - IL backend declaration kinds (D1.10): generic classes/methods (by monomorphization, incl. generic base classes), delegate types and method-group values, constant-expression enum members (`B = 1 << 1`, `AB = A | B`), default interface methods, interface properties, `@[Stack]` structs, `block` parameters, method/field attributes, and events (Alice and CLR, `+=`/`-=`) now compile under `--backend il`; methods named after C# keywords (`double`) resolve.
+- IL backend: `ref T` locals (`h[k] += v` over `CollectionsMarshal.GetValueRefOrAddDefault`) are byref locals read and written through (was `MDecl:ref-local` unsupported), and `alice emit --il` writes the C# build's GC policy (server GC for parallel programs) into the runtimeconfig instead of always workstation GC. Tests: `AirToIlTests.Ref_locals_and_struct_receivers`, `PackageTests.Emit_il_writes_the_gc_policy_of_the_csharp_build`.
 - dataflow (ADR 0038, P3.2/P3.3): `dataflow do` with `source`/`stage(state:, par:)`/`sink`, `stream def`; binder checks AL0244-AL0246; lowered to AirDataflow/AirStage/AirRing and static stage methods over the runtime function-pointer overloads (one `Graph.Run`); `benchmarks/dataflow/alice/dataflow.al` matches the hand C# graph.
 - Alice Core library modules (ADR 0036; stdlib plan C3.1-C3.5, C4.1, C4.2), one namespace per module under
   `src/Alice.Runtime/Core/`: `Text` (`Utf8String`, SIMD `count/delete/squeeze/tr` over UTF-8, `Format.sprintf/try_format`
@@ -44,6 +60,11 @@
   JSON::Any sugar (as_i, dig, nil?, to_h ...); to_json and parse_json go through it (to_json keeps 1.0 and non-ASCII
   as Ruby does). JSONTestSuite 283/283 y_/n_ correct; forge, twitter: stage 1 5.2 GB/s, DOM 2.56 GB/s (3.4x
   JsonDocument), writer 2.4-1.5x Utf8JsonWriter (benchmarks/core/json/results.md).
+- core: typed JSON mapping under `--backend il` (ADR 0036 C2.5): the generated readers/writers are now typed AIR
+  helpers of the module (`__json_R<n>_T` / `__json_W<n>_T`, by-ref `JsonIterator`/`JsonWriter` parameters) instead of a
+  C#-only `__AliceJson` class, so the IL backend emits them like any other method; `JsonMap` gains the small by-ref
+  shims they call (TryNull, StartObject, NextProperty, Is, WriteName ...). Mapping errors are AL0250 (docs/errors.md),
+  including a variant field named `type` (the sum-type tag). JsonMappingTests runs the mapping on both backends.
 - Fuzzers (closing phase): a shared engine in `tests/Alice.Tests/Fuzz/Engine` (grammar generator `SyntaxGen`, corpus
   `Mutator`, typed generator `TypedGen`, `Oracles`, line/block delta-debugging `Minimizer`, triaged `Known.Issues`),
   a short deterministic seed set in `tests/Alice.Tests/Fuzz` (parser + fmt round trip, typed compile/Roslyn/check/
@@ -221,6 +242,7 @@ are published as GitHub prereleases. Every guarantee the toolchain makes is list
 - `require_relative "x"` loads the sibling file in single-file builds.
 
 ### Safety
+- Arena regions are per thread (ADR 0037 amendment 2026-11-03): `scope` marks and resets only its own thread's lane and the lanes it leases to the forks inside it, so a region on one thread can no longer hide another thread's free list or roll its cursor back under live nodes (two Allocs aliased; found as the `ArenaTests` tree(23) flake). Fork children inside a region allocate in leased lanes reclaimed with it; `Dispose` on another thread than `Enter` throws.
 - Arena (review F4, F10, F16): Release builds detect a double `Take` and a `Take`/`Borrow` of a freed slot (one freed bit per slot, fail-stop; a stale term whose slot was already reused is still the affine checker's job); lanes start at 2^12 slots and double; an exited thread's lane and slabs go to the next new thread; a node allocated before a region and taken inside it returns to its own free list. Cost: +2-16% on the tree(23) arena micro-benchmark.
 - FFI callbacks (F5, F17): every `fun` of a `lib` that declares a `Callback` parameter rethrows what a stored callback raised during that call (it no longer resurfaces from a later unrelated call); several raises keep the first, later ones in `Data[NativeCallback.SuppressedKey]`; a raise on a thread C created fails fast. IL callback trampolines honour the declared calling convention.
 - Dataflow (F11, F14): `Replicate` rejects a state that is or holds a reference (it was shared by all workers) and gains factory overloads (`Replicate(() => new S(), ...)`, one state per batch); `Ring.Release(n)` past the published items throws.

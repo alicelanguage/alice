@@ -88,7 +88,6 @@ version and the CHANGELOG heading. Every gate below is checked off, with a link 
 | Every entry in [INVARIANTS.md](../INVARIANTS.md) names tests that exist and pass | `ReleaseMetadataTests` | CTO |
 | `SECURITY.md` supported-versions table and contact address current for 1.x | `SECURITY.md` | lead |
 | Signed archives (publisher identity, macOS notarization) | **TODO lead**: signing identity and certificate not chosen yet; until then archives are SHA-256 only (`docs/production.md#security-limits`) | lead |
-| Bug bounty terms published for the guarantees in INVARIANTS.md | **TODO lead** | lead |
 | `CHANGELOG.md` section for the version, empty `## Unreleased` above it | `CHANGELOG.md` | CTO |
 
 ## Cut a release

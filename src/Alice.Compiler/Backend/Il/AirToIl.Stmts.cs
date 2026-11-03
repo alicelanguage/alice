@@ -199,7 +199,7 @@ internal sealed partial class IlBody
     {
         Type t;
         if (d.TypeCs != null && !d.TypeCs.StartsWith("ref ")) t = T.Parse(d.TypeCs, span);
-        else if (d.TypeCs != null) throw No("MDecl:ref-local", d.TypeCs);
+        else if (d.TypeCs != null) { RefLocal(d); return; }
         else if (d.Init != null) t = Infer(d.Init);
         else throw No("MDecl:untyped", d.Name);
         if (t == typeof(void)) throw No("MDecl:void", d.Name);
@@ -212,6 +212,24 @@ internal sealed partial class IlBody
         }
         Emit(d.Init, t);
         var l = Declare(d.Name, t);
+        il.EmitStoreLocal(l);
+    }
+
+    /// <summary>`ref T x = ref e;` (`h[k] += v` lowers to a ref local over CollectionsMarshal.GetValueRefOrAddDefault):
+    /// a byref local, read and written through like a `ref` parameter.</summary>
+    void RefLocal(MDecl d)
+    {
+        var el = T.Parse(d.TypeCs![4..].Trim(), span);
+        var bt = el.MakeByRefType();
+        var init = d.Init is MArg { Prefix: var pre } ma && pre.Trim() == "ref" ? ma.E : d.Init ?? throw No("MDecl:ref-local-uninit", d.Name);
+        if (init is MUnary { Op: AirUnOp.AddressOf } ) throw No("MDecl:ref-local", d.TypeCs);
+        if (init is MCall or AirRefOrAddDefault or AirRefOrNullRef)
+        {
+            var rt = Call(init as MCall ?? (MCall)Spelled(init), keepRef: true);
+            if (rt != bt) throw No("MDecl:ref-local-init", rt.Name);
+        }
+        else Address(init);
+        var l = Declare(d.Name, bt);
         il.EmitStoreLocal(l);
     }
 
@@ -546,7 +564,11 @@ internal sealed partial class IlBody
     /// <summary>Stores into a named variable or implicit field; <paramref name="value"/> pushes the value and returns its type.</summary>
     void StoreName(string name, Func<Type> value)
     {
-        if (FindLocal(name) is { } l) { var t = value(); Convert(t, l.T, false, true); il.EmitStoreLocal(l.L); return; }
+        if (FindLocal(name) is { } l)
+        {
+            if (l.T.IsByRef) { il.EmitLoadLocal(l.L); var tr = value(); var elr = l.T.GetElementType()!; Convert(tr, elr, false, true); il.EmitStoreObj(T.Il(elr)); return; }
+            var t = value(); Convert(t, l.T, false, true); il.EmitStoreLocal(l.L); return;
+        }
         if (args.TryGetValue(Bare(name), out var a))
         {
             if (a.Type.IsByRef) { il.EmitLoadArg(a.Index); var t1 = value(); var el = a.Type.GetElementType()!; Convert(t1, el, false, true); il.EmitStoreObj(T.Il(el)); return; }
@@ -857,7 +879,7 @@ internal sealed partial class IlBody
                 string pre = ma.Prefix.Trim();
                 if (pre.Contains(':')) throw No("MArg:named", ma.Prefix);
                 if (pre.StartsWith("out") && (pre.Length > 3 || ma.E is MCode { Text: "_" })) r.Add(new ArgInfo(typeof(void), null, false, "out var"));
-                else r.Add(new ArgInfo(Infer(ma.E), null, false, pre + " "));
+                else { var mt = Infer(ma.E); r.Add(new ArgInfo(mt.IsByRef ? mt.GetElementType()! : mt, null, false, pre + " ")); }   // a ref local passed on
                 continue;
             }
             if (IsNullLit(x) || IsDefaultLit(x) || IsMethodGroup(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }

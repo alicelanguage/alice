@@ -63,7 +63,7 @@ public sealed partial class AirToIl
                 throw new IlUnsupportedException("Helper:UnmanagedCallersOnly", sp, m.Name);
             bool st = m.Flags.HasFlag(AirMethodFlags.Static);
             var ret = Types.Parse(m.Ret.ToCs(), sp);
-            var ps = m.Params.Select(p => Types.Parse(p.Type.ToCs(), sp)).ToArray();
+            var ps = m.Params.Select(p => p.Type is AirType.ByRef br ? Types.Parse(br.Elem.ToCs(), sp).MakeByRefType() : Types.Parse(p.Type.ToCs(), sp)).ToArray();   // by-ref: JSON helpers (ref JsonIterator r)
             var def = owner.Def.DefineMethod(m.Name, MethodAttributes.Private | MethodAttributes.HideBySig | (st ? MethodAttributes.Static : 0),
                 Types.Il(ret), [.. ps.Select(Types.Il)]);
             for (int i = 0; i < m.Params.Count; i++) def.DefineParameter(i + 1, m.Params[i].Name);

@@ -237,7 +237,10 @@ public static class Arena<TSlot> where TSlot : unmanaged
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    static ArenaSlab<TSlot> Attach() => t_slab = Kind.Attach(ArenaLane.Current);
+    static ArenaSlab<TSlot> Attach() => t_slab = Kind.Attach(ArenaLane.CurrentInfo);
+
+    /// <summary>Points this thread's cached slab at a lane's (null: attach lazily); see <see cref="ArenaLane"/>.</summary>
+    internal static void BindThread(ArenaSlab<TSlot>? slab) => t_slab = slab;
 
     static void ThrowTag(int tag) => throw new ArgumentOutOfRangeException(nameof(tag), tag, $"variant tag must be 0..{Term.MaxTag}");
 
@@ -249,14 +252,16 @@ public static class Arena<TSlot> where TSlot : unmanaged
         throw new InvalidOperationException($"Arena<{typeof(TSlot).Name}>: {term} is past its lane's cursor {len} (a term of an ended region or a forged word)");
 }
 
-/// <summary>All lanes of one arena type. A lane id freed by an exited thread is handed to a new thread together
-/// with its slab (<see cref="ArenaLane"/>), so the slab's nodes stay valid and its memory is reused.</summary>
+/// <summary>All lanes of one arena type. A lane id freed by an exited thread (or an ended region lease) is handed to
+/// a new thread together with its slab (<see cref="ArenaLane"/>), so the slab's nodes stay valid and its memory is
+/// reused. A region marks and resets only the lanes it owns (<see cref="ArenaRegion"/>).</summary>
 sealed class ArenaTypeOf<TSlot> : ArenaKind where TSlot : unmanaged
 {
     ArenaSlab<TSlot>?[] _lanes = new ArenaSlab<TSlot>?[8];
 
-    internal ArenaSlab<TSlot> Attach(int lane)
+    internal ArenaSlab<TSlot> Attach(LaneInfo info)
     {
+        int lane = info.Id;
         lock (ArenaRegistry.Gate)
         {
             var a = _lanes;
@@ -265,7 +270,7 @@ sealed class ArenaTypeOf<TSlot> : ArenaKind where TSlot : unmanaged
                 Array.Resize(ref a, Math.Max(a.Length * 2, lane + 1));
                 Volatile.Write(ref _lanes, a);
             }
-            return a[lane] ??= new ArenaSlab<TSlot>(lane, ArenaRegistry.Depth);
+            return a[lane] ??= new ArenaSlab<TSlot>(lane, info.Depth);   // born inside the lane's open regions
         }
     }
 
@@ -278,15 +283,17 @@ sealed class ArenaTypeOf<TSlot> : ArenaKind where TSlot : unmanaged
         return s ?? throw new InvalidOperationException($"Arena<{typeof(TSlot).Name}>: {term} names lane {lane}, which never allocated in this arena");
     }
 
-    internal override void PushMarks()
+    ArenaSlab<TSlot>? Find(int lane)
     {
-        foreach (var s in _lanes) s?.PushMark();
+        var a = Volatile.Read(ref _lanes);
+        return (uint)lane < (uint)a.Length ? a[lane] : null;
     }
 
-    internal override void PopMarks()
-    {
-        foreach (var s in _lanes) s?.PopMark();
-    }
+    internal override void PushMark(int lane) => Find(lane)?.PushMark();
+
+    internal override void PopMark(int lane) => Find(lane)?.PopMark();
+
+    internal override void Bind(int lane) => Arena<TSlot>.BindThread(Find(lane));
 }
 
 /// <summary>One lane of one arena type: chunk c holds 2^(12+c) slots for c up to 18, then 2^30 each; each chunk has

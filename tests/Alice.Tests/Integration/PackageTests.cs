@@ -127,6 +127,22 @@ public class PackageTests : IDisposable
         Assert.Equal(server, cfg.Contains("\"System.GC.HeapCount\": 8"));   // capped server heaps: startup floor on many cores
     }
 
+    [Theory]
+    [InlineData("def fib(n : Int32) : Int64\n  return n.to_i64 if n < 2\n  fib(n - 1) + fib(n - 2)\nend\nputs fib(20)\n", true)]
+    [InlineData("puts 1 + 2\n", false)]
+    public void Emit_il_writes_the_gc_policy_of_the_csharp_build(string main, bool server)
+    {
+        // `alice emit --il` images ran on workstation GC while the C# build of a parallel program picks server GC,
+        // so IL-vs-C# timings of forked programs compared two GC modes
+        var dir = Temp("emitil");
+        File.WriteAllText(Path.Combine(dir, "main.al"), main);
+        var (code, o) = Run("dotnet", dir, typeof(Alice.Cli.App).Assembly.Location, "-q", "emit", "--il", "main.al");
+        Assert.True(code == 0, o);
+        var cfg = File.ReadAllText(Path.Combine(dir, "main.runtimeconfig.json"));
+        Assert.Contains($"\"System.GC.Server\":{(server ? "true" : "false")}", cfg);
+        Assert.Equal(server, cfg.Contains("\"System.GC.HeapCount\""));
+    }
+
     [Fact]
     public void Builds_are_incremental_and_track_added_and_deleted_sources()
     {

@@ -245,6 +245,95 @@ public static class JsonMap
     /// <summary>The string of a raw property name from <see cref="JsonIterator.NextProperty"/> (escapes decoded).</summary>
     public static string Key(ReadOnlySpan<byte> rawName) => Strings.Materialize(rawName);
 
+    // ---- pieces of compiler-generated readers/writers (C2.5): plain static calls, no spans or u8 literals at the
+    // call site, so the IL backend emits them like any other call ----
+
+    // iterator/writer steps as static calls on `ref` (what the generated helpers call: both backends emit them
+    // the same way; inlined)
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static bool TryNull(ref JsonIterator r) => r.TryReadNull();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static void StartArray(ref JsonIterator r) => r.ReadStartArray();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static bool NextElement(ref JsonIterator r) => r.NextElement();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static void StartObject(ref JsonIterator r) => r.ReadStartObject();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static bool NextProperty(ref JsonIterator r, out ReadOnlySpan<byte> rawName) => r.NextProperty(out rawName);
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static void Skip(ref JsonIterator r) => r.Skip();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static long Offset(ref JsonIterator r) => r.Offset;
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static void WriteNull(ref JsonWriter w) => w.WriteNull();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static void StartArray(ref JsonWriter w) => w.WriteStartArray();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static void EndArray(ref JsonWriter w) => w.WriteEndArray();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static void StartObject(ref JsonWriter w) => w.WriteStartObject();
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] public static void EndObject(ref JsonWriter w) => w.WriteEndObject();
+
+    /// <summary>The raw property name equals <paramref name="name"/> (an identifier: compared as UTF-8).</summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static bool Is(ReadOnlySpan<byte> raw, string name)
+    {
+        if (raw.Length != name.Length) return name.Length > raw.Length ? false : Utf8Is(raw, name);
+        for (int i = 0; i < raw.Length; i++)
+            if (raw[i] != name[i]) return name[i] >= 0x80 && Utf8Is(raw, name);
+        return true;
+    }
+
+    static bool Utf8Is(ReadOnlySpan<byte> raw, string name)
+    {
+        if (Encoding.UTF8.GetByteCount(name) != raw.Length) return false;
+        Span<byte> tmp = raw.Length <= 256 ? stackalloc byte[raw.Length] : new byte[raw.Length];
+        Encoding.UTF8.GetBytes(name, tmp);
+        return raw.SequenceEqual(tmp);
+    }
+
+    /// <summary>Writes a property name given as a string (no allocation for names up to 128 UTF-8 bytes).</summary>
+    public static void WriteName(ref JsonWriter w, string name)
+    {
+        int n = Encoding.UTF8.GetByteCount(name);
+        Span<byte> tmp = n <= 128 ? stackalloc byte[n] : new byte[n];
+        Encoding.UTF8.GetBytes(name, tmp);
+        w.WritePropertyName(tmp);
+    }
+
+    /// <summary>The tag property of a sum-type value, names as strings.</summary>
+    public static void WriteTag(ref JsonWriter w, string tagName, string variant)
+    {
+        WriteName(ref w, tagName);
+        w.WriteString(variant.AsSpan());
+    }
+
+    /// <summary>PeekTag with the tag name as a string.</summary>
+    public static ReadOnlySpan<byte> PeekTag(ref JsonIterator r, string tagName)
+    {
+        Span<byte> tmp = stackalloc byte[64];
+        int n = Encoding.UTF8.GetBytes(tagName, tmp);
+        return PeekTag(ref r, tmp.Slice(0, n));
+    }
+
+    /// <summary>A growing array buffer of a generated reader: the first one (4 slots).</summary>
+    public static T[] NewArray<T>() => new T[4];
+
+    /// <summary>Doubles <paramref name="items"/> (a generated reader's buffer is full).</summary>
+    public static T[] Grow<T>(T[] items)
+    {
+        Array.Resize(ref items, items.Length * 2);
+        return items;
+    }
+
+    /// <summary>The first <paramref name="n"/> items as an exactly sized array.</summary>
+    public static T[] Trim<T>(T[] items, int n)
+    {
+        if (n == 0) return [];
+        if (n != items.Length) Array.Resize(ref items, n);
+        return items;
+    }
+
+    /// <summary>Int16, range-checked.</summary>
+    public static short ReadInt16(ref JsonIterator r) => checked((short)r.ReadInt64());
+    /// <summary>UInt16, range-checked.</summary>
+    public static ushort ReadUInt16(ref JsonIterator r) => checked((ushort)r.ReadInt64());
+    /// <summary>SByte, range-checked.</summary>
+    public static sbyte ReadSByte(ref JsonIterator r) => checked((sbyte)r.ReadInt64());
+    /// <summary>Byte, range-checked.</summary>
+    public static byte ReadByte(ref JsonIterator r) => checked((byte)r.ReadInt64());
+    /// <summary>Float32 (rounded from the double).</summary>
+    public static float ReadSingle(ref JsonIterator r) => (float)r.ReadDouble();
+
     /// <summary>The error for a required field absent from the object (generated readers).</summary>
     public static JsonParseException MissingField(string field, string type, long offset) => new($"missing field \"{field}\" of {type}", offset);
 
@@ -254,7 +343,7 @@ public static class JsonMap
     /// The raw value of the <paramref name="tagName"/> property of the object at the iterator, without consuming
     /// anything (the tag may come after other fields). Empty when absent or not a string.
     /// </summary>
-    public static ReadOnlySpan<byte> PeekTag(ref JsonIterator r, ReadOnlySpan<byte> tagName)
+    public static ReadOnlySpan<byte> PeekTag(ref JsonIterator r, scoped ReadOnlySpan<byte> tagName)
     {
         var mark = r.Mark();
         ReadOnlySpan<byte> tag = default;

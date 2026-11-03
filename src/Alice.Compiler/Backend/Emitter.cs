@@ -105,7 +105,6 @@ public sealed class Emitter
             sb.Append(lowerer.FlushSpecializations());   // ADR 0026
         }
         sb.Append("}\n");
-        sb.Append(lowerer.FlushJsonMappings());   // typed JSON readers/writers this file asked for (Lowerer.Json.cs)
         return sb.ToString();
     }
 

@@ -55,7 +55,7 @@ internal sealed partial class IlBody
     {
         if (!IsMethodGroup(e) || want.GetMethod("Invoke") is not { } inv) return false;
         string name = Bare(((MCode)e).Text.Trim());
-        var infos = inv.GetParameters().Select(p => new ArgInfo(p.ParameterType, null, false, "")).ToList();
+        var infos = inv.GetParameters().Select(p => p.ParameterType.IsByRef ? new ArgInfo(p.ParameterType.GetElementType()!, null, false, "ref ") : new ArgInfo(p.ParameterType, null, false, "")).ToList();   // by-ref: JsonRead/JsonWrite
         foreach (var host in GroupHosts())
         {
             var cand = T.Pick(host.FindMethods(name).Where(m => !m.IsCtor).Select(IlTypes.FromAlice), infos);
