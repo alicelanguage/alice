@@ -55,7 +55,7 @@ public sealed class LoopUnroll : IMirPass
 
     static (long Start, long End)? Counted(MFor f)
     {
-        if (f.Cmp != "<" || f.VarType is not (null or "int") || !(f.Step == "++" || f.Step == $" = unchecked({f.Var} + 1)")) return null;
+        if (f.Cmp != "<" || f.VarType is not (null or "int") || !f.Step.IsIncrement(f.Var)) return null;
         if (!MirFacts.IntLiteral(f.Start, out long a) || !Plain(f.Start) || !MirFacts.IntLiteral(f.End, out long n) || !Plain(f.End)) return null;
         return (a, n);
     }

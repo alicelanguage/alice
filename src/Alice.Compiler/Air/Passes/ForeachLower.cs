@@ -46,7 +46,7 @@ public sealed class ForeachLower(IlLowerContext? ctx = null) : IlPass(ctx)
         return
         [
             Decl(c, collType, fe.Coll),
-            new MFor { Var = i, VarType = "int", Start = Const(0), Cmp = "<", End = Member(Local(c, collType), length, IlTypes.Int), Step = "++", Body = body },
+            new MFor { Var = i, VarType = "int", Start = Const(0), Cmp = "<", End = Member(Local(c, collType), length, IlTypes.Int), Body = body },
         ];
     }
 

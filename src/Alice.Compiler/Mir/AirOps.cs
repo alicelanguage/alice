@@ -13,7 +13,7 @@ public enum AirBinOp
 
 /// <summary>Unary operators of <see cref="MUnary"/>. Inc/Dec are prefix or postfix (<see cref="MUnary.Postfix"/>);
 /// NotNull is the postfix null-forgiving `x!`.</summary>
-public enum AirUnOp { Neg, Not, BitNot, AddressOf, Inc, Dec, NotNull, Await }
+public enum AirUnOp { Neg, Not, BitNot, AddressOf, Inc, Dec, NotNull, Await, FromEnd }
 
 /// <summary>C# spellings of the AIR operators, and the reverse for operators that arrive as text (Alice source).</summary>
 public static class AirOps
@@ -50,6 +50,7 @@ public static class AirOps
         AirUnOp.Not or AirUnOp.NotNull => "!",
         AirUnOp.BitNot => "~",
         AirUnOp.AddressOf => "&",
+        AirUnOp.FromEnd => "^",
         AirUnOp.Inc => "++",
         AirUnOp.Dec => "--",
         AirUnOp.Await => "await ",

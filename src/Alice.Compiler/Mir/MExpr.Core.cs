@@ -8,11 +8,9 @@ namespace Alice.Compiler.Mir;
 // reading Text unchanged (byte-identical output). The fields are get-only so Text cannot drift from them. D0.9 ports
 // the passes to the fields and drops the MCode base.
 //
-// Binder gaps (count toward the "MCode deleted" gate like AirRawCs; the fix is binder resolution, not a node):
-//   AirName sites: Lowerer.Calls.cs `"field" when soa` (SoA store path), Lowerer.Expressions.cs Name() SoA store path,
-//   Name() fallback for an unresolved name, Const() ConstPath.OwnerText, Const() unresolved constant path.
-//   AirRawCs sites: Lowerer.Statements.cs event-adapter lambda, `gpu for` reduction value (printed before the passes
-//   so the kernel stays byte-identical; making it typed is an ADR 0032 follow-up).
+// No text escape hatches: every leaf is typed (lead decision 2026-11-02). Names the binder could not resolve in
+// this compilation (a type of an unreferenced package, a sibling file's module) lower as by-name AirTypeRef /
+// AirLocalRef with an Unknown type, which the AIR verifier rejects for the IL backend.
 
 /// <summary>Literal kinds of <see cref="AirConst"/>; `nil` is <see cref="AirNull"/>.</summary>
 public enum AirConstKind { Int, Float, Char, String, Bool }
@@ -191,11 +189,15 @@ public sealed class AirMethodGroup : MCode
 public sealed class AirDefault : MCode
 {
     public bool Forgiving { get; }
+    /// <summary>Spelled `default` although <see cref="MExpr.Type"/> is known (the declaration gives the type).</summary>
+    public bool TargetTyped { get; }
 
-    public AirDefault(AirType? type, bool forgiving = false) : base((type == null ? "default" : "default(" + type.ToCs() + ")") + (forgiving ? "!" : ""))
+    public AirDefault(AirType? type, bool forgiving = false, bool targetTyped = false)
+        : base((type == null || targetTyped ? "default" : "default(" + type.ToCs() + ")") + (forgiving ? "!" : ""))
     {
         Type = type;
         Forgiving = forgiving;
+        TargetTyped = targetTyped;
     }
 }
 
@@ -235,23 +237,105 @@ public sealed class AirYieldBreak : MCode
     public AirYieldBreak() : base("yield break") { }
 }
 
-/// <summary>
-/// A dotted name the binder left unresolved, emitted as written for C# to resolve (a CLR namespace or type path, an
-/// implicit-`this` member of a .NET base type, a name only generated code declares). Not C# code: a name path; the IL
-/// backend must reject it (ADR 0032, AirVerifier).
-/// </summary>
-public sealed class AirName : MCode
-{
-    public string Path { get; }
+// ---- shared structural nodes of the parallel/ownership lowerings (frozen AirParExpr children; printed by
+// Backend/Printer.Parallel.cs, dumped by Mir/MirDump.Parallel.cs) ----
 
-    public AirName(string path) : base(path) => Path = path;
+/// <summary>
+/// `x.Length` / `x.Count` of an array, list or SoA store. Deliberately not an <see cref="MMember"/>: the
+/// InductionVariables pass bounds a counter by an MMember `.Length` and would rewrite the loop step, changing C#
+/// that used to be opaque text. Frozen.
+/// </summary>
+public sealed class AirLength : AirParExpr
+{
+    public MExpr Target = null!;
+    public string Member = "Length";
+
+    public override IEnumerable<MExpr> Children() => [Target];
 }
 
 /// <summary>
-/// Escape hatch: C# text no typed node expresses yet. Every construction site carries a comment saying why; the
-/// count is tracked per migration batch and must reach zero before the IL backend (ADR 0032).
+/// `end - start[ + 1]`, the trip count of a range loop. <see cref="End"/> is parenthesized unless it is atomic or an
+/// additive or multiplicative operation (`(c ? a : b) - start`); frozen.
 /// </summary>
-public sealed class AirRawCs : MCode
+public sealed class AirTripCount : AirParExpr
 {
-    public AirRawCs(string cs) : base(cs) { }
+    public MExpr End = null!;
+    public MExpr Start = null!;
+    public bool Inclusive;
+
+    public override IEnumerable<MExpr> Children() => [End, Start];
+}
+
+/// <summary>
+/// `base + offset`, a chunk bound (`start + lo`) known to lie in range. Not an <see cref="MBinary"/>: the loop
+/// passes would derive affine bounds from it and change the chunk loop. Frozen.
+/// </summary>
+public sealed class AirOffset : AirParExpr
+{
+    public MExpr Base = null!;
+    public MExpr Offset = null!;
+
+    public override IEnumerable<MExpr> Children() => [Base, Offset];
+}
+
+/// <summary>
+/// The shared leaf factory of the parallel/ownership lowerings: types used everywhere, and leaves built as the Core
+/// nodes above.
+/// </summary>
+public static class AirLeaf
+{
+    public static readonly AirType Int = new AirType.Prim(PrimKind.Int);
+    public static readonly AirType Long = new AirType.Prim(PrimKind.Long);
+    public static readonly AirType Bool = new AirType.Prim(PrimKind.Bool);
+    public static readonly AirType Void = new AirType.Prim(PrimKind.Void);
+
+    /// <summary>A local or lowering temp read by name.</summary>
+    public static AirLocalRef Name(string name, AirType? type = null) => new(name, type);
+
+    /// <summary>An integer literal as C# spells it (`0`, `1L`).</summary>
+    public static AirConst Lit(string text, AirType? type = null) => new(AirConstKind.Int, text, type);
+
+    /// <summary>A type used as a member-access target (`global::System.Math`).</summary>
+    public static AirTypeRef TypeName(string cs) => AirTypeRef.Named(cs);
+
+    /// <summary>The target-typed `default` of the given type.</summary>
+    public static AirDefault Default(AirType? type) => new(type, targetTyped: true);
+}
+
+/// <summary>
+/// A member chain read off a typed head, kept as one leaf (`MASK.Length`, `ARGV.Length`, `Rules.WIDTH`): the
+/// passes and lowerings see it as the single leaf it always was.
+/// </summary>
+public sealed class AirMemberPath : MCode
+{
+    public MCode Head { get; }
+    public IReadOnlyList<string> Members { get; }
+
+    public AirMemberPath(MCode head, IReadOnlyList<string> members, AirType? type = null) : base(head.Text + "." + string.Join(".", members))
+    {
+        Head = head;
+        Members = members;
+        Type = type;
+    }
+}
+
+/// <summary>
+/// An expression printed exactly as lowered: the MIR passes do not rewrite inside it (its child is frozen), while
+/// analyses still see it. The `gpu for` reduction value: its C# was always fixed before the passes ran.
+/// </summary>
+public sealed class AirFrozen : AirParExpr
+{
+    public MExpr E = null!;
+
+    public override IEnumerable<MExpr> Children() => [E];
+}
+
+/// <summary>An assignment used as a value (`x ??= v` as an initializer). Frozen children, like the text it replaces.</summary>
+public sealed class AirAssignExpr : AirParExpr
+{
+    public MExpr Target = null!;
+    public string Op = "=";
+    public MExpr Value = null!;
+
+    public override IEnumerable<MExpr> Children() => [Target, Value];
 }

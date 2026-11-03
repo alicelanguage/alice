@@ -43,7 +43,7 @@ public sealed partial class Lowerer
                 FieldInit = st.E,
             });
         }
-        return AirLeaf.Name(field, ne.Type.ToAir());   // a static readonly field: a leaf, so receivers stay simple
+        return new AirFieldRef(field, ne.Type.ToAir());   // a static readonly field: a leaf, so receivers stay simple
     }
 
     bool Shareable(TypeSym t)

@@ -93,12 +93,19 @@ public sealed class MLambda : MExpr
     public bool Hot;          // [MethodImpl(AggressiveOptimization)]: a parallel chunk body, hot from its first call
     public MExpr? ExprBody;
     public List<MStmt>? Body;
+    /// <summary>One parameter printed without parentheses: `static f => ...`.</summary>
+    public bool BareParam;
+    /// <summary>A block body of expression statements printed on one line: `(a) => { f(a); }`.</summary>
+    public bool InlineBody;
 }
 
 public sealed class MCast : MExpr
 {
     public string TypeCs = "";
     public MExpr E = null!;
+    /// <summary>Printed `(T)e` without the enclosing parentheses: a cast that is itself an operand of a cast or a
+    /// whole argument. A prefix-unary or bare-cast operand is not parenthesized (`(nint)(T)&amp;f`).</summary>
+    public bool Bare;
 }
 
 public sealed class MIs : MExpr

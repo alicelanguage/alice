@@ -144,7 +144,7 @@ public sealed partial class Lowerer
         switch (n.Res)
         {
             case "local" when soa != null && n.Sym is LocalSym sl && soa.Ps.Contains(sl):
-                return At(new MIndex { Target = new AirName(soa.Store), Args = { new AirLocalRef(soa.Idx, AirInt) } }, n);   // Store: the simple path SoaPipeline captured
+                return At(new MIndex { Target = soa.StoreLeaf, Args = { soa.IdxRef() } }, n);
             case "local":
                 return At(new AirLocalRef(((LocalSym)n.Sym!).CsName, narrowed: n.Narrowed), n);
             case "field":
@@ -156,7 +156,8 @@ public sealed partial class Lowerer
                 return Expr((CallExpr)n.Sym!);
         }
         string cs = Binder.Mangle(n.Name);
-        return zeroArg.Contains(cs) && !props.Contains(cs) ? new MCall { Name = cs } : At(new AirName(cs), n);
+        // a name the binder could not resolve here (a hoisted or generated local): a local by name, of Unknown type
+        return zeroArg.Contains(cs) && !props.Contains(cs) ? new MCall { Name = cs } : At(new AirLocalRef(cs), n);
     }
 
     MExpr Const(ConstExpr ce)
@@ -165,15 +166,29 @@ public sealed partial class Lowerer
             return t.Sym is { Kind: "variant", FieldOrder.Count: 0 } ? At(new MMember { Target = new AirTypeRef(t.ToAir()), Name = "Value" }, ce) : new AirTypeRef(t.ToAir());   // a field-less variant is its singleton
         if (ce.Res == "path" && ce.Sym is ConstPath cp)
         {
-            MExpr cur = cp.OwnerText != null ? new AirName(cp.OwnerText) : new AirTypeRef(cp.Owner.ToAir());
+            // OwnerText: an inherited member of the .NET base class read through `this` (Binder.BindConst, "Color Color")
+            MExpr cur = cp.OwnerText != null ? new AirFieldRef(cp.OwnerText, cp.Owner.ToAir()) : new AirTypeRef(cp.Owner.ToAir());
             foreach (var (name, call) in cp.Members)
                 cur = call ? new MCall { Target = cur, Name = name } : new MMember { Target = cur, Name = name };
             return cur;
         }
         var segs = ce.Ref.Name.Split('.');
         segs[0] = Binder.PrimCs(segs[0]);
-        return new AirName(string.Join(".", segs));
+        // the head the binder bound: a constant field (`MASK`), the program arguments (`ARGV`, the Main parameter or
+        // Prelude.ARGV), else a type or namespace C# resolves (one from an unreferenced package or a sibling file)
+        MCode head = ce.Res == "const" && ce.Sym is FieldSym cf ? new AirFieldRef(segs[0], cf.Type.ToAir())
+            : segs[0] == "ARGV" ? (Method == null ? new AirParamRef("ARGV", ArgvType) : new AirFieldRef("ARGV", ArgvType))
+            : (binder.Program.FindField(segs[0]) ?? Type.FindField(segs[0])) is { } hf ? new AirFieldRef(segs[0], hf.Type.ToAir())
+            : AirTypeRef.Named(segs[0]);
+        if (segs.Length == 1)
+        {
+            if (head is not AirTypeRef) head.Type ??= ce.Type.ToAir();
+            return head;
+        }
+        return new AirMemberPath(head, segs[1..], ce.Type.ToAir());
     }
+
+    static readonly AirType ArgvType = new AirType.Array(new AirType.Prim(PrimKind.String));
 
     MExpr Binary(BinaryExpr b)
     {
@@ -233,8 +248,6 @@ public sealed partial class Lowerer
 
     /// <summary>Inside a `gpu for` kernel: no CPU intrinsics (Prelude.fma tests Fma.IsSupported, which no GPU backend has).</summary>
     bool inGpuKernel;
-
-    static readonly AirType AirInt = new AirType.Prim(PrimKind.Int);
 
     /// <summary>Types and positions a node lowered from <paramref name="e"/> (ADR 0032: Type and Span from the HIR).</summary>
     T At<T>(T node, Syntax.Expr e) where T : MExpr

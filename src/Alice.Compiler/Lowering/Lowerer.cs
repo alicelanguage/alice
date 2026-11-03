@@ -96,7 +96,7 @@ public sealed partial class Lowerer
         hoisted = new HashSet<LocalSym>(hoistedLocals);
         var outp = new List<MStmt>(StackArrayDecls(line));
         foreach (var h in hoistedLocals)
-            if (!stackArrays.ContainsKey(h)) outp.Add(new MDecl { Line = line, Name = h.CsName, TypeCs = TypeCs(h.Type), Init = new MCode("default!") });
+            if (!stackArrays.ContainsKey(h)) outp.Add(new MDecl { Line = line, Name = h.CsName, TypeCs = TypeCs(h.Type), Init = new AirDefault(null, forgiving: true) });
         outp.AddRange(Stmts(body, tail, null));
         if (tail == Tail.None) outp.AddRange(ReleaseOwnedAtEnd());
         return outp;

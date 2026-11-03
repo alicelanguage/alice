@@ -453,12 +453,12 @@ public sealed class IlBody
         loops.Pop();
         Mark(cont);
         var name = new MCode(f.Var);
-        switch (f.Step.Replace(" ", ""))
+        switch (f.Step)
         {
-            case "++": Assign(name, "+=", new MCode("1")); break;
-            case "--": Assign(name, "-=", new MCode("1")); break;
-            case var st when st.Length > 2 && st[1] == '=' && st[0] is '+' or '-': Assign(name, st[..2], new MCode(st[2..])); break;
-            default: throw new SpikeUnsupported("MFor:step", f.Step);
+            case { Op: "++" }: Assign(name, "+=", AirConst.Of(1)); break;
+            case { Op: "--" }: Assign(name, "-=", AirConst.Of(1)); break;
+            case { Op: "+=" or "-=", Value: { } sv }: Assign(name, f.Step.Op, sv); break;
+            default: throw new SpikeUnsupported("MFor:step", f.Step.Op);
         }
         Mark(cond);
         var cmp = new MBinary { Op = AirOps.ParseBin(f.Cmp), L = name, R = f.End };
@@ -712,10 +712,7 @@ public sealed class IlBody
         switch (c)
         {
             case AirLocalRef { Narrowed: true }: throw new SpikeUnsupported("AirLocalRef:narrowed");
-            // unresolved by the binder (ADR 0032 says reject); Main's ARGV arrives this way, so names of parameters/locals and
-            // CLR static paths are still accepted, anything else is reported as AirName
-            case AirName n: return FindLocalOrArg(n.Path) || StaticPath(n.Path) != null ? Code(n.Path) : throw new SpikeUnsupported("AirName", n.Path);
-            case AirRawCs: throw new SpikeUnsupported("AirRawCs", c.Text);
+            // names the binder left unresolved lower as by-name AirTypeRef/AirLocalRef/AirMemberPath (air-b1 D0.7b): read by name below
             case AirThis or AirBase: throw new SpikeUnsupported("AirThis");
             case AirFieldRef f: throw new SpikeUnsupported("AirFieldRef", f.Name);
             case AirNull: il.Emit(OpCodes.Ldnull); return typeof(object);

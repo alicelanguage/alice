@@ -327,14 +327,12 @@ internal sealed partial class IlBody
         loops.Pop();
         il.MarkLabel(cont);
         var name = new AirLocalRef(f.Var);
-        string step = f.Step.Replace(" ", "");
-        switch (step)
+        switch (f.Step)
         {
-            case "++": Assign(name, "+=", AirConst.Of(1)); break;
-            case "--": Assign(name, "-=", AirConst.Of(1)); break;
-            case var st when st.Length > 2 && st[1] == '=' && st[0] is '+' or '-': Assign(name, st[..2], new MCode(st[2..])); break;
-            case var st when st.StartsWith('=') && CsText.Parse(f.Step.Trim()[1..], t => !IsVar(t) && T.TryParse(t) != null) is { } next: Assign(name, "=", next); break;
-            default: throw No("MFor:step", f.Step);
+            case { Op: "++" }: Assign(name, "+=", AirConst.Of(1)); break;
+            case { Op: "--" }: Assign(name, "-=", AirConst.Of(1)); break;
+            case { Op: "+=" or "-=" or "=", Value: { } sv }: Assign(name, f.Step.Op, sv); break;
+            default: throw No("MFor:step", f.Step.Op);
         }
         il.MarkLabel(cond);
         Jump(new MBinary { Op = AirOps.ParseBin(f.Cmp), L = name, R = f.End }, true, body);

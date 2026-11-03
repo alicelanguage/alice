@@ -62,7 +62,7 @@ public static class Dependence
     }
 
     static bool Counted(MFor f) =>
-        f.VarType is "int" or null && f.Cmp == "<" && (f.Step == "++" || f.Step == $" = unchecked({f.Var} + 1)");
+        f.VarType is "int" or null && f.Cmp == "<" && f.Step.IsIncrement(f.Var);
 
     /// <summary>A loop bound: affine, free of the nest's counters.</summary>
     public static Affine? Bound(MExpr e, IReadOnlySet<string> vars) =>

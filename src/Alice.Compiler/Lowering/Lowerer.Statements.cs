@@ -51,10 +51,8 @@ public sealed partial class Lowerer
                 break;
             case Assign { Op: "+=", Target: NameExpr { Sym: LocalSym ga } } gr when gpuAcc != null && ga == gpuAcc:
                 // a `gpu for` reduction: each thread adds into its register; the group reduces it after the loop
-                // AirRawCs: the added value is printed here, before the MIR passes run on the kernel body, as it always
-                // was; a typed value would let StrengthReduction/ConstantFolding rewrite it (floor_div(x, 4) -> x >> 2),
-                // changing the emitted kernel (D0.4 keeps output byte-identical)
-                o.Add(new MAssign { Target = new AirLocalRef("__gr", ga.Type.ToAir()), Op = "+=", Value = new AirRawCs(Backend.Printer.E(Expr(gr.Value))) });
+                // the added value is frozen: the MIR passes never rewrote it (floor_div(x, 4) stays a call, ADR 0032 follow-up)
+                o.Add(new MAssign { Target = new AirLocalRef("__gr", ga.Type.ToAir()), Op = "+=", Value = new AirFrozen { E = Expr(gr.Value), Type = gr.Value.Type.ToAir() } });
                 break;
             case Assign a:
                 AssignStmt(o, a);
@@ -173,10 +171,14 @@ public sealed partial class Lowerer
             && ht.GetMethod("Invoke") is { } inv && inv.ReturnType == typeof(void))
         {
             string hn = "global::" + (ht.FullName ?? ht.Name).Replace('+', '.');
-            var ps = string.Join(", ", inv.GetParameters().Select((_, i) => "__e" + i));
-            // AirRawCs: a parenthesis-less static lambda around a one-line block body; MLambda prints `(p) =>` and a
-            // multi-line block, so no typed form spells this text yet (ClosureConvert/DelegateCreate, ADR 0032)
-            var make = new AirRawCs($"static __f => new {hn}(({ps}) => {{ __f.DynamicInvoke({ps}); }})");
+            // static __f => new H((__e0, ...) => { __f.DynamicInvoke(__e0, ...); })
+            var ps = inv.GetParameters().Select((_, i) => "__e" + i).ToList();
+            var forward = new MCall { Target = new AirParamRef("__f"), Name = "DynamicInvoke", Args = ps.Select(p => (MExpr)new AirParamRef(p)).ToList() };
+            var make = new MLambda
+            {
+                Static = true, BareParam = true, Params = { "__f" },
+                ExprBody = new MNew { TypeCs = hn, Args = { new MLambda { Params = ps, InlineBody = true, Body = [new MExprStmt { E = forward }] } } },
+            };
             o.Add(new MAssign { Target = target, Op = a.Op, Value = new MCall { Target = AirTypeRef.Named("global::Alice.Runtime.EventAdapters"), Name = $"Handler<{hn}>", Args = { value, make } } });
             return;
         }
