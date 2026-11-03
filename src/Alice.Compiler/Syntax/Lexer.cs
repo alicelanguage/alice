@@ -403,7 +403,11 @@ public sealed class Lexer
             if (pos >= src.Length) throw new CompileException($"{file}:{l}:{c}: unterminated string");
             char ch = src[pos];
             if (ch == '"') { Adv(); break; }
-            if (ch == '\\') { sb.Append(ch); Adv(); sb.Append(src[pos]); Adv(); continue; }
+            if (ch == '\\')
+            {
+                if (pos + 1 >= src.Length) throw new CompileException($"{file}:{l}:{c}: unterminated string");
+                sb.Append(ch); Adv(); sb.Append(src[pos]); Adv(); continue;
+            }
             if (ch == '#' && At(1) == '{')
             {
                 sb.Append("#{"); Adv(); Adv();
@@ -417,9 +421,10 @@ public sealed class Lexer
                         sb.Append(x); Adv();
                         while (pos < src.Length && src[pos] != '"')
                         {
-                            if (src[pos] == '\\') { sb.Append(src[pos]); Adv(); }
+                            if (src[pos] == '\\' && pos + 1 < src.Length) { sb.Append(src[pos]); Adv(); }
                             sb.Append(src[pos]); Adv();
                         }
+                        if (pos >= src.Length) throw new CompileException($"{file}:{l}:{c}: unterminated string in an interpolation");
                         sb.Append('"'); Adv();
                         continue;
                     }
@@ -570,7 +575,7 @@ public sealed class Lexer
             return;
         }
         if (HeredocStart()) { Heredoc(l, c); return; }
-        if (src[pos] == '%' && At(1) is 'w' or 'i' or 'W' or 'I' && At(2) is '[' or '(' or '{' or '<' or '|' && SymbolContext()) { WordArray(l, c); return; }
+        if (src[pos] == '%' && At(1) is 'w' or 'i' or 'W' or 'I' && At(2) is '[' or '(' or '{' or '<' or '|' && (SymbolContext() || Last() is { Kind: "op" } po && po.Text is not (")" or "]" or "}"))) { WordArray(l, c); return; }   // an operand: also after `+`, `?`, `:` (fuzz P6)
         if (PercentStringStart()) { PercentString(l, c); return; }
         if (src[pos] == '/' && RegexContext()) { Regex(l, c); return; }
         if (src[pos] == ':' && (char.IsLetter(At(1)) || At(1) == '_') && OpSymbolContext())

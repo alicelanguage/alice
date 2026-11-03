@@ -230,6 +230,7 @@ internal sealed partial class IlBody
             case AirStackAlloc sa when sa.Count is AirConst { Value: int n0 } || IlTypes.TryLiteral(sa.Count is MCode cc ? cc.Text : "", out _, out _):
                 return StackAlloc(T.Parse(sa.Elem.ToCs(), span), sa.Count is AirConst { Value: int n1 } ? n1 : int.Parse(((MCode)sa.Count).Text, System.Globalization.CultureInfo.InvariantCulture));
             case AirTypeRef tr: throw No("AirTypeRef:value", tr.Text);
+            case AirArenaExpr ar: return Arena(ar);   // ADR 0037 arena nodes (AirToIl.Arena.cs)
             case MCode mc: return Code(mc.Text, e);
             case MBinary b: return Binary(b);
             case MUnary u: return Unary(u);
@@ -272,6 +273,7 @@ internal sealed partial class IlBody
             case IlConv cv: { var f = Raw(cv.E); Convert(f, cv.To, cv.Checked); return cv.To; }
             case AirStackBuffer sb: return StackAlloc(T.Parse(sb.ElemCs, span), sb.Length);
         }
+        if (RawExt(e) is { } xt) return xt; // H1 il-emit2
         throw No(Kind(e));
     }
 
@@ -1170,6 +1172,7 @@ internal sealed partial class IlBody
             pt = IlTypes.Promote(lt, rt, ll, rl);
         else if (lt.IsEnum && lt == rt) pt = ln;
         else if (lt == typeof(bool) && rt == typeof(bool)) pt = typeof(bool);
+        else if (lt == typeof(string) && rt == typeof(string) && b.Op is AirBinOp.Eq or AirBinOp.Ne) return UserOp(b, lt, rt); // il-emit2: string ==/!= is value equality, not ceq
         else if (lt == typeof(decimal) || rt == typeof(decimal) || UserOpMethod(b.Op, lt, rt) != null) return UserOp(b, lt, rt);
         else if (b.Op is AirBinOp.Eq or AirBinOp.Ne && !lt.IsValueType && !rt.IsValueType) pt = typeof(object);
         else if (lt.IsPointer && rt.IsPointer && b.Op is AirBinOp.Eq or AirBinOp.Ne or AirBinOp.Lt or AirBinOp.Le or AirBinOp.Gt or AirBinOp.Ge) pt = typeof(nuint);

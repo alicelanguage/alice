@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Alice.Compiler;
+using Alice.Compiler.Syntax;
 using Spectre.Console;
 
 namespace Alice.Cli.Commands;
@@ -42,10 +43,15 @@ public static class Prove
         if (Proof.SmtProver.Unavailable() is { } why) throw new UsageException(why);
         var results = new List<RuleResult>();
         var fallback = new HashSet<string>();
+        var proved = new Dictionary<string, IReadOnlyList<RuleDomain>>();
         uint ms = timeout is { } t ? (uint)Math.Clamp(t.TotalMilliseconds, 1, uint.MaxValue) : Proof.SmtProver.DefaultTimeoutMs;
         foreach (var o in Proof.SmtProver.Prove(files, refs, ms))
         {
-            if (o.Untranslatable == null) results.Add(new RuleResult(o.Rule, -1, o.Counterexample, o.Ms, Smt: true));
+            if (o.Untranslatable == null)
+            {
+                results.Add(new RuleResult(o.Rule, -1, o.Counterexample, o.Ms, Smt: true));
+                if (o.Proved && o.Domains != null) proved[o.Rule] = o.Domains;
+            }
             else
             {
                 fallback.Add(o.Rule);
@@ -59,6 +65,7 @@ public static class Prove
         finally { Alice.Compiler.Backend.Emitter.SkipOversizedRules = false; }
         for (int i = 0; i < results.Count; i++)
             if (results[i] is { Smt: true, Counterexample: { } cex } r) results[i] = Replay(program, r, cex);
+            else if (results[i] is { Smt: true, Proven: true } p && proved.TryGetValue(p.Rule, out var doms)) results[i] = SampleCheck(program, p, doms);
         if (fallback.Count > 0)
             foreach (var r in Enumerate(program, timeout, fallback))
                 results[results.FindIndex(x => x.Rule == r.Rule)] = r;   // enumerated after all
@@ -123,7 +130,8 @@ public static class Prove
     }
 
     /// <summary>Runs the compiled rule on Z3's counterexample: it must return false or raise. If it holds there, Z3 and
-    /// the compiler disagree about the rule's semantics; that is reported as not proven, never as a failure or a proof.</summary>
+    /// the compiler disagree about the rule's semantics: an internal error, reported as a failure at that input (as
+    /// <see cref="SampleCheck"/> does for a contradicted proof), never as a proof.</summary>
     static RuleResult Replay(Type? program, RuleResult r, string cex)
     {
         var m = program?.GetMethod("rule_" + r.Rule);
@@ -142,8 +150,62 @@ public static class Prove
             if ((bool)m.Invoke(null, args)! == false) return r with { Outcome = "false" };
         }
         catch (TargetInvocationException e) { return r with { Outcome = "raised " + (e.InnerException ?? e).GetType().Name }; }
-        return r with { Counterexample = null, NotProven = $"--smt found {cex} but the compiled rule holds there: Z3 and the compiler disagree (please report it)" };
+        return r with { Outcome = "true " + Contradicted };
     }
+
+    /// <summary>Points of a rule's domain a Z3 proof is cross-checked on: every bound, its neighbours and 0 when inside,
+    /// then seeded random points (the same on every run, so verdicts are reproducible).</summary>
+    public const int SamplePoints = 64;
+
+    /// <summary>The outcome suffix of a rule whose Z3 verdict (proof or counterexample) the compiled rule contradicts.</summary>
+    public const string Contradicted = "(internal error: solver verdict contradicted by compiled rule; please report it)";
+
+    /// <summary>
+    /// A Z3 proof (UNSAT) is cross-checked on <see cref="SamplePoints"/> inputs through the compiled rule (review-r1 F8:
+    /// Z3 once modelled Int8 at 8 bits where Alice computes at 32). An input where the compiled rule returns false or
+    /// raises is an internal error of `--smt`: the rule is reported as failing there, never as proven.
+    /// </summary>
+    internal static RuleResult SampleCheck(Type? program, RuleResult r, IReadOnlyList<RuleDomain> domains)
+    {
+        var m = program?.GetMethod("rule_" + r.Rule);
+        if (m == null) return r;
+        var ps = m.GetParameters();
+        if (ps.Length != domains.Count) return r;
+        var rng = new Random(r.Rule.Aggregate(17, (h, c) => unchecked(h * 31 + c)));
+        var picks = domains.Select(d => Candidates(d, rng)).ToList();
+        if (picks.Any(c => c.Count == 0)) return r;   // a domain the enumerator cannot express either
+        for (int k = 0; k < SamplePoints; k++)
+        {
+            var vals = picks.Select(c => c[k % c.Count]).ToList();
+            var args = new object?[ps.Length];
+            for (int i = 0; i < ps.Length; i++)
+                args[i] = vals[i] is bool b ? b : vals[i] is Int128 n ? ToParam(n, ps[i].ParameterType) : null;
+            string at = string.Join(", ", domains.Select((d, i) => $"{d.Name} = {(vals[i] is bool b ? b ? "true" : "false" : vals[i])}"));
+            string? outcome = null;
+            try { if ((bool)m.Invoke(null, args)! == false) outcome = "false"; }
+            catch (TargetInvocationException e) { outcome = "raised " + (e.InnerException ?? e).GetType().Name; }
+            if (outcome != null)
+                return r with { Counterexample = at, Outcome = outcome + " " + Contradicted };
+        }
+        return r;
+    }
+
+    /// <summary>The sample values of one domain variable: <see cref="SamplePoints"/> entries, bounds first.</summary>
+    static List<object> Candidates(RuleDomain d, Random rng)
+    {
+        if (d.IsBool) return [false, true];
+        Int128 lo = d.Lo, hi = d.Hi;
+        var c = new List<object>();
+        if (lo > hi) return c;
+        foreach (var v in new Int128[] { lo, hi, lo + 1, hi - 1, 0, -1, 1 })
+            if (v >= lo && v <= hi && !c.Contains(v)) c.Add(v);
+        while (c.Count < SamplePoints) c.Add(lo + (Int128)(rng.NextDouble() * (double)(hi - lo + 1)) is var x && x > hi ? hi : x);
+        return c;
+    }
+
+    static object ToParam(Int128 v, Type t) => t == typeof(ulong) ? (ulong)(long)v : t == typeof(uint) ? (uint)v
+        : t == typeof(ushort) ? (ushort)v : t == typeof(byte) ? (byte)v : t == typeof(sbyte) ? (sbyte)v
+        : t == typeof(short) ? (short)v : t == typeof(int) ? (int)v : (object)(long)v;
 
     /// <summary>`x = 7, b = true` as ordered (name, long or bool) pairs.</summary>
     public static List<(string Name, object Value)> Assignments(string cex)

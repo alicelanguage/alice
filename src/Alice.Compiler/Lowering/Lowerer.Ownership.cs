@@ -407,6 +407,8 @@ public sealed partial class Lowerer
         // arena sum types (ADR 0037): Binder.Affine proved or inferred the borrow (a `case` on it only reads; AL0243
         // when an explicit `borrow` is consumed), so the array-oriented use count below does not apply
         if (k < m.Params.Count && binder.Affine.LayoutOf(m.Params[k].Type) != null) return borrows[(m, k)] = binder.Affine.BorrowParam(m.Params[k]);
+        // ... also after Lowerer.Affine retyped the arena enum to ulong (its AType no longer names the TypeSym)
+        if (k < m.Params.Count && affine?.TryType(m.Params[k].Type, out _, out _) == true) return borrows[(m, k)] = m.Params[k].Borrow || binder.Affine.InferredBorrow.Contains(m.Params[k]);
         if (m.Decl is not { HasBody: true } d || m.IsAsync || m.UsesYield || k >= m.Params.Count || m.Params[k].Splat || m.Params[k].Block) return borrows[(m, k)] = false;
         if (!visiting.Add((m, k))) return true;
         string name = m.Params[k].Name;

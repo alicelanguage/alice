@@ -249,6 +249,23 @@ public sealed class Emitter
         if (d.Kind == "struct" && !d.Members.OfType<MethodDecl>().Any(m => m.Name == "initialize")
             && d.Members.Any(m => m is AccessorDecl { Init: not null } or FieldDecl { Init: not null }))
             body.Append($"public {s.Name}() {{ }}\n");
+        // Ruby: a subclass without `initialize` inherits its superclass's; C# does not inherit constructors, so forward
+        // each one (`D.new(3)` with `class D < C` and `C#initialize(start)`, fuzz F2). Once per type (partial classes).
+        if (d.Kind == "class" && s.BaseClass is { } baseClass && !s.Methods.ContainsKey("initialize") && forwardedCtors.Add(s))
+        {
+            for (var b = baseClass; b != null; b = b.BaseClass)
+            {
+                if (!b.Methods.TryGetValue("initialize", out var inits)) continue;
+                foreach (var ctor in inits)
+                {
+                    if (ctor.Params.Any(x => x.Splat || x.Block || x.Mod != "" || x.Type.IsUntyped)) continue;
+                    string ps = string.Join(", ", ctor.Params.Select(x => Lowerer.TypeCs(x.Type) + " " + x.CsName + (x.HasDefault ? " = default" : "")));
+                    string args = string.Join(", ", ctor.Params.Select(x => x.CsName));
+                    if (ctor.Params.Count > 0) body.Append($"public {s.Name}({ps}) : base({args}) {{ }}\n");
+                }
+                break;
+            }
+        }
         // `class Trio < IEnumerable(Int32)` with a GetEnumerator iterator: C# also needs the non-generic bridge
         bool implementsEnumerable = s.EnumerableElem != null
             || s.Bases.Any(b => b.Clr is { IsGenericType: true } c && c.GetGenericTypeDefinition() == typeof(IEnumerable<>));
@@ -281,13 +298,17 @@ public sealed class Emitter
         return Printer.E(((MReturn)tmp[^1]).Value!);
     }
 
+    readonly HashSet<TypeSym> forwardedCtors = new();
+
     string Accessor(AccessorDecl a, TypeSym owner)
     {
         var f = (FieldSym)a.Sym!;
         string st = f.IsStatic ? "static " : "";
         if (a.Kind == "event") return $"{Attrs(a.Attrs)}{(owner.Kind == "interface" ? "" : "public ")}{st}event {f.Type.Cs} {f.CsName};\n";
         if (owner.Kind == "interface") return $"{f.Type.Cs} {f.CsName} {(a.Kind == "getter" ? "{ get; }" : "{ get; set; }")}\n";
-        string acc = a.Kind switch { "getter" => "{ get; private set; }", "setter" => "{ private get; set; }", _ => "{ get; set; }" };
+        // a subclass may assign the ivar behind an inherited getter (`@count = ...`, fuzz F3): protected, not private
+        string hidden = owner.Kind == "class" && owner.HasSubclass ? "protected" : "private";
+        string acc = a.Kind switch { "getter" => $"{{ get; {hidden} set; }}", "setter" => $"{{ {hidden} get; set; }}", _ => "{ get; set; }" };
         string init = a.Init != null ? " = " + Init(a.Init, owner) + ";" : "";
         return $"{Attrs(a.Attrs.Select(FieldTarget).ToList())}public {st}{Lowerer.TypeCs(f.Type)} {f.CsName} {acc}{init}\n";
     }

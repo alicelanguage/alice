@@ -1,0 +1,11 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Notes.SettingsView">
+  <StackPanel Spacing="8">
+    <TextBlock Text="Your name" />
+    <TextBox x:Name="UserName" Text="{Binding user_name, Mode=TwoWay}" />
+    <CheckBox x:Name="ShowCount" Content="Show the note count" IsChecked="{Binding show_count, Mode=TwoWay}" />
+    <Button x:Name="Save" Content="Save" Command="{Binding save_command}" />
+    <TextBlock x:Name="Status" Text="{Binding status}" TextWrapping="Wrap" />
+  </StackPanel>
+</UserControl>

@@ -81,7 +81,7 @@ public sealed partial class Lowerer
         BinaryExpr ub => PureOperator(ub),                  // a user-defined operator is a method call
         NameExpr { Res: "call" or "selfcall" } n => n.Sym is MethodSym m && MethodPure(m),
         NewExpr { Type.Kind: "array" } => true,
-        NewExpr n => n.AsCall == null && n.Type.Sym is TypeSym ts && CtorPure(ts, n.Args.Count),
+        NewExpr n => n.AsCall == null && (n.Type.Sym is TypeSym ts && CtorPure(ts, n.Args.Count) || AffineNewPure(n)),
         CallExpr c => c.Args.All(a => a.Mod == "") && c.Res switch
         {
             "alice" => c.Sym is MethodSym m && MethodPure(m),

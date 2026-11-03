@@ -1,0 +1,7 @@
+<Project>
+  <Import Project="../../../Directory.Build.props" />
+  <PropertyGroup>
+    <!-- Every Alice assembly emits a Program class; a package that depends on another sees two. -->
+    <NoWarn>$(NoWarn);CS0436</NoWarn>
+  </PropertyGroup>
+</Project>

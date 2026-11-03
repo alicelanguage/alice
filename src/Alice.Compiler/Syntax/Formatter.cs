@@ -16,15 +16,26 @@ public static class Formatter
 
     public static string Format(string src)
     {
-        var lines = src.Replace("\r\n", "\n").Split('\n');
+        var text = src.Replace("\r\n", "\n");
+        if (text.EndsWith('\n')) text = text[..^1];   // the final newline ends the last line, it is no empty line (a heredoc opener at EOF stayed open over it, fuzz P4)
+        var lines = text.Split('\n');
         var outp = new StringBuilder();
         var stack = new List<string>();   // open block kinds
         int blank = 0;
         bool started = false;
         var heredocs = new Queue<(string Id, bool Plain)>();   // opened on an earlier line, bodies still to copy
+        bool inString = false;   // a "..." literal is open across the line break: its lines are text (fuzz P3)
         for (int li = 0; li < lines.Length; li++)
         {
             string raw = lines[li];
+            if (inString)
+            {
+                if (blank > 0) outp.Append('\n', blank);
+                blank = 0;
+                outp.Append(raw).Append('\n');
+                inString = StringOpenAtEnd(raw, true);
+                continue;
+            }
             if (heredocs.Count > 0)
             {
                 var (id, plain) = heredocs.Peek();
@@ -34,7 +45,8 @@ public static class Formatter
                 if (plain ? raw.TrimEnd('\r') == id : raw.Trim() == id) heredocs.Dequeue();
                 continue;
             }
-            string line = raw.Trim();
+            bool opens = heredocs.Count == 0 && StringOpenAtEnd(raw, false);
+            string line = opens ? raw.TrimStart() : raw.Trim();   // trailing spaces inside the open string are its text
             if (line.Length == 0)
             {
                 if (started) blank++;
@@ -51,6 +63,7 @@ public static class Formatter
             bool closes = first == "end" || code.StartsWith("}");
             if (closes || Midders.Contains(first)) level = Math.Max(0, level - 1);
             outp.Append(string.Concat(Enumerable.Repeat(Unit, level))).Append(line).Append('\n');
+            inString = opens;
 
             // update block structure
             if (first == "end" && stack.Count > 0) stack.RemoveAt(stack.Count - 1);
@@ -102,13 +115,16 @@ public static class Formatter
         return false;
     }
 
-    /// <summary>A record has a body when the next non-blank line is a member declaration (Parser.RecordHasBody rule).</summary>
+    /// <summary>A record has a body when the next non-blank line is a member declaration indented under the record
+    /// (Parser.RecordHasBody rule: a `def` at the record's column is a top-level method, fuzz P5).</summary>
     static bool RecordHasBody(string[] lines, int at)
     {
+        int col = Indent(lines[at]);
         for (int k = at + 1; k < lines.Length; k++)
         {
             var t = lines[k].Trim();
             if (t.Length == 0) continue;
+            if (Indent(lines[k]) <= col) return false;
             var w = Words(CodeOf(t));
             return w.Count > 0 && w[0] is "def" or "getter" or "property" or "setter" or "include" or "private" or "protected" or "abstract" or "@[" or "attr_accessor" or "attr_reader";
         }
@@ -131,6 +147,45 @@ public static class Formatter
             if (plain && !lines.Skip(at + 1).Any(l => l.TrimEnd('\r') == id)) continue;
             yield return (id, plain);
         }
+    }
+
+    static int Indent(string line)
+    {
+        int n = 0;
+        while (n < line.Length && line[n] is ' ' or '\t') n++;
+        return n;
+    }
+
+    /// <summary>Whether a double-quoted string is still open at the end of <paramref name="line"/>, which starts inside
+    /// one when <paramref name="inside"/>. Comments, char/single-quoted literals, %-literals and `#{...}` holes are
+    /// skipped; a heredoc opener ends the scan (its body is the heredoc queue's).</summary>
+    static bool StringOpenAtEnd(string line, bool inside)
+    {
+        int depth = 0;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (inside)
+            {
+                if (c == '\\') { i++; continue; }
+                if (depth == 0 && c == '#' && i + 1 < line.Length && line[i + 1] == '{') { depth++; i++; continue; }
+                if (depth > 0) { if (c == '{') depth++; else if (c == '}') depth--; continue; }
+                if (c == '"') inside = false;
+                continue;
+            }
+            if (c == '#') return false;
+            if (c == '%' && PercentOpen(line, i) >= 0) return false;
+            if (c == '\'')
+            {
+                int e = line.IndexOf('\'', i + 1);
+                if (e < 0) return false;
+                i = e;
+                continue;
+            }
+            if (c == '<' && i + 2 < line.Length && line[i + 1] == '<' && line[i + 2] is '~' or '-' or '"' or '\'') return false;
+            if (c == '"') inside = true;
+        }
+        return inside;
     }
 
     static bool ClosesOnSameLine(List<string> words, string kw) => words.Count > 1 && words[^1] == "end" && words.IndexOf(kw) < words.Count - 1;

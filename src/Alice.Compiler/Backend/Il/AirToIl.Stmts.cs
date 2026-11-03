@@ -7,7 +7,7 @@ namespace Alice.Compiler.Backend.Il;
 /// <summary>Statements, calls and assignments of <see cref="IlBody"/>.</summary>
 internal sealed partial class IlBody
 {
-    sealed record Loop(IlLabel Break, IlLabel Continue, int TryDepth);
+    sealed record Loop(IlLabel Break, IlLabel Continue, int TryDepth) { public int BreakDepth { get; init; } = TryDepth; }
 
     readonly Stack<Loop> loops = new();
     int tryDepth;
@@ -60,7 +60,20 @@ internal sealed partial class IlBody
         if (s.Span is { } sp) span = sp;
         else if (s.Line > 0) span = new Span(c.File, s.Line, 1, 0);
         if (s.Line > 0 && c.File.Length > 0 && s is not (MBlock or MTry))
-            il.MarkSequencePoint(span is { } x && x.Line == s.Line ? x with { File = x.File.Length > 0 ? x.File : c.File, Col = Math.Max(1, x.Col) } : new Span(c.File, s.Line, 1, 0));
+            il.MarkSequencePoint(Columns(s.Span is { } x && x.Line == s.Line ? x with { File = x.File.Length > 0 ? x.File : c.File } : new Span(c.File, s.Line, 0, 0)));
+    }
+
+    /// <summary>Real column and length for a statement's sequence point (review-r1 F19): a missing (or placeholder 1) column is the
+    /// line's first non-blank character, a missing length runs to the end of the line (trailing blanks dropped).</summary>
+    Span Columns(Span sp)
+    {
+        if (!c.SourceLines.TryGetValue(sp.File, out var lines) || sp.Line < 1 || sp.Line > lines.Length)
+            return sp with { Col = Math.Max(1, sp.Col) };
+        var text = lines[sp.Line - 1].TrimEnd();
+        int col = sp.Col;
+        if (col <= 1 || col > text.Length) { col = 1; while (col <= text.Length && char.IsWhiteSpace(text[col - 1])) col++; }
+        int len = sp.Len > 0 ? sp.Len : text.Length - col + 1;
+        return sp with { Col = col, Len = Math.Max(1, len) };
     }
 
     void Stmt(MStmt s)
@@ -116,7 +129,7 @@ internal sealed partial class IlBody
             case MDeconstruct dc: Deconstruct(dc); break;
             case MUsing u: Using(u); break;
             case AirSwitch sw: Switch(sw); break;
-            default: throw No(s.GetType().Name);
+            default: if (!StmtExt(s)) throw No(s.GetType().Name); break; // H2 il-emit2
         }
     }
 
@@ -157,7 +170,7 @@ internal sealed partial class IlBody
     void Branch(Loop l, bool brk)
     {
         var target = brk ? l.Break : l.Continue;
-        if (tryDepth > l.TryDepth) il.EmitLeave(target); else il.EmitBranch(target);
+        if (tryDepth > (brk ? l.BreakDepth : l.TryDepth)) il.EmitLeave(target); else il.EmitBranch(target);
     }
 
     void Return(MReturn r)
@@ -403,7 +416,7 @@ internal sealed partial class IlBody
             EmitInstanceCall(en, cur.GetGetMethod()!);
             var et = Deref(cur.PropertyType);
             BindVars(fe.Vars, et);
-            loops.Push(new(brk, cont, tryDepth));
+            loops.Push(new(brk, cont, tryDepth) { BreakDepth = disposable ? tryDepth - 1 : tryDepth }); // il-emit2: brk lies after the try
             Stmts(fe.Body);
             loops.Pop();
             il.MarkLabel(cont);
@@ -669,10 +682,13 @@ internal sealed partial class IlBody
                     }
                     if (compound)
                     {
-                        // indexer compound: evaluate target and index again for the read (side-effect free in lowered MIR)
+                        // indexer compound: `x[i] = (T)(x[i] op v)` reads target and index twice, so spill both to
+                        // temps first (review-r1 F7); a value-type receiver stays in place unless it is a ref struct
                         var cur = Infer(ix);
-                        var bin = new MBinary { Op = CompoundOp(op, this), L = ix, R = value, Checked = nodeChecked };
-                        Assign(ix, "=", new IlConv { To = cur, E = bin, Checked = chk });
+                        var six = new MIndex { Target = Spill(ix.Target, at, !at.IsValueType || at.IsByRefLike), Type = ix.Type, Span = ix.Span };
+                        foreach (var a in ix.Args) six.Args.Add(Spill(a, Infer(a), true));
+                        var bin = new MBinary { Op = CompoundOp(op, this), L = six, R = value, Checked = nodeChecked };
+                        Assign(six, "=", new IlConv { To = cur, E = bin, Checked = chk });
                         return;
                     }
                     if (at.IsArray)
@@ -699,6 +715,19 @@ internal sealed partial class IlBody
                 }
         }
         throw No("MAssign:target:" + target.GetType().Name, Printer.E(target));
+    }
+
+    int spillN;
+
+    /// <summary>Evaluates <paramref name="e"/> once into a fresh named local and returns a reference to it; literals,
+    /// locals and arguments are returned unchanged (review-r1 F7).</summary>
+    MExpr Spill(MExpr e, Type t, bool allowed)
+    {
+        if (!allowed || Literal(e, out _) || e is AirLocalRef || e is MCode c && (IsVar(c.Text) || c.Text.Trim() == "this")) return e;
+        var name = "__spill" + spillN++;
+        Emit(e, t);
+        il.EmitStoreLocal(Declare(name, t));
+        return new AirLocalRef(name, e.Type);
     }
 
     MethodInfo? FindIndexer(Type t, int argc, string name)
@@ -841,7 +870,7 @@ internal sealed partial class IlBody
     {
         if (rt.IsValueType)
         {
-            if (m.DeclaringType == rt && !m.IsVirtual || m.DeclaringType == rt && m.IsFinal) il.EmitCall(T.Method(m));
+            if (m.DeclaringType == rt) il.EmitCall(T.Method(m)); // il-emit2: a struct method cannot be overridden (ILVerify CallVirtOnValueType)
             else { il.EmitConstrainedPrefix(T.Il(rt)); il.EmitCall(T.Method(m), virtualCall: true); }
             return;
         }
@@ -962,7 +991,7 @@ internal sealed partial class IlBody
             var ownerT = recv == null || baseCall ? (owner.ClrBase ?? typeof(object)) : rt!;
             if (!mi.IsStatic && rt != null && rt.IsValueType && !pick.Extension && !baseCall)
             {
-                if (mi.DeclaringType == rt && (!mi.IsVirtual || mi.IsFinal)) il.EmitCall(T.Method(mi));
+                if (mi.DeclaringType == rt) il.EmitCall(T.Method(mi)); // il-emit2: a struct method cannot be overridden (ILVerify CallVirtOnValueType)
                 else { il.EmitConstrainedPrefix(T.Il(rt)); il.EmitCall(T.Method(mi), virtualCall: true); }
             }
             else il.EmitCall(T.Method(mi), virtualCall: !mi.IsStatic && !baseCall && !(recv == null && owner.IsValueType));

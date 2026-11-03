@@ -1,0 +1,8 @@
+[package]
+name = "ApiTests"
+version = "0.10.0"
+kind = "exe"
+
+[dependencies]
+Api = { workspace = true }
+"Microsoft.AspNetCore.Mvc.Testing" = "10.*"

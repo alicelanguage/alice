@@ -1,0 +1,13 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Notes.NotesView">
+  <DockPanel>
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8">
+      <TextBox x:Name="Draft" Text="{Binding draft, Mode=TwoWay}" Width="240" Watermark="a new note" />
+      <Button x:Name="Add" Content="Add" Command="{Binding add_command}" IsDefault="True" />
+      <Button x:Name="Clear" Content="Clear" Command="{Binding clear_command}" />
+    </StackPanel>
+    <TextBlock x:Name="Summary" DockPanel.Dock="Bottom" Text="{Binding summary}" IsVisible="{Binding show_count}" />
+    <ListBox x:Name="List" ItemsSource="{Binding notes}" />
+  </DockPanel>
+</UserControl>

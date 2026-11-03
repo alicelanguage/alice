@@ -4,7 +4,46 @@
 
 ## 1.0.0-rc.1 - 2026-11-02
 
+- IL backend wiring (backend plan D1.6/D1.8/D1.9/D1.10, ADR 0033): `alice run --backend il` / `alice emit --il` now compile async/iterator/async-iterator methods (own state machines, `Air/Passes/StateMachines`), `Any` operations (`Alice.Runtime.Dyn` call sites, AL0232), records, struct records and sum types (`Synthesize`), and `lib` P/Invokes; the three stub tests `Il_async/iterator/async_iterator_matches_csharp` are real C#-vs-IL differential tests. Fixes found on the way: `break` inside `for v in <IEnumerable>` left the try with `br`, `String == String` was a reference compare under IL.
 - dataflow (ADR 0038, P3.2/P3.3): `dataflow do` with `source`/`stage(state:, par:)`/`sink`, `stream def`; binder checks AL0244-AL0246; lowered to AirDataflow/AirStage/AirRing and static stage methods over the runtime function-pointer overloads (one `Graph.Run`); `benchmarks/dataflow/alice/dataflow.al` matches the hand C# graph.
+- Alice Core library modules (ADR 0036; stdlib plan C3.1-C3.5, C4.1, C4.2), one namespace per module under
+  `src/Alice.Runtime/Core/`: `Text` (`Utf8String`, SIMD `count/delete/squeeze/tr` over UTF-8, `Format.sprintf/try_format`
+  without boxing), `Time` (Ruby `Time`, `Duration` with `5.minutes`, 0-allocation `strftime` into spans), `Csv` (RFC 4180
+  reader on a 64-byte SIMD structural index, zero-copy fields, writer), `Toml` (TOML 1.0 parser and writer, passes
+  toml-test; `alice.toml` is now read with it through `Projects/ManifestToml.cs`), `Fs`, `Process` (`Shell`, `Open3`,
+  `Signals.trap`), `Crypto` (CRC-32C, XXH3-64, digests, HMAC, `SecureRandom`), `Collections` (`Set`, `Deque`, `Ring`,
+  `BitSet`), `Env` (`Env`, `Argv`, `Platform`), `Net` (TCP/Unix/UDP sockets, `TcpServer.serve` per connection, owned
+  `RingBuffer`) and `Net.Http` (`HttpSession` over `SocketsHttpHandler`, JSON body hooks for Alice.Core.Json).
+  Prelude: duration literals (`Prelude.CoreTime.cs`). Benchmarks: `benchmarks/core/lib`, `results/core-lib.md`
+  (CSV 1.6 GB/s, CRC-32C 10-11 GB/s, Deque 1.5x Queue and 8.7x LinkedList, echo 0 bytes/message with 256
+  connections). Docs: `docs/stdlib.md`, `docs/language.md`,
+  "Alice Core modules".
+- Affine arena lowering P1.3 (ADR 0037 step 2, ADR 0040 section 2), driven by `Binder.Affine`: arena sum types are 64-bit terms over per-type lane slabs (packed variants in the term, slot variants as `ulong` words of the binder's slot union); AIR nodes `AirTermPack`, `AirTermTag`, `AirTermPayload`, `AirArenaAlloc`, `AirArenaTake`, `AirArenaBorrow`, `AirArenaDrop` (recursive by default: Bend's free of an unconsumed subtree; `ALICE_ARENA_DEEP=0` for slot-only), `AirSlotWord`, `AirArenaRegion` (`scope` in the main body), `AirLane` (`Mir/MExpr.Arena.cs`). The C# printer calls the public `Arena` API (`Backend/Printer.Arena.cs`); the IL backend inlines slot access through the lane cursor (`Backend/Il/AirToIl.Arena.cs`); `Arena`/`ArenaSlab` gain an `[EditorBrowsable(Never)]` raw-access surface and `Arena.DropDeep`. `ALICE_NO_ARENA=1` keeps records. Results in `benchmarks/bend2/results/arena.md`; tests in `tests/Alice.Tests/Compiler/AffineLowerTests.cs`.
+- samples (ROADMAP-1.0 stream H): a verified, documented starting point per domain, each in `examples/verify.sh`
+  and `Integration/SampleTests`: `samples/netchat` (TCP chat, `spawn` + `Channel`), `examples/web/aspnet` grown
+  into a minimal API (products, JSON bodies, DI, EF Core in memory, WebSocket echo, 14 `WebApplicationFactory`
+  checks; `/health` and `/quote` unchanged), `examples/ui/avalonia` as an MVVM app (two views, JSON settings,
+  headless run), `samples/raylib-pong` (rules tested and proven), `samples/alice-grep` (globs, `Par.For` scan,
+  NativeAOT: 2.7 MB, 3.3 ms start), `examples/data/pipeline` (CSV to JSON), `samples/lowlevel` (libc, `@[Native]`,
+  pointers, index tree, safety story). Compiler gaps found on the way: /work/reports/domain-compiler-issues.md;
+  new "Not ready" rows in docs/production.md.
+
+- core: Alice.Core.Json engine (ADR 0036, C2.1-C2.4) replaces the JSON stubs: stage 1 structural index (AVX-512BW / AVX2
+  vpshufb classes, carry-less-multiply prefix xor, 128-bit and scalar tiers, ALICE_JSON_TIER to force one), simdjson-style
+  tape (JsonDocument, JsonAny, JsonProperty), on-demand JsonIterator, JsonWriter (Ryu shortest doubles), Eisel-Lemire
+  numbers (Int64 -> UInt64 -> Float64), JsonMap mapping pieces. Prelude: JSON.parse / generate / pretty_generate,
+  JSON::Any sugar (as_i, dig, nil?, to_h ...); to_json and parse_json go through it (to_json keeps 1.0 and non-ASCII
+  as Ruby does). JSONTestSuite 283/283 y_/n_ correct; forge, twitter: stage 1 5.2 GB/s, DOM 2.56 GB/s (3.4x
+  JsonDocument), writer 2.4-1.5x Utf8JsonWriter (benchmarks/core/json/results.md).
+- Fuzzers (closing phase): a shared engine in `tests/Alice.Tests/Fuzz/Engine` (grammar generator `SyntaxGen`, corpus
+  `Mutator`, typed generator `TypedGen`, `Oracles`, line/block delta-debugging `Minimizer`, triaged `Known.Issues`),
+  a short deterministic seed set in `tests/Alice.Tests/Fuzz` (parser + fmt round trip, typed compile/Roslyn/check/
+  strict, C# vs IL backend with ILVerify, `ALICE_PAR=0` and `ALICE_DISABLE_PASSES` variants in child processes) and
+  the standalone long-run console `tools/fuzz` (`alice-fuzz parse|typed|diff|minimize`, `tools/fuzz/run.sh`; not in
+  `Alice.sln`). Findings are minimized into `tools/fuzz/findings/`; the 14 bugs of the first 30-minute runs
+  (lexer crashes, fmt round trip, strict/purity false positives on range patterns, inherited `initialize` and getter
+  state, local redeclaration in sibling blocks, IL Float64 constant folding, run cache key) are skipped regression
+  tests in `tests/Alice.Tests/Fuzz/Regressions/` (report: /work/reports/fuzz-findings.md). docs/tooling.md "Fuzzing".
 - perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
   earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
   helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays
@@ -189,6 +228,7 @@ are published as GitHub prereleases. Every guarantee the toolchain makes is list
 - Range analysis: locals passed by `ref`/`out` lose their range, so their arithmetic stays checked (audit F15).
 - `@[Native]` C: bounds-checked indexing, trapping overflow and division, masked shifts, collision-free generated names (audit F16).
 - Fix (ADR 0013): a wrapping operator no longer wraps the checked arithmetic inside its operands; found by the prove differential fuzz.
+- Review r1 (F3/F6/F8/F20): `--backend il` runs the C# path's diagnostic gate first, so AL0310 (nil) and AL0300 (constant overflow) reject the program on both backends; inside `unchecked ... end` the operands of `&+ &- &*` wrap too; `alice prove --smt` follows the compiled numeric promotion (Int8/UInt8/Int16/UInt16 at Int32, Int32 next to UInt32 at Int64) and sample-checks every Z3 proof against the compiled rule; a proof or counterexample the compiled rule contradicts is reported as a failure with an internal error, never as proven; docs and RULES.al state that narrow ints promote to Int32.
 - `alice prove`: domains ending at `Int32::MAX` or near `Int64::MAX` are enumerated exactly; `--smt` replays every Z3 counterexample and evaluates every statement of a rule (audit F14).
 - Affine arena analysis (ADR 0037, P1.2) decides arena or records per sum type; any escape or use after move falls back to records ([AffineTests](tests/Alice.Tests/Compiler/AffineTests.cs)).
 

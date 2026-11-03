@@ -20,6 +20,8 @@ public sealed partial class Lowerer
     readonly List<string> ctx = new();      // loop | lambda | inline
     HashSet<LocalSym> hoisted = new();
     int tmpN;
+    /// <summary>Nesting of `unchecked ... end` regions being lowered: inside one, `&+` operands are not re-checked (F6).</summary>
+    int uncheckedDepth;
     public MethodSym? Method;
 
     /// <summary>Helper methods generated while lowering the current method (e.g. parallel kernels).</summary>
@@ -45,6 +47,7 @@ public sealed partial class Lowerer
             if (ps.Length >= 1 && ps.Skip(1).All(p => p.IsOptional)) zeroArg.Add(m.Name);
         }
         zeroArg.UnionWith(Builtins.PreludeZeroArg.Keys);
+        AffineInit();   // ADR 0037: arena enums are term words from here on (Lowerer.Affine.cs)
     }
 
     public static string TypeCs(AType t) => t.Kind switch
@@ -127,6 +130,7 @@ public sealed partial class Lowerer
         var produced = new List<MStmt>();
         var lent = tail == Tail.None ? LendOwnedResults(s) : [];
         Stmt(produced, s, tail, target);
+        AffineStmtDrops(s, pre, produced);   // ADR 0037: owned arena values that die here (Lowerer.Affine.cs)
         foreach (var (call, temp, el) in lent)
         {
             forkedCalls.Remove(call);

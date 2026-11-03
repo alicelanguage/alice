@@ -1,0 +1,8 @@
+[package]
+name = "Catalog"
+version = "0.10.0"
+kind = "lib"
+
+[dependencies]
+Pricing = { workspace = true }
+"Microsoft.EntityFrameworkCore.InMemory" = "10.*"

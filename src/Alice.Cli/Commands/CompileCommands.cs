@@ -77,9 +77,7 @@ public static class CompileCommands
             var sw = Stopwatch.StartNew();
             var image = UiH.Spin($"{T("compiling")} {name}…", () =>
             {
-                var ph = Stopwatch.StartNew();
-                var (cs, c) = AliceCompiler.TranspileFull(files, refs, name + "_native", strict: strict);
-                Alice.Cli.Telemetry.TelemetrySession.Phase("transpile", ph.ElapsedMilliseconds);
+                var (img, c) = CompileCSharp(files, name, exe, refs, strict);
                 // @[Native] functions: clang -O3 -march=native; without a C compiler the managed bodies run instead
                 if (c != null)
                 {
@@ -88,9 +86,6 @@ public static class CompileCommands
                     if (AliceCompiler.BuildNativeLibrary(c, dir, name + "_native")) Alice.Runtime.NativeLibs.AddSearchPath(dir);
                     else Console.Error.WriteLine("warning: no C compiler found; @[Native] functions use their managed fallback");
                 }
-                ph.Restart();
-                var img = AliceCompiler.Emit(cs, name, exe, refs);
-                Alice.Cli.Telemetry.TelemetrySession.Phase("emit", ph.ElapsedMilliseconds);
                 return img;
             });
             UiH.Status(T("compiling"), $"{name} ({UiH.Elapsed(sw)})");
@@ -101,6 +96,22 @@ public static class CompileCommands
             Ui.DiagnosticRenderer.Render(e.Diagnostics, Sources(files));
             return null;
         }
+    }
+
+    /// <summary>
+    /// The C# pipeline: lowering, then Roslyn (nullable flow -> AL0310, constant overflow -> AL0300, ...). Throws
+    /// <see cref="CompileException"/> on any error. Both backends pass through this one gate (review-r1 F3): until the
+    /// binder owns nullable flow, `--backend il` must never accept a program the C# path rejects.
+    /// </summary>
+    static (byte[] Image, string? C) CompileCSharp(List<SourceFile> files, string name, bool exe, List<string> refs, bool strict)
+    {
+        var ph = Stopwatch.StartNew();
+        var (cs, c) = AliceCompiler.TranspileFull(files, refs, name + "_native", strict: strict);
+        Alice.Cli.Telemetry.TelemetrySession.Phase("transpile", ph.ElapsedMilliseconds);
+        ph.Restart();
+        var img = AliceCompiler.Emit(cs, name, exe, refs);
+        Alice.Cli.Telemetry.TelemetrySession.Phase("emit", ph.ElapsedMilliseconds);
+        return (img, c);
     }
 
     public static int RunCmd(List<string> a)
@@ -146,10 +157,11 @@ public static class CompileCommands
     }
 
     /// <summary>The direct IL backend (ADR 0033, D1.4): unsupported nodes are reported, nothing falls back silently.</summary>
-    static Alice.Compiler.Backend.Il.IlCompileResult? CompileIl(List<SourceFile> files, string name, List<string> refs)
+    static Alice.Compiler.Backend.Il.IlCompileResult? CompileIl(List<SourceFile> files, string name, List<string> refs, bool strict = false)
     {
         try
         {
+            CompileCSharp(files, name, exe: true, refs, strict);   // the C# path's diagnostic gate (F3); the image is discarded
             var res = Alice.Compiler.Backend.Il.AirToIl.Compile(files, name, exe: true, refs);
             if (res.Ok) return res;
             foreach (var e in res.Errors.Take(20)) Console.Error.WriteLine("il: unsupported " + e.Message);
@@ -167,7 +179,7 @@ public static class CompileCommands
     {
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Files[0]);
-        var res = CompileIl(files, name, o.Refs);
+        var res = CompileIl(files, name, o.Refs, o.Strict);
         if (res == null) return 1;
         var entry = AliceCompiler.Load(res.Pe!).EntryPoint;
         if (entry == null) return 0;
@@ -494,7 +506,7 @@ public static class CompileCommands
         {
             string name = Path.GetFileNameWithoutExtension(o.Output ?? o.Files[0]);
             string dir = Path.GetDirectoryName(Path.GetFullPath(o.Output ?? o.Files[0] + ".dll"))!;
-            var res = CompileIl(files, name, o.Refs);
+            var res = CompileIl(files, name, o.Refs, o.Strict);
             if (res == null) return 1;
             Directory.CreateDirectory(dir);
             File.WriteAllBytes(Path.Combine(dir, name + ".dll"), res.Pe!);

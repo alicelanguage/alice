@@ -35,6 +35,8 @@ public sealed partial class Lowerer
                 return Call(c);
             case NewExpr { AsCall: not null } nc:
                 return Expr(nc.AsCall);
+            case NewExpr ne when AffineNew(ne) is MExpr arena:   // ADR 0037 arena variant (Lowerer.Affine.cs)
+                return arena;
             case NewExpr ne when TryShared(ne) is MExpr shared:
                 return shared;
             case NewExpr ne:
@@ -164,6 +166,7 @@ public sealed partial class Lowerer
 
     MExpr Const(ConstExpr ce)
     {
+        if (AffineConst(ce) is MExpr arena) return arena;   // ADR 0037 packed variant (Lowerer.Affine.cs)
         if (ce.Res == "type" && ce.Sym is AType t)
             return t.Sym is { Kind: "variant", FieldOrder.Count: 0 } ? At(new MMember { Target = new AirTypeRef(t.ToAir()), Name = "Value" }, ce) : new AirTypeRef(t.ToAir());   // a field-less variant is its singleton
         if (ce.Res == "path" && ce.Sym is ConstPath cp)
@@ -218,8 +221,13 @@ public sealed partial class Lowerer
         if (b.Res == "usercmp") return new MCall { Target = l, Name = "op_Cmp", Args = { r } };
         if (b.Res == "shiftcount") return new MBinary { Op = AirOps.ParseBin(b.Op), L = l, R = new MCast { TypeCs = "int", E = r } };
         if (Contract(b, l, r) is MExpr fused) return fused;
-        // only the wrapping operator wraps: checked arithmetic inside an operand still traps (ADR 0013)
-        if (b.Op is "&+" or "&-" or "&*") return new MCall { Name = "unchecked", Args = { Optimizer.MirFacts.Unchecked(new MBinary { Op = AirOps.ParseBin(b.Op[1..]), L = Optimizer.MirFacts.KeepChecked(l), R = Optimizer.MirFacts.KeepChecked(r) }) } };
+        // only the wrapping operator wraps: checked arithmetic inside an operand still traps (ADR 0013), except
+        // inside an `unchecked ... end` region, where everything wraps (review-r1 F6)
+        if (b.Op is "&+" or "&-" or "&*")
+        {
+            MExpr Keep(MExpr x) => uncheckedDepth > 0 ? x : Optimizer.MirFacts.KeepChecked(x);
+            return new MCall { Name = "unchecked", Args = { Optimizer.MirFacts.Unchecked(new MBinary { Op = AirOps.ParseBin(b.Op[1..]), L = Keep(l), R = Keep(r) }) } };
+        }
         if (UncheckedIfProven(b, l, r) is MExpr proven) return proven;
         if (FlooredHelper(b.Op, b.Type) is string fl) return At(new MCall { Target = AirTypeRef.Prelude(), Name = fl, Args = { l, r } }, b);
         return At<MExpr>(b.Op switch
