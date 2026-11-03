@@ -101,6 +101,7 @@ public sealed partial class Parser
     bool IsTypeStart()
     {
         if (IsKw("abstract") && Peek(1).Kind == "id" && Peek(1).Text != "def") return true;
+        if (IsKw("affine") && Peek(1).Kind == "id" && Peek(1).Text == "enum") return true;
         return t[p].Kind == "id" && (" class struct module interface enum lib record ".Contains(" " + t[p].Text + " ")
             || t[p].Text == "delegate" && Peek(1).Kind == "const");
     }
@@ -235,6 +236,8 @@ public sealed partial class Parser
         Token tok = Cur;
         bool isAbstract = false;
         if (IsKw("abstract")) { Next(); isAbstract = true; }
+        bool affine = IsKw("affine") && Peek(1).Text == "enum";
+        if (affine) Next();
         string kw = Next().Text;
         if (kw == "record" && IsKw("struct")) { Next(); kw = "record struct"; }
         if (kw == "lib") return Lib(tok);
@@ -258,7 +261,7 @@ public sealed partial class Parser
             EndStmt();
             return dg;
         }
-        if (kw == "enum") return Enum(tok);
+        if (kw == "enum") { var en = Enum(tok); en.Affine = affine; return en; }
         if (t[p].Kind != "const") throw Err("expected type name");
         var d = At(new TypeDecl { Kind = kw, Name = Next().Text, IsAbstract = isAbstract }, tok);
         d.Attrs = TakeAttrs();

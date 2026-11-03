@@ -4,7 +4,7 @@ Alice vs C# on the same .NET runtime. Each Alice program has a C# twin with the 
 
 ## Serial core pairs on the shared forge box
 
-Serial runs pin to one physical core with both hyperthreads, one pair per worker so pinned runs never overlap: bench1 `taskset -c 14,30` (the `SERIAL_CPUS` default of `bend2/run.sh` and `bend-vs/run.sh`), perf `15,31`, everyone else `13,29`; serial Alice uses `ALICE_PAR=0`, never `DOTNET_PROCESSOR_COUNT=1`.
+Serial runs pin to one physical core with both hyperthreads, one pair per worker so pinned runs never overlap: bench1 `taskset -c 14,30` (the `SERIAL_CPUS` default of `bend2/run.sh` and `bend-vs/run.sh`), il-emit `15,31`, perf `11,27`, il-opt `13,29`; serial Alice uses `ALICE_PAR=0`, never `DOTNET_PROCESSOR_COUNT=1`.
 
 ## Run
 
@@ -28,6 +28,13 @@ dotnet out/csharp/Bench.CSharp.dll nbody idiomatic   # or: handopt
 - Timing: 15 timed calls, median reported. Each timed call compares its checksum to the reference, so the JIT cannot drop the work as dead code (an early version without this measured `pipeline` at 2.5 ms).
 - Output: `RESULT <name> <median_ms> <checksum>`. `run.sh` flags checksum mismatches. All match.
 - One process per benchmark variant: no cross-benchmark JIT, GC or ordering effects.
+- **R0: never measure .NET pinned to one cpu.** A process on one cpu (`taskset -c 13`, or `DOTNET_PROCESSOR_COUNT=1`)
+  never reaches tier 1 in a busy loop: it stays on tier-0 and OSR code (`DOTNET_JitDisasmSummary`; queens `Solve`
+  3.1x slower than on two cpus; il-shapes report, rule R0). Every serial run uses a core pair (both hyperthreads of
+  one physical core, see above) with `ALICE_PAR=0`. Codegen choices that only pay off without tier 1 look better
+  there than they are: `AggressiveOptimization` on helper-calling loops measured kmeans -20% on one cpu and +1%
+  (noise) on a core pair (bend2 NOTES, perf2), so it was removed. Before an A/B run check that no other job is
+  pinned to the pair (`ps -eLo psr,args | awk '$1==15 || $1==31'`): two jobs on one physical core skew every ratio.
 
 | Benchmark | Alice | C# idiomatic | C# hand-opt |
 |---|---|---|---|

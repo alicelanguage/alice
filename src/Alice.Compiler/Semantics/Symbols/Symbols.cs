@@ -24,6 +24,8 @@ public sealed class TypeSym
     public TypeSym? SoaStore;         // @[SoA] struct -> its columnar store type
     public TypeSym? SoaOf;            // store -> element struct
     public AType? EnumerableElem;     // `include Enumerable`: the type is an IEnumerable of this
+    /// <summary>Sum type (or variant) lowered to a struct arena (ADR 0037, Binder.Affine.cs); null = sealed records.</summary>
+    public ArenaLayout? Arena;
     /// <summary>Members the IL backend synthesizes for this type (Air/Passes/Synthesize.cs); null until that pass runs.</summary>
     public Alice.Compiler.Mir.AirTypeDecl? Synth;
     public readonly Dictionary<string, List<MethodSym>> Methods = new();

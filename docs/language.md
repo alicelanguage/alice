@@ -513,6 +513,71 @@ puts Shape::Rect(1.0, 2.0) == Shape::Rect(1.0, 2.0)   # true
 
 Variants are constructed with `Type::Variant(args)` (lowered to sealed nested records). `Type(args)` also constructs ordinary classes and records (`Point(1, 2)` is `Point.new(1, 2)`); with type arguments it names a generic type (`List(Int32).new`).
 
+#### `affine enum`: sum types in an arena (ADR 0037)
+
+A sum type whose payload fields are all unmanaged (numbers, `Bool`, `Char`, plain enums, records of those) or other
+such sum types (recursion allowed) is **arena-eligible**: the compiler can keep its values in a per-type struct arena
+instead of one GC object per node. A variant with no fields or one field of at most 32 bits (`Leaf(v : UInt32)`,
+`Emp`) is **packed** into the 64-bit term itself and never allocates.
+
+The proof is whole-program and silent. Every value must be used **affinely**: consumed by one `case`, passed once to
+an Alice method, returned, assigned, or built into another node. Per `case` arm the compiler decides:
+
+| Decision | When | Effect |
+|---|---|---|
+| Take | the scrutinee is owned, not used again on any path from the arm, and the arm has no guard | fields are read, the node is freed |
+| Borrow | the scrutinee is used later on some path, or it is a `borrow` parameter | fields are read in place; they stay borrowed until the scrutinee dies, when its slot is dropped and the fields own their nodes |
+| Keep | `affine enum` only: the value was moved into a call, node or local and is read again | Bend 2's counted redirect: the receiver and the local each hold a count; the local's last read releases its count |
+
+A local that holds a packed value is copied, not moved, so `Tree::Node(leaf, leaf)` is fine. A `borrow p`
+parameter (ADR 0017) only reads: its `case` arms Borrow and the caller keeps ownership. The compiler also **infers**
+`borrow` (Bend 2's borrow inference): a parameter whose body only reads it (every `case` arm on it Borrows, it is not
+moved, returned or built into a node, and no field read from it is consumed) lends instead of moving, to a
+whole-program fixpoint. So `total(t)` twice is fine when `total` only reads `t`; the caller still owns `t` and drops it
+after its last read. Written `borrow` stays a contract (AL0243); an inferred one silently becomes owned.
+
+Any escape **demotes the type** to sealed records everywhere in the program: storing a value in a field, a
+collection, a nullable (`Tree?`) or a generic type; capturing it in a block or lambda; passing it to .NET (`puts t`);
+`==`, `hash`, `to_s` or string interpolation; using it in `rescue`/`ensure`; or using it after it was moved. The
+program still runs, at record speed. `affine enum` makes the same sites compile errors:
+
+```crystal
+affine enum Tree               # arena form, or a compile error
+  Leaf(v : UInt32)
+  Node(l : Tree, r : Tree)
+end
+
+def total(t : Tree) : UInt32
+  case t                       # Take: t is not used again, its node is freed
+  when Tree::Leaf(v) then v
+  when Tree::Node(l, r) then total(l) &+ total(r)
+  end
+end
+
+def size(borrow t : Tree) : UInt32
+  case t                       # Borrow: the caller still owns t
+  when Tree::Leaf(v) then 1_u32
+  when Tree::Node(l, r) then size(l) &+ size(r)
+  end
+end
+
+t = Tree::Node(Tree::Leaf(1_u32), Tree::Leaf(2_u32))
+n = size(t)                    # lends t
+puts total(t) &+ n             # consumes t
+```
+
+| Code | Under `affine enum` |
+|---|---|
+| AL0240 | a payload field is a reference type that is not an affine enum (`A(s : String)`) |
+| AL0241 | an affine value escapes (the list above) |
+| AL0242 | an affine value is used after a `case` consumed it or it was moved into a call (`swap(t)` twice, where `swap` consumes); a read after a move is a Keep instead |
+| AL0243 | a `borrow` parameter, or a field read from it, is consumed |
+
+Calls move their arguments unless the parameter is written or inferred `borrow`. The pass only records facts for now:
+the arena lowering is `Lowering/Lowerer.Affine.cs` (ADR 0040), and the emitted C# is the same with or without
+`affine`. `alice explain` lists every sum type as `arena` or `record (demoted: ... at file:line: why)`. `affine` is a
+modifier only in front of `enum`; it stays an ordinary name elsewhere.
+
 ### Modules
 
 ```crystal
@@ -903,7 +968,7 @@ Full BCL: `StringBuilder`, `Math`, `Path`, `DateTime`, `Regex`, `JsonSerializer`
 | `AMath` | MatMul, Mean, Variance, Norm, Axpy |
 | `CsrMatrix<T>`, `SparseVector<T>` | sparse linear algebra |
 | `Nn`, `Tensor<T>`, `QuantizedMatrix`, `MappedFile` | tensor kernels: dot, GEMV/GEMM, softmax, norms, activations; aligned strided tensors; int8/int4 blocks; mapped files (ADR 0030) |
-| `Cm` | Connection-Machine primitives (ADR 0039): `InclusiveScan`/`ExclusiveScan`/`Reduce` (`CmOp` `+ * & \| ^ min max`), `SegmentedScan`/`SegmentedReduce`, `Histogram`, `ScatterAdd`, `Compact`, `Permute`, `SortByKey`; chunked by length only, so floats are bit-identical for any worker count |
+| `Cm` | Connection-Machine primitives (ADR 0039): `InclusiveScan`/`ExclusiveScan`/`Reduce` (`CmOp` `+ * & \| ^ min max`), `SegmentedScan`/`SegmentedReduce`, `Histogram`, `ScatterAdd`, `Compact`, `Permute`, `SortByKey`; chunked by length only, so floats are bit-identical for any worker count on one machine (float scans follow the SIMD tier: AVX-512, AVX2, Vector128 or scalar hardware may round differently) |
 | `Prelude` | Ruby helpers: `puts`, `each`, `map`, `sum`, `size`, `even?`, `to_s`, `to_i`, `send`, ... |
 
 ### Rules and proofs
