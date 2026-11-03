@@ -343,20 +343,7 @@
     (i32.store (local.get $s) (local.get $new))
     (i32.store offset=8 (local.get $s) (local.get $cap)))
 
-  ;; a slot index: the free list first, else the bump cursor (the caller stores every word)
-  (func $arena_alloc (param $w i32) (result i32)
-    (local $s i32) (local $i i32) (local $f i32)
-    (local.set $s (call $arena_state (local.get $w)))
-    (local.set $f (i32.load offset=12 (local.get $s)))
-    (if (local.get $f)
-      (then
-        (local.set $i (i32.sub (local.get $f) (i32.const 1)))
-        (i32.store offset=12 (local.get $s) (i32.load (call $arena_slot (local.get $w) (local.get $i))))
-        (return (local.get $i))))
-    (local.set $i (i32.load offset=4 (local.get $s)))
-    (if (i32.ge_u (local.get $i) (i32.load offset=8 (local.get $s))) (then (call $arena_grow (local.get $s) (local.get $w))))
-    (i32.store offset=4 (local.get $s) (i32.add (local.get $i) (i32.const 1)))
-    (local.get $i))
+  ;; Alloc and Take/Borrow are inlined by the compiler (WasmBody.Arena.cs); growth, Drop and regions are here
 
   (func $arena_free (param $w i32) (param $i i32)
     (local $s i32)
@@ -364,23 +351,15 @@
     (i64.store (call $arena_slot (local.get $w) (local.get $i)) (i64.extend_i32_u (i32.load offset=12 (local.get $s))))
     (i32.store offset=12 (local.get $s) (i32.add (local.get $i) (i32.const 1))))
 
-  ;; Take / Borrow of a w-word slot: copies it to dst, then (frees) pushes it on the free list
-  (func $arena_read (param $w i32) (param $i i32) (param $dst i32) (param $frees i32)
-    (memory.copy (local.get $dst) (call $arena_slot (local.get $w) (local.get $i)) (i32.shl (local.get $w) (i32.const 3)))
-    (if (local.get $frees) (then (call $arena_free (local.get $w) (local.get $i)))))
-
-  (func $arena_read1 (param $i i32) (param $frees i32) (result i64)
-    (local $v i64)
-    (local.set $v (i64.load (call $arena_slot (i32.const 1) (local.get $i))))
-    (if (local.get $frees) (then (call $arena_free (i32.const 1) (local.get $i))))
-    (local.get $v))
-
   ;; Drop: frees the slot of a term (a packed term is left alone). Words in mask that hold slot terms are dropped too,
   ;; their subtrees with all; the last child is the next turn of the loop (no recursion along a spine).
   (func $arena_drop (param $w i32) (param $t i64) (param $mask i32) (param $all i32)
     (local $p i32) (local $k i32) (local $last i32) (local $v i64)
     (loop $tail
       (if (i32.and (i32.wrap_i64 (i64.shr_u (local.get $t) (i64.const 32))) (i32.const -2130706433)) (then (return)))
+      ;; a term past the cursor (of an ended region, or forged): InvalidOperationException, as Arena.DropRec
+      (if (i32.ge_u (i32.wrap_i64 (local.get $t)) (i32.load offset=4 (call $arena_state (local.get $w))))
+        (then (call $throw_code (i32.const 11)) (unreachable)))
       (local.set $p (call $arena_slot (local.get $w) (i32.wrap_i64 (local.get $t))))
       (local.set $last (i32.const -1))
       (local.set $k (i32.const 0))

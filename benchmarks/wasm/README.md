@@ -58,10 +58,13 @@ loops along the last child, and regions that save and restore every cursor. `ALI
 `WasmOptions.Arena = false`) keeps them heap records.
 
 Default sizes, Node 26, median of 3 wall-clock runs (2026-11-03). Output identical to `alice run` in both modes.
+Alloc and Take/Borrow are inline (free-list pop or bump, word copies, free-list push); growth, Drop and regions
+call rt.wat. The stale check (slot index below the cursor) is emitted unless the slab is proven live, as in the IL
+backend; Drop always checks.
 
     program      arena .wasm   records .wasm   arena     records   .NET 1 core
-    tree-radix   11 801 B      12 415 B        17.9 s    20.2 s    17.4 s
-    merkle       16 877 B      17 205 B        14.7 s    13.4 s    10.2 s
+    tree-radix   12 439 B      12 415 B        16.8 s    20.6 s    17.4 s
+    merkle       17 216 B      17 205 B        13.3 s    12.9 s    10.2 s
 
-tree-radix is 11% faster with the arena; merkle is 9% slower (cause not measured; every Take and Alloc is a call
-into rt.wat, not inlined code as in the IL backend).
+tree-radix is 18% faster with the arena. merkle is 3% slower (13.3 s against 12.9 s; it was 9% slower when Alloc and
+Take were calls into rt.wat). The remaining gap is not measured further.

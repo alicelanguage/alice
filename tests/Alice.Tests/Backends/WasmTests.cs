@@ -129,10 +129,19 @@ public class WasmTests(ITestOutputHelper output)
         string cs = RunCs(files, arg);
         var arena = Wasm(files, new WasmOptions { Arena = true });
         var records = Wasm(files, new WasmOptions { Arena = false });
-        Assert.Contains("arena_alloc", System.Text.Encoding.UTF8.GetString(arena));
-        Assert.DoesNotContain("arena_alloc", System.Text.Encoding.UTF8.GetString(records));
+        Assert.Contains("arena_grow", System.Text.Encoding.UTF8.GetString(arena));
+        Assert.DoesNotContain("arena_grow", System.Text.Encoding.UTF8.GetString(records));
         Assert.Equal(cs, RunNode(arena, arg));
         Assert.Equal(cs, RunNode(records, arg));
+    }
+
+    /// <summary>The affine-lowering programs (Compiler/AffineLowerTests.cs: tree build and sum, borrow and drop, word
+    /// kinds, `scope` regions, demoted enums, guarded arms) in the arena build print what C# prints.</summary>
+    [Theory, MemberData(nameof(Compiler.AffineLowerTests.Programs), MemberType = typeof(Compiler.AffineLowerTests))]
+    public void Affine_programs_run_identically_to_csharp(string name, string src, string arg)
+    {
+        _ = name;
+        Differential(Src(src), arg.Length > 0 ? [arg] : []);
     }
 
     /// <summary>Coverage over benchmarks/ (`WASM_CORPUS=1`; reports, never fails): files that compile, and the

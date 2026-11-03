@@ -305,6 +305,14 @@ public sealed partial class AirToWasm
             DefineFunc(ctor);
             va.Ctors.Add(ctor);
             recordCtors[ctor] = ps;
+            // a variant prints as the C# record it lowers to: `B { l = A { x = 1 }, r = ... }`
+            if (!va.Methods.Any(m => m.Name == "ToString" && m.Params.Count == 0))
+            {
+                var ts = new WMethod { Name = "ToString", Owner = va, Ret = WT.Str, Synthetic = b => b.RecordToString() };
+                DefineFunc(ts);
+                va.Methods.Add(ts);
+                synthMethods.Add(ts);
+            }
             if (ps.Count == 0)
             {
                 var vf = va.AddField("Value", va.Type, isStatic: true);

@@ -682,6 +682,12 @@ public sealed partial class WasmBody
                         return;
                     }
                     if (t.K == WK.Class && c.IsException(t.Cls!)) { code.Call(c.ExceptionToString); return; }
+                    // a sum type: the variant record ToString of the runtime variant (`B { l = A { x = 1 }, ... }`)
+                    if (t.Cls!.IsAdt && !t.Cls.IsVariant && t.Cls.Subclasses.Select(v => AirToWasm.Implementation(v, "ToString", 0)).FirstOrDefault(m => m != null) is { } vts)
+                    {
+                        code.Call(c.Dispatcher(vts, t.Cls));
+                        return;
+                    }
                     code.Emit(Op.Drop);
                     code.I32(c.Literal(t.Cls!.Name));
                     return;
