@@ -112,6 +112,33 @@ public class FixFrontProveSmtNarrowTests
         Assert.Equal("false", r["i8wrap"].Outcome);
     }
 
+    // Int32 next to UInt32 computes in Int64 (C#), a non-negative Int32 literal next to UInt32 stays UInt32
+    const string Mixed = "rule mix_add_is_long(a in -5..5, b in 4294967290..4294967295)\n  y = b.to_u32\n  (a + y) > 0\nend\n" +
+        "rule mix_cmp_is_signed(a in -5..5, b in 0..5)\n  y = b.to_u32\n  y > a || a >= 0\nend\n" +
+        "rule mix_min_is_long(a in -5..5, b in 0..5)\n  y = b.to_u32\n  Math.Min(a, y) <= a\nend\n" +
+        "rule lit_stays_uint(b in 4294967290..4294967295)\n  y = b.to_u32\n  (y &+ 10) < 10\nend\n" +
+        "rule mix_mul_fails(a in -5..5, b in 0..5)\n  y = b.to_u32\n  (a * y) >= 0\nend\n" +
+        "rule uint_wraps(b in 4294967290..4294967295)\n  y = b.to_u32\n  (y &+ y) > y\nend\n";
+
+    [Fact]
+    public void Smt_follows_the_compiled_promotion_of_mixed_32_bit_signedness()
+    {
+        if (!Tooling.ProveZ3.Available()) return;
+        var files = new List<SourceFile> { new("RULES.al", Mixed) };
+        var smt = SmtProver.Prove(files, []).ToDictionary(o => o.Rule);
+        var exhaustive = Prove.Check(files, []).ToDictionary(r => r.Rule);
+        foreach (var (rule, o) in smt)
+        {
+            Assert.Null(o.Untranslatable);
+            Assert.True(o.Proved == exhaustive[rule].Proven, $"{rule}: smt proved={o.Proved} ({o.Counterexample}), enumeration proven={exhaustive[rule].Proven}");
+        }
+        Assert.True(smt["mix_add_is_long"].Proved);
+        Assert.True(smt["lit_stays_uint"].Proved);
+        Assert.False(smt["mix_mul_fails"].Proved);
+        Assert.False(smt["uint_wraps"].Proved);
+        Assert.All(Prove.CheckSmt(files, []), r => Assert.DoesNotContain("internal error", r.Outcome ?? ""));
+    }
+
     [Fact]
     public void A_proof_the_compiled_rule_contradicts_is_never_reported_as_proven()
     {

@@ -299,7 +299,9 @@ arithmetic with Alice's semantics (checked overflow, floored `/` and `%`, wrappi
 wrapping `to_X!` conversions), `if`/ternaries, early `return`, locals, `divmod`, `Math.Min/Max` and inlined
 non-recursive pure methods. Rules with loops, recursion, objects or floats fall back to enumeration. Every Z3
 counterexample is run again through the compiled rule before it is printed: it must return false or raise there,
-otherwise the rule is reported `not proven` with the disagreement (a bug to report), never as a failure or a proof.
+otherwise the rule FAILS there with `internal error: solver verdict contradicted by compiled rule` (a bug to report).
+Every Z3 proof is cross-checked the same way on 64 points of the domain (bounds, then seeded random points); a point
+where the compiled rule returns false or raises makes the rule FAIL with the same internal error, never proven.
 
 How `alice prove --smt` finds Z3: it loads Z3's C library at run time (no NuGet package, any CPU architecture), and
 tries in order:
