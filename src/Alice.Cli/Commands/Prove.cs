@@ -130,7 +130,8 @@ public static class Prove
     }
 
     /// <summary>Runs the compiled rule on Z3's counterexample: it must return false or raise. If it holds there, Z3 and
-    /// the compiler disagree about the rule's semantics; that is reported as not proven, never as a failure or a proof.</summary>
+    /// the compiler disagree about the rule's semantics: an internal error, reported as a failure at that input (as
+    /// <see cref="SampleCheck"/> does for a contradicted proof), never as a proof.</summary>
     static RuleResult Replay(Type? program, RuleResult r, string cex)
     {
         var m = program?.GetMethod("rule_" + r.Rule);
@@ -149,19 +150,22 @@ public static class Prove
             if ((bool)m.Invoke(null, args)! == false) return r with { Outcome = "false" };
         }
         catch (TargetInvocationException e) { return r with { Outcome = "raised " + (e.InnerException ?? e).GetType().Name }; }
-        return r with { Counterexample = null, NotProven = $"--smt found {cex} but the compiled rule holds there: Z3 and the compiler disagree (please report it)" };
+        return r with { Outcome = "true " + Contradicted };
     }
 
     /// <summary>Points of a rule's domain a Z3 proof is cross-checked on: every bound, its neighbours and 0 when inside,
     /// then seeded random points (the same on every run, so verdicts are reproducible).</summary>
     public const int SamplePoints = 64;
 
+    /// <summary>The outcome suffix of a rule whose Z3 verdict (proof or counterexample) the compiled rule contradicts.</summary>
+    public const string Contradicted = "(internal error: solver verdict contradicted by compiled rule; please report it)";
+
     /// <summary>
     /// A Z3 proof (UNSAT) is cross-checked on <see cref="SamplePoints"/> inputs through the compiled rule (review-r1 F8:
     /// Z3 once modelled Int8 at 8 bits where Alice computes at 32). An input where the compiled rule returns false or
     /// raises is an internal error of `--smt`: the rule is reported as failing there, never as proven.
     /// </summary>
-    public static RuleResult SampleCheck(Type? program, RuleResult r, IReadOnlyList<RuleDomain> domains)
+    internal static RuleResult SampleCheck(Type? program, RuleResult r, IReadOnlyList<RuleDomain> domains)
     {
         var m = program?.GetMethod("rule_" + r.Rule);
         if (m == null) return r;
@@ -181,7 +185,7 @@ public static class Prove
             try { if ((bool)m.Invoke(null, args)! == false) outcome = "false"; }
             catch (TargetInvocationException e) { outcome = "raised " + (e.InnerException ?? e).GetType().Name; }
             if (outcome != null)
-                return r with { Counterexample = at, Outcome = outcome + " (internal error: Z3 proved the rule but the compiled rule fails here; please report it)" };
+                return r with { Counterexample = at, Outcome = outcome + " " + Contradicted };
         }
         return r;
     }

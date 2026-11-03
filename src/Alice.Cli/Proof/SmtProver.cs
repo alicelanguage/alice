@@ -170,7 +170,7 @@ public static class SmtProver
                     case MultiAssign { Values: [CallExpr { Res: "ext", Recv: { } dr, Args: [{ Value: { } dd }] } dc] } ma
                         when Binder.Mangle(dc.Name) == "divmod" && ma.Locals.Count == 2:
                         {
-                            var (x, y, sg) = Operands((BitVecExpr)Eval(dr, f.Env, live), (BitVecExpr)Eval(dd, f.Env, live), dr.Type, dd.Type);
+                            var (x, y, sg) = Operands((BitVecExpr)Eval(dr, f.Env, live), (BitVecExpr)Eval(dd, f.Env, live), dr, dd);
                             var (q, r) = FlooredDivMod(x, y, sg, live);
                             f.Env[ma.Locals[0]] = q;
                             f.Env[ma.Locals[1]] = r;
@@ -279,7 +279,7 @@ public static class SmtProver
             var r = Eval(b.R, env, live);
             if (l is BoolExpr lb && r is BoolExpr rb)
                 return b.Op switch { "==" => z.MkEq(lb, rb), "!=" => z.MkNot(z.MkEq(lb, rb)), _ => throw new Untranslatable($"`{b.Op}` on Bool") };
-            var (x, y, sg) = Operands((BitVecExpr)l, (BitVecExpr)r, b.L.Type, b.R.Type);
+            var (x, y, sg) = Operands((BitVecExpr)l, (BitVecExpr)r, b.L, b.R);
             switch (b.Op)
             {
                 case "==": return z.MkEq(x, y);
@@ -310,37 +310,45 @@ public static class SmtProver
         }
 
         /// <summary>
-        /// The operands of a binary operator at the width and signedness the compiled code computes in. Int8/UInt8/
-        /// Int16/UInt16 promote to Int32 first, as in C# (`sbyte + sbyte` is an `int`; review-r1 F8): `&+` on two Int8
-        /// wraps at 32 bits, not 8, and only an explicit `to_i8` (checked) or `to_i8!` (wrapping) narrows again.
-        /// The binder gives such an operation the wider operand type, at least Int32 (Binder.Expressions.cs).
+        /// The operands of a binary operator at the width and signedness the compiled code computes in: C#'s binary
+        /// numeric promotion, which the emitted C# keeps (review-r1 F8). Int8/UInt8/Int16/UInt16 promote to Int32 first
+        /// (`&+` on two Int8 wraps at 32 bits; only `to_i8` / `to_i8!` narrow again). Int32 (or a narrow signed type)
+        /// next to UInt32 computes in Int64, so `-1 + 4000000000_u32` is 3999999999, not a wrapped UInt32; a
+        /// non-negative Int32 literal next to UInt32 stays UInt32 (C#'s constant conversion). A value already wider
+        /// than its static type (an Int64 result the binder types UInt32) counts at its real width, signed.
         /// </summary>
-        (BitVecExpr, BitVecExpr, bool Signed) Operands(BitVecExpr x, BitVecExpr y, AType tx, AType ty)
+        (BitVecExpr, BitVecExpr, bool Signed) Operands(BitVecExpr x, BitVecExpr y, Syntax.Expr ex, Syntax.Expr ey)
         {
-            if (x.SortSize >= 32 && y.SortSize >= 32)
+            var (cx, sx) = Category(x, ex);
+            var (cy, sy) = Category(y, ey);
+            (uint w, bool sg) = (cx, cy) switch
             {
-                var (a, b) = Same(x, y, tx, ty);
-                return (a, b, Signed(tx));
-            }
-            var hi = tx.NumericRank >= ty.NumericRank ? tx : ty;
-            bool sg = hi.NumericRank < AType.Int.NumericRank || Signed(hi);
-            uint w = Math.Max(32, Math.Max(x.SortSize, y.SortSize));
-            return (Extend(x, tx, w), Extend(y, ty, w), sg);
+                _ when cx == "u64" || cy == "u64" => (64u, false),
+                _ when cx == "i64" || cy == "i64" => (64u, true),
+                ("u32", "i32") or ("i32", "u32") => (64u, true),
+                ("u32", _) or (_, "u32") => (32u, false),
+                _ => (32u, true),
+            };
+            return (Extend(x, sx, w), Extend(y, sy, w), sg);
+        }
+
+        /// <summary>The promotion class of one operand (i32 u32 i64 u64, or `lit` for a non-negative Int32 literal) and
+        /// whether its bits extend signed.</summary>
+        static (string, bool) Category(BitVecExpr v, Syntax.Expr e)
+        {
+            var t = e.Type;
+            uint tw = Width(t);
+            if (v.SortSize > tw) return (v.SortSize > 32 ? "i64" : "i32", true);   // promoted beyond its static type
+            if (tw < 32) return ("i32", Signed(t));
+            if (e is LitExpr { Kind: "int" } li && t.Cs == "int" && IntLiteral(li.Text) >= 0) return ("lit", true);
+            return ((Signed(t) ? "i" : "u") + tw, Signed(t));
         }
 
         /// <summary>A narrow integer (Int8..UInt16) as the Int32 C# promotes it to; wider values unchanged.</summary>
-        BitVecExpr Promote(BitVecExpr x, AType t) => Extend(x, t, Math.Max(32, x.SortSize));
+        BitVecExpr Promote(BitVecExpr x, AType t) => Extend(x, Signed(t), Math.Max(32, x.SortSize));
 
-        BitVecExpr Extend(BitVecExpr x, AType t, uint w) =>
-            x.SortSize >= w ? x : Signed(t) ? z.MkSignExt(w - x.SortSize, x) : z.MkZeroExt(w - x.SortSize, x);
-
-        /// <summary>Operands of different widths (an Int32 next to an Int64) widen like C#: sign- or zero-extension.</summary>
-        (BitVecExpr, BitVecExpr) Same(BitVecExpr x, BitVecExpr y, AType tx, AType ty)
-        {
-            if (x.SortSize == y.SortSize) return (x, y);
-            if (x.SortSize < y.SortSize) return (Signed(tx) ? z.MkSignExt(y.SortSize - x.SortSize, x) : z.MkZeroExt(y.SortSize - x.SortSize, x), y);
-            return (x, Signed(ty) ? z.MkSignExt(x.SortSize - y.SortSize, y) : z.MkZeroExt(x.SortSize - y.SortSize, y));
-        }
+        BitVecExpr Extend(BitVecExpr x, bool signed, uint w) =>
+            x.SortSize >= w ? x : signed ? z.MkSignExt(w - x.SortSize, x) : z.MkZeroExt(w - x.SortSize, x);
 
         /// <summary>Alice's `/` and `%` round toward negative infinity (ADR 0013); zero divisors and MIN / -1 raise.</summary>
         (BitVecExpr Q, BitVecExpr R) FlooredDivMod(BitVecExpr x, BitVecExpr y, bool signed, BoolExpr live)
@@ -378,8 +386,8 @@ public static class SmtProver
             }
             if (c.Recv is ConstExpr { Ref.Name: "Math" } && c.Args.Count == 2 && name is "Min" or "Max")
             {
-                var (x, y) = Same((BitVecExpr)Eval(c.Args[0].Value!, env, live), (BitVecExpr)Eval(c.Args[1].Value!, env, live), c.Args[0].Value!.Type, c.Args[1].Value!.Type);
-                bool sg = Signed(c.Args[0].Value!.Type);
+                // Math.Min(Int32, UInt32) resolves to the Int64 overload: the same promotion as an operator
+                var (x, y, sg) = Operands((BitVecExpr)Eval(c.Args[0].Value!, env, live), (BitVecExpr)Eval(c.Args[1].Value!, env, live), c.Args[0].Value!, c.Args[1].Value!);
                 var less = sg ? z.MkBVSLT(x, y) : z.MkBVULT(x, y);
                 return name == "Min" ? z.MkITE(less, x, y) : z.MkITE(less, y, x);
             }
