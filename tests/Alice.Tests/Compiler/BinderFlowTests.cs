@@ -93,6 +93,9 @@ public class BinderFlowTests
         { "modifier unless nil?", "s = pick(true)\nputs s.size unless s.nil?\n" },
         { "modifier if", "s = pick(true)\nputs s.size if s\n" },
         { "property path", "class Q\n  property name : String? = nil\nend\nq = Q.new\nif q.name\n  puts q.name.size\nend\nputs q.name.size\n" },
+        { "dictionary GetValueOrDefault", "d = Dictionary(String, String).new\nputs d.GetValueOrDefault(\"a\").size\n" },
+        { "channel receive", "ch = Channel(Array(Int32)).new(1)\nch.send([1])\nputs ch.receive.sum\n" },
+        { "unassigned typed local", "x : String\nif true\n  x = \"a\"\nend\nputs x.size\n" },
         { "tail of an if", "def g(f : Bool) : String\n  if f\n    pick(f)\n  else\n    \"a\"\n  end\nend\nputs g(true)\n" },
         { "unsigned constant overflow", "z = 0_u32 - 1_u32\nputs z\n" },
         { "int constant overflow", "z = 2147483647 + 1\nputs z\n" },
@@ -119,6 +122,13 @@ public class BinderFlowTests
         var ex = Assert.Throws<CompileException>(() => Alice.Compiler.Backend.Il.AirToIl.Compile([new SourceFile("main.al", Pick + body)], "flow"));
         Assert.Equal(code, ex.Diagnostics[0].Code);
     }
+
+    /// <summary>Holes the C# path never saw (its lowering writes `default!`): the binder closes them on every backend.</summary>
+    [Theory]
+    [InlineData("x : String\nputs x.size\n", "AL0309")]
+    [InlineData("x : String?\nputs x.size\n", "AL0310")]
+    public void Valueless_locals_are_not_silently_nil(string body, string code) =>
+        Assert.Contains((code, 5), Binder(Pick + body));
 
     [Fact]
     public void Il_backend_accepts_checked_nil_flow()
