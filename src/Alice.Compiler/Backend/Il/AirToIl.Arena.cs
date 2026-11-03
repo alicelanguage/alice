@@ -11,11 +11,14 @@ namespace Alice.Compiler.Backend.Il;
 /// IL for the affine arena nodes (Mir/MExpr.Arena.cs; ADR 0040 section 2). Terms are `uint64`; packing and the
 /// `case` key are bit operations; the lane slab is read once per method into a local (lazily, at its first use);
 /// slot access goes through the lane cursor: `(uint)(i - CurBase) &lt; Cur.Length` selects
-/// `Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Cur), i - CurBase)` (no bounds check, no Locate), else the
-/// slab's `Ref(i)`; the stale check `i &lt; Len` is dropped under <see cref="SlotProof.Live"/>. Take reads the slot and
-/// pushes the free list (load Free, store it into the slot's first uint, store i into Free) when the term's lane is
+/// `Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Cur), i - CurBase)` and the freed-bit word
+/// `CurFreed[(i - CurBase) >> 6]` (no bounds checks, no Locate), else the slab's `Ref(i)` and its RawFreed/RawCheck/RawLive
+/// calls; the freed bit is tested, set and cleared inline (a set bit on Take/Borrow calls the slab, which throws); the
+/// stale check `i &lt; Len` is dropped under <see cref="SlotProof.Live"/>. Take reads the slot and
+/// pushes the free list (load Free, store it into the slot's first uint, store i into Free; a slot below RegionBase
+/// goes to its own level's list through FreeOuter, as in Arena.Take) when the term's lane is
 /// this thread's; a foreign or stale term takes the out-of-line `Arena.RawForeign`. Alloc inlines the free-list pop
-/// and the bump; `Grow` stays a call. The debug-build liveness checks are calls that are empty in Release.
+/// and the bump (a bumped slot below Dirty clears its bit); `Grow` stays a call.
 /// </summary>
 internal sealed partial class IlBody
 {
@@ -184,12 +187,15 @@ internal sealed partial class IlBody
         return l;
     }
 
-    /// <summary>`ref TSlot` of slot <paramref name="i"/> (uint) of the slab: the lane-cursor fast path, else `Ref(i)`.</summary>
-    void SlotRef(Type slot, IlLocal sl, IlLocal i)
+    /// <summary>
+    /// Slot <paramref name="i"/> on the lane cursor's chunk (`(uint)(i - CurBase) &lt; Cur.Length`): stores `ref TSlot`
+    /// in <paramref name="r"/>, `ref ulong` of the slot's freed-bit word (`CurFreed[off >> 6]`, in bounds because a
+    /// chunk's bitmap has one bit per slot) in <paramref name="w"/> and the bit in <paramref name="bit"/>, without
+    /// bounds checks or `Locate`, and falls through; a slot of another chunk branches to <paramref name="slow"/>.
+    /// </summary>
+    void LocateFast(Type slot, IlLocal sl, IlLocal i, IlLocal r, IlLocal w, IlLocal bit, IlLabel slow)
     {
         var off = Temp(typeof(uint));
-        var slow = il.DefineLabel();
-        var done = il.DefineLabel();
         il.EmitLoadLocal(i);
         il.EmitLoadLocal(sl);
         il.EmitLoadField(SlabField(slot, "CurBase"));
@@ -207,11 +213,80 @@ internal sealed partial class IlBody
         il.EmitLoadLocal(off);
         il.EmitConvert(PrimitiveTypeCode.UIntPtr);
         il.EmitCall(c.Module.Import(AddRef.MakeGenericMethod(slot)));
+        il.EmitStoreLocal(r);
+        BitWord(slot, sl, off, w, bit);
+    }
+
+    /// <summary>`w = ref CurFreed[off >> 6]` (no bounds check) and `bit = 1UL &lt;&lt; (off &amp; 63)`.</summary>
+    void BitWord(Type slot, IlLocal sl, IlLocal off, IlLocal w, IlLocal bit)
+    {
+        il.EmitLoadLocal(sl);
+        il.EmitLoadField(SlabField(slot, "CurFreed"));
+        il.EmitCall(c.Module.Import(DataRef.MakeGenericMethod(typeof(ulong))));
+        il.EmitLoadLocal(off);
+        il.EmitLoadConst(6);
+        il.EmitBinary(IlBinOp.Shr, unsigned: true);
+        il.EmitConvert(PrimitiveTypeCode.UIntPtr);
+        il.EmitCall(c.Module.Import(AddRef.MakeGenericMethod(typeof(ulong))));
+        il.EmitStoreLocal(w);
+        il.EmitLoadConst(1L);
+        il.EmitLoadLocal(off);
+        il.EmitLoadConst(63);
+        il.EmitBinary(IlBinOp.And);
+        il.EmitBinary(IlBinOp.Shl);
+        il.EmitStoreLocal(bit);
+    }
+
+    /// <summary>`*w |= bit` (set) or `*w &amp;= ~bit` (clear).</summary>
+    void SetBit(IlLocal w, IlLocal bit, bool set)
+    {
+        il.EmitLoadLocal(w);
+        il.EmitLoadLocal(w);
+        il.EmitLoadObj(T.Il(typeof(ulong)));
+        il.EmitLoadLocal(bit);
+        if (!set) il.Emit(ILOpCode.Not);
+        il.EmitBinary(set ? IlBinOp.Or : IlBinOp.And);
+        il.EmitStoreObj(T.Il(typeof(ulong)));
+    }
+
+    /// <summary>The freed-bit check of a Take/Drop (<paramref name="frees"/>) or Borrow, inline: a set bit calls the
+    /// slab's <c>RawFreed</c>/<c>RawCheck</c>, which throws (every build, INVARIANTS #9); a Take then sets the bit.</summary>
+    void CheckBit(Type slot, IlLocal sl, IlLocal i, IlLocal tt, IlLocal w, IlLocal bit, bool frees)
+    {
+        var ok = il.DefineLabel();
+        il.EmitLoadLocal(w);
+        il.EmitLoadObj(T.Il(typeof(ulong)));
+        il.EmitLoadLocal(bit);
+        il.EmitBinary(IlBinOp.And);
+        il.EmitBranch(ok, IlCond.False);
+        il.EmitLoadLocal(sl);
+        il.EmitLoadLocal(i);
+        il.EmitLoadLocal(tt);
+        il.EmitCall(SlabMethod(slot, frees ? "RawFreed" : "RawCheck"));   // throws
+        il.MarkLabel(ok);
+        if (frees) SetBit(w, bit, set: true);
+    }
+
+    /// <summary>Slot <paramref name="i"/> with its freed bit checked (and set for a Take): the cursor chunk inline,
+    /// any other chunk through the slab's <c>Ref</c> and <c>RawFreed</c>/<c>RawCheck</c>. Leaves `ref TSlot` in r.</summary>
+    void Access(Type slot, IlLocal sl, IlLocal i, IlLocal tt, IlLocal r, bool frees)
+    {
+        var w = il.DeclareLocal(T.Il(typeof(ulong).MakeByRefType()));
+        var bit = Temp(typeof(ulong));
+        var slow = il.DefineLabel();
+        var done = il.DefineLabel();
+        LocateFast(slot, sl, i, r, w, bit, slow);
+        CheckBit(slot, sl, i, tt, w, bit, frees);
         il.EmitBranch(done);
         il.MarkLabel(slow);
         il.EmitLoadLocal(sl);
         il.EmitLoadLocal(i);
         il.EmitCall(SlabMethod(slot, "Ref"));
+        il.EmitStoreLocal(r);
+        il.EmitLoadLocal(sl);
+        il.EmitLoadLocal(i);
+        il.EmitLoadLocal(tt);
+        il.EmitCall(SlabMethod(slot, frees ? "RawFreed" : "RawCheck"));
         il.MarkLabel(done);
     }
 
@@ -248,27 +323,11 @@ internal sealed partial class IlBody
             il.EmitLoadField(SlabField(slot, "Len"));
             il.EmitBranch(foreign, IlCond.GeUn);   // stale: the slow path throws
         }
-        SlotRef(slot, sl, i);
-        il.EmitStoreLocal(r);
-        il.EmitLoadLocal(sl);
-        il.EmitLoadLocal(i);
-        il.EmitLoadLocal(tt);
-        il.EmitCall(SlabMethod(slot, frees ? "RawFreed" : "RawCheck"));
+        Access(slot, sl, i, tt, r, frees);
         il.EmitLoadLocal(r);
         il.EmitLoadObj(T.Il(slot));
         il.EmitStoreLocal(res);
-        if (frees)
-        {
-            // push: the slot's first uint links the old head, the head becomes i
-            il.EmitLoadLocal(r);
-            FirstUint(slot);
-            il.EmitLoadLocal(sl);
-            il.EmitLoadField(SlabField(slot, "Free"));
-            il.EmitStoreObj(T.Il(typeof(uint)));
-            il.EmitLoadLocal(sl);
-            il.EmitLoadLocal(i);
-            il.EmitStoreField(SlabField(slot, "Free"));
-        }
+        if (frees) Free(slot, sl, i, r);
         il.EmitBranch(end);
         il.MarkLabel(foreign);
         il.EmitLoadLocal(tt);
@@ -319,12 +378,23 @@ internal sealed partial class IlBody
             il.EmitBranch(end);
             il.MarkLabel(ok);
         }
-        SlotRef(slot, sl, i);
-        il.EmitStoreLocal(r);
-        il.EmitLoadLocal(sl);
+        Access(slot, sl, i, tt, r, frees: true);
+        Free(slot, sl, i, r);
+        il.MarkLabel(end);
+    }
+
+    /// <summary>Frees slot <paramref name="i"/> (its freed bit already set) as <c>Arena.Take</c> does: a slot of the
+    /// current level (i &gt;= RegionBase) is pushed onto the lane's free list (the slot's first uint links the old head,
+    /// the head becomes i); a slot allocated before the innermost open region goes to its own level's list through
+    /// <c>FreeOuter</c>, so the region's reset does not discard it.</summary>
+    void Free(Type slot, IlLocal sl, IlLocal i, IlLocal r)
+    {
+        var outer = il.DefineLabel();
+        var done = il.DefineLabel();
         il.EmitLoadLocal(i);
-        il.EmitLoadLocal(tt);
-        il.EmitCall(SlabMethod(slot, "RawFreed"));
+        il.EmitLoadLocal(sl);
+        il.EmitLoadField(SlabField(slot, "RegionBase"));
+        il.EmitBranch(outer, IlCond.LtUn);
         il.EmitLoadLocal(r);
         FirstUint(slot);
         il.EmitLoadLocal(sl);
@@ -333,7 +403,12 @@ internal sealed partial class IlBody
         il.EmitLoadLocal(sl);
         il.EmitLoadLocal(i);
         il.EmitStoreField(SlabField(slot, "Free"));
-        il.MarkLabel(end);
+        il.EmitBranch(done);
+        il.MarkLabel(outer);
+        il.EmitLoadLocal(sl);
+        il.EmitLoadLocal(i);
+        il.EmitCall(SlabMethod(slot, "FreeOuter"));
+        il.MarkLabel(done);
     }
 
     Type Alloc(AirArenaAlloc a)
@@ -348,26 +423,37 @@ internal sealed partial class IlBody
         il.EmitStoreLocal(v);
         var sl = Slab(slot);
         var i = Temp(typeof(uint));
+        var off = Temp(typeof(uint));
         var r = il.DeclareLocal(T.Il(slot.MakeByRefType()));
+        var w = il.DeclareLocal(T.Il(typeof(ulong).MakeByRefType()));
+        var bit = Temp(typeof(ulong));
         var bump = il.DefineLabel();
         var room = il.DefineLabel();
+        var popSlow = il.DefineLabel();
         var store = il.DefineLabel();
-        // pop the free list
+        // pop the free list: the head's first uint is the next head; its freed bit is cleared
         il.EmitLoadLocal(sl);
         il.EmitLoadField(SlabField(slot, "Free"));
         il.EmitStoreLocal(i);
         il.EmitLoadLocal(i);
         il.EmitLoadConst(-1);
         il.EmitBranch(bump, IlCond.Eq);
-        SlotRef(slot, sl, i);
-        il.EmitStoreLocal(r);
-        il.EmitLoadLocal(sl);
-        il.EmitLoadLocal(r);
-        FirstUint(slot);
-        il.EmitLoadObj(T.Il(typeof(uint)));
-        il.EmitStoreField(SlabField(slot, "Free"));
+        LocateFast(slot, sl, i, r, w, bit, popSlow);
+        PopHead(slot, sl, r);
+        SetBit(w, bit, set: false);
         il.EmitBranch(store);
-        // or bump the cursor (Grow moves Cur into the next chunk, out of line)
+        il.MarkLabel(popSlow);
+        il.EmitLoadLocal(sl);
+        il.EmitLoadLocal(i);
+        il.EmitCall(SlabMethod(slot, "Ref"));
+        il.EmitStoreLocal(r);
+        PopHead(slot, sl, r);
+        il.EmitLoadLocal(sl);
+        il.EmitLoadLocal(i);
+        il.EmitCall(SlabMethod(slot, "RawLive"));
+        il.EmitBranch(store);
+        // or bump the cursor (Grow moves Cur into the next chunk, out of line); a slot past Dirty was never freed,
+        // so its bit is already clear (Arena.Alloc does the same)
         il.MarkLabel(bump);
         il.EmitLoadLocal(sl);
         il.EmitLoadField(SlabField(slot, "Len"));
@@ -384,23 +470,28 @@ internal sealed partial class IlBody
         il.EmitLoadConst(1);
         il.EmitBinary(IlBinOp.Add);
         il.EmitStoreField(SlabField(slot, "Len"));
-        il.EmitLoadLocal(sl);
-        il.EmitLoadField(SlabField(slot, "Cur"));
-        il.EmitCall(c.Module.Import(DataRef.MakeGenericMethod(slot)));
         il.EmitLoadLocal(i);
         il.EmitLoadLocal(sl);
         il.EmitLoadField(SlabField(slot, "CurBase"));
         il.EmitBinary(IlBinOp.Sub);
+        il.EmitStoreLocal(off);
+        il.EmitLoadLocal(sl);
+        il.EmitLoadField(SlabField(slot, "Cur"));
+        il.EmitCall(c.Module.Import(DataRef.MakeGenericMethod(slot)));
+        il.EmitLoadLocal(off);
         il.EmitConvert(PrimitiveTypeCode.UIntPtr);
         il.EmitCall(c.Module.Import(AddRef.MakeGenericMethod(slot)));
         il.EmitStoreLocal(r);
+        il.EmitLoadLocal(i);
+        il.EmitLoadLocal(sl);
+        il.EmitLoadField(SlabField(slot, "Dirty"));
+        il.EmitBranch(store, IlCond.GeUn);
+        BitWord(slot, sl, off, w, bit);   // a slot reused after a region reset
+        SetBit(w, bit, set: false);
         il.MarkLabel(store);
         il.EmitLoadLocal(r);
         il.EmitLoadLocal(v);
         il.EmitStoreObj(T.Il(slot));
-        il.EmitLoadLocal(sl);
-        il.EmitLoadLocal(i);
-        il.EmitCall(SlabMethod(slot, "RawLive"));
         // the term: tag << 56 | lane bits | slot index
         il.EmitLoadConst(unchecked((long)((ulong)(uint)a.Tag << 56)));
         il.EmitLoadLocal(sl);
@@ -410,5 +501,15 @@ internal sealed partial class IlBody
         il.EmitConvert(PrimitiveTypeCode.UInt64);
         il.EmitBinary(IlBinOp.Or);
         return typeof(ulong);
+    }
+
+    /// <summary>`Free = *(uint*)r`: the popped slot's link becomes the free-list head.</summary>
+    void PopHead(Type slot, IlLocal sl, IlLocal r)
+    {
+        il.EmitLoadLocal(sl);
+        il.EmitLoadLocal(r);
+        FirstUint(slot);
+        il.EmitLoadObj(T.Il(typeof(uint)));
+        il.EmitStoreField(SlabField(slot, "Free"));
     }
 }

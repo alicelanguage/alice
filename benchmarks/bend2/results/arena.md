@@ -60,3 +60,22 @@ interleaved cold processes (old/new, then new/old), 1 warm-up + 3 rounds, median
 No regression beyond noise (every ratio within 0.95-1.02, ranges overlap). None of these ports opens a `scope`, so the
 only new work on their path is one thread-static read per fork job; the region cost itself is covered by
 `ArenaTests` (0 allocations steady state, forks inside a region).
+
+## IL backend arena optimizations (2026-11-03, A/B/C test, wt/fix-runtime cdfc24c+local)
+
+Correctness fix (Part 1): IL inlined Take/Drop checks RegionBase, calls FreeOuter for outer slots (mirrors C# Arena.Take).
+Speed opts (Part 2): inline freed-bit checks (LocateFast, BitWord, CheckBit, SetBit), hoist slab load per method,
+Alloc bump skips RawLive unless i < Dirty. Interleaved A/B/C runs (A=Part1, B=Part1+2, C=C# baseline), 3 rounds,
+cores 14,30, serial, checksums identical. Load 8-9, .NET SDK 10.0.114.
+
+| port | C# (ms) | Part1 (ms) | Part1+2 (ms) | P1+2/C# | P1+2/P1 | improvement |
+|---|---:|---:|---:|---:|---:|---|
+| tree-bitonic (21) | 33807 | 35802 | 36266 | 1.073 | 1.013 | +1.3% (regress) |
+| tree-matmul | 18018 | 19417 | 19290 | 1.071 | 0.993 | -0.7% |
+| tree-radix | 18265 | 18617 | 18145 | 0.993 | 0.975 | -2.5% ✓ |
+| symreg | 14234 | 12367 | 11221 | 0.788 | 0.907 | -9.3% ✓ |
+| merkle | 8493 | 8516 | 8481 | 0.999 | 0.996 | -0.4% |
+
+Part 1 (correctness): approved, tested (AffineLowerTests), CHANGELOG entry. Part 2 (speed): helps symreg (9.3%)
+and tree-radix (2.5%), neutral on tree-matmul/merkle, regresses tree-bitonic (+1.3%). Kept Part 2 as-is: net
+positive, no serious regressions, benefits real programs (symreg).

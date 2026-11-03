@@ -362,6 +362,93 @@ puts "#{e}"
     static Func<int, uint> Run(Assembly asm) =>
         asm.GetType("Program")!.GetMethod("run", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.CreateDelegate<Func<int, uint>>();
 
+    // a list built outside `scope` and consumed inside it (`inc` owns its parameter: a Take): its slots belong to the
+    // outer level, so they must go back to the outer free list (Arena.Take's RegionBase check), not to the region's
+    // list that the reset discards
+    const string OuterTakenInScope = """
+enum L
+  Nil
+  Cons(v : UInt32, rest : L)
+end
+
+def mk(n : Int32) : L
+  return L::Nil if n == 0
+  L::Cons(n.to_u32, mk(n - 1))
+end
+
+def inc(l : L, stop : Bool) : L
+  return l if stop
+  case l
+  when L::Nil then L::Nil
+  when L::Cons(v, rest) then L::Cons(v &+ 1_u32, inc(rest, false))
+  end
+end
+
+def total(l : L) : UInt32
+  case l
+  when L::Nil then 0_u32
+  when L::Cons(v, rest) then v &+ total(rest)
+  end
+end
+
+s = 0_u32
+i = 0
+while i < 50
+  l = mk(64)
+  scope
+    s = s &+ total(inc(l, false))
+  end
+  i += 1
+end
+puts s
+
+""";
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void An_outer_node_taken_inside_a_scope_is_reused_after_it_under_both_backends(bool deep)
+    {
+        // review chat #2800: the IL Take pushed every freed slot onto the current free list, so 50 rounds leaked
+        // 50 x 64 outer slots under --backend il while the C# backend (Arena.Take) reused them
+        static (string Out, uint Growth) Measure(Func<string> run)
+        {
+            uint before = Alice.Runtime.Arena<(ulong, ulong)>.Used;
+            string o = run();
+            return (o, Alice.Runtime.Arena<(ulong, ulong)>.Used - before);
+        }
+        var cs = Affine(() => Measure(() => RunCs(OuterTakenInScope, arena: true)), deep: deep);
+        var il = Affine(() => Measure(() => RunIl(OuterTakenInScope)), deep: deep);
+        Assert.Equal(cs.Out, il.Out);
+        Assert.True(cs.Growth <= 64, $"C# backend: the lane grew by {cs.Growth} slots");
+        Assert.True(il.Growth <= 64, $"IL backend: the lane grew by {il.Growth} slots (C#: {cs.Growth})");
+    }
+
+    [Fact]
+    public void Inlined_IL_take_and_borrow_detect_a_freed_slot()
+    {
+        // the IL backend tests and sets the freed bit inline (lane-cursor chunk): a second Take of the same term, or a
+        // Borrow after it, must still fail-stop as Arena.Take/Borrow do (INVARIANTS #9), and a reused slot is live again
+        string src = OuterTakenInScope[..OuterTakenInScope.IndexOf("s = 0_u32", StringComparison.Ordinal)] +
+            "def eat(l : L, stop : Bool) : L\n  return l if stop\n  case l\n  when L::Nil then L::Nil\n  when L::Cons(v, rest) then eat(rest, false)\n  end\nend\n";
+        var asm = AliceCompiler.Load(IlImage([new SourceFile("main.al", src)], "freedil", exe: false));
+        var p = asm.GetType("Program")!;
+        object? Call(string name, params object[] args)
+        {
+            try { return p.GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, args); }
+            catch (TargetInvocationException e) when (e.InnerException != null) { throw e.InnerException; }
+        }
+        var t = (ulong)Call("mk", 3)!;
+        Assert.Equal(6u, (uint)Call("total", t)!);                   // inline Borrow of live slots
+        Call("eat", t, false);                                        // inline Takes free all three
+        Assert.Contains("double free", Assert.Throws<InvalidOperationException>(() => Call("eat", t, false)).Message);
+        Assert.Contains("freed", Assert.Throws<InvalidOperationException>(() => Call("total", t)).Message);
+        var u = (ulong)Call("mk", 3)!;                                // pops the freed slots: their bits are cleared
+        Assert.Equal((uint)t, (uint)u);
+        Assert.Equal(6u, (uint)Call("total", u)!);
+        Call("eat", u, false);
+    }
+
     [Fact]
     public void Tree_build_and_sum_allocates_nothing_in_steady_state()
     {

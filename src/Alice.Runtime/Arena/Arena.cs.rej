@@ -1,0 +1,22 @@
+--- src/Alice.Runtime/Arena/Arena.cs
++++ src/Alice.Runtime/Arena/Arena.cs
+@@ -311,8 +311,8 @@ public sealed class ArenaSlab<TSlot> where TSlot : unmanaged
+     public readonly ulong LaneBits;
+     public uint Len, Free = Arena<TSlot>.None, CurBase, CurEnd;
+     /// <summary>Len at the entry of the innermost open region (0 outside regions): slots below it belong to an
+-    /// outer level and are freed into that level's list.</summary>
+-    internal uint RegionBase;
++    /// outer level and are freed into that level's list (<see cref="FreeOuter"/>; read by generated code).</summary>
++    public uint RegionBase;
+     /// <summary>Highest cursor before a region reset: freed bits at or past it are still 0, so a bump there skips
+     /// clearing its bit.</summary>
+     internal uint Dirty;
+@@ -384,7 +384,7 @@ public sealed class ArenaSlab<TSlot> where TSlot : unmanaged
+     /// <summary>Slot <paramref name="i"/>, below <see cref="RegionBase"/>, was Taken inside a region: link it into
+     /// the free list of the level that allocated it (saved in the mark stack), so the region's reset keeps it.</summary>
+     [MethodImpl(MethodImplOptions.NoInlining)]
+-    internal void FreeOuter(uint i)
++    public void FreeOuter(uint i)
+     {
+         int j = _depth - 1;
+         while (j > 0 && i < _markLen[j - 1]) j--;
