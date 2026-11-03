@@ -49,4 +49,35 @@ public class IlFixR1Tests
         Differential("CNT = [0]\ndef idx : Int32\n  CNT[0] += 10\n  1\nend\nxs = [1_i8, 2_i8]\nxs[idx - 1] += 1_i8\nputs xs[0]\nputs CNT[0]\n"
             + "ls = List(Int32).new\nls.add(5)\nls[idx - 1] += 3\nputs ls[0]\nputs CNT[0]\n",
             "2\n10\n8\n20\n");
+
+    const string Counter = "CNT = [0]\ndef idx : Int32\n  CNT[0] += 10\n  1\nend\n";
+
+    // F7: an Alice user-class indexer (`def []` / `def []=`): receiver and index each evaluated once.
+    [Fact]
+    public void F7_user_class_indexer_compound_evaluates_receiver_and_index_once() =>
+        Differential(Counter + "class Grid\n  def initialize\n    @d = [1, 2, 3]\n  end\n  def [](i : Int32) : Int32\n    @d[i]\n  end\n"
+            + "  def []=(i : Int32, v : Int32)\n    @d[i] = v\n  end\nend\nGS : Array(Grid) = [Grid.new]\n"
+            + "def pick : Grid\n  CNT[0] += 100\n  GS[0]\nend\ng = Grid.new\ng[idx] += 5\nputs g[1]\npick[idx] += 7\nputs GS[0][1]\nputs CNT[0]\n",
+            "7\n9\n120\n");
+
+    // F7: a mutable struct receiver is updated in place (not spilled to a copy), its index still evaluated once.
+    [Fact]
+    public void F7_mutable_struct_indexer_compound_updates_in_place() =>
+        Differential(Counter + "struct Acc\n  def initialize\n    @v = 1\n  end\n  def [](i : Int32) : Int32\n    @v + i\n  end\n"
+            + "  def []=(i : Int32, x : Int32)\n    @v = x - i\n  end\nend\na = Acc.new\na[idx] += 5\nputs a[0]\na[idx] += 5\nputs a[0]\nputs CNT[0]\n",
+            "6\n11\n20\n");
+
+    // F19: statement sequence points carry the real start column and the statement's length.
+    [Fact]
+    public void F19_sequence_points_have_real_columns_and_lengths()
+    {
+        var res = AirToIl.Compile([new SourceFile("main.al", "def f(x : Int32) : Int32\n  y = x + 1\n  y * 2\nend\nputs f(3)\n")], "il", true);
+        Assert.True(res.Ok, string.Join("\n", res.Errors.Select(e => e.Message)));
+        using var pdb = System.Reflection.Metadata.MetadataReaderProvider.FromPortablePdbStream(new MemoryStream(res.Pdb!));
+        var md = pdb.GetMetadataReader();
+        var sps = md.MethodDebugInformation.SelectMany(h => md.GetMethodDebugInformation(h).GetSequencePoints()).Where(p => !p.IsHidden).ToList();
+        var y = Assert.Single(sps, p => p.StartLine == 2);
+        Assert.Equal((3, 12), (y.StartColumn, y.EndColumn));
+        Assert.Contains(sps, p => p.StartLine == 5 && p.StartColumn == 1 && p.EndColumn == 10);
+    }
 }

@@ -60,7 +60,20 @@ internal sealed partial class IlBody
         if (s.Span is { } sp) span = sp;
         else if (s.Line > 0) span = new Span(c.File, s.Line, 1, 0);
         if (s.Line > 0 && c.File.Length > 0 && s is not (MBlock or MTry))
-            il.MarkSequencePoint(span is { } x && x.Line == s.Line ? x with { File = x.File.Length > 0 ? x.File : c.File, Col = Math.Max(1, x.Col) } : new Span(c.File, s.Line, 1, 0));
+            il.MarkSequencePoint(Columns(s.Span is { } x && x.Line == s.Line ? x with { File = x.File.Length > 0 ? x.File : c.File } : new Span(c.File, s.Line, 0, 0)));
+    }
+
+    /// <summary>Real column and length for a statement's sequence point (review-r1 F19): a missing (or placeholder 1) column is the
+    /// line's first non-blank character, a missing length runs to the end of the line (trailing blanks dropped).</summary>
+    Span Columns(Span sp)
+    {
+        if (!c.SourceLines.TryGetValue(sp.File, out var lines) || sp.Line < 1 || sp.Line > lines.Length)
+            return sp with { Col = Math.Max(1, sp.Col) };
+        var text = lines[sp.Line - 1].TrimEnd();
+        int col = sp.Col;
+        if (col <= 1 || col > text.Length) { col = 1; while (col <= text.Length && char.IsWhiteSpace(text[col - 1])) col++; }
+        int len = sp.Len > 0 ? sp.Len : text.Length - col + 1;
+        return sp with { Col = col, Len = Math.Max(1, len) };
     }
 
     void Stmt(MStmt s)
