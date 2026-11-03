@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using CoreRegex = Alice.Core.Text.Regex;
 
 namespace Alice.Runtime;
 
@@ -36,12 +37,34 @@ public static partial class Prelude
         return i < 0 ? s : s[..i] + b + s[(i + a.Length)..];
     }
 
+    /// <summary>Ruby sub/gsub with a replacement template (\1, \k&lt;name&gt;, \0, \&amp;, pre/post-match, \\ for a backslash).</summary>
+    public static string sub(this string s, CoreRegex re, string b) => re.Replace(s, b, 1);
+    public static string gsub(this string s, CoreRegex re, string b) => re.Replace(s, b);
+
+    /// <summary>Ruby scan (whole matches; scan_groups for patterns with groups); sets $~ to the last match.</summary>
+    public static string[] scan(this string s, CoreRegex re)
+    {
+        var r = new List<string>();
+        int last = -1;
+        foreach (var m in re.Matches(s.AsSpan())) { r.Add(s[m]); last = m.Start.Value; }
+        if (last >= 0) SetLastMatch(re, s, last);
+        return r.ToArray();
+    }
+
+    /// <summary>scan("lit"): a string pattern matches literally (Ruby).</summary>
+    public static string[] scan(this string s, string pattern) => s.scan(CoreRegex.Cached(CoreRegex.Escape(pattern)));
+
+    /// <summary>match?: true when the pattern matches; never sets $~ and does not allocate.</summary>
+    public static bool match_q(this string s, CoreRegex re) => re.IsMatch(s);
+
+    /// <summary>match?("re"): a string pattern is a regex (Ruby String#match?).</summary>
+    public static bool match_q(this string s, string pattern) => CoreRegex.Cached(pattern).IsMatch(s);
+
+    // System.Text.RegularExpressions.Regex objects that user code builds explicitly keep .NET semantics
     public static string sub(this string s, Regex re, string b) => re.Replace(s, b, 1);
     public static string gsub(this string s, Regex re, string b) => re.Replace(s, b);
     public static string[] scan(this string s, Regex re) => re.Matches(s).Select(m => m.Value).ToArray();
-    public static string[] scan(this string s, string pattern) => s.scan(new Regex(pattern));
     public static bool match_q(this string s, Regex re) => re.IsMatch(s);
-    public static bool match_q(this string s, string pattern) => Regex.IsMatch(s, pattern);
 
     /// <summary>Ruby `tr`: maps characters of `from` to `to` (last `to` char repeats; `a-z` ranges).</summary>
     public static string tr(this string s, string from, string to)

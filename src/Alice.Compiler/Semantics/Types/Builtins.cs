@@ -248,8 +248,8 @@ public static class Builtins
                 return AType.Int.AsNullable();
             case "to_f_q" when recv.IsString:
                 return AType.Double.AsNullable();
-            case "match" when recv.IsString || recv.Clr == typeof(System.Text.RegularExpressions.Regex):
-                return ClrTypes.FromClr(typeof(Alice.Runtime.MatchData)).AsNullable();
+            case "match" when recv.IsString || recv.Clr == typeof(System.Text.RegularExpressions.Regex) || recv.Clr == typeof(Alice.Core.Text.Regex):
+                return ClrTypes.FromClr(typeof(Alice.Core.Text.MatchData)).AsNullable();
             case "dup" or "clone" when recv.Kind == "array" || recv.Clr is { IsGenericType: true }:
                 return recv;
             case "max" when args.Count == 1 && args[0].IsInteger:

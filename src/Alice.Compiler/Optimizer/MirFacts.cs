@@ -86,9 +86,9 @@ public static class MirFacts
     /// <summary>Opaque text with a write form for `name`: an assignment, ++/--, or a ref/out/in argument.</summary>
     public static bool WriteForm(string text, string name)
     {
-        var n = System.Text.RegularExpressions.Regex.Escape(name);
-        return System.Text.RegularExpressions.Regex.IsMatch(text,
-            $@"(?<![\w.])({n}\s*([-+*/%&|^]|<<|>>>?|\?\?)?=(?!=)|{n}\s*(\+\+|--)|(\+\+|--)\s*{n}(?![\w])|\b(ref|out|in)\s+{n}(?![\w]))");
+        var n = Alice.Core.Text.Regex.Escape(name);
+        return Alice.Core.Text.Regex.Cached(
+            $@"(?<![\w.])({n}\s*([-+*/%&|^]|<<|>>>?|\?\?)?=(?!=)|{n}\s*(\+\+|--)|(\+\+|--)\s*{n}(?![\w])|\b(ref|out|in)\s+{n}(?![\w]))").IsMatch(text);
     }
 
     static bool ContainsWord(string text, string name)

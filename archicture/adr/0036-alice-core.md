@@ -130,3 +130,16 @@ baseline for each compiler-recognized idiom, and each idiom keeps a runtime fall
 it, passing a span over a local (`stackalloc`, a `u8` slice of a local buffer) to a writer reached through
 `ref JsonWriter` is CS8350, because the compiler must assume the writer could keep the span. The writer copies the
 bytes and never stores the span, so `scoped` states the real contract; callers that compiled before still compile.
+
+## Amendment 2 (2026-11-03): Tier B is Alice's own backtracker; compile-time regex emission deferred to 1.1
+
+- **Tier B runs on `Backtracker.cs`** (`src/Alice.Runtime/Core/Text/Regex/`), a memoizing backtracker over the same
+  `RegexNode` AST, not `System.Text.RegularExpressions` with `RegexOptions.Compiled`. Reasons: match-only calls
+  allocate 0 bytes on both tiers (copying BCL `Match` groups into `MatchData` allocates on every match), the
+  semantics are Ruby/Onigmo on both tiers without a translation to .NET syntax (ASCII `\w \d \s \b`, `^ $` as line
+  anchors, `m` = dot-all, named groups turning off unnamed captures), UTF-8 input needs no transcoding, and nothing
+  depends on Reflection.Emit (NativeAOT and wasm behave the same as the JIT). The BCL stays the test oracle
+  (`RegexParityTests`), not a runtime fallback.
+- **Compile-time emission of literal patterns (the C# `switch` DFA above) is deferred to 1.1.** In 1.0 a regex
+  literal is parsed and compiled on first use at runtime and kept in the `Prelude.regex` cache
+  (`Prelude.Syntax.cs`); the cache stays when emission lands, for `Regex.new` and for patterns over the state limit.

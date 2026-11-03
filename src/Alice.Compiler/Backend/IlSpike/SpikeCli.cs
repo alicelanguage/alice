@@ -1,7 +1,6 @@
 // THROWAWAY SPIKE (backend plan D1.1): see README.md in this folder. Not production code.
 using System.Diagnostics;
 using System.Reflection;
-using System.Text.RegularExpressions;
 
 namespace Alice.Compiler.Backend.IlSpike;
 
@@ -49,8 +48,8 @@ public static class SpikeCli
         var csImage = AliceCompiler.Emit(cs, name + ".cs", exe: true);
         long csMs = sw.ElapsedMilliseconds;
         // the C# backend's [MethodImpl] flags (`inline def`, kernels, loop leaves...) are decided in Emitter text: copy them
-        foreach (Match m in Regex.Matches(string.Join("\n", cs), @"MethodImplOptions\.(\w+)\)\]\n(?:#line[^\n]*\n)*(?:public|private|internal)[^\n(]*?\s(\w+)\("))
-            (m.Groups[1].Value == "AggressiveInlining" ? opt.Inline : m.Groups[1].Value == "NoInlining" ? opt.NoInline : opt.Hot).Add(m.Groups[2].Value);
+        foreach (var m in new Alice.Core.Text.Regex(@"MethodImplOptions\.(\w+)\)\]\n(?:#line[^\n]*\n)*(?:public|private|internal)[^\n(]*?\s(\w+)\(").MatchAll(string.Join("\n", cs)))
+            (m[1] == "AggressiveInlining" ? opt.Inline : m[1] == "NoInlining" ? opt.NoInline : opt.Hot).Add(m[2]!);
         opt.Inline.UnionWith(forceInline);
         if (noHot) opt.Hot.Clear();   // experiment: no AggressiveOptimization on the IL side
         Write(outDir, name + ".cs", csImage);

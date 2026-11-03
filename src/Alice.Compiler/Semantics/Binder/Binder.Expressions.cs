@@ -130,7 +130,7 @@ public sealed partial class Binder
                     return t.Kind == "func" && t.Args.Count > 0 ? t.Args[^1] : AType.Unknown;
                 }
             case RegexExpr:
-                return ClrTypes.FromClr(typeof(System.Text.RegularExpressions.Regex));
+                return ClrTypes.FromClr(typeof(Alice.Core.Text.Regex));   // Alice's own engine (ADR 0036)
             case AwaitExpr aw:
                 {
                     var t = BindExpr(aw.E);

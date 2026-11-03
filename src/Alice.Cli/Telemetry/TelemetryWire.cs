@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace Alice.Telemetry.Wire;
 
@@ -23,14 +22,14 @@ public static partial class TelemetryWire
         ["schema", "install_id", "command", "alice_version", "os", "arch", "dotnet", "exit_code", "duration_ms", "crash", "error_codes", "phases_ms"];
     static readonly HashSet<string> Os = ["linux", "windows", "macos", "other"];
 
-    [GeneratedRegex("^[0-9a-f]{32}$")] private static partial Regex Id();
-    [GeneratedRegex("^[a-z]{1,16}( [a-z-]{1,12})?$")] private static partial Regex Cmd();
-    [GeneratedRegex(@"^[0-9A-Za-z.\-]{1,40}$")] private static partial Regex Ver();
-    [GeneratedRegex("^[a-z0-9]{1,16}$")] private static partial Regex Arch();
-    [GeneratedRegex(@"^(AL|CS)\d{4}$")] private static partial Regex Code();
-    [GeneratedRegex("^[a-z_]{1,24}$")] private static partial Regex Phase();
-    [GeneratedRegex(@"^(System|Alice|Microsoft)\.[A-Za-z0-9_.`+]{1,200}$|^Exception$")] private static partial Regex CrashType();
-    [GeneratedRegex(@"^   at (<external>|(Alice|System|Microsoft|Spectre)\.[^\s(/\\]+\([A-Za-z0-9_.,`\[\]<>&*? ]*\))$")] private static partial Regex Frame();
+    static readonly Alice.Core.Text.Regex IdRx = new(@"\A[0-9a-f]{32}\Z");
+    static readonly Alice.Core.Text.Regex CmdRx = new(@"\A[a-z]{1,16}(?: [a-z-]{1,12})?\Z");
+    static readonly Alice.Core.Text.Regex VerRx = new(@"\A[0-9A-Za-z.\-]{1,40}\Z");
+    static readonly Alice.Core.Text.Regex ArchRx = new(@"\A[a-z0-9]{1,16}\Z");
+    static readonly Alice.Core.Text.Regex CodeRx = new(@"\A(?:AL|CS)\d{4}\Z");
+    static readonly Alice.Core.Text.Regex PhaseRx = new(@"\A[a-z_]{1,24}\Z");
+    static readonly Alice.Core.Text.Regex CrashTypeRx = new(@"\A(?:System|Alice|Microsoft)\.[A-Za-z0-9_.`+]{1,200}\Z|\AException\Z");
+    static readonly Alice.Core.Text.Regex FrameRx = new(@"\A   at (?:<external>|(?:Alice|System|Microsoft|Spectre)\.[^\s(/\\]+\([A-Za-z0-9_.,`\[\]<>&*? ]*\))\Z");
 
     public static bool TryParseBatch(ReadOnlySpan<byte> body, out List<WireEvent> events, out string error)
     {
@@ -62,13 +61,13 @@ public static partial class TelemetryWire
         ev = null;
         if (e.ValueKind != JsonValueKind.Object) { error = "event must be an object"; return false; }
         foreach (var p in e.EnumerateObject()) if (!EventFields.Contains(p.Name)) { error = $"unknown field '{Clip(p.Name)}'"; return false; }
-        string Str(string k, Regex r) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String && v.GetString() is { } s && r.IsMatch(s)
+        string Str(string k, Alice.Core.Text.Regex r) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String && v.GetString() is { } s && r.IsMatch(s)
             ? s : throw new FormatException(k);
         try
         {
             int schema = e.GetProperty("schema").GetInt32();
-            string id = Str("install_id", Id()), cmd = Str("command", Cmd()), ver = Str("alice_version", Ver()),
-                arch = Str("arch", Arch()), dotnet = Str("dotnet", Ver());
+            string id = Str("install_id", IdRx), cmd = Str("command", CmdRx), ver = Str("alice_version", VerRx),
+                arch = Str("arch", ArchRx), dotnet = Str("dotnet", VerRx);
             string os = e.GetProperty("os").GetString() is { } o && Os.Contains(o) ? o : throw new FormatException("os");
             int exit = e.GetProperty("exit_code").GetInt32();
             long dur = e.GetProperty("duration_ms").GetInt64();
@@ -77,15 +76,15 @@ public static partial class TelemetryWire
             if (e.TryGetProperty("crash", out var c))
             {
                 foreach (var p in c.EnumerateObject()) if (p.Name is not ("type" or "stack")) throw new FormatException("crash field");
-                ctype = c.GetProperty("type").GetString() is { } t && CrashType().IsMatch(t) ? t : throw new FormatException("crash.type");
+                ctype = c.GetProperty("type").GetString() is { } t && CrashTypeRx.IsMatch(t) ? t : throw new FormatException("crash.type");
                 cstack = c.GetProperty("stack").GetString() ?? throw new FormatException("crash.stack");
                 var lines = cstack.Split('\n');
-                if (cstack.Length > MaxStackChars || lines[0] != ctype || lines.Skip(1).Any(l => !Frame().IsMatch(l))) throw new FormatException("crash.stack");
+                if (cstack.Length > MaxStackChars || lines[0] != ctype || lines.Skip(1).Any(l => !FrameRx.IsMatch(l))) throw new FormatException("crash.stack");
             }
             var codes = new Dictionary<string, int>();
             foreach (var p in e.GetProperty("error_codes").EnumerateObject())
             {
-                if (!Code().IsMatch(p.Name) || p.Value.GetInt32() is < 1 or > 100_000) throw new FormatException("error_codes");
+                if (!CodeRx.IsMatch(p.Name) || p.Value.GetInt32() is < 1 or > 100_000) throw new FormatException("error_codes");
                 codes[p.Name] = p.Value.GetInt32();
             }
             Dictionary<string, long>? phases = null;
@@ -94,7 +93,7 @@ public static partial class TelemetryWire
                 phases = [];
                 foreach (var p in ph.EnumerateObject())
                 {
-                    if (!Phase().IsMatch(p.Name) || p.Value.GetInt64() is < 0 or > 86_400_000 || phases.Count >= 16) throw new FormatException("phases_ms");
+                    if (!PhaseRx.IsMatch(p.Name) || p.Value.GetInt64() is < 0 or > 86_400_000 || phases.Count >= 16) throw new FormatException("phases_ms");
                     phases[p.Name] = p.Value.GetInt64();
                 }
             }

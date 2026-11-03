@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Alice.Cli.Repl;
 
@@ -27,8 +26,9 @@ public static class Highlighter
 
     static readonly HashSet<string> Constants = ["nil", "true", "false"];
 
-    static readonly Regex Number_ = new(@"\G(0x[0-9A-Fa-f_]+|0b[01_]+|\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d+)?)(_?[iuf](8|16|32|64))?");
-    static readonly Regex Ident = new(@"\G[A-Za-z_][\w]*[?!]?");
+    static readonly Alice.Core.Text.Regex Number_ = new(@"\G(0x[0-9A-Fa-f_]+|0b[01_]+|\d[\d_]*(\.\d[\d_]*)?([eE][+-]?\d+)?)(_?[iuf](8|16|32|64))?");
+    static int Len(Alice.Core.Text.MatchData? m) => m == null ? 0 : m.End(0) - m.Begin(0);
+    static readonly Alice.Core.Text.Regex Ident = new(@"\G[A-Za-z_][\w]*[?!]?");
 
     enum K { Plain, Kw, Fn, Ty, Str, Num, Sym, Com, Ivar, Const }
 
@@ -70,24 +70,24 @@ public static class Highlighter
             if (c is '"' or '\'' or '`') { i = StringLit(s, k, i); prevWord = null; continue; }
             if (c == ':' && i + 1 < s.Length && (char.IsLetter(s[i + 1]) || s[i + 1] == '_') && (i == 0 || !char.IsLetterOrDigit(s[i - 1]) && s[i - 1] != ':') && !(i > 0 && s[i - 1] == ' ' && i + 1 < s.Length && char.IsUpper(s[i + 1])))
             {
-                var m = Ident.Match(s, i + 1);
-                Fill(k, i, i + 1 + m.Length, K.Sym); i += 1 + m.Length; continue;
+                int ml = Len(Ident.Match(s, i + 1));
+                Fill(k, i, i + 1 + ml, K.Sym); i += 1 + ml; continue;
             }
             if (c == '@')
             {
                 int j = i + 1; while (j < s.Length && s[j] == '@') j++;
                 var m = Ident.Match(s, j);
-                if (m.Success) { Fill(k, i, j + m.Length, K.Ivar); i = j + m.Length; continue; }
+                if (m != null) { int ml = Len(m); Fill(k, i, j + ml, K.Ivar); i = j + ml; continue; }
             }
             if (char.IsDigit(c) && (i == 0 || !char.IsLetter(s[i - 1]) && s[i - 1] != '_'))
             {
-                var m = Number_.Match(s, i);
-                Fill(k, i, i + m.Length, K.Num); i += Math.Max(1, m.Length); continue;
+                int ml = Len(Number_.Match(s, i));
+                Fill(k, i, i + ml, K.Num); i += Math.Max(1, ml); continue;
             }
             if (char.IsLetter(c) || c == '_')
             {
                 var m = Ident.Match(s, i);
-                string w = m.Value;
+                string w = m?.ToString() ?? "";
                 int end = i + w.Length;
                 K kind = Keywords.Contains(w) ? K.Kw
                     : Constants.Contains(w) ? K.Const
@@ -158,7 +158,7 @@ public static class Highlighter
         return -1;
     }
 
-    static readonly Regex Ansi = new("\u001b\\[[0-9;]*[A-Za-z]");
+    static readonly Alice.Core.Text.Regex Ansi = new(@"\e\[[0-9;]*[A-Za-z]");
 
     public static string StripAnsi(string s) => Ansi.Replace(s, "");
 }

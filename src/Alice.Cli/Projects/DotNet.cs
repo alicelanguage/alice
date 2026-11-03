@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using Alice.Compiler;
 
 namespace Alice.Cli.Projects;
@@ -7,7 +6,7 @@ namespace Alice.Cli.Projects;
 /// <summary>Drives `dotnet` (MSBuild/NuGet) and turns its output into Alice diagnostics.</summary>
 public static class DotNet
 {
-    static readonly Regex MsBuildDiag = new(@"^\s*(?<file>[^(]+)\((?<line>\d+),(?<col>\d+)\): (?<sev>error|warning) (?<code>\w+): (?<msg>.*?)(?: \[[^\]]*\])?$");
+    static readonly Alice.Core.Text.Regex MsBuildDiag = new(@"\A\s*(?<file>[^(]+)\((?<line>\d+),(?<col>\d+)\): (?<sev>error|warning) (?<code>\w+): (?<msg>.*?)(?: \[[^\]]*\])?\Z");
 
     public sealed record Result(int ExitCode, List<Diagnostic> Diagnostics, List<string> Output);
 
@@ -16,10 +15,10 @@ public static class DotNet
     public static Diagnostic? ParseLine(string line)
     {
         var m = MsBuildDiag.Match(line);
-        if (!m.Success) return null;
-        string file = m.Groups["file"].Value.Trim(), code = m.Groups["code"].Value, msg = m.Groups["msg"].Value;
+        if (m == null) return null;
+        string file = m["file"]!.Trim(), code = m["code"]!, msg = m["msg"]!;
         if (code.StartsWith("CS") && file.EndsWith(".al")) (code, msg) = Alice.Compiler.Diagnostics.CSharpErrors.Translate(code, msg);
-        return new Diagnostic(m.Groups["sev"].Value, code, file, int.Parse(m.Groups["line"].Value), int.Parse(m.Groups["col"].Value), msg);
+        return new Diagnostic(m["sev"]!, code, file, int.Parse(m["line"]!), int.Parse(m["col"]!), msg);
     }
 
     public static Result Run(IEnumerable<string> args, Action<string>? onLine = null, bool inherit = false)

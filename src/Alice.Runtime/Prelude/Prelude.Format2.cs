@@ -1,25 +1,23 @@
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Alice.Runtime;
 
 /// <summary>sprintf-style `format`: %d %i %s %f %e %x %X %o %b %c %%, flags `-0+ `, width, precision.</summary>
 public static partial class Prelude
 {
-    // source-generated: a static `new Regex(..., Compiled)` here ran Reflection.Emit on every program's startup
-    [GeneratedRegex(@"%([-0+ ]*)(\d+)?(?:\.(\d+))?([disfeExXobc%])")]
-    private static partial Regex FormatSpecRegex();
+    // lazy holder: built on the first format call, not when a program first touches Prelude (StartupTests)
+    static class FormatSpecHolder { public static readonly Alice.Core.Text.Regex Value = new(@"%([-0+ ]*)(\d+)?(?:\.(\d+))?([disfeExXobc%])"); }
 
     public static string format(string fmt, params object?[] args)
     {
         int ai = 0;
-        return FormatSpecRegex().Replace(fmt, m =>
+        return FormatSpecHolder.Value.Replace(fmt, (Alice.Core.Text.MatchData m) =>
         {
-            char conv = m.Groups[4].Value[0];
+            char conv = m[4]![0];
             if (conv == '%') return "%";
-            string flags = m.Groups[1].Value;
-            int width = m.Groups[2].Success ? int.Parse(m.Groups[2].Value, Inv) : 0;
-            int? prec = m.Groups[3].Success ? int.Parse(m.Groups[3].Value, Inv) : null;
+            string flags = m[1]!;
+            int width = m[2] is { } w0 ? int.Parse(w0, Inv) : 0;
+            int? prec = m[3] is { } p0 ? int.Parse(p0, Inv) : null;
             object? a = ai < args.Length ? args[ai++] : throw new FormatException("too few arguments for format");
             string body = conv switch
             {

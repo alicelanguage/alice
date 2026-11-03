@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Text.RegularExpressions;
 
 namespace Alice.Runtime;
 
@@ -115,7 +114,7 @@ public static partial class Prelude
     public static Matcher have_size(int n) => new($"have size {n}", a => (a is string s ? s.Length : a is IEnumerable e ? e.Cast<object>().Count() : -1) == n, n.ToString());
     public static Matcher start_with(string prefix) => new($"start with {inspect(prefix)}", a => a is string s && s.StartsWith(prefix, StringComparison.Ordinal));
     public static Matcher end_with(string suffix) => new($"end with {inspect(suffix)}", a => a is string s && s.EndsWith(suffix, StringComparison.Ordinal));
-    public static Matcher match(string pattern) => new($"match /{pattern}/", a => a is string s && Regex.IsMatch(s, pattern));
+    public static Matcher match(string pattern) => new($"match /{pattern}/", a => a is string s && Alice.Core.Text.Regex.Cached(pattern).IsMatch(s));
     public static Matcher satisfy(Func<object?, bool> pred) => new("satisfy the block", pred);
     public static Matcher respond_to(string name) => new($"respond to {name}", a => respond_to_q(a, name));
 

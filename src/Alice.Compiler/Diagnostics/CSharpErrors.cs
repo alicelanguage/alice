@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -21,48 +20,50 @@ public static class CSharpErrors
     /// MSBuild's compile, not a second in-process one. The callee name is not known there.</summary>
     public static (string Code, string Message) Translate(string id, string message) => Translate(id, message, () => "");
 
+    static Alice.Core.Text.MatchData? Rx(string pattern, string text) => Alice.Core.Text.Regex.Cached(pattern).Match(text);
+
     static (string Code, string Message) Translate(string id, string en, Func<string> callee)
     {
-        Match m;
+        Alice.Core.Text.MatchData? m;
         switch (id)
         {
-            case "CS1061" or "CS0117" when (m = Regex.Match(en, @"^'(?<t>.+?)' does not contain a definition for '(?<n>[^']+)'")).Success:
-                return ("AL0302", $"undefined method '{M(m.Groups["n"].Value)}' for {T(m.Groups["t"].Value)}");
-            case "CS0019" when (m = Regex.Match(en, @"Operator '(?<o>[^']+)' cannot be applied to operands of type '(?<a>.+?)' and '(?<b>.+?)'")).Success:
-                return ("AL0301", $"'{m.Groups["o"].Value}' is not defined for {T(m.Groups["a"].Value)} and {T(m.Groups["b"].Value)}");
-            case "CS0023" when (m = Regex.Match(en, @"Operator '(?<o>[^']+)' cannot be applied to operand of type '(?<a>.+?)'")).Success:
-                return ("AL0301", $"'{m.Groups["o"].Value}' is not defined for {T(m.Groups["a"].Value)}");
+            case "CS1061" or "CS0117" when (m = Rx(@"\A'(?<t>.+?)' does not contain a definition for '(?<n>[^']+)'", en)) != null:
+                return ("AL0302", $"undefined method '{M(m!["n"]!)}' for {T(m!["t"]!)}");
+            case "CS0019" when (m = Rx(@"Operator '(?<o>[^']+)' cannot be applied to operands of type '(?<a>.+?)' and '(?<b>.+?)'", en)) != null:
+                return ("AL0301", $"'{m!["o"]!}' is not defined for {T(m!["a"]!)} and {T(m!["b"]!)}");
+            case "CS0023" when (m = Rx(@"Operator '(?<o>[^']+)' cannot be applied to operand of type '(?<a>.+?)'", en)) != null:
+                return ("AL0301", $"'{m!["o"]!}' is not defined for {T(m!["a"]!)}");
             case var _ when en.Contains("unsafe context"):   // CS0214, CS0227, CS9123...: every pointer-in-safe-code error
                 return ("AL0216", "pointer operation outside `unsafe`: wrap it in `unsafe ... end` or declare the method `unsafe def`");
-            case "CS0103" when (m = Regex.Match(en, @"The name '(?<n>[^']+)' does not exist")).Success:
-                return ("AL0303", $"undefined name '{M(m.Groups["n"].Value)}'");
-            case "CS0029" or "CS0266" when (m = Regex.Match(en, @"convert type '(?<a>.+?)' to '(?<b>.+?)'")).Success:
-                return ("AL0304", $"type mismatch: expected {T(m.Groups["b"].Value)}, got {T(m.Groups["a"].Value)}" +
-                    (id == "CS0266" ? $" (convert explicitly, e.g. .to_i / .to_f / .as({T(m.Groups["b"].Value)}))" : ""));
-            case "CS1503" when (m = Regex.Match(en, @"Argument (?<i>\d+): cannot convert from '(?<a>.+?)' to '(?<b>.+?)'")).Success:
-                return ("AL0305", $"argument {m.Groups["i"].Value}{callee()}: expected {T(m.Groups["b"].Value)}, got {T(m.Groups["a"].Value)}");
-            case "CS1501" when (m = Regex.Match(en, @"No overload for method '(?<n>[^']+)' takes (?<k>\d+) arguments")).Success:
-                return ("AL0306", $"wrong number of arguments for {M(m.Groups["n"].Value)} (given {m.Groups["k"].Value})");
+            case "CS0103" when (m = Rx(@"The name '(?<n>[^']+)' does not exist", en)) != null:
+                return ("AL0303", $"undefined name '{M(m!["n"]!)}'");
+            case "CS0029" or "CS0266" when (m = Rx(@"convert type '(?<a>.+?)' to '(?<b>.+?)'", en)) != null:
+                return ("AL0304", $"type mismatch: expected {T(m!["b"]!)}, got {T(m!["a"]!)}" +
+                    (id == "CS0266" ? $" (convert explicitly, e.g. .to_i / .to_f / .as({T(m!["b"]!)}))" : ""));
+            case "CS1503" when (m = Rx(@"Argument (?<i>\d+): cannot convert from '(?<a>.+?)' to '(?<b>.+?)'", en)) != null:
+                return ("AL0305", $"argument {m!["i"]!}{callee()}: expected {T(m!["b"]!)}, got {T(m!["a"]!)}");
+            case "CS1501" when (m = Rx(@"No overload for method '(?<n>[^']+)' takes (?<k>\d+) arguments", en)) != null:
+                return ("AL0306", $"wrong number of arguments for {M(m!["n"]!)} (given {m!["k"]!})");
             case "CS7036":
                 return ("AL0306", $"wrong number of arguments{callee()} (missing a required argument)");
-            case "CS0246" when (m = Regex.Match(en, @"name '(?<n>[^']+)' could not be found")).Success:
-                return ("AL0307", $"unknown type '{T(m.Groups["n"].Value)}' (missing `require`, `using` or a package?)");
+            case "CS0246" when (m = Rx(@"name '(?<n>[^']+)' could not be found", en)) != null:
+                return ("AL0307", $"unknown type '{T(m!["n"]!)}' (missing `require`, `using` or a package?)");
             case "CS0161":
                 return ("AL0308", "not every path returns a value; add a final value or `return`");
-            case "CS0165" when (m = Regex.Match(en, @"variable '(?<n>[^']+)'")).Success:
-                return ("AL0309", $"'{M(m.Groups["n"].Value)}' may be used before it is assigned");
+            case "CS0165" when (m = Rx(@"variable '(?<n>[^']+)'", en)) != null:
+                return ("AL0309", $"'{M(m!["n"]!)}' may be used before it is assigned");
             case "CS8602" or "CS8600" or "CS8601" or "CS8603" or "CS8604" or "CS8625" or "CS8618" or "CS8629":
                 return ("AL0310", "value may be nil here; check it (`if x`, `x.nil?`, `x || default`) or assert with `x.not_nil!`");
             case "CS0121":
                 return ("AL0311", "ambiguous call: " + AliceNames.Quoted(en[(en.IndexOf(':') + 1)..].Trim()));
-            case "CS0411" when (m = Regex.Match(en, @"method '(?<n>[^'(<]+)")).Success:
-                return ("AL0312", $"cannot infer type arguments for '{M(m.Groups["n"].Value.Split('.')[^1])}'; give them explicitly: name<T>(...)");
-            case "CS0122" when (m = Regex.Match(en, @"^'(?<n>[^']+)' is inaccessible")).Success:
-                return ("AL0313", $"'{M(m.Groups["n"].Value.Split('.')[^1])}' is private here");
-            case "CS0200" or "CS0191" or "CS0198" when (m = Regex.Match(en, @"'(?<n>[^']+)'")).Success:
-                return ("AL0314", $"'{M(m.Groups["n"].Value.Split('.')[^1])}' is read-only (declare it with `property` to allow assignment)");
-            case "CS0120" when (m = Regex.Match(en, @"'(?<n>[^']+)'")).Success:
-                return ("AL0315", $"'{M(m.Groups["n"].Value.Split('.')[^1].Split('(')[0])}' needs an instance (it is not a class method)");
+            case "CS0411" when (m = Rx(@"method '(?<n>[^'(<]+)", en)) != null:
+                return ("AL0312", $"cannot infer type arguments for '{M(m!["n"]!.Split('.')[^1])}'; give them explicitly: name<T>(...)");
+            case "CS0122" when (m = Rx(@"\A'(?<n>[^']+)' is inaccessible", en)) != null:
+                return ("AL0313", $"'{M(m!["n"]!.Split('.')[^1])}' is private here");
+            case "CS0200" or "CS0191" or "CS0198" when (m = Rx(@"'(?<n>[^']+)'", en)) != null:
+                return ("AL0314", $"'{M(m!["n"]!.Split('.')[^1])}' is read-only (declare it with `property` to allow assignment)");
+            case "CS0120" when (m = Rx(@"'(?<n>[^']+)'", en)) != null:
+                return ("AL0315", $"'{M(m!["n"]!.Split('.')[^1].Split('(')[0])}' needs an instance (it is not a class method)");
         }
         return ("AL0300", AliceNames.Quoted(en));
     }
