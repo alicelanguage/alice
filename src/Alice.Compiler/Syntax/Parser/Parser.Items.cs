@@ -166,8 +166,9 @@ public sealed partial class Parser
         bool neg = false;
         if (IsOp("-")) { Next(); neg = true; }
         if (t[p].Kind != "int") throw Err("rule domain bounds are integer literals");
-        long v = long.Parse(Next().Text.Replace("_", ""));
-        return neg ? -v : v;
+        var text = Next().Text.Replace("_", "");
+        try { long v = long.Parse(text); return neg ? -v : v; }
+        catch (FormatException) { throw Err($"invalid integer literal '{text}"); }
     }
 
     bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"))
