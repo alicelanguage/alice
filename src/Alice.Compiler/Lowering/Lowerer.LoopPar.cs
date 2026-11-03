@@ -432,7 +432,7 @@ public sealed partial class Lowerer
         ConstExpr ce when LiteralConst(ce) => true,   // `Int32::MAX`, `Math::PI`
         CallExpr { Res: "alice", Sym: MethodSym m, Block: null } c => MarkHeavy(plan) && MethodPure(m) && (c.Recv == null || PureRead(c.Recv, plan)) && c.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         NameExpr { Res: "call", Sym: MethodSym m } => MarkHeavy(plan) && MethodPure(m),
-        NewExpr { AsCall: null, Block: null } n => n.Type.Sym is { Kind: "class" or "struct" or "record" or "record struct" or "variant" } ts && CtorPure(ts, n.Args.Count) && n.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
+        NewExpr { AsCall: null, Block: null } n => (n.Type.Sym is { Kind: "class" or "struct" or "record" or "record struct" or "variant" } ts && CtorPure(ts, n.Args.Count) || AffineNewPure(n)) && n.Args.All(a => a.Mod == "" && PureRead(a.Value!, plan)),
         NewExpr { AsCall: { } ac } => PureRead(ac, plan),
         StmtExpr { Stmt: var st } => PureMethodBody([st], plan, false),   // if / case used as a value
         _ => false,

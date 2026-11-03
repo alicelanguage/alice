@@ -21,7 +21,7 @@ public sealed partial class Lowerer
                     var block = new MBlock { Body = Stmts(plain.Body, tail, target), Unchecked = plain.Unchecked, Unsafe = plain.Unsafe, Lock = plain.Lock != null ? Expr(plain.Lock) : null };
                     if (plain.Scope && tail == Tail.None && !inParallelGen && releaseAt.TryGetValue(plain, out var dying))   // lifetime region ends
                         foreach (var l in dying.Where(owned.ContainsKey)) block.Body.Add(Release(l, owned[l]));
-                    o.Add(block);
+                    o.Add(AffineRegion(plain, block));   // `scope`: arena region (Lowerer.Affine.cs)
                     break;
                 }
             case ExprStmt es:
@@ -292,6 +292,7 @@ public sealed partial class Lowerer
 
     void Case(List<MStmt> o, CaseStmt c, Tail tail, string? target)
     {
+        if (AffineCase(o, c, tail, target)) return;   // ADR 0037 arena enum (Lowerer.Affine.cs)
         MExpr? subj = null;
         if (c.Subject != null)
         {

@@ -230,6 +230,7 @@ internal sealed partial class IlBody
             case AirStackAlloc sa when sa.Count is AirConst { Value: int n0 } || IlTypes.TryLiteral(sa.Count is MCode cc ? cc.Text : "", out _, out _):
                 return StackAlloc(T.Parse(sa.Elem.ToCs(), span), sa.Count is AirConst { Value: int n1 } ? n1 : int.Parse(((MCode)sa.Count).Text, System.Globalization.CultureInfo.InvariantCulture));
             case AirTypeRef tr: throw No("AirTypeRef:value", tr.Text);
+            case AirArenaExpr ar: return Arena(ar);   // ADR 0037 arena nodes (AirToIl.Arena.cs)
             case MCode mc: return Code(mc.Text, e);
             case MBinary b: return Binary(b);
             case MUnary u: return Unary(u);
