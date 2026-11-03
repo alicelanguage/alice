@@ -2,7 +2,7 @@
 # Every rule marked proven returned true on every case of its domain. Rules are pure, so this is a proof by
 # exhaustion of the program as Alice compiles it. `alice prove --check` fails when the sources change.
 #
-# alice 0.14.0
+# alice 1.0.0-rc.1
 # sources sha256 2acf57e997ad3662af70c4ddb9e44581bce9ce75bc3b4afaa92afec04396a8d9
 # rule clamp_is_stable: proven over 2001 cases
 # rule follow_moves_towards_the_ball: proven over 167321 cases
