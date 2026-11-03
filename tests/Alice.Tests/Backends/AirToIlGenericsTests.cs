@@ -82,4 +82,52 @@ public class AirToIlGenericsTests
         puts biggest(3, 8)
         puts biggest("pear", "apple")
         """);
+
+    [Fact]
+    public void Generic_interface_implemented_by_instances_and_inferred_through_it() => Same("""
+        interface Source(T)
+          def next_value : T
+        end
+        class Counter < Source(Int32)
+          def initialize(@n : Int32)
+          end
+          def next_value : Int32
+            @n += 1
+            @n
+          end
+        end
+        class Const(T) < Source(T)
+          def initialize(@v : T)
+          end
+          def next_value : T
+            @v
+          end
+        end
+        def take<T>(s : Source(T)) : T
+          s.next_value
+        end
+        c : Source(Int32) = Counter.new(4)
+        puts c.next_value
+        puts take(Const(String).new("k"))
+        puts take(c)
+        """);
+
+    [Fact]
+    public void Generic_methods_over_generic_types_with_lambda_inferred_results() => Same("""
+        class Box(T)
+          def initialize(@v : T)
+          end
+          def get : T
+            @v
+          end
+        end
+        def unbox<T>(b : Box(T)) : T
+          b.get
+        end
+        def mapb<T, U>(b : Box(T), f : Func(T, U)) : Box(U)
+          Box(U).new(f.(b.get))
+        end
+        puts unbox(Box(Int32).new(3))
+        puts unbox(mapb(Box(Int32).new(3), ->(x : Int32) { x.to_s + "!" }))
+        """);
 }

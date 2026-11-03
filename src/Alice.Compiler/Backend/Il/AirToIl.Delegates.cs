@@ -101,3 +101,33 @@ public sealed partial class AirToIl
         return null;
     }
 }
+
+internal sealed partial class IlBody
+{
+    static readonly System.Text.RegularExpressions.Regex NegCast =
+        new(@"^-\(\((byte|sbyte|short|ushort|float|double)\)(.+)\)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>`-((short)300)`: the lexer's sized literal under a folded sign; C# promotes the narrow types to int.</summary>
+    Type? NegatedCastLiteral(string text)
+    {
+        var m = NegCast.Match(text);
+        if (!m.Success || !IlTypes.TryLiteral(m.Groups[2].Value, out var lt, out var lv) || lv == null) return null;
+        var target = m.Groups[1].Value switch
+        {
+            "byte" => typeof(byte), "sbyte" => typeof(sbyte), "short" => typeof(short), "ushort" => typeof(ushort), "float" => typeof(float), _ => typeof(double),
+        };
+        try
+        {
+            if (target == typeof(float) || target == typeof(double))
+            {
+                double d = -System.Convert.ToDouble(lv, System.Globalization.CultureInfo.InvariantCulture);
+                Const(target, target == typeof(float) ? (float)d : d);
+                return target;
+            }
+            long v = System.Convert.ToInt64(System.Convert.ChangeType(lv, target, System.Globalization.CultureInfo.InvariantCulture), System.Globalization.CultureInfo.InvariantCulture);
+            Const(typeof(int), (int)-v);
+            return typeof(int);
+        }
+        catch (Exception e) when (e is OverflowException or InvalidCastException or FormatException) { return null; }
+    }
+}

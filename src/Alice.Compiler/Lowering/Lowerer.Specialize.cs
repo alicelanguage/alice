@@ -46,10 +46,13 @@ public sealed partial class Lowerer
 
     static bool StaticMethod(MethodSym m) => m.IsStatic || m.Owner.Kind is "module" or "program";
 
+    /// <summary>Set by the IL backend: clones are C# text, which it cannot emit (the call keeps its delegate; same output).</summary>
+    public bool NoSpecialize;
+
     /// <summary>The call `m(args)` as a call to a specialized clone, or null when it stays as it is.</summary>
     MExpr? TrySpecialize(CallExpr c, MethodSym m, List<MExpr> args, MExpr? recv)
     {
-        if (SpecializeOff || specializing != null || soa != null || inParallelGen || recv != null || c.Recv != null || c.Safe) return null;
+        if (SpecializeOff || NoSpecialize || specializing != null || soa != null || inParallelGen || recv != null || c.Recv != null || c.Safe) return null;
         if (m.Decl is not { HasBody: true } d || d.File != File || m.Owner != Type || !StaticMethod(m)) return null;
         if (Method != null ? !StaticMethod(Method) || Method.Owner != Type : Type.Kind != "program") return null;
         if (m.TypeParams.Count > 0 || m.HasInferredGenerics || m.Instances.Count > 0 || m.IsAsync || m.IsIterator || m.IsCtor) return null;

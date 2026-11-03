@@ -437,18 +437,22 @@ public class IlLowerTests
         Assert.Equal(3, ctx.Unsupported.Count);
     }
 
+    static readonly AirType LockT = new AirType.ClrRef("global::System.Threading.Lock", typeof(Lock), []);
+    static MExpr IsEntered() => new MCall { Target = AirTypeRef.Named("global::System.Threading.Monitor"), Name = "IsEntered", Args = { L("gate", O) }, Type = B };
+    static MExpr Held() => new MMember { Target = L("l", LockT), Name = "IsHeldByCurrentThread", Type = B };
+
     static List<MStmt> UsingProgram() =>
     [
         new MUsing { Name = "c", Value = new MNew { TypeCs = "CRes", Type = Alice("CRes", "class") }, Body = { Out("c;") } },
-        new MUsing { Name = "n", Value = C("(CRes?)null", Alice("CRes", "class")), Body = { Out("n;") } },
+        new MUsing { Name = "n", Value = new MCast { TypeCs = "CRes?", E = new AirNull(), Type = Alice("CRes", "class") }, Body = { Out("n;") } },
         new MUsing { Name = "s", Value = new MNew { TypeCs = "SRes", Type = Alice("SRes", "struct") }, Body = { Out("s;") } },
-        Out(C("Log.Text")),
-        Decl("gate", "object", C("new object()", O)),
-        new MBlock { Lock = L("gate", O), Body = { Out(C("global::System.Threading.Monitor.IsEntered(gate)")) } },
-        Out(C("global::System.Threading.Monitor.IsEntered(gate)")),
-        Decl("l", "global::System.Threading.Lock", C("new global::System.Threading.Lock()", new AirType.ClrRef("global::System.Threading.Lock", typeof(Lock), []))),
-        new MBlock { Lock = L("l", new AirType.ClrRef("global::System.Threading.Lock", typeof(Lock), [])), Body = { Out(C("l.IsHeldByCurrentThread")) } },
-        Out(C("l.IsHeldByCurrentThread")),
+        Out(new MMember { Target = AirTypeRef.Named("Log"), Name = "Text" }),
+        Decl("gate", "object", new MNew { TypeCs = "object", Type = O }),
+        new MBlock { Lock = L("gate", O), Body = { Out(IsEntered()) } },
+        Out(IsEntered()),
+        Decl("l", "global::System.Threading.Lock", new MNew { TypeCs = "global::System.Threading.Lock", Type = LockT }),
+        new MBlock { Lock = L("l", LockT), Body = { Out(Held()) } },
+        Out(Held()),
     ];
 
     const string ResClasses =
@@ -577,7 +581,7 @@ public class IlLowerTests
         Out(";"),
         new MForeach
         {
-            Vars = { "s" }, Coll = C("new string?[] { \"apple\", \"kiwi\", \"fig\", \"banana\", \"pear\", null, \"plum\", \"\", \"Fig\" }", new AirType.Array(NS)),
+            Vars = { "s" }, Coll = new MNewArray { ElemCs = "string?", Items = new object?[] { "apple", "kiwi", "fig", "banana", "pear", null, "plum", "", "Fig" }.Select(K).ToList(), Type = new AirType.Array(NS) },
             Body = { Chain(() => L("s", NS), [(["apple"], Arm("1")), (["kiwi"], Arm("2")), (["fig"], Arm("3")), (["pear", "plum"], Arm("4"))], Arm("-")) },
         },
         Out(";"),
@@ -659,7 +663,7 @@ public class IlLowerTests
             Out(L("a", I)), Out(L("b", I)),
             Decl("t", "(int n1, int n2, int n3, int n4, int n5, int n6, int n7, int n8, int n9)", new MTuple { Items = Enumerable.Range(1, 9).Select(k => (MExpr)K(k * 10)).ToList(), Type = nine }),
             Out(new MMember { Target = L("t", nine), Name = "n9" }), Out(new MMember { Target = L("t", nine), Name = "n3" }),
-            Decl("kv", "global::System.Collections.Generic.KeyValuePair<string, int>", C("new global::System.Collections.Generic.KeyValuePair<string, int>(\"k\", 5)", KV)),
+            Decl("kv", "global::System.Collections.Generic.KeyValuePair<string, int>", new MNew { TypeCs = "global::System.Collections.Generic.KeyValuePair<string, int>", Args = { K("k"), K(5) }, Type = KV }),
             new MDeconstruct { Names = { "k", "v" }, Declare = true, Value = L("kv", KV) },
             Out(L("k", S)), Out(L("v", I)),
         ];
@@ -717,21 +721,23 @@ public class IlLowerTests
         Assert.Equal(["three-valued `bool?` operator &"], ctx.Unsupported);
     }
 
+    static MExpr Nulls(AirType arr) => new MNewArray { ElemCs = "int?", Items = [K(null), K(3), K(-2)], Type = arr };
+
     static List<MStmt> NullableProgram()
     {
         var arr = new AirType.Array(NI);
         var row = new List<MStmt>
         {
             Out(Bin(AirBinOp.Add, L("a", NI), L("b", NI), NI)), Out(","),
-            Out(Bin(AirBinOp.Mul, L("a", NI), new MCall { Target = C("N"), Name = "Three", Type = NI }, NI)), Out(","),
+            Out(Bin(AirBinOp.Mul, L("a", NI), new MCall { Target = AirTypeRef.Named("N"), Name = "Three", Type = NI }, NI)), Out(","),
             Out(Bin(AirBinOp.Lt, L("a", NI), L("b", NI), B)), Out(","),
-            Out(Bin(AirBinOp.Ge, L("a", NI), new MCall { Target = C("N"), Name = "Two", Type = I }, B)), Out(","),
+            Out(Bin(AirBinOp.Ge, L("a", NI), new MCall { Target = AirTypeRef.Named("N"), Name = "Two", Type = I }, B)), Out(","),
             Out(Bin(AirBinOp.Eq, L("a", NI), L("b", NI), B)), Out(","),
             Out(Bin(AirBinOp.Ne, L("a", NI), L("b", NI), B)), Out(","),
             Out(Bin(AirBinOp.Eq, L("a", NI), K(3), B)), Out(","),
             Out(Bin(AirBinOp.Eq, L("a", NI), K(null), B)), Out(","),
             Out(Bin(AirBinOp.Coalesce, L("a", NI), K(7), I)), Out(","),
-            Out(Bin(AirBinOp.Coalesce, L("a", NI), new MCall { Target = C("N"), Name = "Two", Type = I }, I)), Out(","),
+            Out(Bin(AirBinOp.Coalesce, L("a", NI), new MCall { Target = AirTypeRef.Named("N"), Name = "Two", Type = I }, I)), Out(","),
             Out(Bin(AirBinOp.Coalesce, L("a", NI), L("b", NI), NI)), Out(","),
             Out(new MUnary { Op = AirUnOp.Neg, E = L("a", NI), Type = NI }), Out(";"),
         };
@@ -739,10 +745,10 @@ public class IlLowerTests
         [
             new MForeach
             {
-                Vars = { "a" }, Coll = C("new int?[] { null, 3, -2 }", arr),
-                Body = { new MForeach { Vars = { "b" }, Coll = C("new int?[] { null, 3, -2 }", arr), Body = row } },
+                Vars = { "a" }, Coll = Nulls(arr),
+                Body = { new MForeach { Vars = { "b" }, Coll = Nulls(arr), Body = row } },
             },
-            Out(C("N.Calls")),
+            Out(new MMember { Target = AirTypeRef.Named("N"), Name = "Calls" }),
         ];
     }
 

@@ -67,7 +67,7 @@ public sealed partial class AirToIl
         }).ToList();
         binder = new Binder(asts, new ClrTypes(refs));
         binder.Bind();
-        lowerer = new Lowerer(binder) { Sequential = !ParallelOn };
+        lowerer = new Lowerer(binder) { Sequential = !ParallelOn, NoSpecialize = true };
         Module = new IlModule(name);
         Types = new IlTypes(binder, Module);
         Types.InstantiateType = InstantiateTypeImpl; // D1.10 il-emit2
@@ -308,6 +308,7 @@ public sealed partial class AirToIl
             foreach (var b in a.Sym.Bases)
             {
                 if (b.Sym != null && Types.BySym.TryGetValue(b.Sym, out var bi) && bi.IsInterface) a.Def.Interfaces.Add(bi.Il);
+                else if (b.Sym != null && genericBySym.ContainsKey(b.Sym) && Types.Alice(Types.FromAType(b)) is { IsInterface: true } gi) a.Def.Interfaces.Add(gi.Il);   // class C < Source(Int32)
                 else if (b.Sym == null && b.Clr is { IsInterface: true }) a.Def.Interfaces.Add(Types.Il(Types.FromAType(b)));
             }
             if (!a.IsStatic && !a.IsVariant && !a.IsAdt) a.Def.AddCustomAttribute(Module.Import(typeof(Alice.Runtime.AliceTypeAttribute).GetConstructor(Type.EmptyTypes)!));
@@ -757,9 +758,10 @@ public sealed partial class AirToIl
     {
         foreach (var b in a.Sym.Bases)
         {
-            if (b.Sym != null && Types.BySym.TryGetValue(b.Sym, out var bi) && bi.IsInterface && bi.Sym.Methods.Values.SelectMany(x => x).Any(x => x.CsName == name && x.Params.Count == argc)) return true;
-            if (b.Sym != null && Types.BySym.TryGetValue(b.Sym, out var pi) && pi.IsInterface && name.Length > 4 && name[3] == '_' && name[..3] is "get" or "set"
-                && pi.Sym.Fields.Values.Any(f => f.Kind is "property" or "getter" or "setter" && Bare(f.CsName).Equals(name[4..], StringComparison.OrdinalIgnoreCase)
+            var ifc = b.Sym != null ? (Types.BySym.TryGetValue(b.Sym, out var found) ? found : genericBySym.ContainsKey(b.Sym) ? Types.Alice(Types.BaseOf(a, b) ?? typeof(void)) : null) : null;
+            if (ifc != null && ifc.IsInterface && ifc.Sym.Methods.Values.SelectMany(x => x).Any(x => x.CsName == name && x.Params.Count == argc)) return true;
+            if (ifc != null && ifc.IsInterface && name.Length > 4 && name[3] == '_' && name[..3] is "get" or "set"
+                && ifc.Sym.Fields.Values.Any(f => f.Kind is "property" or "getter" or "setter" && Bare(f.CsName).Equals(name[4..], StringComparison.OrdinalIgnoreCase)
                     && (name[0] == 'g' ? f.Kind != "setter" : f.Kind != "getter"))) return true;   // interface property accessors
             if (b.Sym == null && b.Clr is { IsInterface: true } ci && ci.GetMethods().Concat(ci.GetInterfaces().SelectMany(i => i.GetMethods())).Any(x => x.Name == name && x.GetParameters().Length == argc)) return true;
         }

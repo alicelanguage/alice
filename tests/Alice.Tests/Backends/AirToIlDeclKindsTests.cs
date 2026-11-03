@@ -210,4 +210,44 @@ public class AirToIlDeclKindsTests
         Assert.Equal("X1", cfg.GetMethod("old")!.GetCustomAttributes(typeof(ObsoleteAttribute), false).Cast<ObsoleteAttribute>().Single().DiagnosticId);
         Assert.Equal("field", cfg.GetField("_x", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetCustomAttributes(typeof(ObsoleteAttribute), false).Cast<ObsoleteAttribute>().Single().Message);
     }
+
+    [Fact]
+    public void Lambdas_literal_blocks_delegates_events_and_interface_defaults() => Same("""
+        def twice(x : Int32, &f : Int32 -> Int32) : Int32
+          f.(f.(x))
+        end
+        y = 10
+        puts twice(3) { |q| q + 1 }
+        puts twice(3) { |q| q + y }
+        op = ->(a : Int32, b : Int32) { a * b + y }
+        puts op.(2, 3)
+        puts [1, 2, 3].map { |v| v * y }.sum
+        delegate Op(a : Int32, b : Int32) : Int32
+        def apply(f : Op, x : Int32) : Int32
+          f.(x, x)
+        end
+        puts apply(->(a : Int32, b : Int32) { a + b + y }, 5)
+        class Btn
+          event clicked : EventHandler
+          def fire
+            clicked&.Invoke(self, EventArgs.Empty)
+          end
+        end
+        b = Btn.new
+        b.clicked += ->(s : Object?, e : EventArgs) { puts "hit #{y}" }
+        b.fire
+        interface Greet
+          def name : String
+          def greet : String
+            "hi " + name
+          end
+        end
+        class Bob < Greet
+          def name : String
+            "bob"
+          end
+        end
+        g : Greet = Bob.new
+        puts g.greet
+        """);
 }

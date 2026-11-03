@@ -41,6 +41,7 @@ internal sealed class AliceT
     public TypeSym Sym = null!;
     public TypeScope? Scope;             // a generic type's instance: T -> concrete
     public AliceT? GenericDef;
+    public Type? OpenProxy;              // a generic type definition: its generic stand-in (see IlTypes.MakeOpenProxy)
     public Type[] TypeArgs = [];
     public IlTypeDef Def = null!;
     public Type Proxy = null!;
@@ -283,7 +284,8 @@ internal sealed class IlTypes
         {
             var args = SplitTop(bare[(lt + 1)..^1]).Select(TryParse).ToList();
             if (args.Any(a => a == null)) return null;
-            if (GenericDefs.TryGetValue(bare[..lt] + "`" + args.Count, out var gdef)) return InstantiateType!(gdef, args.ToArray()!).Proxy;
+            if (GenericDefs.TryGetValue(bare[..lt] + "`" + args.Count, out var gdef))
+                return args.Any(x => x!.ContainsGenericParameters) ? gdef.OpenProxy!.MakeGenericType(args.ToArray()!) : InstantiateType!(gdef, args.ToArray()!).Proxy;
             var open = binder.Clr.Find(bare[..lt], args.Count, Usings);
             return open?.MakeGenericType(args.ToArray()!);
         }
@@ -455,6 +457,45 @@ internal sealed class IlTypes
     static bool IsSignedSmall(Type t) => t == typeof(int) || t == typeof(short) || t == typeof(sbyte);
     public static Type Widen(Type t) => t == typeof(byte) || t == typeof(sbyte) || t == typeof(short) || t == typeof(ushort) || t == typeof(char) ? typeof(int) : t;
 
+    /// <summary>The type a base/interface clause of <paramref name="s"/> names (a generic instance resolves in the scope of <paramref name="s"/>).</summary>
+    public Type? BaseOf(AliceT s, AType b)
+    {
+        var prev = Scope;
+        Scope = s.Scope;
+        try { return b.Sym != null && BySym.TryGetValue(b.Sym, out var bi) ? bi.Proxy : TryParse(b.Cs); }
+        finally { Scope = prev; }
+    }
+
+    /// <summary>The generic stand-in of generic Alice type <paramref name="def"/> (arity of its type parameters): the pattern
+    /// `Box&lt;!!0&gt;` that generic-method inference unifies against the instances.</summary>
+    public Type MakeOpenProxy(AliceT def)
+    {
+        var tb = proxies.DefineType("G" + pn++ + "_" + def.Sym.Name, TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Class);
+        tb.DefineGenericParameters([.. def.Sym.TypeParams]);
+        var t = tb.CreateType();
+        OpenDefs[t] = def;
+        return t;
+    }
+
+    public readonly Dictionary<Type, AliceT> OpenDefs = new();
+
+    /// <summary>An instance proxy and what it derives from / implements, as instance proxies (for inference through bases and interfaces).</summary>
+    IEnumerable<Type> AliceSupertypes(Type t)
+    {
+        var seen = new HashSet<Type>();
+        var work = new Stack<Type>();
+        work.Push(t);
+        while (work.Count > 0)
+        {
+            var x = work.Pop();
+            if (!seen.Add(x)) continue;
+            yield return x;
+            if (!ByProxy.TryGetValue(x, out var a)) continue;
+            foreach (var b in a.Sym.Bases)
+                if (BaseOf(a, b) is { } bt) work.Push(bt);
+        }
+    }
+
     /// <summary>Reference/boxing assignability, with Alice interfaces and base classes.</summary>
     public bool Assignable(Type from, Type to)
     {
@@ -466,10 +507,7 @@ internal sealed class IlTypes
             {
                 if (s.ClrBase != null && to.IsAssignableFrom(s.ClrBase)) return true;
                 foreach (var b in s.Sym.Bases)
-                {
-                    if (b.Sym != null && BySym.TryGetValue(b.Sym, out var bi) && (bi.Proxy == to || Assignable(bi.Proxy, to))) return true;
-                    if (b.Sym == null && TryParse(b.Cs) is { } bt && (bt == to || to.IsAssignableFrom(bt))) return true;
-                }
+                    if (BaseOf(s, b) is { } bt && (bt == to || Assignable(bt, to) || to.IsAssignableFrom(bt))) return true;
             }
         }
         return false;
@@ -592,10 +630,22 @@ internal sealed class IlTypes
     public static IEnumerable<MethodInfo> PreludeNamed(string name) => PreludeStatics.Where(m => m.Name == name);
 
     /// <summary>Binds generic parameters of <paramref name="p"/> from <paramref name="a"/> (T, T[], C&lt;T&gt; through bases and interfaces).</summary>
-    public static void Unify(Type p, Type a, Type?[] bound)
+    public void Unify(Type p, Type a, Type?[] bound)
     {
         if (p.IsByRef) p = p.GetElementType()!;
         if (a.IsByRef) a = a.GetElementType()!;
+        if (p.IsGenericType && !p.IsGenericTypeDefinition && OpenDefs.TryGetValue(p.GetGenericTypeDefinition(), out var gd))
+        {
+            // Box<!!0> against an instance of generic Alice type Box (or a type deriving from / implementing one)
+            var pargs = p.GetGenericArguments();
+            foreach (var s in AliceSupertypes(a))
+                if (ByProxy.TryGetValue(s, out var inst) && inst.GenericDef == gd)
+                {
+                    for (int i = 0; i < pargs.Length; i++) Unify(pargs[i], inst.TypeArgs[i], bound);
+                    return;
+                }
+            return;
+        }
         if (p.IsGenericParameter)
         {
             if (p.DeclaringMethod != null) bound[p.GenericParameterPosition] ??= a;
@@ -710,7 +760,16 @@ internal sealed class IlTypes
             // an Alice generic method: infer its type arguments like a CLR one, then use the monomorphic instance
             var bound = new Type?[tps.Length];
             for (int i = 0; i < Math.Min(c.Params.Length, args.Count); i++)
-                if (!args[i].IsNull) Unify(c.Params[i], args[i].Type, bound);
+                if (!args[i].IsNull && args[i].Type != LambdaArg) Unify(c.Params[i], args[i].Type, bound);
+            for (int i = 0; i < Math.Min(c.Params.Length, args.Count) && bound.Any(b => b == null) && LambdaReturn != null; i++)
+            {
+                if (args[i].Type != LambdaArg || !IsDelegate(c.Params[i])) continue;
+                var linv = c.Params[i].GetMethod("Invoke");
+                if (linv == null || !linv.ReturnType.ContainsGenericParameters) continue;
+                var lps = linv.GetParameters().Select(p => Subst(p.ParameterType, bound)).ToArray();
+                if (lps.Any(p => p == null)) continue;
+                if (LambdaReturn(args[i].Literal!, lps!) is { } r && r != typeof(void)) Unify(linv.ReturnType, r, bound);
+            }
             if (bound.Any(b => b == null) || InstantiateMethod!(template, bound!) is not { } inst) yield break;
             c = c with { Alice = inst, Params = inst.Params, Ret = inst.Ret };
         }

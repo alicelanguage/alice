@@ -155,10 +155,12 @@ interface methods and interface properties; `@[Stack]` structs (`IsByRefLikeAttr
 attributes on methods/fields as custom-attribute blobs (literal arguments, named arguments); events (field plus
 `add_`/`remove_` with `Interlocked.CompareExchange`, `+=`/`-=` on Alice and CLR events).
 Still `IlUnsupportedException` (each names its kind, see `Decl:*` in `AirToIl.Decls.cs`): refinement types, SoA,
-`__class_body`, enumerable bridges, generic types nested in generic types or over a generic method's parameter, generic
-interfaces and abstract/constructor generic methods, generic sum types (no front-end syntax yet), `ref`/`out` parameters
-of non-FFI methods, attributes with non-literal arguments or `param:`/`return:` targets, `MLambda` (closure conversion is
-not wired), C# helper text from the lowerer (`Lowerer.Extra`, specializations, GPU). `ALICE_IL_SYNTH=0` keeps the old mirrored declarations for A/B comparison; it is a temporary
+`__class_body`, enumerable bridges, generic types nested in generic types, abstract/constructor/interface generic methods,
+generic sum types (no front-end syntax yet), `ref`/`out` parameters of non-FFI methods, attributes with non-literal
+arguments or `param:`/`return:` targets, C# helper text from the lowerer (`Lowerer.Extra`, GPU). Generic methods infer
+their arguments through generic types (`Box<!!0>` is matched against instances via `IlTypes.MakeOpenProxy`/`Unify`),
+interfaces and lambda results; the IL path lowers with `Lowerer.NoSpecialize` (higher-order specialization clones are C#
+text; a call keeps its delegate, same output). `ALICE_IL_SYNTH=0` keeps the old mirrored declarations for A/B comparison; it is a temporary
 switch and goes away with the mirror (`DeclareMembers`, `SyntheticCtor`, `CtorPrologue`). Differential tests (C# stdout
 == IL stdout): `StateMachinesTests.Il_*`, `DynSitesTests`, `SynthesizeTests.Il_backend_prints_...`,
 `AirToIlInteropTests`.
