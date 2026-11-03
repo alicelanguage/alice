@@ -78,10 +78,14 @@ public sealed partial class AirToWasm
     {
         var c = new AirToWasm(options ?? new WasmOptions());
         // ADR 0037 arena enums: u64 terms in linear-memory slabs (WasmBody.Arena.cs), or heap records with WasmOptions.Arena = false
+        // thread-static compile state set by the other backends (il-emit: Pipeline.Backend = Il) must not leak in:
+        // the wasm compile runs the C# pass set and lowers (IlLowering) itself, serially
         var saved = AffinePlan.Disable;
+        var savedBackend = Optimizer.Pipeline.Backend;
         AffinePlan.Disable = !c.Opt.Arena;
+        Optimizer.Pipeline.Backend = Optimizer.AirBackend.CSharp;
         try { return c.Run(files); }
-        finally { AffinePlan.Disable = saved; }
+        finally { AffinePlan.Disable = saved; Optimizer.Pipeline.Backend = savedBackend; }
     }
 
     /// <summary>The runtime sources (embedded from src/Alice.Core.Wasm, or read from the source tree in development).</summary>
@@ -247,9 +251,10 @@ public sealed partial class AirToWasm
         ("System.Collections.Generic.KeyNotFoundException", "The given key was not present in the dictionary."),
         ("System.InvalidOperationException", "Operation is not valid due to the current state of the object."),
         ("System.ArgumentException", "Value does not fall within the expected range."),
+        ("System.InvalidOperationException", "arena: stale term (a term of an ended region, or a forged word)"),
     ];
 
-    internal const int ErrIndex = 1, ErrOverflow = 2, ErrDivZero = 3, ErrNull = 4, ErrFormat = 5, ErrRange = 6, ErrCast = 7, ErrStack = 8, ErrMemory = 9, ErrKey = 10, ErrState = 11, ErrArg = 12;
+    internal const int ErrIndex = 1, ErrOverflow = 2, ErrDivZero = 3, ErrNull = 4, ErrFormat = 5, ErrRange = 6, ErrCast = 7, ErrStack = 8, ErrMemory = 9, ErrKey = 10, ErrState = 11, ErrArg = 12, ErrStaleTerm = 13;
 
     WasmFunc? throwCode;
 

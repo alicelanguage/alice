@@ -357,9 +357,9 @@
     (local $p i32) (local $k i32) (local $last i32) (local $v i64)
     (loop $tail
       (if (i32.and (i32.wrap_i64 (i64.shr_u (local.get $t) (i64.const 32))) (i32.const -2130706433)) (then (return)))
-      ;; a term past the cursor (of an ended region, or forged): InvalidOperationException, as Arena.DropRec
+      ;; a term past the cursor (of an ended region, or forged): InvalidOperationException (code 13, arena: stale term)
       (if (i32.ge_u (i32.wrap_i64 (local.get $t)) (i32.load offset=4 (call $arena_state (local.get $w))))
-        (then (call $throw_code (i32.const 11)) (unreachable)))
+        (then (call $throw_code (i32.const 13)) (unreachable)))
       (local.set $p (call $arena_slot (local.get $w) (i32.wrap_i64 (local.get $t))))
       (local.set $last (i32.const -1))
       (local.set $k (i32.const 0))

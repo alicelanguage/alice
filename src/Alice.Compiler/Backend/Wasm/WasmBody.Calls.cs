@@ -81,7 +81,7 @@ public sealed partial class WasmBody
             }
         }
         if (call.Safe) throw No("MCall:safe-navigation", call.Name);
-        if (call.Args.Any(a => a is MArg)) throw No("MCall:named-or-ref-argument", call.Name);
+        if (call.Args.Any(a => a is MArg) && !(call.Name == "Deconstruct" && call.Target != null && Ty(call.Target) is { K: WK.Struct } kt && c.IsKvp(kt.Cls!))) throw No("MCall:named-or-ref-argument", call.Name);
         if (call.Target == null)
         {
             var m = Resolve(owner, call.Name, call.Args, instance: !isStatic) ?? (owner != c.ProgramC ? Resolve(c.ProgramC, call.Name, call.Args, instance: false) : null);
@@ -467,6 +467,15 @@ public sealed partial class WasmBody
         }
         if (tt.IsNumeric || tt.K is WK.Char or WK.Bool) return NumberMethod(target!, tt, n, a);
         if (tt.K == WK.Struct && c.IsListEnumerator(tt.Cls!)) return EnumeratorMethod(target!, tt, n, a);
+        if (tt.K == WK.Struct && c.DictEnumeratorDict(tt.Cls!) is { } ed) return DictEnumeratorMethod(target!, tt, ed, n, a);
+        if (tt.K == WK.Struct && c.IsKvp(tt.Cls!) && n == "Deconstruct" && a.Count == 2)
+        {
+            // kv.Deconstruct(out k, out v)
+            if (a[0] is not MArg { E: var ko } || a[1] is not MArg { E: var vo }) throw No("Intrinsic:KeyValuePair.Deconstruct");
+            Assign(new MAssign { Target = ko, Op = "=", Value = new MMember { Target = target!, Name = "Key" } });
+            Assign(new MAssign { Target = vo, Op = "=", Value = new MMember { Target = target!, Name = "Value" } });
+            return WT.Void;
+        }
         if (tt.K == WK.Class && n == "ToString" && a.Count == 0) { Emit(target!, tt); ToStr(tt, csharp: true); return WT.Str; }
         if (tt.K == WK.Class && c.IsException(tt.Cls!) && n == "ToString") { Emit(target!, tt); ToStr(tt, csharp: true); return WT.Str; }
         if (tt.K == WK.Func && n == "Invoke") return Invoke(new MInvoke { Target = target!, Args = a });
@@ -820,6 +829,7 @@ public sealed partial class WasmBody
     /// <summary>`xs.sum { |x| f(x) }` / `par_sum` (serial: one thread): the closure over each element, summed.</summary>
     WT SumMap(MExpr target, WT at, MExpr f)
     {
+        if (f is MLambda lam) lambdaHints.TryAdd(lam, [at.Elem!]);
         var ft = Ty(f);
         if (ft.K != WK.Func || ft.Params.Length != 1) throw No("Intrinsic:sum-closure", ft.Name);
         var r = ft.Ret!;
@@ -1023,6 +1033,7 @@ public sealed partial class WasmBody
             case WK.Dict when n == "Count": Emit(m.Target, tt); NullCheck(); code.Mem(Op.I32Load, 8); return WT.I32;
         }
         if (tt.K == WK.Struct && c.IsListEnumerator(tt.Cls!) && n == "Current") return EnumeratorCurrent(m.Target, tt);
+        if (tt.K == WK.Struct && c.DictEnumeratorDict(tt.Cls!) is { } cd && n == "Current") return DictEnumeratorCurrent(m.Target, tt, cd);
         if (tt.K is WK.Class or WK.Struct)
         {
             var f = tt.Cls!.FindField(n) ?? tt.Cls!.FindField("@" + n);
@@ -1260,6 +1271,16 @@ public sealed partial class WasmBody
     {
         switch (n, a.Count)
         {
+            case ("GetEnumerator", 0):
+                {
+                    // the enumerator struct [dict, position -1] in a frame temp
+                    var et = c.DictEnumerator(t).Type;
+                    var tmp = FrameTemp(et);
+                    code.Get(Fp()); Emit(target, t); code.Mem(Op.I32Store, (uint)tmp.Frame);
+                    code.Get(Fp()); code.I32(-1); code.Mem(Op.I32Store, (uint)tmp.Frame + 4);
+                    FrameAddr(tmp.Frame);
+                    return et;
+                }
             case ("ContainsKey" or "has_key_q" or "key_q" or "include_q", 1):
                 Operands([Opnd(target, t), Opnd(a[0], t.KeyT!)]);
                 code.Call(c.DictFind(t));
@@ -1300,6 +1321,50 @@ public sealed partial class WasmBody
             case ("Dispose", 0): return WT.Void;
         }
         throw No("Intrinsic:List.Enumerator." + n);
+    }
+
+    WT DictEnumeratorMethod(MExpr target, WT t, WT d, string n, List<MExpr> a)
+    {
+        switch (n, a.Count)
+        {
+            case ("MoveNext", 0):
+                {
+                    // index = next live position after index; index < used
+                    Emit(target, t);
+                    int en = Temp(ValType.I32), i = Temp(ValType.I32);
+                    code.Tee(en);
+                    code.Get(en); code.Mem(Op.I32Load); code.Get(en); code.Mem(Op.I32Load, 4); code.Call(c.DictNext(d)); code.Tee(i);
+                    code.Mem(Op.I32Store, 4);
+                    code.Get(i);
+                    code.Get(en); code.Mem(Op.I32Load); code.Mem(Op.I32Load, 32);
+                    code.Emit(Op.I32LtS);
+                    return WT.Bool;
+                }
+            case ("Dispose", 0): Emit(target, t); code.Emit(Op.Drop); return WT.Void;
+        }
+        throw No("Intrinsic:Dictionary.Enumerator." + n);
+    }
+
+    /// <summary>The current entry as a KeyValuePair struct in a frame temp: key and value of hash slot order[index].</summary>
+    WT DictEnumeratorCurrent(MExpr target, WT t, WT d)
+    {
+        var kt = c.Kvp(d.KeyT!, d.Elem!).Type;
+        var kc = kt.Cls!;
+        var tmp = FrameTemp(kt);
+        int dl = Temp(ValType.I32), s = Temp(ValType.I32);
+        Emit(target, t);
+        int en = Temp(ValType.I32);
+        code.Tee(en); code.Mem(Op.I32Load); code.Set(dl);
+        code.Get(dl); code.Mem(Op.I32Load, 28); code.Get(en); code.Mem(Op.I32Load, 4); code.I32(2); code.Emit(Op.I32Shl); code.Emit(Op.I32Add); code.Mem(Op.I32Load, 8); code.Set(s);
+        foreach (var (f, arr, ft) in new[] { (kc.FieldsByName["Key"], 16u, d.KeyT!), (kc.FieldsByName["Value"], 20u, d.Elem!) })
+        {
+            FrameAddr(tmp.Frame + f.Offset);
+            code.Get(dl); code.Mem(Op.I32Load, arr); code.Get(s); code.I32(ft.Size); code.Emit(Op.I32Mul); code.Emit(Op.I32Add);
+            if (ft.IsStruct) { code.I32(8); code.Emit(Op.I32Add); code.I32(ft.Size); code.Call(c.Rt.Func("memcpy")); }
+            else { code.Mem(ft.Load, 8); code.Mem(ft.Store); }
+        }
+        FrameAddr(tmp.Frame);
+        return kt;
     }
 
     WT EnumeratorCurrent(MExpr target, WT t)

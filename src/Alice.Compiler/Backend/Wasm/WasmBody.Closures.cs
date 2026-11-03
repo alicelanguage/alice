@@ -244,6 +244,10 @@ public sealed partial class WasmBody
         return null;
     }
 
+    /// <summary>Parameter types of a block the lowering left untyped, from the call that takes it (`xs.par_sum { |x| ... }`:
+    /// the element type).</summary>
+    readonly Dictionary<MLambda, WT[]> lambdaHints = new(ReferenceEqualityComparer.Instance);
+
     (List<WT> Ps, List<string> Names, WT? Ret) LambdaSignature(MLambda lam)
     {
         var ps = new List<WT>();
@@ -255,6 +259,7 @@ public sealed partial class WasmBody
             names.Add(AirToWasm.Bare(parts[^1]));
             if (parts.Length > 1) ps.Add(c.Parse(string.Join(" ", parts[..^1]), span));
             else if (ft != null && i < ft.Params.Length) ps.Add(ft.Params[i]);
+            else if (lambdaHints.TryGetValue(lam, out var hint) && i < hint.Length) ps.Add(hint[i]);
             else throw No("MLambda:untyped-parameter", parts[^1]);
         }
         return (ps, names, ft?.Ret);
