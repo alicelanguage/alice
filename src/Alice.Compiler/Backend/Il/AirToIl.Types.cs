@@ -46,7 +46,7 @@ internal sealed class AliceT
     public Type Proxy = null!;
     public AliceT? Base;
     public Type? ClrBase;
-    public bool IsValueType, IsInterface, IsEnum, IsStatic, IsRecord, IsAdt, IsVariant;
+    public bool IsValueType, IsInterface, IsEnum, IsStatic, IsRecord, IsAdt, IsVariant, IsDelegate;
     public Type? EnumUnderlying;
     public readonly Dictionary<TypeSym, AliceT> InstVariants = new();   // a generic sum type's instance: its nested variants
     public readonly Dictionary<string, AField> Fields = new(StringComparer.Ordinal);
@@ -161,6 +161,20 @@ internal sealed class IlTypes
             try { t = proxies.DefineType(name, TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Class, parent ?? typeof(object)).CreateType(); }
             catch (Exception) when (parent != null) { t = proxies.DefineType(name + "_", TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Class).CreateType(); }
         }
+        ByProxy[t] = a;
+        return t;
+    }
+
+    /// <summary>The reflection stand-in of an Alice delegate type: a sealed MulticastDelegate with the runtime-implemented
+    /// constructor and Invoke, so overload resolution and conversions see a real delegate.</summary>
+    public Type MakeDelegateProxy(AliceT a, Type ret, Type[] ps)
+    {
+        var tb = proxies.DefineType("P" + pn++ + "_" + a.Sym.Name, TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.Class, typeof(MulticastDelegate));
+        var ctor = tb.DefineConstructor(MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.RTSpecialName | MethodAttributes.SpecialName, CallingConventions.Standard, [typeof(object), typeof(IntPtr)]);
+        ctor.SetImplementationFlags(MethodImplAttributes.Runtime | MethodImplAttributes.Managed);
+        var inv = tb.DefineMethod("Invoke", MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Virtual, ret, ps);
+        inv.SetImplementationFlags(MethodImplAttributes.Runtime | MethodImplAttributes.Managed);
+        var t = tb.CreateType();
         ByProxy[t] = a;
         return t;
     }

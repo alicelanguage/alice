@@ -85,6 +85,9 @@ public sealed partial class AirToIl
         catch (IlUnsupportedException e) { Fail(e); }
         if (errors.Count > 0) return new IlCompileResult(null, null, Stats, errors);
         Module.EntryPoint = main;
+        foreach (var hook in IlPipeline.BeforeEncode)
+            foreach (var m in Module.TypeDefOrder().SelectMany(t => t.Methods))
+                if (m.Body is { } b) hook(m, b);
         try
         {
             var (pe, pdb) = Module.Emit();
@@ -200,7 +203,7 @@ public sealed partial class AirToIl
             switch (it)
             {
                 case LibDecl: continue; // H5 il-emit2: DeclareLibs below
-                case DelegateDecl: throw new IlUnsupportedException("Decl:delegate", Sp(it));
+
                 case TypeDecl { RefineScope: not null }: throw new IlUnsupportedException("Decl:refinement", Sp(it));
             }
             if (outer?.Sym is TypeSym { TypeParams.Count: > 0 }) throw new IlUnsupportedException("Decl:type-nested-in-generic", Sp(it));
@@ -218,6 +221,7 @@ public sealed partial class AirToIl
                 a.IsRecord = td.Kind.StartsWith("record");
                 if (sym.IsStack) throw new IlUnsupportedException("Decl:ref-struct", Sp(it), sym.Name);
             }
+            else if (it is DelegateDecl) a.IsDelegate = true;
             else if (it is EnumDecl ed)
             {
                 if (ed.IsAdt) a.IsAdt = true;
@@ -253,6 +257,7 @@ public sealed partial class AirToIl
         void Make(AliceT a, Item? it, string ns, AliceT? outer)
         {
             if (made.Contains(a)) return;
+            if (a.IsDelegate) return;   // after every other proxy: its signature needs them (MakeDelegate)
             if (outer != null) MakeOf(outer);
             if (a.Sym.BaseClass is { } bc && Types.BySym.TryGetValue(bc, out var ba)) { MakeOf(ba); a.Base = ba; }
             if (!made.Add(a)) return;
@@ -285,6 +290,8 @@ public sealed partial class AirToIl
             }
         }
         foreach (var (_, a) in decls) MakeOf(a);
+        foreach (var (it, a) in decls)
+            if (it is DelegateDecl dg) MakeDelegate(a, dg, outers[it].Ns);
         foreach (var a in made)
         {
             if (a.IsEnum || a.IsInterface) continue;
@@ -326,10 +333,9 @@ public sealed partial class AirToIl
             if (e.Values[i] is { } ex)
             {
                 var me = Init(ex, binder.Program);
-                if (me is AirConst { Value: int iv }) v = iv;
-                else if (me is AirConst { Value: long lv }) v = lv;
-                else if (me is MCode mc && IlTypes.TryLiteral(mc.Text, out _, out var lit) && lit is int or long or uint or ulong) v = System.Convert.ToInt64(lit);
-                else throw new IlUnsupportedException("Decl:enum-value", Sp(e), e.Names[i]);
+                var known = new Dictionary<string, long>();
+                for (int j = 0; j < r.Count; j++) known[r[j].Item1] = System.Convert.ToInt64(r[j].Item2);
+                v = FoldEnumValue(me, known, e.Name) ?? throw new IlUnsupportedException("Decl:enum-value", Sp(e), e.Names[i] + " (" + me.GetType().Name + (me is MCode fc ? ": " + fc.Text : "") + ")");
             }
             r.Add((e.Names[i], System.Convert.ChangeType(v, under)));
             next = v + 1;
@@ -622,6 +628,7 @@ public sealed partial class AirToIl
         if (!IlLoweringOn) return;
         var ctx = Air.Passes.IlLowering.Run(body);
         foreach (var u in ctx.Unsupported) Stats.Seen("IlLowering.left:" + u.Split(':')[0]);
+        foreach (var make in IlPipeline.AfterLowering) make(ctx).Run(body);
     }
 
     void CheckLowerer(Span? sp)
@@ -710,7 +717,7 @@ public sealed partial class AirToIl
         bool abstractM = d.IsAbstract || a.IsInterface && !d.HasBody;
         if (abstractM) attrs |= MethodAttributes.Abstract | MethodAttributes.Virtual | (virt == " override" ? 0 : MethodAttributes.NewSlot);
         if (!isStatic && !m.IsCtor && ImplementsInterface(a, name, ps.Count)) attrs |= MethodAttributes.Virtual | MethodAttributes.Final | MethodAttributes.NewSlot;
-        if (a.IsInterface && d.HasBody) throw new IlUnsupportedException("Decl:default-interface-method", sp, m.Name);
+        if (a.IsInterface && d.HasBody) attrs |= MethodAttributes.Virtual | MethodAttributes.NewSlot;   // default interface method (D1.10 il-emit2)
         var ilps = ps.Select(Types.Il).ToArray();
         var md = m.IsCtor
             ? a.Def.DefineConstructor((vis == "private" ? MethodAttributes.Private : MethodAttributes.Public) | MethodAttributes.HideBySig, ilps)
@@ -1008,33 +1015,34 @@ public sealed partial class AirToIl
 }
 
 /// <summary>
+/// Extension points of the IL pipeline for the IL-side optimizer (il-opt, Air/Passes/IlOpt, Backend/Il/Opt):
+/// <see cref="AfterLowering"/> MIR passes run per body after IlLowering (before emission);
+/// <see cref="BeforeEncode"/> runs over every emitted body before the module is encoded. Both empty by default.
+/// </summary>
+public static class IlPipeline
+{
+    public static readonly List<Func<Air.Passes.IlLowerContext, Optimizer.IMirPass>> AfterLowering = [];
+    public static readonly List<Action<IlMethodDef, IlBuilder>> BeforeEncode = [];
+}
+
+/// <summary>
 /// Which methods get [MethodImpl(AggressiveOptimization)]: the C# backend's own policy (Emitter.Kernel, LoopLeaves,
-/// LoopNest, PrimitiveLoop), invoked by reflection so the two backends cannot drift.
+/// LoopNest, PrimitiveLoop, internal for this), so the two backends cannot drift.
 /// </summary>
 internal sealed class HotPolicy
 {
     readonly Emitter emitter;
-    static readonly MethodInfo? Kernel = typeof(Emitter).GetMethod("Kernel", BindingFlags.NonPublic | BindingFlags.Static);
-    static readonly MethodInfo? LoopLeaves = typeof(Emitter).GetMethod("LoopLeaves", BindingFlags.NonPublic | BindingFlags.Instance);
-    static readonly MethodInfo? LoopNest = typeof(Emitter).GetMethod("LoopNest", BindingFlags.NonPublic | BindingFlags.Static);
-    static readonly MethodInfo? PrimitiveLoop = typeof(Emitter).GetMethod("PrimitiveLoop", BindingFlags.NonPublic | BindingFlags.Instance);
 
-    /// <summary>True when every Emitter policy method was found (a test guards it).</summary>
-    public static bool Available => Kernel != null && LoopLeaves != null && LoopNest != null && PrimitiveLoop != null;
+    /// <summary>The policy is shared by direct calls now; kept for the guard test.</summary>
+    public static bool Available => true;
 
     public HotPolicy(Binder binder) => emitter = new Emitter(binder, sequential: true);
 
     public bool IsHot(MethodDecl? d, MethodSym? m, Instance? inst, List<MStmt> body)
     {
-        if (!Available) return false;
-        try
-        {
-            if (d == null || m == null) return (bool)LoopNest!.Invoke(null, [body, 0])! || (bool)PrimitiveLoop!.Invoke(emitter, [body])!;
-            if ((bool)Kernel!.Invoke(null, [d, m, inst, body])!) return true;
-            if (((HashSet<MethodSym>)LoopLeaves!.Invoke(emitter, [])!).Contains(m)) return true;
-            if (d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline")) return false;
-            return (bool)LoopNest!.Invoke(null, [body, 0])! || !m.IsAsync && !m.UsesYield && (bool)PrimitiveLoop!.Invoke(emitter, [body])!;
-        }
-        catch (TargetInvocationException) { return false; }
+        if (d == null || m == null) return Emitter.LoopNest(body, 0) || emitter.PrimitiveLoop(body);
+        if (Emitter.Kernel(d, m, inst, body) || emitter.LoopLeaves().Contains(m)) return true;
+        if (d.Attrs.Any(x => x is "Hot" or "Inline" or "NoInline")) return false;
+        return Emitter.LoopNest(body, 0) || !m.IsAsync && !m.UsesYield && emitter.PrimitiveLoop(body);
     }
 }
