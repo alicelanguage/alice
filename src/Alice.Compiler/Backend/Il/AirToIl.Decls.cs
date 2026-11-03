@@ -31,6 +31,8 @@ public sealed partial class AirToIl
     internal readonly IlStats Stats = new();
     internal AliceT ProgramT = null!;
     internal string File = "";
+    /// <summary>Source lines per file path: sequence point columns and lengths (review-r1 F19).</summary>
+    internal readonly Dictionary<string, string[]> SourceLines = [];
     internal readonly List<AMethod> Extensions = [];
     readonly List<IlUnsupportedException> errors = [];
     Binder binder = null!;
@@ -53,6 +55,7 @@ public sealed partial class AirToIl
 
     IlCompileResult Run(IReadOnlyList<SourceFile> files, string name, bool exe, IEnumerable<string>? refs)
     {
+        foreach (var f in files) SourceLines[f.Path] = f.Text.Split('\n');
         var asts = files.Select(f =>
         {
             var ast = Parser.ParseFile(f.Text, f.Path);
@@ -687,6 +690,7 @@ public sealed partial class AirToIl
         if (m.IsCtor) name = ".ctor";
         else if (isToString) name = "ToString";
         else if (d.Name == "[]") { name = "get_Item"; special = true; }
+        else if (d.Name == "[]=") { name = "set_Item"; special = true; } // C#: the indexer setter (review-r1 F7 follow-up)
         else if (AliceOps.TryGetValue(d.Name, out var on)) name = m.Params.Count == 0 && AliceUnary.TryGetValue(d.Name, out var un) ? un : on;
         var (vis, virt) = Virtual(m, a, d.Vis);
         var attrs = (vis == "private" ? MethodAttributes.Private : vis == "protected" ? MethodAttributes.Family : MethodAttributes.Public) | MethodAttributes.HideBySig;
