@@ -75,7 +75,12 @@ public sealed partial class AirToWasm
     public static WasmCompileResult Compile(IReadOnlyList<SourceFile> files, WasmOptions? options = null)
     {
         var c = new AirToWasm(options ?? new WasmOptions());
-        return c.Run(files);
+        // ADR 0037 arena enums (u64 terms, AirArena* nodes) are not lowered to linear memory yet: the wasm target
+        // keeps sum types as heap records, as with ALICE_NO_ARENA=1 (benchmarks/wasm/README.md)
+        var saved = AffinePlan.Disable;
+        AffinePlan.Disable = true;
+        try { return c.Run(files); }
+        finally { AffinePlan.Disable = saved; }
     }
 
     /// <summary>The runtime sources (embedded from src/Alice.Core.Wasm, or read from the source tree in development).</summary>

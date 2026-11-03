@@ -48,3 +48,9 @@ for p in nbody queens editdist; do alice build --target wasm32 $p.al; done
 for p in nbody queens editdist; do diff <(node $p.mjs) <(alice run $p.al 2>/dev/null); done
 ALICE_TTFC=1 node nbody.mjs 2>&1 >/dev/null
 ```
+
+## Arena enums (ADR 0037)
+
+The wasm target compiles with the affine arena plan off (`AffinePlan.Disable` around `AirToWasm.Compile`, the
+same as `ALICE_NO_ARENA=1`): arena sum types stay heap records. Lowering the `AirArena*` nodes to a
+linear-memory arena is a follow-up.
