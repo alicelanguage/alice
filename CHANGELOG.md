@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Fuzzers (closing phase): a shared engine in `tests/Alice.Tests/Fuzz/Engine` (grammar generator `SyntaxGen`, corpus
+  `Mutator`, typed generator `TypedGen`, `Oracles`, line/block delta-debugging `Minimizer`, triaged `Known.Issues`),
+  a short deterministic seed set in `tests/Alice.Tests/Fuzz` (parser + fmt round trip, typed compile/Roslyn/check/
+  strict, C# vs IL backend with ILVerify, `ALICE_PAR=0` and `ALICE_DISABLE_PASSES` variants in child processes) and
+  the standalone long-run console `tools/fuzz` (`alice-fuzz parse|typed|diff|minimize`, `tools/fuzz/run.sh`; not in
+  `Alice.sln`). Findings are minimized into `tools/fuzz/findings/`; the 14 bugs of the first 30-minute runs
+  (lexer crashes, fmt round trip, strict/purity false positives on range patterns, inherited `initialize` and getter
+  state, local redeclaration in sibling blocks, IL Float64 constant folding, run cache key) are skipped regression
+  tests in `tests/Alice.Tests/Fuzz/Regressions/` (report: /work/reports/fuzz-findings.md). docs/tooling.md "Fuzzing".
 - perf: re-measured AggressiveOptimization on a serial core pair (`taskset -c 11,27`, interleaved cold runs; the
   earlier gains were partly measured on one cpu, where tier 1 never arrives). A primitive loop that only calls
   helpers no longer gets AO (kmeans `chunk`, mandelbrot, nbody: within 3% either way); loops over owned arrays
