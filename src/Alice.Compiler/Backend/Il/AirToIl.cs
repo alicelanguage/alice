@@ -396,7 +396,14 @@ internal sealed partial class IlBody
     Type Code(string text, MExpr node)
     {
         text = text.Trim();
-        if (FindLocal(text) is { } l) { il.EmitLoadLocal(l.L); return l.T; }
+        if (FindLocal(text) is { } l)
+        {
+            il.EmitLoadLocal(l.L);
+            if (!l.T.IsByRef) return l.T;
+            var el = l.T.GetElementType()!;   // a ref local reads through its reference
+            il.EmitLoadObj(T.Il(el));
+            return el;
+        }
         if (args.TryGetValue(Bare(text), out var a)) { il.EmitLoadArg(a.Index); return a.Type; }
         if (text == "this")
         {
@@ -677,7 +684,7 @@ internal sealed partial class IlBody
             case MCode or AirLocalRef:
                 {
                     string n = e is MCode mc ? mc.Text.Trim() : ((AirLocalRef)e).Name;
-                    if (FindLocal(n) is { } l) { il.EmitLoadLocalAddress(l.L); return; }
+                    if (FindLocal(n) is { } l) { if (l.T.IsByRef) il.EmitLoadLocal(l.L); else il.EmitLoadLocalAddress(l.L); return; }
                     if (args.TryGetValue(Bare(n), out var a))
                     {
                         if (a.Type.IsByRef) il.EmitLoadArg(a.Index); else il.EmitLoadArgAddress(a.Index);
