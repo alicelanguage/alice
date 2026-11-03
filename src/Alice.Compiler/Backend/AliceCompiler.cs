@@ -45,8 +45,9 @@ public static class AliceCompiler
             if (f.LibraryOnly) ast.Items.RemoveAll(i => i is Syntax.StmtItem);
             return ast;
         }).ToList();
-        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs)) { DotnetNames = dotnetNames, Strict = strict };
+        var binder = new Semantics.Binder(asts, clr ?? new Semantics.ClrTypes(extraRefs)) { DotnetNames = dotnetNames, Strict = strict, FlowShadow = true };
         binder.Bind();
+        Diagnostics.FlowOracle.Binder(binder.FlowErrors, files);
         var emitter = new Backend.Emitter(binder, sequential) { NativeLib = nativeLib };
         var cs = asts.Select(emitter.EmitFile).ToList();
         if (binder.StrictErrors.Count > 0)
@@ -248,6 +249,7 @@ public static class AliceCompiler
         comp = RunGenerators(comp, Triggered(analyzers ?? FrameworkAnalyzers.Value, csharp));
         using var ms = new MemoryStream();
         var res = comp.Emit(ms);
+        Diagnostics.FlowOracle.Roslyn(res.Diagnostics);
         if (!res.Success)
         {
             var errs = res.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(20).Select(d =>
@@ -277,6 +279,7 @@ public static class AliceCompiler
         var refs = Refs.Value.Concat((extraRefs ?? []).Where(File.Exists).Where(r => !runtimeNames.Contains(Path.GetFileName(r)))
             .Select(r => (MetadataReference)MetadataReference.CreateFromImage(File.ReadAllBytes(r), filePath: Path.GetFullPath(r))));
         var comp = CSharpCompilation.Create("check", trees, refs, opts);
+        if (Diagnostics.FlowOracle.On) Diagnostics.FlowOracle.Roslyn(comp.GetDiagnostics());
         return comp.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).Take(50).Select(d =>
         {
             var span = d.Location.GetMappedLineSpan();

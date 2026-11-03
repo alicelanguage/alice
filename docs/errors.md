@@ -67,6 +67,8 @@ Language: `ALICE_LANG=pt|es|en` or `--lang pt`. Default: OS UI culture.
 
 The generated C# is type-checked by Roslyn; its errors are reported in Alice terms (Alice type names, no C# ids).
 
+AL0309 (use before assignment), AL0310 (possible nil) and AL0300 constant overflow (`The operation overflows at compile time in checked mode`, `Constant value ... cannot be converted`) come from the binder, so every backend reports them (IL included).
+
 | Code | Meaning | Example message |
 |---|---|---|
 | AL0301 | operator not defined for the operand types | `'-' is not defined for Int32 and String` |
