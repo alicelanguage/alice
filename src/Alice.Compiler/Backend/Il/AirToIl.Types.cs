@@ -27,15 +27,28 @@ public sealed class IlUnsupportedException : Exception
 
 /// <summary>An Alice-declared type in the IL module: its TypeDef, the reflection stand-in used for typing
 /// (<see cref="Proxy"/>: generic instantiations, arrays and base-class chains work through reflection) and members.</summary>
+/// <summary>The type parameters of a generic type or method instance in scope (monomorphization).</summary>
+internal sealed class TypeScope
+{
+    static int next;
+    public readonly int Id = Interlocked.Increment(ref next);
+    public readonly Dictionary<string, Type> Map;
+    public TypeScope(Dictionary<string, Type> map) => Map = map;
+}
+
 internal sealed class AliceT
 {
     public TypeSym Sym = null!;
+    public TypeScope? Scope;             // a generic type's instance: T -> concrete
+    public AliceT? GenericDef;
+    public Type[] TypeArgs = [];
     public IlTypeDef Def = null!;
     public Type Proxy = null!;
     public AliceT? Base;
     public Type? ClrBase;
     public bool IsValueType, IsInterface, IsEnum, IsStatic, IsRecord, IsAdt, IsVariant;
     public Type? EnumUnderlying;
+    public readonly Dictionary<TypeSym, AliceT> InstVariants = new();   // a generic sum type's instance: its nested variants
     public readonly Dictionary<string, AField> Fields = new(StringComparer.Ordinal);
     public readonly List<AMethod> Methods = [];
     public readonly List<AMethod> Ctors = [];
@@ -86,6 +99,8 @@ internal sealed class AMethod
     public MethodSym? Sym;
     public Instance? Inst;
     public Syntax.MethodDecl? Decl;
+    public TypeScope? Scope;             // the type parameters in scope (owner instance, own instance)
+    public Type[]? GenericParams;        // a generic method template: its type parameters (stand-ins, never emitted)
     public override string ToString() => Owner + "::" + Name;
 }
 
@@ -107,6 +122,12 @@ internal sealed class IlTypes
     public readonly Dictionary<string, AliceT> ByCs = new(StringComparer.Ordinal);
     public readonly Dictionary<TypeSym, AliceT> BySym = new();
     public readonly List<string> Usings = [.. ClrTypes.DefaultNamespaces];
+
+    // monomorphization (AirToIl.Generics.cs): type parameter names -> concrete types while a generic body or declaration is processed
+    public TypeScope? Scope;
+    public readonly Dictionary<string, AliceT> GenericDefs = new(StringComparer.Ordinal);   // "Name`arity" -> generic type definition
+    public Func<AliceT, Type[], AliceT>? InstantiateType;
+    public Func<AMethod, Type[], AMethod?>? InstantiateMethod;
 
     public IlTypes(Binder binder, IlModule module)
     {
@@ -164,11 +185,13 @@ internal sealed class IlTypes
     public Type? TryParse(string cs)
     {
         cs = cs.Trim();
-        if (cache.TryGetValue(cs, out var hit)) return hit;
+        var scope = Scope;
+        string key = scope == null ? cs : scope.Id + "|" + cs;
+        if (cache.TryGetValue(key, out var hit)) return hit;
         Type? r;
         try { r = ParseCore(cs); }
         catch (ArgumentException) { r = null; }
-        return cache[cs] = r;
+        return cache[key] = r;
     }
 
     Type? ParseCore(string cs)
@@ -194,6 +217,7 @@ internal sealed class IlTypes
             return Type.GetType("System.ValueTuple`" + items.Count)!.MakeGenericType(items.ToArray()!);
         }
         if (Keywords.TryGetValue(cs, out var k)) return k;
+        if (Scope != null && Scope.Map.TryGetValue(cs, out var tp)) return tp;
         if (ByCs.TryGetValue(cs, out var at)) return at.Proxy;
         string bare = cs.StartsWith("global::") ? cs[8..] : cs;
         if (ByCs.TryGetValue(bare, out var at2)) return at2.Proxy;
@@ -210,6 +234,7 @@ internal sealed class IlTypes
         {
             var args = SplitTop(bare[(lt + 1)..^1]).Select(TryParse).ToList();
             if (args.Any(a => a == null)) return null;
+            if (GenericDefs.TryGetValue(bare[..lt] + "`" + args.Count, out var gdef)) return InstantiateType!(gdef, args.ToArray()!).Proxy;
             var open = binder.Clr.Find(bare[..lt], args.Count, Usings);
             return open?.MakeGenericType(args.ToArray()!);
         }
@@ -629,6 +654,15 @@ internal sealed class IlTypes
     /// defaulted, `params` arrays expanded.</summary>
     IEnumerable<Cand> Expand(Cand c, IReadOnlyList<ArgInfo> args)
     {
+        if (c.Alice is { GenericParams: { } tps } template)
+        {
+            // an Alice generic method: infer its type arguments like a CLR one, then use the monomorphic instance
+            var bound = new Type?[tps.Length];
+            for (int i = 0; i < Math.Min(c.Params.Length, args.Count); i++)
+                if (!args[i].IsNull) Unify(c.Params[i], args[i].Type, bound);
+            if (bound.Any(b => b == null) || InstantiateMethod!(template, bound!) is not { } inst) yield break;
+            c = c with { Alice = inst, Params = inst.Params, Ret = inst.Ret };
+        }
         if (c.Clr is MethodInfo { IsGenericMethodDefinition: true } gm)
         {
             var ps0 = gm.GetParameters();
