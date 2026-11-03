@@ -1,25 +1,24 @@
-using System.Runtime.InteropServices;
 using Alice.Compiler;
-using Alice.Compiler.Semantics;
 using Alice.Compiler.Syntax;
 using Alice.Cli.Proof.Z3;
 using Expr = Alice.Cli.Proof.Z3.Expr;
-using Syntax = Alice.Compiler.Syntax;
+using Term = Alice.Check.Term;
+using Op = Alice.Check.Op;
 
 namespace Alice.Cli.Proof;
 
 /// <summary>
 /// `alice prove --smt` (ADR 0022): a rule holds for every input of its domain, the full Int32/Int64 range included,
 /// when Z3 finds no input that makes it fail. Failing means returning false or raising: integer overflow (Alice traps,
-/// ADR 0013), division by zero, `Int::MIN / -1`. The rule's body is executed symbolically over bit vectors with the
-/// semantics the compiler gives it (floored `/` and `%`, checked `+ - *`, wrapping `&+ &- &*`); branches and early
-/// returns become if-then-else terms. A construct outside that subset makes the rule untranslatable, never half-proven.
+/// ADR 0013), division by zero, `Int::MIN / -1`. The rule is first translated to the proof IR (<see cref="Symbolic"/>);
+/// this class lowers that IR to Z3 terms. A construct outside the IR makes the rule untranslatable, never half-proven.
 /// </summary>
 public static class SmtProver
 {
     /// <summary><paramref name="Domains"/>: the rule's quantified variables, so a proof can be sample-checked against
-    /// the compiled rule (review-r1 F8: an UNSAT verdict is never trusted blindly).</summary>
-    public sealed record Outcome(string Rule, bool Proved, string? Counterexample, string? Untranslatable, double Ms = 0, IReadOnlyList<RuleDomain>? Domains = null);
+    /// the compiled rule (review-r1 F8: an UNSAT verdict is never trusted blindly). <paramref name="T"/>: the rule's
+    /// translation, which a certificate (ADR 0042) is built from. <paramref name="Unknown"/>: Z3 gave up (time limit).</summary>
+    public sealed record Outcome(string Rule, bool Proved, string? Counterexample, string? Untranslatable, double Ms = 0, IReadOnlyList<RuleDomain>? Domains = null, Translation? T = null, bool Unknown = false);
 
     /// <summary>Z3's limit per rule when `alice prove --timeout` is not given: a nonlinear 64-bit query can run for hours.</summary>
     public const uint DefaultTimeoutMs = 20000;
@@ -38,394 +37,87 @@ public static class SmtProver
 
     public static List<Outcome> Prove(List<SourceFile> files, IEnumerable<string> refs, uint timeoutMs = DefaultTimeoutMs)
     {
-        var asts = files.Select(f => Parser.ParseFile(f.Text, f.Path)).ToList();
-        new Binder(asts, new ClrTypes(refs)).Bind();
-        var rules = asts.SelectMany(a => Methods(a.Items)).Where(m => m.RuleName != null).ToList();
-        var methods = asts.SelectMany(a => Methods(a.Items)).Where(m => m.Sym != null).ToDictionary(m => (MethodSym)m.Sym!, m => m);
         var r = new List<Outcome>();
-        foreach (var rule in rules)
+        foreach (var (rule, t, why) in Symbolic.Translate(files, refs))
         {
-            using var ctx = new Context();
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            try
-            {
-                var ex = new Exec(ctx, methods, timeoutMs);
-                r.Add(ex.Check(rule) with { Ms = sw.Elapsed.TotalMilliseconds, Domains = rule.Domains });
-            }
-            catch (Untranslatable u) { r.Add(new Outcome(rule.RuleName!, false, null, u.Message, sw.Elapsed.TotalMilliseconds)); }
+            if (t == null) { r.Add(new Outcome(rule.RuleName!, false, null, why, sw.Elapsed.TotalMilliseconds)); continue; }
+            using var ctx = new Context();
+            r.Add(Check(ctx, t, timeoutMs) with { Ms = sw.Elapsed.TotalMilliseconds, Domains = rule.Domains, T = t });
         }
         return r;
     }
 
-    static IEnumerable<MethodDecl> Methods(IEnumerable<Item> items)
+    static Outcome Check(Context z, Translation t, uint timeoutMs)
     {
-        foreach (var it in items)
-        {
-            if (it is MethodDecl m) yield return m;
-            if (it is TypeDecl t) foreach (var x in Methods(t.Members)) yield return x;
-            if (it is NamespaceItem n) foreach (var x in Methods(n.Items)) yield return x;
-        }
+        var memo = new Dictionary<Term, Expr>(ReferenceEqualityComparer.Instance);
+        Expr L(Term x) => Lower(z, x, memo);
+        using var s = z.MkSolver();
+        s.TimeoutMs = timeoutMs;   // a nonlinear 64-bit query can run for hours: give up, enumerate instead
+        s.Assert(t.Goal.Domain.Select(d => (BoolExpr)L(d)).ToArray());
+        s.Assert(z.MkOr((BoolExpr)L(t.Goal.Fails), z.MkNot((BoolExpr)L(t.Goal.Result))));   // an input that raises or returns false
+        string rule = t.Rule.RuleName!;
+        var status = s.Check();
+        if (status == Status.UNSATISFIABLE) return new Outcome(rule, true, null, null);
+        if (status == Status.UNKNOWN) return new Outcome(rule, false, null, "Z3 could not decide the rule: " + s.ReasonUnknown, Unknown: true);
+        string ce = string.Join(", ", t.Inputs.Select(x => $"{x.Domain.Name} = {s.Value(L(x.Var))}"));
+        return new Outcome(rule, false, ce, null);
     }
 
-    sealed class Untranslatable(string why) : Exception(why);
-
-    /// <summary>Symbolic execution of one rule. Values are Z3 terms; `err` accumulates the inputs that raise.</summary>
-    sealed class Exec(Context z, Dictionary<MethodSym, MethodDecl> methods, uint timeoutMs)
+    /// <summary>One IR node as a Z3 term (operands memoized: the IR is a DAG).</summary>
+    static Expr Lower(Context z, Term t, Dictionary<Term, Expr> memo)
     {
-        BoolExpr err = z.MkFalse();
-        int depth;
-
-        public Outcome Check(MethodDecl rule)
+        if (memo.TryGetValue(t, out var done)) return done;
+        var a = t.A.Select(x => Lower(z, x, memo)).ToArray();
+        BoolExpr B(int i) => (BoolExpr)a[i];
+        BitVecExpr V(int i) => (BitVecExpr)a[i];
+        bool sg = t.K != 0;
+        Expr r = t.Op switch
         {
-            var env = new Dictionary<LocalSym, Expr>();
-            var domain = new List<BoolExpr>();
-            var inputs = new List<(string Name, Expr Var)>();
-            var syms = ((MethodSym)rule.Sym!).Params;
-            for (int i = 0; i < rule.Domains.Count; i++)
-            {
-                var d = rule.Domains[i];
-                var local = syms[i].Local ?? throw new Untranslatable($"parameter {d.Name} has no local");
-                Expr v;
-                if (d.IsBool) v = z.MkBoolConst(d.Name);
-                else
-                {
-                    uint w = Width(local.Type);
-                    var bv = z.MkBVConst(d.Name, w);
-                    v = bv;
-                    domain.Add(z.MkBVSGE(bv, z.MkBV(d.Lo, w)));
-                    domain.Add(z.MkBVSLE(bv, z.MkBV(d.Hi, w)));
-                }
-                env[local] = v;
-                inputs.Add((d.Name, v));
-            }
-            var result = Body(rule.Body, env);
-            using var s = z.MkSolver();
-            s.TimeoutMs = timeoutMs;   // a nonlinear 64-bit query can run for hours: give up, enumerate instead
-            s.Assert(domain.ToArray());
-            s.Assert(z.MkOr(err, z.MkNot((BoolExpr)result)));   // an input that raises or returns false
-            var status = s.Check();
-            if (status == Status.UNSATISFIABLE) return new Outcome(rule.RuleName!, true, null, null);
-            if (status == Status.UNKNOWN) throw new Untranslatable("Z3 could not decide the rule: " + s.ReasonUnknown);
-            string ce = string.Join(", ", inputs.Select(x => $"{x.Name} = {s.Value(x.Var)}"));
-            return new Outcome(rule.RuleName!, false, ce, null);
-        }
-
-        static uint Width(AType t) => t.Cs switch
-        {
-            "sbyte" or "byte" => 8,
-            "short" or "ushort" => 16,
-            "int" or "uint" => 32,
-            "long" or "ulong" => 64,
-            _ => throw new Untranslatable($"type {t.Cs} is not supported by --smt (integers and Bool are)"),
+            Op.Bool => z.MkBool(t.K != 0),
+            Op.Bv => z.MkBV(t.K, t.W),
+            Op.Var => t.IsBool ? z.MkBoolConst(t.Name!) : z.MkBVConst(t.Name!, t.W),
+            Op.Not => z.MkNot(B(0)),
+            Op.And => z.MkAnd(a.Cast<BoolExpr>().ToArray()),
+            Op.Or => z.MkOr(a.Cast<BoolExpr>().ToArray()),
+            Op.Eq => z.MkEq(a[0], a[1]),
+            Op.Ite => z.MkITE(B(0), a[1], a[2]),
+            Op.Slt => z.MkBVSLT(V(0), V(1)),
+            Op.Sle => z.MkBVSLE(V(0), V(1)),
+            Op.Ult => z.MkBVULT(V(0), V(1)),
+            Op.Ule => z.MkBVULE(V(0), V(1)),
+            Op.Add => z.MkBVAdd(V(0), V(1)),
+            Op.Sub => z.MkBVSub(V(0), V(1)),
+            Op.Mul => z.MkBVMul(V(0), V(1)),
+            Op.Neg => z.MkBVNeg(V(0)),
+            Op.BvNot => z.MkBVNot(V(0)),
+            Op.BAnd => z.MkBVAND(V(0), V(1)),
+            Op.BOr => z.MkBVOR(V(0), V(1)),
+            Op.BXor => z.MkBVXOR(V(0), V(1)),
+            Op.UDiv => z.MkBVUDiv(V(0), V(1)),
+            Op.URem => z.MkBVURem(V(0), V(1)),
+            Op.FDiv => Floored(z, V(0), V(1)).Q,
+            Op.FMod => Floored(z, V(0), V(1)).R,
+            Op.SExt => z.MkSignExt(t.W - V(0).SortSize, V(0)),
+            Op.ZExt => z.MkZeroExt(t.W - V(0).SortSize, V(0)),
+            Op.Extract => z.MkExtract(t.W - 1, 0, V(0)),
+            Op.AddOvf => z.MkNot(z.MkAnd(z.MkBVAddNoOverflow(V(0), V(1), sg), sg ? z.MkBVAddNoUnderflow(V(0), V(1)) : z.MkTrue())),
+            Op.SubOvf => z.MkNot(z.MkAnd(sg ? z.MkBVSubNoOverflow(V(0), V(1)) : z.MkTrue(), z.MkBVSubNoUnderflow(V(0), V(1), sg))),
+            Op.MulOvf => z.MkNot(z.MkAnd(z.MkBVMulNoOverflow(V(0), V(1), sg), sg ? z.MkBVMulNoUnderflow(V(0), V(1)) : z.MkTrue())),
+            _ => throw new InvalidOperationException(t.Op.ToString()),
         };
+        return memo[t] = r;
+    }
 
-        static bool Signed(AType t) => t.Cs is "sbyte" or "short" or "int" or "long";
-
-        // ---- statements: path condition + "already returned" + the returned value ----
-
-        sealed class Frame
-        {
-            public Dictionary<LocalSym, Expr> Env = new();
-            public BoolExpr Returned = null!;
-            public Expr? Value;
-        }
-
-        Expr Body(List<Stmt> body, Dictionary<LocalSym, Expr> env)
-        {
-            var f = new Frame { Env = new(env), Returned = z.MkFalse() };
-            Block(body, f, z.MkTrue(), tail: true);
-            return f.Value ?? throw new Untranslatable("the rule has no result value");
-        }
-
-        void Return(Frame f, BoolExpr pc, Expr v)
-        {
-            var live = z.MkAnd(pc, z.MkNot(f.Returned));
-            f.Value = f.Value == null ? v : z.MkITE(live, v, f.Value);
-            f.Returned = z.MkOr(f.Returned, live);
-        }
-
-        void Block(List<Stmt> body, Frame f, BoolExpr pc, bool tail)
-        {
-            for (int i = 0; i < body.Count; i++)
-            {
-                var s = body[i];
-                bool last = tail && i == body.Count - 1;
-                var live = z.MkAnd(pc, z.MkNot(f.Returned));
-                switch (s)
-                {
-                    case ExprStmt es when last:
-                        Return(f, pc, Eval(es.Expr, f.Env, live));
-                        break;
-                    case ReturnStmt { Value: { } rv }:
-                        Return(f, pc, Eval(rv, f.Env, live));
-                        break;
-                    case Assign { Op: "=" } a when (a.Declares ?? (a.Target as NameExpr)?.Sym as LocalSym) is { } l:
-                        {
-                            var v = Eval(a.Value, f.Env, live);
-                            if (f.Env.TryGetValue(l, out var old) && old is BitVecExpr ob && v is BitVecExpr nb && ob.SortSize != nb.SortSize)
-                                throw new Untranslatable($"`{l.Name}` holds values of different widths");
-                            f.Env[l] = old != null ? z.MkITE(live, v, old) : v;
-                            break;
-                        }
-                    case MultiAssign { Values: [CallExpr { Res: "ext", Recv: { } dr, Args: [{ Value: { } dd }] } dc] } ma
-                        when Binder.Mangle(dc.Name) == "divmod" && ma.Locals.Count == 2:
-                        {
-                            var (x, y, sg) = Operands((BitVecExpr)Eval(dr, f.Env, live), (BitVecExpr)Eval(dd, f.Env, live), dr, dd);
-                            var (q, r) = FlooredDivMod(x, y, sg, live);
-                            f.Env[ma.Locals[0]] = q;
-                            f.Env[ma.Locals[1]] = r;
-                            break;
-                        }
-                    case IfStmt ifs:
-                        {
-                            BoolExpr rest = live;
-                            for (int k = 0; k < ifs.Conds.Count; k++)
-                            {
-                                var c = Truth(Eval(ifs.Conds[k], f.Env, rest));
-                                Block(ifs.Bodies[k], f, z.MkAnd(rest, c), last);
-                                rest = z.MkAnd(rest, z.MkNot(c));
-                            }
-                            if (ifs.Else != null) Block(ifs.Else, f, rest, last);
-                            break;
-                        }
-                    case ExprStmt es:
-                        // the value is dropped but the expression still runs: a call that divides by zero or
-                        // overflows fails the rule (audit F14); an untranslatable one makes the rule untranslatable
-                        Eval(es.Expr, f.Env, live);
-                        break;
-                    default:
-                        throw new Untranslatable($"`{s.GetType().Name.Replace("Stmt", "").ToLowerInvariant()}` statements are not supported by --smt");
-                }
-            }
-        }
-
-        BoolExpr Truth(Expr e) => e as BoolExpr ?? throw new Untranslatable("a condition is not a Bool");
-
-        void Fails(BoolExpr live, BoolExpr cond) => err = z.MkOr(err, z.MkAnd(live, cond));
-
-        // ---- expressions ----
-
-        Expr Eval(Syntax.Expr e, Dictionary<LocalSym, Expr> env, BoolExpr live)
-        {
-            switch (e)
-            {
-                case LitExpr { Kind: "bool" } b: return z.MkBool(b.Text == "true");
-                case LitExpr { Kind: "int" } li: return z.MkBV(IntLiteral(li.Text), Width(li.Type));
-                case NameExpr { Res: "local", Sym: LocalSym l } when env.TryGetValue(l, out var v): return v;
-                case ConstExpr ce when ce.Ref.Name.Split('.', ':').LastOrDefault(x => x.Length > 0) is "MIN" or "MAX" && ce.Type.IsInteger:
-                    {
-                        // Int32::MIN, UInt8::MAX...: the limits of the constant's own type
-                        uint w = Width(ce.Type);
-                        bool max = ce.Ref.Name.EndsWith("MAX");
-                        if (Signed(ce.Type)) return max ? z.MkBVSub(MinOf(w), z.MkBV(1, w)) : MinOf(w);   // MAX = MIN - 1 (wraps)
-                        return max ? z.MkBVNot(z.MkBV(0, w)) : z.MkBV(0, w);
-                    }
-                case UnaryExpr { Op: "!" } u: return z.MkNot(Truth(Eval(u.E, env, live)));
-                case UnaryExpr { Op: "-" } neg:
-                    {
-                        var x = Promote((BitVecExpr)Eval(neg.E, env, live), neg.E.Type);   // -Int8 is an Int32 (C#)
-                        if (Signed(neg.E.Type)) Fails(live, z.MkEq(x, MinOf(x.SortSize)));   // -MIN overflows
-                        return z.MkBVNeg(x);
-                    }
-                case TernaryExpr t:
-                    {
-                        var c = Truth(Eval(t.C, env, live));
-                        return z.MkITE(c, Eval(t.A, env, z.MkAnd(live, c)), Eval(t.B, env, z.MkAnd(live, z.MkNot(c))));
-                    }
-                case BinaryExpr { Op: "&&" or "and" } and:
-                    {
-                        var l = Truth(Eval(and.L, env, live));
-                        return z.MkAnd(l, Truth(Eval(and.R, env, z.MkAnd(live, l))));   // the right side runs only when l
-                    }
-                case BinaryExpr { Op: "||" or "or" } or:
-                    {
-                        var l = Truth(Eval(or.L, env, live));
-                        return z.MkOr(l, Truth(Eval(or.R, env, z.MkAnd(live, z.MkNot(l)))));
-                    }
-                case BinaryExpr bin: return Binary(bin, env, live);
-                case CallExpr call: return Call(call, env, live);
-                case StmtExpr se:
-                    {
-                        var f = new Frame { Env = new(env), Returned = z.MkFalse() };
-                        Block([se.Stmt], f, live, tail: true);
-                        return f.Value ?? throw new Untranslatable("an if/case used as a value has no value");
-                    }
-            }
-            throw new Untranslatable($"`{e.GetType().Name.Replace("Expr", "").ToLowerInvariant()}` expressions are not supported by --smt");
-        }
-
-        /// <summary>`1_000`, `0xFF`, `0b1010`, `0o17`, `7_i64`, `18446744073709551615_u64` as the literal's 64-bit pattern
-        /// (MkBV keeps the low bits of the literal's width).</summary>
-        static long IntLiteral(string text)
-        {
-            string t = text.Replace("_", "");
-            foreach (var suf in new[] { "i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "L" })
-                if (t.EndsWith(suf, StringComparison.OrdinalIgnoreCase)) { t = t[..^suf.Length]; break; }
-            bool neg = t.StartsWith('-');
-            if (neg) t = t[1..];
-            int radix = t.Length > 2 && t[0] == '0' ? char.ToLowerInvariant(t[1]) switch { 'x' => 16, 'b' => 2, 'o' => 8, _ => 10 } : 10;
-            if (radix != 10) t = t[2..];
-            ulong u;
-            try { u = System.Convert.ToUInt64(t, radix); }
-            catch (Exception e) when (e is FormatException or OverflowException or ArgumentException) { throw new Untranslatable($"integer literal `{text}` is not supported by --smt"); }
-            return neg ? unchecked(-(long)u) : unchecked((long)u);
-        }
-
-        BitVecExpr MinOf(uint w) => z.MkBV(-(1L << (int)Math.Min(63, w - 1)), w);
-
-        Expr Binary(BinaryExpr b, Dictionary<LocalSym, Expr> env, BoolExpr live)
-        {
-            var l = Eval(b.L, env, live);
-            var r = Eval(b.R, env, live);
-            if (l is BoolExpr lb && r is BoolExpr rb)
-                return b.Op switch { "==" => z.MkEq(lb, rb), "!=" => z.MkNot(z.MkEq(lb, rb)), _ => throw new Untranslatable($"`{b.Op}` on Bool") };
-            var (x, y, sg) = Operands((BitVecExpr)l, (BitVecExpr)r, b.L, b.R);
-            switch (b.Op)
-            {
-                case "==": return z.MkEq(x, y);
-                case "!=": return z.MkNot(z.MkEq(x, y));
-                case "<": return sg ? z.MkBVSLT(x, y) : z.MkBVULT(x, y);
-                case "<=": return sg ? z.MkBVSLE(x, y) : z.MkBVULE(x, y);
-                case ">": return sg ? z.MkBVSGT(x, y) : z.MkBVUGT(x, y);
-                case ">=": return sg ? z.MkBVSGE(x, y) : z.MkBVUGE(x, y);
-                case "+":
-                    Fails(live, z.MkNot(z.MkAnd(z.MkBVAddNoOverflow(x, y, sg), sg ? z.MkBVAddNoUnderflow(x, y) : z.MkTrue())));
-                    return z.MkBVAdd(x, y);
-                case "-":
-                    Fails(live, z.MkNot(z.MkAnd(sg ? z.MkBVSubNoOverflow(x, y) : z.MkTrue(), z.MkBVSubNoUnderflow(x, y, sg))));
-                    return z.MkBVSub(x, y);
-                case "*":
-                    Fails(live, z.MkNot(z.MkAnd(z.MkBVMulNoOverflow(x, y, sg), sg ? z.MkBVMulNoUnderflow(x, y) : z.MkTrue())));
-                    return z.MkBVMul(x, y);
-                case "&+": return z.MkBVAdd(x, y);
-                case "&-": return z.MkBVSub(x, y);
-                case "&*": return z.MkBVMul(x, y);
-                case "&": return z.MkBVAND(x, y);
-                case "|": return z.MkBVOR(x, y);
-                case "^": return z.MkBVXOR(x, y);
-                case "/": return FlooredDivMod(x, y, sg, live).Q;
-                case "%": return FlooredDivMod(x, y, sg, live).R;
-            }
-            throw new Untranslatable($"operator `{b.Op}` is not supported by --smt");
-        }
-
-        /// <summary>
-        /// The operands of a binary operator at the width and signedness the compiled code computes in: C#'s binary
-        /// numeric promotion, which the emitted C# keeps (review-r1 F8). Int8/UInt8/Int16/UInt16 promote to Int32 first
-        /// (`&+` on two Int8 wraps at 32 bits; only `to_i8` / `to_i8!` narrow again). Int32 (or a narrow signed type)
-        /// next to UInt32 computes in Int64, so `-1 + 4000000000_u32` is 3999999999, not a wrapped UInt32; a
-        /// non-negative Int32 literal next to UInt32 stays UInt32 (C#'s constant conversion). A value already wider
-        /// than its static type (an Int64 result the binder types UInt32) counts at its real width, signed.
-        /// </summary>
-        (BitVecExpr, BitVecExpr, bool Signed) Operands(BitVecExpr x, BitVecExpr y, Syntax.Expr ex, Syntax.Expr ey)
-        {
-            var (cx, sx) = Category(x, ex);
-            var (cy, sy) = Category(y, ey);
-            (uint w, bool sg) = (cx, cy) switch
-            {
-                _ when cx == "u64" || cy == "u64" => (64u, false),
-                _ when cx == "i64" || cy == "i64" => (64u, true),
-                ("u32", "i32") or ("i32", "u32") => (64u, true),
-                ("u32", _) or (_, "u32") => (32u, false),
-                _ => (32u, true),
-            };
-            return (Extend(x, sx, w), Extend(y, sy, w), sg);
-        }
-
-        /// <summary>The promotion class of one operand (i32 u32 i64 u64, or `lit` for a non-negative Int32 literal) and
-        /// whether its bits extend signed.</summary>
-        static (string, bool) Category(BitVecExpr v, Syntax.Expr e)
-        {
-            var t = e.Type;
-            uint tw = Width(t);
-            if (v.SortSize > tw) return (v.SortSize > 32 ? "i64" : "i32", true);   // promoted beyond its static type
-            if (tw < 32) return ("i32", Signed(t));
-            if (e is LitExpr { Kind: "int" } li && t.Cs == "int" && IntLiteral(li.Text) >= 0) return ("lit", true);
-            return ((Signed(t) ? "i" : "u") + tw, Signed(t));
-        }
-
-        /// <summary>A narrow integer (Int8..UInt16) as the Int32 C# promotes it to; wider values unchanged.</summary>
-        BitVecExpr Promote(BitVecExpr x, AType t) => Extend(x, Signed(t), Math.Max(32, x.SortSize));
-
-        BitVecExpr Extend(BitVecExpr x, bool signed, uint w) =>
-            x.SortSize >= w ? x : signed ? z.MkSignExt(w - x.SortSize, x) : z.MkZeroExt(w - x.SortSize, x);
-
-        /// <summary>Alice's `/` and `%` round toward negative infinity (ADR 0013); zero divisors and MIN / -1 raise.</summary>
-        (BitVecExpr Q, BitVecExpr R) FlooredDivMod(BitVecExpr x, BitVecExpr y, bool signed, BoolExpr live)
-        {
-            var zero = z.MkBV(0, x.SortSize);
-            Fails(live, z.MkEq(y, zero));
-            if (!signed) return (z.MkBVUDiv(x, y), z.MkBVURem(x, y));
-            Fails(live, z.MkAnd(z.MkEq(x, MinOf(x.SortSize)), z.MkEq(y, z.MkBV(-1, x.SortSize))));
-            var q = z.MkBVSDiv(x, y);
-            var r = z.MkBVSRem(x, y);
-            // truncated -> floored: when the remainder is non-zero and its sign differs from the divisor's
-            var adjust = z.MkAnd(z.MkNot(z.MkEq(r, zero)), z.MkBVSLT(z.MkBVXOR(r, y), zero));
-            var one = z.MkBV(1, x.SortSize);
-            return ((BitVecExpr)z.MkITE(adjust, z.MkBVSub(q, one), q), (BitVecExpr)z.MkITE(adjust, z.MkBVAdd(r, y), r));
-        }
-
-        Expr Call(CallExpr c, Dictionary<LocalSym, Expr> env, BoolExpr live)
-        {
-            string name = Binder.Mangle(c.Name);
-            // number conversions and helpers the compiler maps to arithmetic
-            if (c.Res == "ext" && c.Recv != null && c.Args.Count == 0)
-            {
-                var x = (BitVecExpr)Eval(c.Recv, env, live);
-                switch (name)
-                {
-                    case "abs":
-                        if (Signed(c.Recv.Type)) Fails(live, z.MkEq(x, MinOf(x.SortSize)));
-                        return z.MkITE(z.MkBVSLT(x, z.MkBV(0, x.SortSize)), z.MkBVNeg(x), x);
-                    case "to_i8" or "to_i16" or "to_i32" or "to_i" or "to_i64" or "to_u8" or "to_u16" or "to_u32" or "to_u64":
-                        return Convert(x, c.Recv.Type, c.Type, live, check: true);
-                    // `to_X!`: wrapping (CreateTruncating, Prelude.Primitives.cs); `to_X` above is CreateChecked
-                    case "to_i_b" or "to_i8_b" or "to_i16_b" or "to_i32_b" or "to_i64_b" or "to_u8_b" or "to_u16_b" or "to_u32_b" or "to_u64_b":
-                        return Convert(x, c.Recv.Type, c.Type, live, check: false);
-                }
-            }
-            if (c.Recv is ConstExpr { Ref.Name: "Math" } && c.Args.Count == 2 && name is "Min" or "Max")
-            {
-                // Math.Min(Int32, UInt32) resolves to the Int64 overload: the same promotion as an operator
-                var (x, y, sg) = Operands((BitVecExpr)Eval(c.Args[0].Value!, env, live), (BitVecExpr)Eval(c.Args[1].Value!, env, live), c.Args[0].Value!, c.Args[1].Value!);
-                var less = sg ? z.MkBVSLT(x, y) : z.MkBVULT(x, y);
-                return name == "Min" ? z.MkITE(less, x, y) : z.MkITE(less, y, x);
-            }
-            // a call to a pure Alice method: inlined (recursion is not unrolled)
-            if (c.Res == "alice" && c.Sym is MethodSym m && methods.TryGetValue(m, out var decl) && decl.HasBody)
-            {
-                if (++depth > 32) throw new Untranslatable($"`{m.Name}` recurses; --smt inlines non-recursive calls only");
-                try
-                {
-                    var callee = new Dictionary<LocalSym, Expr>();
-                    for (int i = 0; i < m.Params.Count; i++)
-                    {
-                        var p = m.Params[i];
-                        if (p.Local == null || i >= c.Args.Count) throw new Untranslatable($"call to `{m.Name}` with default arguments");
-                        callee[p.Local] = Eval(c.Args[i].Value!, env, live);
-                    }
-                    var f = new Frame { Env = callee, Returned = z.MkFalse() };
-                    Block(decl.Body, f, live, tail: true);
-                    return f.Value ?? throw new Untranslatable($"`{m.Name}` has no result value");
-                }
-                finally { depth--; }
-            }
-            throw new Untranslatable($"`{c.Name}` is not supported by --smt (arithmetic, comparisons, Math.Min/Max, abs, conversions and pure Alice methods are)");
-        }
-
-        Expr Convert(BitVecExpr x, AType from, AType to, BoolExpr live, bool check)
-        {
-            uint wf = x.SortSize, wt = Width(to);
-            BitVecExpr r = wt == wf ? x : wt < wf ? z.MkExtract(wt - 1, 0, x) : Signed(from) ? z.MkSignExt(wt - wf, x) : z.MkZeroExt(wt - wf, x);
-            if (check)   // checked: the value must survive the round trip (`to_X` raises on out-of-range)
-            {
-                BitVecExpr back = wt == wf ? r : wt < wf ? (Signed(to) ? z.MkSignExt(wf - wt, r) : z.MkZeroExt(wf - wt, r)) : z.MkExtract(wf - 1, 0, r);
-                Fails(live, z.MkNot(z.MkEq(back, x)));
-                // a sign change: signed -> unsigned raises on negatives, unsigned -> signed when the result reads negative
-                if (Signed(from) && !Signed(to)) Fails(live, z.MkBVSLT(x, z.MkBV(0, wf)));
-                if (!Signed(from) && Signed(to)) Fails(live, z.MkBVSLT(r, z.MkBV(0, wt)));
-            }
-            return r;
-        }
+    /// <summary>Alice's `/` and `%` round toward negative infinity (ADR 0013): truncated division, then one step down
+    /// when the remainder is non-zero and its sign differs from the divisor's.</summary>
+    static (BitVecExpr Q, BitVecExpr R) Floored(Context z, BitVecExpr x, BitVecExpr y)
+    {
+        var zero = z.MkBV(0, x.SortSize);
+        var q = z.MkBVSDiv(x, y);
+        var r = z.MkBVSRem(x, y);
+        var adjust = z.MkAnd(z.MkNot(z.MkEq(r, zero)), z.MkBVSLT(z.MkBVXOR(r, y), zero));
+        var one = z.MkBV(1, x.SortSize);
+        return ((BitVecExpr)z.MkITE(adjust, z.MkBVSub(q, one), q), (BitVecExpr)z.MkITE(adjust, z.MkBVAdd(r, y), r));
     }
 }

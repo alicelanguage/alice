@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Alice.Compiler\Alice.Compiler.csproj" />
+    <!-- the proof IR, bit-blaster and certificate checker (ADR 0042): the same code alice-check re-checks with -->
+    <ProjectReference Include="..\Alice.Check\Alice.Check.csproj" />
   </ItemGroup>
 
   <ItemGroup>
