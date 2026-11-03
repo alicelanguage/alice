@@ -669,10 +669,13 @@ internal sealed partial class IlBody
                     }
                     if (compound)
                     {
-                        // indexer compound: evaluate target and index again for the read (side-effect free in lowered MIR)
+                        // indexer compound: `x[i] = (T)(x[i] op v)` reads target and index twice, so spill both to
+                        // temps first (review-r1 F7); a value-type receiver stays in place unless it is a ref struct
                         var cur = Infer(ix);
-                        var bin = new MBinary { Op = CompoundOp(op, this), L = ix, R = value, Checked = nodeChecked };
-                        Assign(ix, "=", new IlConv { To = cur, E = bin, Checked = chk });
+                        var six = new MIndex { Target = Spill(ix.Target, at, !at.IsValueType || at.IsByRefLike), Type = ix.Type, Span = ix.Span };
+                        foreach (var a in ix.Args) six.Args.Add(Spill(a, Infer(a), true));
+                        var bin = new MBinary { Op = CompoundOp(op, this), L = six, R = value, Checked = nodeChecked };
+                        Assign(six, "=", new IlConv { To = cur, E = bin, Checked = chk });
                         return;
                     }
                     if (at.IsArray)
@@ -699,6 +702,19 @@ internal sealed partial class IlBody
                 }
         }
         throw No("MAssign:target:" + target.GetType().Name, Printer.E(target));
+    }
+
+    int spillN;
+
+    /// <summary>Evaluates <paramref name="e"/> once into a fresh named local and returns a reference to it; literals,
+    /// locals and arguments are returned unchanged (review-r1 F7).</summary>
+    MExpr Spill(MExpr e, Type t, bool allowed)
+    {
+        if (!allowed || Literal(e, out _) || e is AirLocalRef || e is MCode c && (IsVar(c.Text) || c.Text.Trim() == "this")) return e;
+        var name = "__spill" + spillN++;
+        Emit(e, t);
+        il.EmitStoreLocal(Declare(name, t));
+        return new AirLocalRef(name, e.Type);
     }
 
     MethodInfo? FindIndexer(Type t, int argc, string name)

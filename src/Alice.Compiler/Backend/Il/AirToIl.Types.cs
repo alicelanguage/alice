@@ -362,8 +362,10 @@ internal sealed class IlTypes
     public static Type Promote(Type l, Type r, object? litL, object? litR)
     {
         if (l == r) return Widen(l);
-        if (litL != null && IsNumeric(r) && LiteralFits(litL, r) && !(IsIntegral(r) && Widen(r) != r && litL is int)) return Widen(r);
-        if (litR != null && IsNumeric(l) && LiteralFits(litR, l) && !(IsIntegral(l) && Widen(l) != l && litR is int)) return Widen(l);
+        // Only an `int`-typed literal adopts the other operand's type (C# implicit constant conversion); a typed wide
+        // literal (`1L`, `4294967295UL`) keeps its own type and promotes normally (review-r1 F1).
+        if (litL is int && IsNumeric(r) && LiteralFits(litL, r) && !(IsIntegral(r) && Widen(r) != r)) return Widen(r);
+        if (litR is int && IsNumeric(l) && LiteralFits(litR, l) && !(IsIntegral(l) && Widen(l) != l)) return Widen(l);
         if (l == typeof(decimal) || r == typeof(decimal)) return typeof(decimal);
         if (l == typeof(double) || r == typeof(double)) return typeof(double);
         if (l == typeof(float) || r == typeof(float)) return typeof(float);
