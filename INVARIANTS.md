@@ -2,8 +2,8 @@
 
 This file lists every guarantee the Alice compiler, runtime and tools make about programs they accept. Each entry
 says what holds, where it does not apply, which tests pin it, and how to report a violation. A program that the
-toolchain accepts and that breaks one of these statements is a bug in Alice, and it is in scope for the planned bug
-bounty (terms to be published with 1.0).
+toolchain accepts and that breaks one of these statements is a bug in Alice: we are confident enough in these
+guarantees to publish them as the 1.0 contract, and we fix any violation as a security bug.
 
 Applies to: the latest release of the 1.x line and the current `main`, on the platforms in
 [docs/releases.md](docs/releases.md), with both backends unless an entry says otherwise. Test paths are relative
@@ -148,9 +148,13 @@ cases are compile errors instead: AL0240 (payload), AL0241 (escape), AL0242 (use
 consumed).
 
 **Scope and exclusions.** Arena slabs are per thread; arena values do not cross threads except through forks the
-compiler creates.
+compiler creates. A region (`scope`) marks and resets only its own thread's lane and the lanes it leased to its forks
+(ADR 0037 amendment 2026-11-03): another thread's region never moves a node this thread holds.
 
-**Pinned by.** `tests/Alice.Tests/Compiler/AffineTests.cs`, `tests/Alice.Tests/Runtime/ArenaTests.cs`.
+**Pinned by.** `tests/Alice.Tests/Compiler/AffineTests.cs`, `tests/Alice.Tests/Runtime/ArenaTests.cs` (regions:
+`A_region_on_another_thread_does_not_move_this_threads_lane`, `Regions_on_another_thread_race_with_this_lane_without_effect`,
+`A_fork_inside_a_region_allocates_in_a_leased_lane_reclaimed_with_the_region`, `A_thread_outside_the_region_keeps_its_nodes`,
+`A_region_ends_on_the_thread_that_entered_it`).
 
 ## 10. `alice prove` verdicts are sound
 

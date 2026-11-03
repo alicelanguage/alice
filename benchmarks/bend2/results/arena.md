@@ -43,3 +43,20 @@ DropDeep with the lane slab read once (src/Alice.Runtime/Arena/Arena.cs DropRec)
 - A recursive Drop costs time where the program discards whole trees (tree-bitonic 3.2x, tree-matmul 1.45x vs shallow);
   shallow Drop leaks them instead (27 GB and 3.7 GB RSS).
 - Not measured: 32 cores (script /tmp/al-arena/v3/par.sh on the forge, not run).
+
+## Per-thread regions (ADR 0037 amendment 2026-11-03)
+
+Old runtime (main 21b5933) vs per-thread regions, same compiled programs with only `Alice.Runtime.dll` swapped,
+interleaved cold processes (old/new, then new/old), 1 warm-up + 3 rounds, median ms [min-max]. Serial: `taskset -c
+14,30`, `ALICE_PAR=0`; parallel: all 32 cores. Shared box (load 9-20). Checksums identical in every run.
+
+| port | serial old | serial new | new / old | parallel old | parallel new | new / old |
+|---|---|---|---|---|---|---|
+| symreg | 8690 [8299-8787] | 8223 [8084-8239] | 0.946 | 875 [863-884] | 892 [886-893] | 1.020 |
+| tree-radix | 14890 [14862-15350] | 15001 [13914-15384] | 1.007 | 1085 [1024-1097] | 1089 [1034-1093] | 1.004 |
+| tree-matmul | 9770 [9514-9878] | 9880 [9634-10175] | 1.011 | 1290 [1287-1377] | 1227 [1182-1261] | 0.951 |
+| tree-bitonic | 120185 [119525-121176] | 120843 [119759-121169] | 1.005 | 6001 [5924-6268] | 5972 [5814-6067] | 0.995 |
+
+No regression beyond noise (every ratio within 0.95-1.02, ranges overlap). None of these ports opens a `scope`, so the
+only new work on their path is one thread-static read per fork job; the region cost itself is covered by
+`ArenaTests` (0 allocations steady state, forks inside a region).
