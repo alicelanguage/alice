@@ -65,6 +65,8 @@ public sealed partial class AirToWasm
             case "System.Runtime.CompilerServices.DefaultInterpolatedStringHandler" or "System.Text.StringBuilder": return WT.Builder;
             case "System.Diagnostics.Stopwatch": return WT.Stopwatch;
             case "System.TimeSpan": return WT.TimeSpan;
+            case "System.ValueTuple" when args.Count is >= 2 and <= 7 && args.All(a => a.K == WK.U64): return SlotClass(args.Count).Type;
+            case "Alice.Runtime.ArenaRegion": return WT.I32;
             case "System.String": return WT.Str;
             case "System.Int32": return WT.I32;
             case "System.Int64": return WT.I64;

@@ -115,6 +115,7 @@ public sealed partial class WasmBody
                     foreach (var s in sq.Pre) Stmt(s);
                     return Raw(sq.Value);
                 }
+            case AirArenaExpr ae: return Arena(ae);
             case AirRent r: return Rent(r);
             case AirRelease r:
                 {

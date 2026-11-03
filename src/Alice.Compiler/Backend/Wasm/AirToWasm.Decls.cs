@@ -64,6 +64,17 @@ public sealed partial class AirToWasm
         ProgramC = Add(new WClass { Name = "Program", IsStatic = true, Sym = binder.Program });
     }
 
+    readonly Dictionary<int, WClass> slotClasses = new();
+
+    /// <summary>The slot value of an N-word arena slab (ADR 0037): a struct of N u64 words, `(ulong, ulong, ...)`.</summary>
+    internal WClass SlotClass(int words)
+    {
+        if (slotClasses.TryGetValue(words, out var s)) return s;
+        s = Add(new WClass { Name = "System.ValueTuple`" + words, IsStruct = true });
+        for (int k = 0; k < words; k++) s.AddField("Item" + (k + 1), WT.U64);
+        return slotClasses[words] = s;
+    }
+
     internal WClass RuntimeClass(string name) => byCs.TryGetValue(name, out var c) ? c : throw new WasmUnsupportedException("Type:runtime-class", null, name);
 
     internal bool IsException(WClass c) => c.IsSubclassOf(byCs["System.Exception"]);

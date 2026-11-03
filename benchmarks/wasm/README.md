@@ -51,6 +51,17 @@ ALICE_TTFC=1 node nbody.mjs 2>&1 >/dev/null
 
 ## Arena enums (ADR 0037)
 
-The wasm target compiles with the affine arena plan off (`AffinePlan.Disable` around `AirToWasm.Compile`, the
-same as `ALICE_NO_ARENA=1`): arena sum types stay heap records. Lowering the `AirArena*` nodes to a
-linear-memory arena is a follow-up.
+Arena sum types are u64 terms in linear-memory slabs (src/Alice.Compiler/Backend/Wasm/WasmBody.Arena.cs, the arena
+section of rt.wat): one slab per slot width shared by every arena enum of that width, one lane, a free list
+threaded through freed slots, bump allocation with doubling growth (slot indices survive it), recursive Drop that
+loops along the last child, and regions that save and restore every cursor. `ALICE_NO_ARENA=1` (or
+`WasmOptions.Arena = false`) keeps them heap records.
+
+Default sizes, Node 26, median of 3 wall-clock runs (2026-11-03). Output identical to `alice run` in both modes.
+
+    program      arena .wasm   records .wasm   arena     records   .NET 1 core
+    tree-radix   11 801 B      12 415 B        17.9 s    20.2 s    17.4 s
+    merkle       16 877 B      17 205 B        14.7 s    13.4 s    10.2 s
+
+tree-radix is 11% faster with the arena; merkle is 9% slower (cause not measured; every Take and Alloc is a call
+into rt.wat, not inlined code as in the IL backend).
