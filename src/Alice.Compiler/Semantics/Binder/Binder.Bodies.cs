@@ -102,6 +102,7 @@ public sealed partial class Binder
         if (d.SuperInit != null) BindArgs(d.SuperInit);
         if (!d.HasBody) return;
         BindBlock(d.Body);
+        CheckStreamDef(m, d);   // ADR 0038 (Binder.Dataflow.cs)
         d.HoistedLocals = hoisted;
         if (inst != null)
         {

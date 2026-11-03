@@ -35,9 +35,9 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0241 | affine value escapes (planned, ADR 0037) | `affine enum Tree ...`<br>`puts t` | `affine value \`t\` escapes: ...` | consume it with `case`, move it to an Alice call or return it; or drop `affine` (the type becomes records) |
 | AL0242 | use after consume (planned, ADR 0037) | `case t ... end`<br>`total(t)` | `affine value \`t\` read after it was consumed` | read the fields inside the `case`, or pass it as `borrow` |
 | AL0243 | borrow consumed (planned, ADR 0037) | `def f(borrow t : Tree)`<br>`  case t ...` that frees `t` | `borrowed affine value \`t\` is consumed` | drop `borrow`, or only read `t` |
-| AL0244 | stage not isolated (planned, ADR 0038) | `xs = List(Int32).new`<br>`dataflow do ... stage { \|v\| xs << v }` | `dataflow stage captures ...` | build state with `stage(state: ...)` or send it through the stream |
-| AL0245 | replicated stage not pure (planned, ADR 0038) | `stage(par: true) { \|t\| puts t }` | `stage(par: true) is not pure: ...` | remove the effect, or drop `par: true` |
-| AL0246 | not a static network (planned, ADR 0038) | two `stage`s reading `lines`, or a cycle | `dataflow edge ... has more than one consumer` / `cycle` | split the stream explicitly, or use actors for feedback |
+| AL0244 | stage not isolated (ADR 0038) | `xs = List(Int32).new`<br>`dataflow do ... stage { \|v\| xs << v }` | `dataflow stage captures ...` | build state with `stage(state: ...)` or send it through the stream |
+| AL0245 | replicated stage not pure (ADR 0038) | `stage(par: true) { \|t\| puts t }` | `stage(par: true) is not pure: ...` | remove the effect, or drop `par: true` |
+| AL0246 | not a static network (ADR 0038) | two `stage`s reading `lines`, or a cycle | `dataflow edge ... has more than one consumer` / `cycle` | split the stream explicitly, or use actors for feedback |
 | AL0247 | not CM-admissible (planned, ADR 0039) | `cm for i in 0...n`<br>`  a[i] = a[i - 1] + 1` | `cannot lower \`cm for\`: ...` | write a scan, combine, compaction or permute shape, or use a plain `for` |
 | AL0248 | non-associative combine (planned, ADR 0039) | `cm for ... h[k[i]] += x[i]` with Float64 `h` | `combine on floats needs \`ordered\`` | use integers, mark it `ordered`, or use a plain `for` |
 | AL0249 | unproven permutation (planned, ADR 0039) | `cm for i ... out[p[i]] = a[i]` | `permutation \`p\` not provably in range and distinct` | produce `p` with `sort_by_key`/`compact`, or mark it `@[Permutation]` |

@@ -108,6 +108,7 @@ public sealed class MethodDecl : Item
     public bool IsPartial;   // `partial def f : T` (no body): a source generator writes it ([GeneratedRegex], [LibraryImport])   // `unsafe def`: pointers allowed in the whole method (C# unsafe)
     public string? RuleName;      // `rule name(...)` (RULES.al): a pure Bool method checked over Domains by `alice prove`
     public List<RuleDomain> Domains = new();           // `pure def`: proven free of effects, or AL0210
+    public bool IsStream;         // `stream def` (ADR 0038): an iterator whose consumer may run concurrently; its body follows the stage capture rule
     public bool IsSafe;           // `safe def`: only Alice code, no interop, native or unchecked escape, or AL0212
     public List<string> TypeParams = new();
     public List<Param> Params = new();

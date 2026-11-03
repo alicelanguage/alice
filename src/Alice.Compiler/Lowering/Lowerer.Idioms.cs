@@ -330,6 +330,7 @@ public sealed partial class Lowerer
         SuperExpr { Args: { } sa } => sa.Select(a => a.Value),
         AwaitExpr aw => [aw.E],
         SpawnExpr sp => [sp.Body],   // the task body is a lambda: every mention inside is a capture
+        DataflowExpr df => [df.Body],   // ADR 0038: node blocks capture like lambdas
         _ => [],
     };
 }
