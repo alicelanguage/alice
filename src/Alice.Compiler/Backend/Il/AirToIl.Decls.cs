@@ -67,6 +67,10 @@ public sealed partial class AirToIl
         lowerer = new Lowerer(binder) { Sequential = true };
         Module = new IlModule(name);
         Types = new IlTypes(binder, Module);
+        Types.InstantiateType = InstantiateTypeImpl; // D1.10 il-emit2
+        Types.InstantiateMethod = InstantiateMethodImpl;
+        allAsts = asts;
+        declaring = 1;
         hot = new HotPolicy(binder);
         foreach (var f in files) Module.AddDocument(f.Path, f.Text);
 
@@ -199,12 +203,14 @@ public sealed partial class AirToIl
                 case DelegateDecl: throw new IlUnsupportedException("Decl:delegate", Sp(it));
                 case TypeDecl { RefineScope: not null }: throw new IlUnsupportedException("Decl:refinement", Sp(it));
             }
+            if (outer?.Sym is TypeSym { TypeParams.Count: > 0 }) throw new IlUnsupportedException("Decl:type-nested-in-generic", Sp(it));
+            if (it is TypeDecl or EnumDecl && it.Sym is TypeSym { TypeParams.Count: > 0 }) { RegisterGenericDef(it, ns); continue; } // D1.10 il-emit2
             var sym = (TypeSym)it.Sym!;
             if (Types.BySym.TryGetValue(sym, out var existing)) { byItem[it] = existing; decls.Add((it, existing)); continue; }
             var a = new AliceT { Sym = sym };
             if (it is TypeDecl td)
             {
-                if (sym.TypeParams.Count > 0) throw new IlUnsupportedException("Decl:generic-type", Sp(it), sym.Name);
+
                 if (sym.SoaStore != null || sym.SoaOf != null) throw new IlUnsupportedException("Decl:soa", Sp(it), sym.Name);
                 a.IsValueType = td.Kind is "struct" or "record struct";
                 a.IsInterface = td.Kind == "interface";
@@ -655,7 +661,7 @@ public sealed partial class AirToIl
     {
         var m = (MethodSym)d.Sym!;
         if (d.IsPartial) throw new IlUnsupportedException("Decl:partial-method (source generator)", Sp(d), m.Name);
-        if (m.TypeParams.Count > 0 && !m.HasInferredGenerics) throw new IlUnsupportedException("Decl:generic-method", Sp(d), m.Name);
+        if (m.TypeParams.Count > 0 && !m.HasInferredGenerics) { DeclareTemplate(d, a, m); return; } // D1.10 il-emit2
         if (d.Attrs.Any(x => x is not ("Inline" or "NoInline" or "Hot" or "StrictMath" or "Native" or "Open" or "Stack") && !x.StartsWith("Native(") && !x.StartsWith("__enumerable:")))
             throw new IlUnsupportedException("Decl:attribute", Sp(d), string.Join(",", d.Attrs));
         if (m.Params.Any(p => p.Block || p.Mod != "")) throw new IlUnsupportedException("Decl:param-kind", Sp(d), m.Name);
@@ -726,7 +732,7 @@ public sealed partial class AirToIl
         var am = new AMethod
         {
             Name = name, Owner = a, Ret = retT, Params = [.. ps], ParamNames = [.. names], IsStatic = isStatic, IsCtor = m.IsCtor,
-            IsVirtual = (attrs & MethodAttributes.Virtual) != 0, IsAbstract = abstractM, IsExtension = ext, Def = md, Sym = m, Inst = inst, Decl = d,
+            IsVirtual = (attrs & MethodAttributes.Virtual) != 0, IsAbstract = abstractM, IsExtension = ext, Def = md, Sym = m, Inst = inst, Decl = d, Scope = Types.Scope,
             Defaults = defaults, HasDefault = hasDefault, ParamsArray = m.Params.Count > 0 && m.Params[^1].Splat,
         };
         if (m.IsCtor) a.Ctors.Add(am); else a.Methods.Add(am);
@@ -788,15 +794,7 @@ public sealed partial class AirToIl
 
     IlMethodDef? EmitBodies(List<FileNode> asts, bool exe)
     {
-        foreach (var am in toEmit) Guard(am.ToString(), () => MethodBody(am, asts));
-        if (SynthOn) SynthBodies(); // S3 il-emit2
-        else
-        {
-            foreach (var a in Types.BySym.Values.Distinct())
-                foreach (var ctor in a.Ctors.Where(x => x.Decl == null && x.Owner == a).ToList())
-                    if (!ctor.Def.Attributes.HasFlag(MethodAttributes.Private) || !a.IsAdt) Guard(a + "::.ctor", () => SyntheticCtor(ctor));
-            foreach (var (owner, inits) in staticInits) Guard(owner + "::.cctor", () => StaticCtor(owner, inits));
-        }
+        EmitPending(asts);
         IlMethodDef? main = null;
         var mains = asts.Where(f => f.Items.OfType<StmtItem>().Any()).ToList();
         if (mains.Count > 1) Fail(new IlUnsupportedException("Main:several-files"));
@@ -829,7 +827,33 @@ public sealed partial class AirToIl
             });
             if (exe) main = md;
         }
+        EmitPending(asts);   // instances reached from Main
         return main;
+    }
+
+    int emittedT, emittedS;
+    bool legacyDone;
+
+    /// <summary>The user bodies and synthesized bodies declared so far; repeated until no instance (D1.10) adds more.</summary>
+    void EmitPending(List<FileNode> asts)
+    {
+        do
+        {
+            while (emittedT < toEmit.Count)
+            {
+                var am = toEmit[emittedT++];
+                Guard(am.ToString(), () => { Types.Scope = am.Scope; try { MethodBody(am, asts); } finally { Types.Scope = null; } });
+            }
+            if (SynthOn) SynthBodies(); // S3 il-emit2
+            else if (!legacyDone)
+            {
+                legacyDone = true;
+                foreach (var a in Types.BySym.Values.Distinct())
+                    foreach (var ctor in a.Ctors.Where(x => x.Decl == null && x.Owner == a).ToList())
+                        if (!ctor.Def.Attributes.HasFlag(MethodAttributes.Private) || !a.IsAdt) Guard(a + "::.ctor", () => SyntheticCtor(ctor));
+                foreach (var (owner, inits) in staticInits) Guard(owner + "::.cctor", () => StaticCtor(owner, inits));
+            }
+        } while (emittedT < toEmit.Count || SynthOn && emittedS < synthBodies.Count);
     }
 
     void Guard(string where, Action a)

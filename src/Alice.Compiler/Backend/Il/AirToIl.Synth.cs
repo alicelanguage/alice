@@ -54,11 +54,14 @@ public sealed partial class AirToIl
         }
         foreach (var t in synth.Types)
         {
+            if (genericBySym.ContainsKey(t.Sym)) continue;   // declared per instance (DeclareInstance)
             var a = t.Sym == binder.Program ? ProgramT : Types.BySym.GetValueOrDefault(t.Sym)
                 ?? throw new IlUnsupportedException("Synth:type", null, t.Name);
             SynthDeclare(a, t);
         }
         if (synth.ModuleInitializer != null) throw new IlUnsupportedException("Decl:class-body (module initializer)", null);
+        declaring = 0;
+        DrainInstances();
     }
 
     /// <summary>The user members of a type declaration: plain fields (initializers run from FieldInits / `.cctor`),
@@ -138,7 +141,7 @@ public sealed partial class AirToIl
         }
         foreach (var n in d.Nested)
         {
-            var va = Types.BySym.GetValueOrDefault(n.Sym) ?? throw new IlUnsupportedException("Synth:nested", null, n.Name);
+            var va = VariantOf(a, n.Sym) ?? throw new IlUnsupportedException("Synth:nested", null, n.Name);
             SynthDeclare(va, n);
         }
     }
@@ -172,7 +175,7 @@ public sealed partial class AirToIl
         {
             Name = cctor ? ".cctor" : ctor ? ".ctor" : md.Name, Owner = a, Ret = ret, Params = ps,
             ParamNames = [.. md.Params.Select(p => p.Name)], IsStatic = st || cctor, IsCtor = ctor && !cctor,
-            IsVirtual = (def.Attributes & MethodAttributes.Virtual) != 0, IsAbstract = md.Is(AirMethodFlags.Abstract), Def = def,
+            IsVirtual = (def.Attributes & MethodAttributes.Virtual) != 0, IsAbstract = md.Is(AirMethodFlags.Abstract), Def = def, Scope = Types.Scope,
         };
         if (md.Implements is { } impl)
         {
@@ -190,8 +193,20 @@ public sealed partial class AirToIl
     /// <summary>S3: the synthesized bodies (after the user bodies; replaces SyntheticCtor and StaticCtor).</summary>
     void SynthBodies()
     {
-        foreach (var (a, md, am) in synthBodies)
+        while (emittedS < synthBodies.Count)
+        {
+            var (a, md, am) = synthBodies[emittedS++];
             Guard(a + "::" + am.Name, () =>
+            {
+                Types.Scope = am.Scope;
+                try { SynthBody(a, md, am); } finally { Types.Scope = null; }
+            });
+        }
+    }
+
+    void SynthBody(AliceT a, AirMethodDecl md, AMethod am)
+    {
+        {
             {
                 var body = SmTree.CloneList(md.Body!);
                 if (md.Synth is AirSynth.TypeInitializer or AirSynth.DefaultCtor or AirSynth.StructCtor or AirSynth.PrimaryCtor)
@@ -205,7 +220,8 @@ public sealed partial class AirToIl
                 var b = new IlBody(this, a, isCctor ? null : am, Body(am.Def), am.Ret, am.IsStatic,
                     am.ParamNames.Select((n, i) => (n, am.Params[i])).ToList());
                 b.Body(SmAdapt(body));
-            });
+            }
+        }
     }
 
     /// <summary>S4: a user constructor's prologue: the type's FieldInits, the base constructor (with `super`
