@@ -183,6 +183,7 @@ are published as GitHub prereleases. Every guarantee the toolchain makes is list
 - Range analysis: locals passed by `ref`/`out` lose their range, so their arithmetic stays checked (audit F15).
 - `@[Native]` C: bounds-checked indexing, trapping overflow and division, masked shifts, collision-free generated names (audit F16).
 - Fix (ADR 0013): a wrapping operator no longer wraps the checked arithmetic inside its operands; found by the prove differential fuzz.
+- Review r1 (F3/F6/F8/F20): `--backend il` runs the C# path's diagnostic gate first, so AL0310 (nil) and AL0300 (constant overflow) reject the program on both backends; inside `unchecked ... end` the operands of `&+ &- &*` wrap too; `alice prove --smt` computes Int8/UInt8/Int16/UInt16 at Int32 like the compiled code and sample-checks every Z3 proof against the compiled rule (a mismatch is reported as a failure, never as proven); docs and RULES.al state that narrow ints promote to Int32.
 - `alice prove`: domains ending at `Int32::MAX` or near `Int64::MAX` are enumerated exactly; `--smt` replays every Z3 counterexample and evaluates every statement of a rule (audit F14).
 - Affine arena analysis (ADR 0037, P1.2) decides arena or records per sum type; any escape or use after move falls back to records ([AffineTests](tests/Alice.Tests/Compiler/AffineTests.cs)).
 
