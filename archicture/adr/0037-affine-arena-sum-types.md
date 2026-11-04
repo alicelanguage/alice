@@ -1,6 +1,6 @@
 # ADR 0037: Affine arena memory for sum types
 
-Status: Accepted (direction; not yet implemented). Amends ADR 0006 ("Alice never implements allocation or freeing")
+Status: Accepted, implemented in 1.0.0 (`affine enum`, AL0240-AL0243, `src/Alice.Runtime/Arena`). Amends ADR 0006 ("Alice never implements allocation or freeing")
 and extends ADR 0016 (ownership) and ADR 0017 (`scope`, `borrow`) to recursive sum types. Design detail:
 `/work/reports/paradigms-plan.md` section 1.
 

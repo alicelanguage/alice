@@ -44,8 +44,8 @@ Alice checks report `AL` codes; .NET binding errors keep `CS` codes mapped to `f
 | AL0250 | JSON mapping (ADR 0036 C2.5) | `JSON.parse(Int32, s)`; `record Bag(items : Set(Int32))` + `to_json(b)`; a variant field named `type` | `JSON mapping: ... needs an Alice record, class or enum` / `cannot map Bag to JSON: ...` / `variant Ev::Click has a field named \`type\`, which is the sum-type tag` | use `JSON.parse(text)` for JSON::Any, map arrays/hashes/nilables of mappable types, or rename the field |
 | AL0001 | other | any unclassified compiler error | - | read the message |
 
-Codes marked *planned* are reserved by an accepted ADR and are not reported by the compiler yet. AL0222-AL0229 are unassigned (the
-planned paradigm codes were drafted there and moved to AL0240-AL0249, clear of the live AL0220/AL0221).
+Every code in the table is reported by the 1.0 compiler. AL0222-AL0229 are unassigned (the paradigm codes were
+drafted there and moved to AL0240-AL0249, clear of the live AL0220/AL0221).
 
 Output format (CLI):
 

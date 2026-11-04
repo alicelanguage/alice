@@ -1,6 +1,7 @@
 # ADR 0036: Alice Core, the standard library
 
-Status: Accepted (1.0 stream C; contracts frozen, engines not yet implemented). Applies ADR 0019 inward; uses ADR 0016
+Status: Accepted, implemented in 1.0.0 (`src/Alice.Runtime/Core/`); compile-time regex emission is planned for 1.1
+(amendment 2), and `Net.Http` is a client (no own server in 1.0). Applies ADR 0019 inward; uses ADR 0016
 (owned buffers), ADR 0017 (`borrow`), ADR 0024 (`--native`), ADR 0028 (actors per connection).
 
 Today regex and JSON are the BCL with Ruby names plus extra allocation. `/re/` goes through a dictionary of

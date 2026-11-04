@@ -13,8 +13,9 @@
 
 ---
 
-> **Status: Alice 1.0.0** released. The language, the guarantees in [INVARIANTS.md](INVARIANTS.md)
-> and the CLI are what 1.0 will ship; what is left is listed in the [1.0 checklist](docs/releases.md#10-release-checklist).
+> **Status: Alice 1.0.1**, released 2026-11-04 (1.0.0 the same day). The language, the guarantees in
+> [INVARIANTS.md](INVARIANTS.md) and the CLI are the 1.0 contract; the release gates and their evidence are in the
+> [1.0 checklist](docs/releases.md#10-release-checklist), and the known gaps in [production readiness](docs/production.md).
 
 Alice is a programming language for .NET. You write blocks, `case/in` and DSLs; the compiler infers static
 types, turns whole classes of bugs into compile errors, and makes your loops fast without you asking. Every .NET
@@ -144,7 +145,7 @@ Toolchains, nightly and building from source: [docs/tooling.md](docs/tooling.md)
 [Architecture](archicture/) ·
 [Changelog](CHANGELOG.md)
 
-Alice is a release candidate: please report bugs, and report anything that breaks [INVARIANTS.md](INVARIANTS.md) privately as described in [SECURITY.md](SECURITY.md).
+Alice 1.0 is a stable release: please report bugs, and report anything that breaks [INVARIANTS.md](INVARIANTS.md) privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

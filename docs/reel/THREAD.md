@@ -30,7 +30,7 @@ Arena-allocated enums cut memory 2-8x on tree workloads (benchmarks/bend2/result
 
 [GIF: 5-arena/demo.gif]
 
-Playground: 1.1
+Playground: https://playground.alice-lang.org
 
 Docs: docs/proofs.md, INVARIANTS.md
 Releases: https://github.com/alice-lang/alice/releases

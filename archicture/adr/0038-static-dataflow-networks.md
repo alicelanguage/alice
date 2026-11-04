@@ -1,7 +1,7 @@
 # ADR 0038: Static dataflow networks over bounded SPSC rings
 
-Status: Accepted (direction; not yet implemented). Amends ADR 0005 (`Channel`/`spawn` lowering) for proven networks;
-builds on ADR 0028 (isolation rules) and ADR 0029 (fusion). Ships in 1.0 (Wave 3). Design detail:
+Status: Accepted, implemented in 1.0.0 (`dataflow do`, AL0244-AL0246, `src/Alice.Runtime/Dataflow`). Amends ADR 0005 (`Channel`/`spawn` lowering) for proven networks;
+builds on ADR 0028 (isolation rules) and ADR 0029 (fusion). Shipped in 1.0.0. Design detail:
 `/work/reports/paradigms-plan.md` section 2.
 
 Pipelines are the shape fork/join and fusion do not reach: their stages are dependent and usually stateful (a

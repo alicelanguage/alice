@@ -1,8 +1,8 @@
 # Alice language reference
 
-Alice is a .NET language with Crystal/Ruby syntax. Files use `.al`. The compiler (pure C#) parses, binds, lowers to MIR, prints C#, and Roslyn emits Release IL (ADR 0007). Alice types are ordinary CLR types.
+Alice is a .NET language with Crystal/Ruby syntax. Files use `.al`. The compiler (pure C#) parses, binds, lowers to MIR and AIR, and the IL backend emits Release IL directly (ADR 0033, the default since 1.0.0; `--backend csharp` prints C# for Roslyn instead, ADR 0007). Alice types are ordinary CLR types.
 
-Status: unmarked = implemented and covered by `tests/Alice.Tests/Compiler/`. **(planned)** = not implemented.
+Status: everything on this page is implemented in 1.0 and covered by `tests/Alice.Tests/Compiler/`.
 
 ## 0. Goals
 

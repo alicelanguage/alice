@@ -1,6 +1,6 @@
 # ADR 0039: Connection-Machine data-parallel primitives: scan, segmented scan, combine, compaction, permutation
 
-Status: Accepted (direction; not yet implemented). Extends the admission rules of ADR 0015 (purity gate), ADR 0021
+Status: Accepted, implemented in 1.0.0 (`cm for`, AL0247-AL0249, `src/Alice.Runtime/Cm`). Extends the admission rules of ADR 0015 (purity gate), ADR 0021
 (`gpu for`) and ADR 0025 (affine subscripts). Design detail: `/work/reports/paradigms-plan.md` section 3.
 
 `par for` (`Lowerer.LoopPar.cs`) proves only "iteration i writes `a[i]` or `a[i * w + j]` and may accumulate one

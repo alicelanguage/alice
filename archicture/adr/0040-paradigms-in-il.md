@@ -1,6 +1,6 @@
 # ADR 0040: The paradigms in IL: how AirToIl lowers fork/join, arenas, CM primitives and dataflow
 
-Status: Accepted (direction; not yet implemented). Lead direction 2026-11-02. Builds on ADR 0032 (AIR), ADR 0033 (IL
+Status: Accepted, implemented in 1.0.0 (arena, CM and dataflow nodes in AIR and `AirToIl`; no `AirVerifier` class). Lead direction 2026-11-02. Builds on ADR 0032 (AIR), ADR 0033 (IL
 backend) and the paradigm ADRs 0015 (fork/join), 0037 (affine arenas), 0038 (dataflow), 0039 (CM primitives); each of
 those carries a short "IL lowering" paragraph that points here.
 

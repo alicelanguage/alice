@@ -1,6 +1,6 @@
 # ADR 0032: AIR, a typed structured IR replacing MIR in place
 
-Status: Accepted (1.0 backend direction; not yet implemented). Evolves ADR 0007 (MIR stage) and ADR 0014 (passes run on AIR).
+Status: Accepted, implemented in 1.0.0 (`src/Alice.Compiler/Air`, the IR of the IL and wasm backends). Evolves ADR 0007 (MIR stage) and ADR 0014 (passes run on AIR).
 
 MIR is a C# AST with strings where types and symbols should be: `MDecl.TypeCs`, `MNew.TypeCs`, `MCast.TypeCs` and
 `MIs.TypeCs` hold C# text, `MBinary.Op`/`MUnary.Op` are strings, `MDecl.TypeCs == null` means `var` (Roslyn infers the

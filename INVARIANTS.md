@@ -19,7 +19,8 @@ These are outside every entry below unless the entry says otherwise:
   bypass the type system.
 - The limits listed under "Not ready yet" and "Security limits" in [docs/production.md](docs/production.md). They
   are known and documented; a way around a limit that is not listed there is in scope.
-- Error codes marked "planned" in [docs/errors.md](docs/errors.md) (features not shipped yet).
+- Error codes marked "planned" in [docs/errors.md](docs/errors.md), if any: reserved by an ADR and not reported
+  by the compiler (none in 1.0).
 - Hardware faults, out-of-memory and stack overflow, a modified toolchain, or a modified .NET runtime.
 
 ## How to report a violation

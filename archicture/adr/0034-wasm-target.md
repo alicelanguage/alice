@@ -1,6 +1,7 @@
 # ADR 0034: WebAssembly target without the .NET runtime (`runtime = "alice"`)
 
-Status: Accepted (1.0 backend direction; not yet implemented). Extends ADR 0023 and ADR 0024.
+Status: Accepted, implemented in 1.0.0 for loose files (`alice build|run --target wasm32|wasm32-wasi`,
+`src/Alice.Compiler/Backend/Wasm`); the `[build] runtime = "alice"` package setting is planned for 1.1. Extends ADR 0023 and ADR 0024.
 
 `kind = "wasm"` (ADR 0023) ships the .NET WebAssembly runtime: 1.5-2.5 MB to download and 300-800 ms to start, and
 AOT only works with the wasm-tools workload. Rust ships 10-40 KB. Pure Alice code needs none of the .NET runtime.

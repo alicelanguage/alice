@@ -1,6 +1,8 @@
 # Alice 1.0 roadmap
 
-Status: draft by the CTO agent, 2026-11-02. Direction from the lead (verbatim goals in `archicture/user/` are
+Status: completed. Alice 1.0.0 shipped on 2026-11-04 ([CHANGELOG.md](../CHANGELOG.md)); this is the historical plan,
+drafted by the CTO agent on 2026-11-02. Not in 1.0 and planned for 1.1: signed and notarized archives
+([releases.md](releases.md#10-release-checklist)) and compile-time regex emission (ADR 0036 amendment 2). Direction from the lead (verbatim goals in `archicture/user/` are
 untouched; this file is the engineering plan). Baseline: v0.14.0 (`b82a902`), 1484 tests, 2 failing on Linux x64.
 
 ## The promise

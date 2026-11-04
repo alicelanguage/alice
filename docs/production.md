@@ -1,13 +1,13 @@
 # Production readiness
 
-What Alice 0.13.0 is ready for, the test that backs each claim, and what is not ready yet. Update this page in the
+What Alice 1.0 is ready for, the test that backs each claim, and what is not ready yet. Update this page in the
 same commit as any change that moves a row.
 
 ## Ready
 
 | Area | What works | Evidence |
 |---|---|---|
-| Compiler | Alice -> C# -> IL through Roslyn; null safety, `val`, data races (AL0202) are compile errors | `tests/Alice.Tests/Compiler/` (1180+ tests, `dotnet test`) |
+| Compiler | Alice -> AIR -> IL with the IL backend (default since 1.0.0; `--backend csharp` goes through C# and Roslyn); null safety, `val`, data races (AL0202) are compile errors | `tests/Alice.Tests/Compiler/` (1180+ tests, `dotnet test`) |
 | Performance | At or ahead of idiomatic C# on the repo suite; 0-byte allocation tests; fork/join of 2 and 3 calls with serial clones; pooled arrays, lists and hashes of numbers | `benchmarks/README.md`, `AllocationTests`, `ParallelizeTests`, `OwnershipTests` |
 | C# interop | Alice types are plain CLR types; C# calls Alice and Alice calls C# both ways | `Integration/SampleTests.Interop_samples_build_and_run` |
 | F# interop | F# calls a `naming = "dotnet"` library and matches its sum types | `Integration/FSharpInteropTests` |

@@ -14,7 +14,7 @@ default), and credit you in the release notes unless you prefer otherwise.
 | Version | Security fixes |
 |---|---|
 | latest 1.x minor (1.0.x, 1.1.x, ...) | yes |
-| 1.0.0-rc.N | fixed in the next rc |
+| release candidates (`X.Y.Z-rc.N`) | fixed in the next candidate or the release |
 | nightly | fixed in the next nightly |
 | older stable releases | no: update with `alice self update` |
 

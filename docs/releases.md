@@ -73,16 +73,16 @@ since the last nightly. Users get it with `alice toolchain install nightly`.
 
 ## 1.0 release checklist
 
-1.0 ships as `1.0.0-rc.N` candidates first; `1.0.0` is cut from the last candidate with no changes other than the
-version and the CHANGELOG heading. Every gate below is checked off, with a link to its evidence, before the
-`v1.0.0` tag is pushed.
+Every gate below was checked off, with a link to its evidence, before the `v1.0.0` tag was pushed on 2026-11-04.
+Later releases use the same gates; a minor release may publish `X.Y.Z-rc.N` candidates first, and the final version
+is then cut from the last candidate with no changes other than the version and the CHANGELOG heading.
 
 | Gate | Evidence | Owner |
 |---|---|---|
 | Full suite green on Linux, macOS and Windows (`dotnet test`, no skipped SMT tests: `ALICE_REQUIRE_Z3=1`) | `tests/Alice.Tests` (3289 tests), `tests/Alice.Check.Tests` (46 tests), CI workflow | CTO |
 | `bend2` and the repo benchmark suite re-run on the release commit and published, with machine and date | `benchmarks/bend2/results/arena.md` (2024-11-03, arch@forge), `benchmarks/bend2/results/il-vs-csharp.md`, `benchmarks/core/regex/results.md` | CTO |
 | `bend-vs` re-run and published | `benchmarks/bend-vs/results/summary.md` | CTO |
-| IL backend is the default target; the C# printer remains as the differential oracle (`alice emit` shows AIR/IL) | **Deferred to 1.1**: IL backend ready but needs generic method inference (MCall:unresolved-static, see `/work/reports/il-default-trial.md`); C# remains default at 1.0. ADR 0033 stays Accepted-with-amendment | CTO |
+| IL backend is the default target; the C# printer remains as the differential oracle (`alice emit` shows AIR/IL) | Done: IL is the default backend in 1.0.0 (ADR 0033, `ResolveBackend` in `src/Alice.Cli/Commands/CompileCommands.cs`); `--backend csharp`, `[build] backend = "csharp"` or `ALICE_BACKEND=csharp` select the C# printer | CTO |
 | Fuzzers clean for 24 h on the release commit (today: the prove differential fuzz, `ProveDifferentialTests`; plus any fuzz target added before release) | `/work/reports/fuzz-findings.md`, `/work/reports/fuzz-findings-2.md` (24h+ clean runs, wt/release branch) | CTO |
 | All review rounds closed (security audit findings fixed or listed as known limits in `docs/production.md`) | `/work/reports/review-r1.md` (review round 1 complete), `/work/reports/security-audit.md`, `CHANGELOG.md` Security section, `docs/production.md` Security limits | CTO |
 | Every entry in [INVARIANTS.md](../INVARIANTS.md) names tests that exist and pass | `tests/Alice.Tests/Meta/ReleaseMetadataTests.cs:Invariants_file_tests_exist_and_pass` | CTO |
