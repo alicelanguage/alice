@@ -1,6 +1,6 @@
 # Performance model
 
-Alice rewrites common source patterns into the IL shape a hand-optimizing C# author would write (ADR 0007). Memory and GC: [heap and GC](heap-gc.md). Parallel recursion: [fork/join](fork-join.md). Inspect with `alice emit file.al`. Code: `src/Alice.Compiler/Lowering/`. Tests: `tests/Alice.Tests/Compiler/`.
+Alice compiles to .NET IL (ADR 0033, default since 1.0.0), rewriting common source patterns into the IL shape a hand-optimizing C# author would write (ADR 0007). Memory and GC: [heap and GC](heap-gc.md). Parallel recursion: [fork/join](fork-join.md). Inspect with `alice emit file.al`. Code: `src/Alice.Compiler/Lowering/`. Tests: `tests/Alice.Tests/Compiler/`.
 
 ## Pipeline
 

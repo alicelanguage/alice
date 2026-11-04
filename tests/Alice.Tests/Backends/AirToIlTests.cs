@@ -574,4 +574,35 @@ puts f(1_u32, 2_u32)
         end
         puts apply(5, ->double)
         """);
+
+    // ------------------------------------------------------------------ property attributes
+
+    [Fact]
+    public void Property_attribute_json_name() => Differential("""
+        using System.Text.Json
+        using System.Text.Json.Serialization
+        record Range(start : Int32, @[JsonPropertyName("end")] stop : Int32)
+        puts JsonSerializer.Serialize(Range.new(2, 9))
+        """);
+
+    [Fact]
+    public void Property_attribute_obsolete() => Differential("""
+        using System
+        record Item(@[Obsolete] code : Int32)
+        puts Item.new(42).code
+        """);
+
+    [Fact]
+    public void Method_reference_through_two_generic_layers() => Differential("""
+        def apply<T>(x : T, f : Func(T, T)) : T
+          f.(x)
+        end
+        def wrap<U>(v : U, g : Func(U, U)) : U
+          apply(v, g)
+        end
+        def inc(n : Int32) : Int32
+          n + 1
+        end
+        puts wrap(10, ->inc)
+        """);
 }

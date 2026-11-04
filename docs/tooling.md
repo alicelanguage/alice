@@ -41,6 +41,15 @@ transpiling and the Roslyn compile: a hello world goes from 1.2 s to 0.13 s on t
 The directory is owner-only (0700 on Unix) and every image carries an HMAC with a per-install key (`.key`, 0600);
 a modified image, or one in a directory other users can write to, is a miss and gets recompiled.
 
+n### Backend
+
+The IL backend (ADR 0033) is the default compilation target (1.0.0). Escape hatches preserve C# printer access:
+
+1. `--backend csharp` flag on `alice run`, `alice build`, `alice emit`
+2. `[build] backend = "csharp"` in alice.toml
+3. `ALICE_BACKEND=csharp` environment variable
+
+Precedence: flag > toml > env > default IL. The C# printer remains the differential oracle (testing).
 ## alice.toml
 
 ```toml

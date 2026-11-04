@@ -117,11 +117,10 @@ public static class CompileCommands
     public static int RunCmd(List<string> a)
     {
         if (WasmTarget(a)) return WasmCommands.RunAlice(a);   // ADR 0034: native wasm backend (runtime = "alice")
-        string? backend = TakeOption(a, "--backend");
-        if (backend is not (null or "csharp" or "il")) throw new UsageException($"unknown backend `{backend}`", "--backend il | csharp");
+        string? flagBackend = TakeOption(a, "--backend");
+        string backend = ResolveBackend(flagBackend, null);
         var o = Parse(a);
-        if (o.Files.Count == 0) return RunProject(o);
-        if (backend == "il") return RunIl(o);
+        if (o.Files.Count == 0) return RunProject(o, backend);
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Files[0]);
         string? key = RunCache.Enabled && !o.Strict ? RunCache.Key(files, name, o.Refs) : null;   // a cached image skipped the strict check
@@ -153,6 +152,24 @@ public static class CompileCommands
         string? t = TakeOption(a, "--target");
         if (t == null || WasmCommands.IsAliceTarget(t)) return t != null;
         throw new UsageException($"unknown target `{t}`", "--target wasm32 | wasm32-wasi");
+    }
+
+    /// <summary>Backend choice (precedence: flag > toml > env > default IL).</summary>
+    static string ResolveBackend(string? flag, string? toml)
+    {
+        if (flag is not null)
+        {
+            if (flag is not ("csharp" or "il")) throw new UsageException($"unknown backend `{flag}`", "--backend il | csharp");
+            return flag;
+        }
+        if (toml is not null) return toml;
+        string? env = Environment.GetEnvironmentVariable("ALICE_BACKEND");
+        if (env is not null)
+        {
+            if (env is not ("csharp" or "il")) throw new InvalidOperationException($"ALICE_BACKEND={env} is not a valid backend (expected il or csharp)");
+            return env;
+        }
+        return "il";   // ADR 0033: IL is the default backend (1.0.0)
     }
 
     static string? TakeOption(List<string> a, string name)
@@ -249,7 +266,7 @@ public static class CompileCommands
         } : null;
     }
 
-    static int RunProject(Options o)
+    static int RunProject(Options o, string? backend = null)
     {
         string where = o.Project ?? ".";
         if (Workspace.IsWorkspaceRoot(where))

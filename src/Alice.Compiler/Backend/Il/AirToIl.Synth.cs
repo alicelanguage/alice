@@ -135,7 +135,16 @@ public sealed partial class AirToIl
             var get = p.Get != null && made.TryGetValue(p.Get, out var g) ? g.Def : null;
             var set = p.Set != null && made.TryGetValue(p.Set, out var st) ? st.Def : null;
             var pt = AirClr(p.Type, null);
-            a.Def.DefineProperty(p.Name, Types.Il(pt), get, set);
+            var prop = a.Def.DefineProperty(p.Name, Types.Il(pt), get, set);
+            var backingFieldName = Synthesize.BackingField(p.Name);
+            var backingFieldDecl = d.Fields.FirstOrDefault(f => f.Name == backingFieldName);
+            // emit custom attributes from record parameters
+            if (backingFieldDecl?.Field is { } fsym && fsym.Owner.Decl is { } tdecl)
+            {
+                var param = tdecl.RecordParams.FirstOrDefault(rp => rp.Name == fsym.CsName);
+                if (param != null && param.Attrs.Count > 0 && !TryApplyAttributes(prop.CustomAttributes, param.Attrs, out var badAttr))
+                    throw new IlUnsupportedException("Decl:property-attribute", null, string.Join(",", param.Attrs));
+            }
             var backing = a.Fields.GetValueOrDefault(Synthesize.BackingField(p.Name));
             a.Fields[p.Name] = new AField { Name = p.Name, Type = pt, IsStatic = p.Static || a.IsStatic, Owner = a, Field = backing?.Field, Getter = get, Setter = set };
         }

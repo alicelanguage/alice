@@ -166,4 +166,33 @@ public class PackageTests : IDisposable
         Assert.Equal(0, Alice.Cli.App.Run(["-q", "build", dir]));   // a deleted file's C# goes away with it
         Assert.DoesNotContain(Directory.GetFiles(gen, "*.g.cs"), f => Path.GetFileName(f).StartsWith("b."));
     }
+
+    [Fact]
+    public void Backend_escape_hatch_env_var()
+    {
+        var dir = Temp("backend_env");
+        File.WriteAllText(Path.Combine(dir, "main.al"), "puts 42\n");
+        Environment.SetEnvironmentVariable("ALICE_BACKEND", "csharp");
+        try
+        {
+            var (code, output) = Run("dotnet", dir, typeof(Alice.Cli.App).Assembly.Location, "-q", "run", "main.al");
+            Assert.Equal(0, code);
+            Assert.Contains("42", output);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ALICE_BACKEND", null);
+        }
+    }
+
+    [Fact]
+    public void Backend_escape_hatch_toml()
+    {
+        var dir = Temp("backend_toml");
+        File.WriteAllText(Path.Combine(dir, "alice.toml"), "[package]\nname = \"backend_toml\"\n\n[build]\nbackend = \"csharp\"\n");
+        Directory.CreateDirectory(Path.Combine(dir, "src"));
+        File.WriteAllText(Path.Combine(dir, "src", "main.al"), "puts 42\n");
+        var (code, output) = Run("dotnet", dir, typeof(Alice.Cli.App).Assembly.Location, "-q", "build", dir);
+        Assert.Equal(0, code);
+    }
 }

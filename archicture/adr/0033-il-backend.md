@@ -1,6 +1,6 @@
 # ADR 0033: Direct IL backend through System.Reflection.Metadata
 
-Status: Accepted (1.0 backend direction; not yet implemented). Amends ADR 0001 and ADR 0007: "single Roslyn backend"
+Status: Accepted, implemented: IL is the default backend (1.0.0); the C# printer remains the differential oracle
 becomes "single IR (AIR, ADR 0032), IL-first".
 
 Today Alice prints C# and Roslyn emits IL. Roslyn is also the real type checker: nullable flow analysis (CS8600-CS8625
