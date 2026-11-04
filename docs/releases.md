@@ -5,7 +5,7 @@
 ```bash
 # Linux, macOS
 curl -fsSL https://alice-lang.org/install.sh | sh
-curl -fsSL .../install.sh | sh -s -- --nightly       # or --version 1.0.0-rc.1, --home DIR, --no-modify-path
+curl -fsSL .../install.sh | sh -s -- --nightly       # or --version 1.0.0, --home DIR, --no-modify-path
 ```
 
 ```powershell
@@ -88,7 +88,7 @@ version and the CHANGELOG heading. Every gate below is checked off, with a link 
 | Every entry in [INVARIANTS.md](../INVARIANTS.md) names tests that exist and pass | `tests/Alice.Tests/Meta/ReleaseMetadataTests.cs:Invariants_file_tests_exist_and_pass` | CTO |
 | `SECURITY.md` supported-versions table and contact address current for 1.x | `SECURITY.md` (updated for 1.x support policy) | lead |
 | Signed archives (publisher identity, macOS notarization) | **Decision: SHA-256 only for 1.0.0** (archives verified by hash; no code-sign/notarization; documented in `docs/production.md#security-limits`); signing planned for 1.1+ | lead |
-| `CHANGELOG.md` section for the version, empty `## Unreleased` above it | `CHANGELOG.md` (1.0.0-rc.1 section exists) | CTO |
+| `CHANGELOG.md` section for the version, empty `## Unreleased` above it | `CHANGELOG.md` (1.0.0 section exists) | CTO |
 
 ## Cut a release
 
@@ -97,8 +97,8 @@ version and the CHANGELOG heading. Every gate below is checked off, with a link 
 3. Alternatively, tag the reviewed commit and push the tag to start a release:
 
    ```bash
-   git tag -a v1.0.0-rc.1 <reviewed-commit> -m "Alice 1.0.0-rc.1"
-   git push origin v1.0.0-rc.1
+   git tag -a v1.0.0 <reviewed-commit> -m "Alice 1.0.0"
+   git push origin v1.0.0
    ```
 
 4. A tag-triggered run repeats the gates (unless `RELEASE_SKIP_TESTS=true` skips the full test stage) and publishes the four archives plus four `.sha256` files with generated release notes. Choose either manual dispatch or a tag push for a release. Review the release page and add highlights from the changelog.
