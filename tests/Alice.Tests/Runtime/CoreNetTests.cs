@@ -186,54 +186,101 @@ public class CoreNetTests
     }
 }
 
-/// <summary>Echo over the async server: bytes allocated per message in steady state (process-wide, so the test
-/// runs alone).</summary>
+/// <summary>
+/// Echo over the async server allocates 0 bytes per message in steady state. The count is process-wide (the server
+/// runs on pool threads), so it is taken in a child process that runs nothing else: inside the test host a background
+/// allocation of about 1.7 KB/s goes on with no server at all (168 B about ten times a second, measured on the forge
+/// with an idle window), so a 0.3-1 s window read 500-2,400 B there (1,512 B on the ubuntu runner) while the same echo
+/// in a bare process reads 0 B.
+/// </summary>
 [Collection(IsolatedAllocationCollection.Name)]
 public class CoreNetAllocationTests
 {
-    [Fact]
-    public async Task Echo_with_256_connections_allocates_nothing_per_message()
-    {
-        using var srv = TcpServer.Listen(0);
-        using var cts = new CancellationTokenSource();
-        var serving = srv.ServeAsync(CoreNetTests.Echo, cts.Token);
-        var clients = new List<TcpSocket>();
-        for (int i = 0; i < 256; i++) clients.Add(TcpSocket.Connect("127.0.0.1", srv.Port));
-        var msg = new byte[64];
-        var back = new byte[64];
-        void Round()
+    // the measured program: server on the pool, the 256 clients on one dedicated thread (a blocked pool thread made
+    // the pool inject threads, whose start-up allocations land in the window), least of up to 5 windows
+    const string EchoProgram = """
+        using System;
+        using System.Buffers;
+        using System.Collections.Generic;
+        using System.Threading;
+        using System.Threading.Tasks;
+        using Alice.Core.Net;
+
+        public static class EchoAllocation
         {
-            foreach (var c in clients)
+            static async ValueTask Echo(StreamSocket c, CancellationToken ct)
             {
-                c.Write(msg);
-                c.ReadExactly(back);
+                var buf = ArrayPool<byte>.Shared.Rent(4096);
+                try
+                {
+                    int n;
+                    while ((n = await c.ReadAsync(buf, ct)) > 0) await c.WriteAsync(buf.AsMemory(0, n), ct);
+                }
+                finally { ArrayPool<byte>.Shared.Return(buf); }
+            }
+
+            public static void Main()
+            {
+                using var srv = TcpServer.Listen(0);
+                using var cts = new CancellationTokenSource();
+                var serving = srv.ServeAsync(Echo, cts.Token);
+                var clients = new List<TcpSocket>();
+                for (int i = 0; i < 256; i++) clients.Add(TcpSocket.Connect("127.0.0.1", srv.Port));
+                var msg = new byte[64];
+                var back = new byte[64];
+                var windows = new long[5];
+                int done = 0;
+                var client = new Thread(() =>
+                {
+                    void Round() { foreach (var c in clients) { c.Write(msg); c.ReadExactly(back); } }
+                    for (int i = 0; i < 150; i++) Round();
+                    for (; done < windows.Length; done++)
+                    {
+                        GC.Collect();
+                        GC.WaitForPendingFinalizers();
+                        long before = GC.GetTotalAllocatedBytes(precise: true);
+                        for (int i = 0; i < 100; i++) Round();
+                        windows[done] = GC.GetTotalAllocatedBytes(precise: true) - before;
+                        if (windows[done] == 0) { done++; break; }
+                    }
+                });
+                client.Start();
+                client.Join();
+                foreach (var c in clients) c.Dispose();
+                cts.Cancel();
+                srv.Dispose();
+                Console.WriteLine("windows: " + string.Join(" ", windows[..done]));
             }
         }
-        // Extended warmup: trigger all lazy initialization in server threads and thread pool
-        for (int i = 0; i < 100; i++) Round();
-        await Task.Delay(50); // Let server background tasks settle
-        // Force GC to settle platform-specific lazily-initialized objects
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        GC.Collect();
-        // More warmup post-GC to ensure everything is truly initialized
-        for (int i = 0; i < 50; i++) Round();
-        long least = long.MaxValue;
-        const int Rounds = 100;
-        for (int attempt = 0; attempt < 3 && least > 0; attempt++)
+        """;
+
+    [Fact]
+    public void Echo_with_256_connections_allocates_nothing_per_message()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "alice-echo-alloc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
         {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            long before = GC.GetTotalAllocatedBytes(precise: true);
-            for (int i = 0; i < Rounds; i++) Round();
-            least = Math.Min(least, GC.GetTotalAllocatedBytes(precise: true) - before);
+            var runtime = typeof(TcpServer).Assembly.Location;
+            File.WriteAllBytes(Path.Combine(dir, "EchoAllocation.dll"), Alice.Compiler.AliceCompiler.Emit([EchoProgram], "EchoAllocation", exe: true));   // references the host's TPA, Alice.Runtime included
+            File.Copy(runtime, Path.Combine(dir, Path.GetFileName(runtime)));
+            string major = Environment.Version.Major.ToString();
+            File.WriteAllText(Path.Combine(dir, "EchoAllocation.runtimeconfig.json"),
+                """{"runtimeOptions":{"tfm":"netMAJOR.0","framework":{"name":"Microsoft.NETCore.App","version":"MAJOR.0.0"}}}""".Replace("MAJOR", major));
+            var psi = new System.Diagnostics.ProcessStartInfo("dotnet") { WorkingDirectory = dir };
+            psi.ArgumentList.Add(Path.Combine(dir, "EchoAllocation.dll"));
+            var (code, output) = Alice.Tests.Integration.ChildProcess.Run(psi, timeoutMinutes: 5);
+            Assert.True(code == 0, output);
+            var line = output.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("windows: "));
+            var windows = line["windows: ".Length..].Split(' ').Select(long.Parse).ToList();
+            // 25,600 echoed messages per window: one window at 0 B shows the steady state allocates nothing
+            // (a window can still see the pool's one-time growth, which does not repeat)
+            Assert.True(windows.Min() == 0, $"bytes per window of 25,600 echoed messages: {line}");
         }
-        foreach (var c in clients) c.Dispose();
-        cts.Cancel();
-        srv.Dispose();
-        await serving;
-        // any per-message allocation (>= 24 B) would add >= 600 KB over 25,600 messages; what remains is a constant
-        // of the window (thread-pool bookkeeping), not a cost per message
-        Assert.True(least < 1024, $"{least} bytes over {Rounds * clients.Count} echoed messages");
+        finally
+        {
+            try { Directory.Delete(dir, true); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
     }
 }
