@@ -8,8 +8,14 @@ namespace Alice.Compiler.Air.Passes;
 /// Async methods and async iterators (C#'s AsyncMethodToStateMachineRewriter / AsyncIteratorMethodToStateMachineRewriter
 /// shapes). States: -1 running, -2 finished, 0.. suspended at an await; async iterators also -3 not started and
 /// -4, -5.. suspended at a `yield`. A try block that holds a suspension gets a label before it and a second dispatch
-/// table at the start of its body, and its finally runs only when the state is -1 (not when MoveNext returns to
-/// suspend). Exceptions end the machine through the builder (SetException) or the promise (async iterators).
+/// table at the start of its body, and its finally runs only when this MoveNext is not returning to suspend.
+/// Exceptions end the machine through the builder (SetException) or the promise (async iterators).
+/// <para>
+/// The finally guard reads a MoveNext local (<see cref="SuspendedLocal"/>), never the state field: once a suspension
+/// handed the machine to an awaiter or completed the promise, a continuation on another thread may already have
+/// resumed it (state -1) before this thread leaves the try block, and a field read would run the finally on both
+/// threads. C# caches the state in a local (`num`) for the same reason.
+/// </para>
 /// </summary>
 sealed partial class StateMachineRewriter
 {
@@ -31,6 +37,24 @@ sealed partial class StateMachineRewriter
     string? resultLocal, smLocal;
     int awaitState, yieldState = -4;
     const string ExitLabel = "<>exit";
+    const string SuspendedName = "<>suspended";
+    bool suspendedDeclared;
+
+    /// <summary>`bool &lt;&gt;suspended = false`, set just before a suspension inside a try with a finally: the finally
+    /// runs only while it is false (C#: `if (num &lt; 0)` on its cached state local).</summary>
+    AirLocalRef SuspendedLocal()
+    {
+        if (!suspendedDeclared)
+        {
+            suspendedDeclared = true;
+            moveNextLocals.Add(Decl(SuspendedName, SmTypes.Bool, AirConst.Bool(false)));
+        }
+        return Local(SuspendedName, SmTypes.Bool);
+    }
+
+    /// <summary>The statement that marks a suspension, when one of <paramref name="fs"/> has a guarded finally.</summary>
+    IEnumerable<MStmt> MarkSuspended(List<Frame> fs) =>
+        fs.Any(f => f.Try.Finally != null) ? [Set(SuspendedLocal(), AirConst.Bool(true))] : [];
 
     /// <summary>T of Task&lt;T&gt; / ValueTask&lt;T&gt;, else void.</summary>
     AirType ResultType()
@@ -208,7 +232,7 @@ sealed partial class StateMachineRewriter
                 if (t.Finally != null) EmitAsync(t.Finally, fs);
                 if (f.DisposeLabel != null) t.Body.Add(new AirLabel { Name = f.DisposeLabel });
                 if (Dispatch(f.Entries) is { } table) t.Body.Insert(0, table);
-                if (t.Finally != null) t.Finally = [new MIf { Cond = Bin(AirBinOp.Eq, State(), I(-1)), Then = t.Finally }];
+                if (t.Finally != null) t.Finally = [new MIf { Cond = Not(SuspendedLocal()), Then = t.Finally }];
                 list.Insert(i, new AirLabel { Name = f.Head });
                 i++;
                 if (f.DisposeLabel != null && !pendingTries.Contains(t))
@@ -270,7 +294,7 @@ sealed partial class StateMachineRewriter
         string resume = Label("resume");
         Register(state, resume, fs);
         outp.Add(Set(loc, Call(awaitable, "GetAwaiter", inf.Awaiter)));
-        var suspend = new List<MStmt> { SetState(state), Set(F(field), Local(local, inf.Awaiter)) };
+        var suspend = new List<MStmt>(MarkSuspended(fs)) { SetState(state), Set(F(field), Local(local, inf.Awaiter)) };
         if (!IsStruct) suspend.Add(Set(SmRef(), This()));
         suspend.Add(Do(Call(F(builderF), inf.Critical ? "AwaitUnsafeOnCompleted" : "AwaitOnCompleted", SmTypes.Void, Ref(F(field)), Ref(SmRef()))));
         suspend.Add(new MReturn());
@@ -292,6 +316,7 @@ sealed partial class StateMachineRewriter
         return
         [
             Set(F(currentF!), y.Value),
+            .. MarkSuspended(fs),
             SetState(state),
             Do(Call(F(promiseF!), "SetResult", SmTypes.Void, AirConst.Bool(true))),
             new MReturn(),

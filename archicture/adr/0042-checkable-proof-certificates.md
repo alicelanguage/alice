@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** for 1.0.0-rc.1
+**Accepted** for 1.0.0
 
 ## Context
 

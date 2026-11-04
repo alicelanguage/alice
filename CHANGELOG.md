@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-## 1.0.0-rc.1 - 2026-11-02
+## 1.0.0 - 2026-11-04
+- fix: IL backend async methods and async iterators: a `finally`/`ensure` around an `await` or `yield` ran twice when the
+  continuation resumed the machine on another thread before the suspending MoveNext left the try block (its guard
+  re-read the state field, which the other thread had set to -1). The guard now reads a MoveNext local set before
+  each suspension, as C# does with its cached `num`. Seen in CI as `Il_async_iterator_matches_csharp` printing
+  "ticks done" three times; pinned deterministically by `Il_async_finally_runs_once_when_the_await_resumes_before_the_suspend_returns`
+  and `Il_async_iterator_finally_runs_once_when_the_next_MoveNextAsync_races_the_yield`.
+- fix: dataflow graphs on few cores: an idle node no longer spins while other pool work items wait for a thread, and yields
+  the core between re-checks instead of `Thread.SpinWait`. Chains of tiny rings crawled on 1-4 core machines (50k items
+  through 15 nodes: 8-15 s per run on 1-2 cores, past the 30 s test bound on CI runners), now about 1 s; no wake was
+  lost. Benchmarks/dataflow unchanged (serial and `Replicate`). Stress: `DataflowStressTests` (pinned to two cores).
 - tests: Windows CRLF normalization in dump comparisons (ClosureConvertTests, DynSitesTests)
 - tests: Windows file handle leak in CoreFsProcessTests (enumerator disposal)
 - tests: Windows cross-drive path handling in ExecutablesTests (GetRelativePath can return absolute paths)
