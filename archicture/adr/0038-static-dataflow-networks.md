@@ -124,3 +124,22 @@ the `Task.Run` form 3x and matches the hand-written C# pipeline.
 IL lowering (ADR 0040, section 4): stage bodies are static methods `(ref TState, ReadOnlySpan<TIn>, ref
 RingWriter<TOut>)` registered through `ldftn` on the runtime function-pointer overloads; items are read by `ref
 readonly`, no per-item delegate; the writer fast path and the publish (`volatile.` release store) are emitted inline.
+
+## Amendment 2026-11-04: idle nodes never spin while pool work is pending
+
+Problem (CI): `Long_chain_of_tiny_rings_never_loses_a_wake` hit its 30 s bound on GitHub runners (ubuntu 1m22s,
+windows 42s, macOS 30s for three rounds). It was not a lost wake: an idle node spun 40 x `Thread.SpinWait(20)` before
+giving its thread back, holding the pool thread or the core that the node it waited for needed. On the forge the same
+test took 0.4 s on 16 cores, 24 s on 2, 44 s on 1, and 0.6 s on 2 cores with the spin removed.
+
+Rule: the idle re-check loop in `DataflowNode.Execute` (`src/Alice.Runtime/Dataflow/Stage.cs`) stops as soon as
+`ThreadPool.PendingWorkItemCount > 0` (another work item waits for a thread) and calls `Thread.Yield()` between
+re-checks instead of `SpinWait`, so a runnable thread on the same core gets it. The wake protocol itself is unchanged
+(written down as a state machine above `Execute`).
+
+Measured: 1 s on 2 cores and 0.7-2 s on 1 core (was 24 s / 44 s); 1-3 s on 4 cores with the Runtime tests running in
+parallel (was 23 s); `benchmarks/dataflow` on 28 cores unchanged within noise (dataflow 2.58-2.80 s before, 2.67-2.91 s
+after; dataflow-par 0.99-1.10 s before, 1.04-1.07 s after; allocation the same).
+
+Pinned by `tests/Alice.Tests/Runtime/DataflowStressTests.cs` (seeded injection points, a stall detector that dumps
+the node states, and a variant pinned to two cores that fails before this rule).

@@ -255,9 +255,12 @@ public class StateMachinesTests
     public void Await_in_try_finally_dump()
     {
         var d = Dump(Build(Method("f", TaskInt, true, false, ("log", LogT)), AwaitInTry()));
-        // the try holding an await: a label before it, a second dispatch inside, the finally guarded by the state
+        // the try holding an await: a label before it, a second dispatch inside, the finally guarded by a MoveNext
+        // local set before each suspension (never the state field: another thread may have resumed the machine)
         Assert.Contains("      label <>try_2\n      try\n        switch (member <>1__state (this):<f>d__0):int 0: <>resume_3\n", d);
-        Assert.Contains("      finally\n        if (Eq (member <>1__state (this):<f>d__0):int (const -1):int):bool\n", d);
+        Assert.Contains("      finally\n        if (Not", d);
+        Assert.Contains("(local <>suspended)", d);
+        Assert.DoesNotContain("if (Eq (member <>1__state (this):<f>d__0):int (const -1):int)", d);
         Assert.Contains("switch (member <>1__state (this):<f>d__0):int 0: <>try_2, <>try_4, <>resume_6", d);
         // the awaiting finally runs after a catch that stores the exception; the return is replayed after it
         Assert.Contains("assign (member <>ex__1 (this):<f>d__0):global::System.Exception? = (local <>c__3):global::System.Exception", d);
@@ -1104,6 +1107,171 @@ public class StateMachinesTests
     [Fact]
     public void Il_async_iterator_matches_csharp() =>
         SameOnIl(IlAsyncIteratorSrc, "<ticks>d__", valueType: false);
+
+    // ---- races: a finally must not run on the thread that is returning to suspend. C# guards it with the state
+    // MoveNext cached in a local (`num`); a guard that re-reads the field sees -1 once the continuation resumed the
+    // machine on another thread, and runs the finally a second time (CI under load: "ticks done" printed 3 times).
+
+    const string IlRaceSrc = """
+        async def held(g1 : ValueTask, g2 : ValueTask, log : List(String)) : Task
+          begin
+            log.Add("start")
+            await g1
+            await g2
+            log.Add("resumed")
+          ensure
+            log.Add("ensure")
+          end
+        end
+
+        async def ticks(g1 : ValueTask, g2 : ValueTask, log : List(String)) : IAsyncEnumerable(Int32)
+          begin
+            await g1
+            yield 1
+            await g2
+            yield 2
+          ensure
+            log.Add("ensure")
+          end
+        end
+        """;
+
+    static readonly TimeSpan RaceT = TimeSpan.FromSeconds(10);
+
+    static readonly Lazy<Assembly> raceAsm = new(() =>
+    {
+        var res = AirToIl.Compile([new SourceFile("race.al", IlRaceSrc)], "race", exe: false);
+        Assert.True(res.Ok, "IL backend: " + string.Join("\n", res.Errors.Select(e => e.Message)));
+        return AliceCompiler.Load(res.Pe!);
+    });
+
+    static MethodInfo RaceMethod(string name) => raceAsm.Value.GetTypes()
+        .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
+        .First(m => m.Name == name);
+
+    /// <summary>Runs on a new thread: no synchronization context, so a promise's continuation runs inline.</summary>
+    static void OnFreshThread(Action body)
+    {
+        ExceptionDispatchInfo? error = null;
+        var t = new Thread(() =>
+        {
+            try { body(); }
+            catch (Exception e) { error = ExceptionDispatchInfo.Capture(e); }
+        }) { IsBackground = true };
+        t.Start();
+        Assert.True(t.Join(TimeSpan.FromSeconds(60)), "race scenario hung");
+        error?.Throw();
+    }
+
+    /// <summary>
+    /// A ValueTask source that is pending for the thread that awaits it. ParkOnResume: OnCompleted runs the
+    /// continuation on a new thread, which parks in GetResult (inside the resumed MoveNext, state -1) until
+    /// <see cref="Release"/>, and returns only once it parked: the suspending MoveNext then leaves its try block while
+    /// the machine runs elsewhere. ParkOnStatus: completed, but the first GetStatus (the `IsCompleted` of the await)
+    /// parks the same way. Manual: the continuation waits for <see cref="Fire"/>.
+    /// </summary>
+    sealed class RaceGate(int mode) : IValueTaskSource
+    {
+        public const int Manual = 0, ParkOnResume = 1, ParkOnStatus = 2;
+        public readonly ManualResetEventSlim Parked = new(false), Release = new(false);
+        Action<object?>? cont;
+        object? state;
+        int parks;
+
+        public ValueTask Task => new(this, 0);
+
+        void Park()
+        {
+            if (Interlocked.Exchange(ref parks, 1) != 0) return;
+            Parked.Set();
+            Release.Wait(RaceT);
+        }
+
+        public ValueTaskSourceStatus GetStatus(short token)
+        {
+            if (mode != ParkOnStatus) return ValueTaskSourceStatus.Pending;
+            Park();
+            return ValueTaskSourceStatus.Succeeded;
+        }
+
+        public void GetResult(short token)
+        {
+            if (mode == ParkOnResume) Park();
+        }
+
+        public void OnCompleted(Action<object?> continuation, object? s, short token, ValueTaskSourceOnCompletedFlags flags)
+        {
+            if (mode != ParkOnResume) { cont = continuation; state = s; return; }
+            new Thread(() => continuation(s)) { IsBackground = true }.Start();
+            Parked.Wait(RaceT);
+        }
+
+        public Thread Fire()
+        {
+            var t = new Thread(() => cont!(state)) { IsBackground = true };
+            t.Start();
+            return t;
+        }
+    }
+
+    [Fact]
+    public void Il_async_finally_runs_once_when_the_await_resumes_before_the_suspend_returns()
+    {
+        var held = RaceMethod("held");
+        OnFreshThread(() =>
+        {
+            var log = new List<string>();
+            // the first await moves the struct machine into its box; the second suspends the box itself, and the
+            // continuation resumes that box (state -1) on another thread before the suspending MoveNext returns
+            var g1 = new RaceGate(RaceGate.Manual);
+            var g2 = new RaceGate(RaceGate.ParkOnResume);
+            var task = (Task)held.Invoke(null, [g1.Task, g2.Task, log])!;
+            Assert.True(g1.Fire().Join(RaceT));
+            Assert.True(g2.Parked.IsSet, "the continuation did not resume on the other thread");
+            g2.Release.Set();
+            Assert.True(task.Wait(RaceT));
+            Assert.Equal("start,resumed,ensure", string.Join(",", log));
+        });
+    }
+
+    [Fact]
+    public void Il_async_iterator_finally_runs_once_when_the_next_MoveNextAsync_races_the_yield()
+    {
+        var ticks = RaceMethod("ticks");
+        OnFreshThread(() =>
+        {
+            var log = new List<string>();
+            var g1 = new RaceGate(RaceGate.Manual);
+            var g2 = new RaceGate(RaceGate.ParkOnStatus);
+            var e = ((IAsyncEnumerable<int>)ticks.Invoke(null, [g1.Task, g2.Task, log])!).GetAsyncEnumerator();
+            var first = e.MoveNextAsync();   // suspends at `await g1`
+            Assert.False(first.IsCompleted);
+            bool r1 = false, parked = false;
+            ValueTask<bool> second = default;
+            Thread? b = null;
+            var aw = first.GetAwaiter();
+            aw.OnCompleted(() =>
+            {
+                // inline in `yield 1`'s SetResult(true), still inside the first MoveNext: the consumer asks for the
+                // next item from another thread, which resumes the machine (state -1) and parks at `await g2`
+                r1 = aw.GetResult();
+                b = new Thread(() => second = e.MoveNextAsync()) { IsBackground = true };
+                b.Start();
+                parked = g2.Parked.Wait(RaceT);
+            });
+            var a = g1.Fire();   // resumes the machine on thread a, which yields 1
+            Assert.True(a.Join(RaceT));
+            Assert.True(parked, "the second MoveNextAsync did not park");
+            g2.Release.Set();
+            Assert.True(b!.Join(RaceT));
+            Assert.True(r1);
+            Assert.True(second.IsCompleted && second.Result);
+            Assert.Equal(2, e.Current);
+            Assert.Empty(log);
+            Assert.True(e.DisposeAsync().AsTask().Wait(RaceT));
+            Assert.Equal("ensure", string.Join(",", log));
+        });
+    }
 }
 
 public static class SmSources

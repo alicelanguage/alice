@@ -30,7 +30,14 @@ internal abstract class DataflowNode : IThreadPoolWorkItem
 {
     /// <summary>Items per turn before the node requeues itself (fairness when stages outnumber pool threads).</summary>
     const int TurnBudget = 1 << 16;
-    /// <summary>Re-checks before an idle node gives its thread back: a wake through the pool costs microseconds.</summary>
+    /// <summary>
+    /// Re-checks before an idle node gives its thread back: a wake through the pool costs microseconds. Only while no
+    /// other work item waits for a pool thread, and yielding the core between checks: a spinning node must never
+    /// hold the thread or the core that the node it waits for needs. With fewer cores than busy nodes (a 2-4 core CI
+    /// runner under the parallel test suite) plain spinning made every hop of a tiny-ring chain cost a full spin
+    /// window: 50k items through 15 nodes went from 0.4 s to 8-15 s per run on 1-2 cores and past the 30 s test bound
+    /// under load. No wake was lost; the graph crawled.
+    /// </summary>
     const int IdleSpins = 40;
 
     protected enum Turn { Idle, Blocked, Yield, Done }
@@ -74,6 +81,18 @@ internal abstract class DataflowNode : IThreadPoolWorkItem
     bool Ready(bool isBlocked) =>
         graph.failed ? CanExitOnFailure : isBlocked ? HasRoom() : CanProgress();
 
+    // Wake protocol, per edge P -> ring -> C (ADR 0038):
+    //   publish (P):  Tail = t (release store); C.Wake(): if C.scheduled == 0, CAS 0 -> 1 and queue C
+    //   release (C):  Head = h (release store); if P.blocked == 1, P.Wake()
+    //   idle (node):  blocked = 1 if stopped on a full ring; spin on Ready(); scheduled = 0 (Interlocked: full
+    //                 fence); Nudge(); if Ready(), CAS scheduled 0 -> 1 and take the turn back
+    // A publish or release does not fence, so its index store can be passed by its flag load (store -> load
+    // reordering, allowed even by x86): the waker reads scheduled == 1 (or blocked == 0) while the fenced re-check
+    // of the sleeper still reads the old index, and that wake is missed. It is repaired, not lost: every path of the
+    // waker reaches a full fence and a re-check later (going idle runs Nudge after the Exchange; finishing runs
+    // Ring.Complete, an interlocked write, then wakes the consumer; a yield only defers that), and a fence plus a
+    // read on both sides is the Dekker pattern: one of the two sees the other. A node never finishes while a
+    // neighbour still waits on it (a stage finishes only after its input completed). Stress: DataflowStressTests.
     void IThreadPoolWorkItem.Execute()
     {
         int budget = TurnBudget;
@@ -106,7 +125,8 @@ internal abstract class DataflowNode : IThreadPoolWorkItem
             bool again = false;
             for (int i = 0; i < IdleSpins && !again; i++)
             {
-                Thread.SpinWait(20);
+                if (ThreadPool.PendingWorkItemCount > 0) break;
+                Thread.Yield();
                 again = Ready(isBlocked);
             }
             if (again) { budget = Math.Max(budget, 1); continue; }

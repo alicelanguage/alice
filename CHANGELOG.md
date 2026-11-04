@@ -3,6 +3,17 @@
 ## Unreleased
 
 ## 1.0.0 - 2026-11-04
+- fix: IL backend async methods and async iterators: a `finally`/`ensure` around an `await` or `yield` ran twice when the
+  continuation resumed the machine on another thread before the suspending MoveNext left the try block (its guard
+  re-read the state field, which the other thread had set to -1). The guard now reads a MoveNext local set before
+  each suspension, as C# does with its cached `num`. Seen in CI as `Il_async_iterator_matches_csharp` printing
+  "ticks done" three times; pinned deterministically by `Il_async_finally_runs_once_when_the_await_resumes_before_the_suspend_returns`
+  and `Il_async_iterator_finally_runs_once_when_the_next_MoveNextAsync_races_the_yield`.
+- fix: dataflow graphs on few cores: an idle node no longer spins while other pool work items wait for a thread, and yields
+  the core between re-checks instead of `Thread.SpinWait`. Chains of tiny rings crawled on 1-4 core machines (50k items
+  through 15 nodes: 8-15 s per run on 1-2 cores, past the 30 s test bound on CI runners), now about 1 s; no wake was
+  lost. Benchmarks/dataflow unchanged (serial and `Replicate`). Stress: `DataflowStressTests` (pinned to two cores).
+
 - IL backend is the default target (ADR 0033); `--backend csharp` flag, `[build] backend = "csharp"` in alice.toml, and `ALICE_BACKEND=csharp` environment variable preserve C# printer access for differential testing and debugging.
 - Checkable proof certificates (ADR 0042): `alice prove --smt` produces independently verifiable certificates when a proof-emitting SAT solver (CaDiCaL 1.7+) is available. Each certificate contains the rule's symbolic IR (Alice.Check terms), the Tseitin-encoded CNF, and an LRAT proof from the SAT solver. The standalone `alice-check` tool (<600 lines, no compiler/runtime dependencies) verifies: (1) the LRAT proof refutes the CNF, (2) the CNF matches the re-derived bit-blast of the IR, (3) hashes match. `alice prove --check` re-validates all certificates. `PROOF.cert` (Brotli-compressed) accompanies `PROOF.al`. Trusted computing base for certificate mode: Alice's rule-to-IR translation + alice-check (vs. enumeration: compiler+runtime, --smt without certs: +Z3). docs/proofs.md, alice-check executable, tests/Alice.Check.Tests (46 tests), differential fuzz extended to certificates.
 
