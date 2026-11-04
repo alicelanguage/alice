@@ -223,11 +223,11 @@ public class DataflowLowerAllocationTests
             Assert.True(rows.Count == 3, output);
             return (rows.Min(r => r[0]), rows.Min(r => r[1]), output);
         }
-        // 100x the items, the same bytes up to one small object: what a graph allocates (rings, nodes, spills, about
-        // 100 KB) does not grow with its items. Measured in the child: 102,928 B for 10k items, 102,952 B for 1M (one
-        // 24 B object more per long run, from the runtime's dataflow scheduler); 1 B per item would be 990 KB
+        // 100x the items, the same bytes: what a graph allocates (rings, nodes, spills, about 100 KB) does not grow with
+        // its items. A long run once read 24 B more: Graph.Run's ManualResetEventSlim created its lock object only when
+        // the wait outlasted its spin
         var (small, big, o) = Measure("x.to_i64");
-        Assert.True(big - small <= 128, $"bytes per graph run (10k items, 1M items):\n{o}");
+        Assert.True(big == small, $"bytes per graph run (10k items, 1M items):\n{o}");
         // negative check: one string per item shows as about 24 MB more for the 990k extra items
         var (lsmall, lbig, lo) = Measure("x.to_s.size.to_i64");
         Assert.True(lbig - lsmall >= 990_000 * 24, $"one string per item must show:\n{lo}");

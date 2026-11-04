@@ -29,7 +29,9 @@ public sealed class Graph
     int remaining;
     internal volatile bool failed;
     ExceptionDispatchInfo? error;
-    readonly ManualResetEventSlim done = new(false);
+    // Run waits on this monitor until the last node exits. A ManualResetEventSlim allocated its lock object (24 B)
+    // only when the wait outlasted its spin, so a long run allocated more than a short one (DataflowLowerAllocationTests)
+    readonly object gate = new();
 
     /// <summary>Creates an empty graph.</summary>
     /// <param name="capacity">Default ring capacity per edge (rounded up to a power of two).</param>
@@ -115,9 +117,14 @@ public sealed class Graph
         {
             Volatile.Write(ref remaining, nodes.Count);
             foreach (var n in nodes) n.Wake();
-            done.Wait();
+            // a short graph ends while we spin; otherwise sleep on the monitor (Exited pulses it under the lock, so
+            // the check below cannot miss the last exit)
+            var spin = new SpinWait();
+            while (Volatile.Read(ref remaining) != 0 && !spin.NextSpinWillYield) spin.SpinOnce();
+            if (Volatile.Read(ref remaining) != 0)
+                lock (gate)
+                    while (Volatile.Read(ref remaining) != 0) Monitor.Wait(gate);
         }
-        done.Dispose();
         error?.Throw();
     }
 
@@ -130,7 +137,8 @@ public sealed class Graph
 
     internal void Exited()
     {
-        if (Interlocked.Decrement(ref remaining) == 0) done.Set();
+        if (Interlocked.Decrement(ref remaining) == 0)
+            lock (gate) Monitor.PulseAll(gate);
     }
 }
 
