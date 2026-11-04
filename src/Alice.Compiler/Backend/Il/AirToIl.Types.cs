@@ -675,6 +675,9 @@ internal sealed class IlTypes
             yield return typeof(IReadOnlyList<>).MakeGenericType(e);
             yield return typeof(ICollection<>).MakeGenericType(e);
             yield return typeof(IReadOnlyCollection<>).MakeGenericType(e);
+            // T[] has implicit conversions to ReadOnlySpan<T> and Span<T> (D1.11: generic method inference)
+            yield return typeof(ReadOnlySpan<>).MakeGenericType(e);
+            yield return typeof(Span<>).MakeGenericType(e);
         }
         Type[] ifs;
         try { ifs = t.GetInterfaces(); } catch (Exception) { ifs = []; }
