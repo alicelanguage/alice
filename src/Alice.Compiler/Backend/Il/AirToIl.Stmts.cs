@@ -872,6 +872,8 @@ internal sealed partial class IlBody
     List<ArgInfo> ArgInfos(List<MExpr> xs)
     {
         var r = new List<ArgInfo>(xs.Count);
+        T.Owner = owner;
+        T.Program = c.ProgramT;
         foreach (var x in xs)
         {
             if (x is MArg ma)
@@ -882,7 +884,8 @@ internal sealed partial class IlBody
                 else { var mt = Infer(ma.E); r.Add(new ArgInfo(mt.IsByRef ? mt.GetElementType()! : mt, null, false, pre + " ")); }   // a ref local passed on
                 continue;
             }
-            if (IsNullLit(x) || IsDefaultLit(x) || IsMethodGroup(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }
+            if (IsNullLit(x) || IsDefaultLit(x)) { r.Add(new ArgInfo(typeof(object), null, true, "")); continue; }
+            if (IsMethodGroup(x)) { r.Add(new ArgInfo(IlTypes.MethodRefArg, x, false, "")); continue; }
             if (x is MLambda) throw No("MLambda");
             if (x is AirDelegateCreate dc)
             {

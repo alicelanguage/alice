@@ -157,9 +157,19 @@ internal sealed class IlTypes
     /// converts to any delegate of its arity; its result type is inferred through <see cref="LambdaReturn"/>.</summary>
     public static readonly Type LambdaArg = typeof(LambdaMarker);
     sealed class LambdaMarker { }
+    /// <summary>The argument type of a method reference (an <see cref="MExpr"/> in <see cref="ArgInfo.Literal"/>): it
+    /// converts to any delegate matching its signature.</summary>
+    public static readonly Type MethodRefArg = typeof(MethodRefMarker);
+    sealed class MethodRefMarker { }
+
 
     /// <summary>Set by the body resolving a call: the result type of a lambda argument for given parameter types.</summary>
     public Func<object, Type[], Type?>? LambdaReturn;
+    /// <summary>Set by the body resolving a call: the owner type for method group resolution.</summary>
+    public AliceT? Owner;
+    /// <summary>Set by the body resolving a call: the program type for method group resolution.</summary>
+    public AliceT? Program;
+
 
     static bool IsDelegate(Type t) => typeof(Delegate).IsAssignableFrom(t) && t != typeof(Delegate) && t != typeof(MulticastDelegate);
 
@@ -691,6 +701,8 @@ internal sealed class IlTypes
             return pt.IsByRef && (a.Prefix.StartsWith("out var") || pt.GetElementType() == a.Type) ? 6 : int.MinValue;
         if (a.Type == LambdaArg)
             return IsDelegate(pt) && a.Literal is AirDelegateCreate dc && pt.GetMethod("Invoke")?.GetParameters().Length == dc.Method.Params.Count ? 4 : int.MinValue;
+        if (a.Type == MethodRefArg)
+            return IsDelegate(pt) ? 4 : int.MinValue;
         if (pt.IsByRef)
         {
             var el = pt.GetElementType()!;   // `in` parameter: the argument is passed by reference implicitly
@@ -754,6 +766,26 @@ internal sealed class IlTypes
         return best;
     }
 
+    /// <summary>Extract the signature (parameter types and return type) of a method reference for generic inference.</summary>
+    (Type[] Params, Type Return)? MethodRefSignature(MExpr e, Type[] expectedParams)
+    {
+        if (e is not MCode mc) return null;
+        string name = mc.Text.Trim().TrimStart('@', '-', '>');
+        if (name.Length == 0 || (!char.IsLetter(name[0]) && name[0] != '_')) return null;
+        
+        // Try to find a matching method in the current context
+        var infos = expectedParams.Select(p => new ArgInfo(p, null, false, "")).ToList();
+        foreach (var host in new[] { Owner, Program })
+        {
+            if (host == null) continue;
+            var cand = Pick(host.FindMethods(name).Where(m => !m.IsCtor).Select(FromAlice), infos);
+            if (cand?.Alice is { } am && am.Def != null)
+                return (am.Params, am.Ret);
+        }
+        return null;
+    }
+
+
     /// <summary>A candidate in its applicable forms: generic methods closed by inference, optional parameters
     /// defaulted, `params` arrays expanded.</summary>
     IEnumerable<Cand> Expand(Cand c, IReadOnlyList<ArgInfo> args)
@@ -763,7 +795,7 @@ internal sealed class IlTypes
             // an Alice generic method: infer its type arguments like a CLR one, then use the monomorphic instance
             var bound = new Type?[tps.Length];
             for (int i = 0; i < Math.Min(c.Params.Length, args.Count); i++)
-                if (!args[i].IsNull && args[i].Type != LambdaArg) Unify(c.Params[i], args[i].Type, bound);
+                if (!args[i].IsNull && args[i].Type != LambdaArg && args[i].Type != MethodRefArg) Unify(c.Params[i], args[i].Type, bound);
             for (int i = 0; i < Math.Min(c.Params.Length, args.Count) && bound.Any(b => b == null) && LambdaReturn != null; i++)
             {
                 if (args[i].Type != LambdaArg || !IsDelegate(c.Params[i])) continue;
@@ -772,6 +804,24 @@ internal sealed class IlTypes
                 var lps = linv.GetParameters().Select(p => Subst(p.ParameterType, bound)).ToArray();
                 if (lps.Any(p => p == null)) continue;
                 if (LambdaReturn(args[i].Literal!, lps!) is { } r && r != typeof(void)) Unify(linv.ReturnType, r, bound);
+            }
+            // generic parameters that method references bind
+            for (int i = 0; i < Math.Min(c.Params.Length, args.Count) && bound.Any(b => b == null); i++)
+            {
+                if (args[i].Type == MethodRefArg && IsDelegate(c.Params[i]))
+                {
+                    var minv = c.Params[i].GetMethod("Invoke");
+                    if (minv != null && minv.ReturnType.ContainsGenericParameters)
+                    {
+                        var mps = minv.GetParameters().Select(p => Subst(p.ParameterType, bound)).ToArray();
+                        if (mps.All(p => p != null) && args[i].Literal is MExpr mref && MethodRefSignature(mref, mps!) is { } sig)
+                        {
+                            Unify(minv.ReturnType, sig.Return, bound);
+                            for (int j = 0; j < Math.Min(mps.Length, sig.Params.Length); j++)
+                                Unify(minv.GetParameters()[j].ParameterType, sig.Params[j], bound);
+                        }
+                    }
+                }
             }
             if (bound.Any(b => b == null) || InstantiateMethod!(template, bound!) is not { } inst) yield break;
             c = c with { Alice = inst, Params = inst.Params, Ret = inst.Ret };
@@ -783,7 +833,7 @@ internal sealed class IlTypes
             int k = c.Extension ? 0 : 0;
             for (int i = 0; i < Math.Min(ps0.Length, args.Count); i++)
             {
-                if (args[i].IsNull || args[i].Type == LambdaArg) continue;
+                if (args[i].IsNull || args[i].Type == LambdaArg || args[i].Type == MethodRefArg) continue;
                 var pt = ps0[i].ParameterType;
                 if (ps0[i].IsDefined(typeof(ParamArrayAttribute)) && pt.IsArray && !(args[i].Type.IsArray && args.Count == ps0.Length)) pt = pt.GetElementType()!;
                 Unify(pt, args[i].Type, bound);
@@ -798,6 +848,24 @@ internal sealed class IlTypes
                 var lps = inv.GetParameters().Select(p => Subst(p.ParameterType, bound)).ToArray();
                 if (lps.Any(p => p == null)) continue;
                 if (LambdaReturn(args[i].Literal!, lps!) is { } r && r != typeof(void)) Unify(inv.ReturnType, r, bound);
+            }
+            // generic parameters that method references bind
+            for (int i = 0; i < Math.Min(ps0.Length, args.Count) && bound.Any(b => b == null); i++)
+            {
+                if (args[i].Type == MethodRefArg && IsDelegate(ps0[i].ParameterType))
+                {
+                    var minv = ps0[i].ParameterType.GetMethod("Invoke");
+                    if (minv != null && minv.ReturnType.ContainsGenericParameters)
+                    {
+                        var mps = minv.GetParameters().Select(p => Subst(p.ParameterType, bound)).ToArray();
+                        if (mps.All(p => p != null) && args[i].Literal is MExpr mref && MethodRefSignature(mref, mps!) is { } sig)
+                        {
+                            Unify(minv.ReturnType, sig.Return, bound);
+                            for (int j = 0; j < Math.Min(mps.Length, sig.Params.Length); j++)
+                                Unify(minv.GetParameters()[j].ParameterType, sig.Params[j], bound);
+                        }
+                    }
+                }
             }
             if (bound.Any(b => b == null)) yield break;
             MethodInfo closed;

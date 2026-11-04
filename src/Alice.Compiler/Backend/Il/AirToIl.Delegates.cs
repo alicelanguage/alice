@@ -43,8 +43,8 @@ internal sealed partial class IlBody
 {
     /// <summary>A bare method name used as a value (`->add`, a `def` reference): resolved against the current type and the Program.</summary>
     bool IsMethodGroup(MExpr e) =>
-        e is MCode mc && IsIdentifier(mc.Text.Trim()) && !IsVar(mc.Text.Trim()) && Implicit(mc.Text.Trim()) is null
-        && GroupHosts().Any(h => h.FindMethods(Bare(mc.Text.Trim())).Any(m => !m.IsCtor));
+        e is MCode mc && IsIdentifier(mc.Text.Trim().TrimStart('@')) && !IsVar(mc.Text.Trim().TrimStart('@')) && Implicit(mc.Text.Trim().TrimStart('@')) is null
+        && GroupHosts().Any(h => h.FindMethods(Bare(mc.Text.Trim().TrimStart('@'))).Any(m => !m.IsCtor));
 
     static bool IsIdentifier(string s) => s.Length > 0 && (char.IsLetter(s[0]) || s[0] == '_') && s.All(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '?' || ch == '!');
 
@@ -54,7 +54,7 @@ internal sealed partial class IlBody
     bool MethodGroup(MExpr e, Type want)
     {
         if (!IsMethodGroup(e) || want.GetMethod("Invoke") is not { } inv) return false;
-        string name = Bare(((MCode)e).Text.Trim());
+        string name = Bare(((MCode)e).Text.Trim().TrimStart('@'));
         var infos = inv.GetParameters().Select(p => p.ParameterType.IsByRef ? new ArgInfo(p.ParameterType.GetElementType()!, null, false, "ref ") : new ArgInfo(p.ParameterType, null, false, "")).ToList();   // by-ref: JsonRead/JsonWrite
         foreach (var host in GroupHosts())
         {

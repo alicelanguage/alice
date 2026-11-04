@@ -553,4 +553,25 @@ puts f(1_u32, 2_u32)
         puts nested[0][0]
         puts nested.size
         """);
+
+    // ------------------------------------------------------------------ method references in generic inference
+
+    [Fact]
+    public void Method_reference_in_map() => Differential("""
+        def triple(x : Int32) : Int32
+          x * 3
+        end
+        puts [1, 2, 3].map(->triple).join(",")
+        """);
+
+    [Fact]
+    public void Method_reference_to_user_def_taking_block() => Differential("""
+        def apply<T>(x : T, f : Func(T, T)) : T
+          f.(x)
+        end
+        def double(n : Int32) : Int32
+          n * 2
+        end
+        puts apply(5, ->double)
+        """);
 }
