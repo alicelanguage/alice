@@ -139,28 +139,30 @@ public static partial class Par
 
 /// <summary>
 /// The chunk scheduler of <see cref="ParJob{T}"/> (atomic chunk counter, the caller works too, a timed second chunk
-/// decides whether helpers are woken) for struct kernels. A job is reused by the thread that owns it once every helper
-/// it queued has returned; until then the owner allocates a fresh one.
+/// decides whether helpers are woken) for struct kernels. The thread that owns a job reuses it on its next call even
+/// while helpers it queued have not run yet (a pool that wakes late, as on 3-core macOS runners: the owner runs every
+/// chunk itself). The chunk count and the claim counter share one word (<see cref="work"/>), replaced atomically after
+/// the run's fields are set, so a late helper either finds its old run closed or joins the new one, never a mix.
 /// </summary>
 abstract class KernelJob : IThreadPoolWorkItem
 {
-    int n, chunks, next, pending, helpers;
+    int n, pending, helpers;
+    long work;   // (chunks << 32) | chunks claimed so far
     ExceptionDispatchInfo? error;
     RegionFrame? region;
 
     protected abstract void Chunk(int c, int lo, int hi);
 
-    /// <summary>No queued helper can still touch this job.</summary>
-    internal bool Idle => Volatile.Read(ref helpers) == 0;
+    /// <summary>Helpers queued and not yet returned (late ones are harmless, see the class summary).</summary>
+    internal int QueuedHelpers => Volatile.Read(ref helpers);
 
     internal void Run(int n, int chunks)
     {
         this.n = n;
-        this.chunks = chunks;
-        next = 0;
         error = null;
         region = ArenaRegion.Context;
         Volatile.Write(ref pending, chunks);
+        Interlocked.Exchange(ref work, (long)chunks << 32);   // publishes the run: everything above is visible to a claim
         RunOne();
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         RunOne();
@@ -185,7 +187,8 @@ abstract class KernelJob : IThreadPoolWorkItem
 
     bool RunOne()
     {
-        int c = Interlocked.Increment(ref next) - 1;
+        long w = Interlocked.Increment(ref work);
+        int chunks = (int)(w >> 32), c = (int)(uint)w - 1;
         if (c >= chunks) return false;
         int lo = (int)((long)n * c / chunks), hi = (int)((long)n * (c + 1) / chunks);
         ChildLane lane = default;
@@ -214,7 +217,7 @@ sealed class RangeKernelJob<TKernel> : KernelJob where TKernel : struct, IParKer
     internal static RangeKernelJob<TKernel> Rent()
     {
         var j = free;
-        if (j != null && j.Idle) { free = null; return j; }
+        if (j != null) { free = null; return j; }
         return new RangeKernelJob<TKernel>();
     }
 
@@ -232,7 +235,7 @@ sealed class ReduceKernelJob<TKernel, T> : KernelJob where TKernel : struct, IPa
     internal static ReduceKernelJob<TKernel, T> Rent(int chunks)
     {
         var j = free;
-        if (j != null && j.Idle) free = null;
+        if (j != null) free = null;
         else j = new ReduceKernelJob<TKernel, T>();
         if (j.Partial.Length < chunks) j.Partial = new T[chunks];
         return j;

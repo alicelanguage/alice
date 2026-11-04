@@ -481,7 +481,7 @@ public static class CompileCommands
     public static int Check(List<string> a)
     {
         var o = Parse(a);
-        var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories).Where(f => !f.Contains("/obj/") && !f.Contains("/bin/")).ToList();
+        var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories).Where(f => !f.Contains("/obj/") && !f.Contains("/bin/") && !Marked(f)).ToList();
         if (paths.Count == 0) throw new UsageException(T("no.files"), T("hint.no.project"));
         var files = Read(paths);
         var sw = Stopwatch.StartNew();
@@ -491,8 +491,16 @@ public static class CompileCommands
         return 0;
     }
 
-    /// <summary>A file that keeps its directory (and below) out of a plain `alice prove`'s source scan.</summary>
+    /// <summary>A file that keeps its directory (and below) out of a plain `alice prove` / `alice check` source scan.</summary>
     public const string NoProveMarker = ".alice-noprove";
+
+    /// <summary><paramref name="f"/> lies under a directory (below the current one) that holds <see cref="NoProveMarker"/>.</summary>
+    static bool Marked(string f)
+    {
+        for (var d = Path.GetDirectoryName(Path.GetFullPath(f)); d != null && d != Path.GetFullPath("."); d = Path.GetDirectoryName(d))
+            if (File.Exists(Path.Combine(d, NoProveMarker))) return true;
+        return false;
+    }
 
     /// <summary>`alice prove [files] [--check] [--smt] [--timeout SECONDS] [--format text|json]`: every .al file under the
     /// current directory by default, except other packages (alice.toml) and directories marked <see cref="NoProveMarker"/>.</summary>
@@ -514,8 +522,8 @@ public static class CompileCommands
         static bool OwnPackage(string f)
         {
             for (var d = Path.GetDirectoryName(Path.GetFullPath(f)); d != null && d != Path.GetFullPath("."); d = Path.GetDirectoryName(d))
-                if (File.Exists(Path.Combine(d, Manifest.FileName)) || File.Exists(Path.Combine(d, NoProveMarker))) return false;
-            return true;
+                if (File.Exists(Path.Combine(d, Manifest.FileName))) return false;
+            return !Marked(f);
         }
         var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories)
             .Where(f => !f.Contains("/obj/") && !f.Contains("/bin/") && !f.Contains("/.alice/") && Path.GetFileName(f) != Prove.ProofFile && OwnPackage(f)).ToList();

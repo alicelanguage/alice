@@ -18,6 +18,23 @@ public class ParKernelTests
         }
     }
 
+    /// <summary>~50 ns per element: a chunk is long enough that a cold pool still dispatches helpers.</summary>
+    struct Heavy : IParKernel<long>
+    {
+        public int[] Xs;
+        public long Invoke(int lo, int hi)
+        {
+            long s = 0;
+            for (int i = lo; i < hi; i++)
+            {
+                long x = Xs[i];
+                for (int k = 0; k < 48; k++) x = x * 31 + k;
+                s += x;
+            }
+            return s;
+        }
+    }
+
     struct Sum : IParKernel<long>
     {
         public int[] Xs;
@@ -139,5 +156,42 @@ public class ParKernelTests
         long reduce = AllocationProbe.Least(() => Par.Reduce(xs.Length, ref sum, add, 8192));
         Assert.True(range == 0, $"Par.Range with a struct kernel allocated {range} B");
         Assert.True(reduce == 0, $"Par.Reduce with a struct kernel allocated {reduce} B");
+    }
+
+    [Fact]
+    public void Jobs_are_reused_while_their_helpers_are_still_queued()
+    {
+        // 1.0.2 (macOS CI, 3 cores: "Par.Reduce with a struct kernel allocated 288 B" = a fresh ReduceKernelJob + 24
+        // partials): when the pool wakes late, the caller runs every chunk itself and returns while the helpers it queued
+        // still wait. The next call must reuse the job anyway. Here every pool thread is held, so no helper can start.
+        var xs = new int[1 << 20];
+        var sum = new Heavy { Xs = xs };
+        var nop = new Nop();
+        Func<long, long, long> add = static (a, b) => a + b;
+        for (int i = 0; i < 5; i++) { Par.Reduce(xs.Length, ref sum, add, 8192); Par.Range(1 << 20, ref nop, 8192); }
+        var gate = new ManualResetEventSlim(false);   // never disposed: blockers still queued at the end start after Set and return
+        // far more blockers than pool threads: the helpers queue behind them, and a thread the pool injects meanwhile
+        // takes a blocker first
+        const int held = 512;
+        int started = 0;
+        for (int i = 0; i < held; i++)
+            ThreadPool.UnsafeQueueUserWorkItem<object?>(_ => { Interlocked.Increment(ref started); gate.Wait(); }, null, preferLocal: false);
+        try
+        {
+            var until = DateTime.UtcNow.AddSeconds(5);
+            while (Volatile.Read(ref started) < Environment.ProcessorCount && DateTime.UtcNow < until) Thread.Sleep(1);
+            long expected = sum.Invoke(0, xs.Length);
+            Par.Reduce(xs.Length, ref sum, add, 8192);   // queues helpers that cannot run yet
+            Par.Range(1 << 20, ref nop, 8192);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            long got = Par.Reduce(xs.Length, ref sum, add, 8192);
+            Par.Range(1 << 20, ref nop, 8192);
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.Equal(expected, got);
+            Assert.True(allocated == 0, $"Par.Reduce/Range with helpers still queued allocated {allocated} B");
+        }
+        finally { gate.Set(); }
+        // the late helpers find their old run closed, or join the current one: results stay exact afterwards
+        for (int i = 0; i < 20; i++) Assert.Equal(sum.Invoke(0, xs.Length), Par.Reduce(xs.Length, ref sum, add, 8192));
     }
 }

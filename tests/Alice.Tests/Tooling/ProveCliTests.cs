@@ -198,6 +198,17 @@ public class ProveCliTests : IDisposable
     }
 
     [Fact]
+    public void A_plain_check_skips_directories_marked_alice_noprove()
+    {
+        File.WriteAllText("main.al", "puts 1\n");
+        Directory.CreateDirectory(Path.Combine("tools", "findings"));
+        File.WriteAllText(Path.Combine("tools", "findings", "broken.al"), "x = \"a#{\"b\n");
+        Assert.Equal(1, Cli("check").Code);   // unmarked: the broken input is checked
+        File.WriteAllText(Path.Combine("tools", "findings", CompileCommands.NoProveMarker), "");
+        Assert.Equal(0, Cli("check").Code);
+    }
+
+    [Fact]
     public void Check_verifies_certificates_when_proof_cert_exists()
     {
         if (!ProveZ3.Available() || Alice.Cli.Proof.SatCert.Unavailable() != null) return;
