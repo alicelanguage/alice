@@ -17,8 +17,9 @@
 - fix: actors now count every message they admit but never handle in `dropped_messages`. Before, a mailbox cleared by
   a crash, `kill` or restart was not counted. A send admitted just before `stop` that enqueued after the final drain
   stayed in the dead mailbox, unhandled and uncounted. A dead process's turn now clears and counts what arrives late,
-  and re-checks the mailbox when it gives up the flag (the same Dekker pair as the idle path). `ClearMailbox` returns
-  the count. Pinned by `A_send_admitted_before_stop_and_queued_after_the_exit_counts_as_dropped` (deterministic, a
+  and re-checks the mailbox when it gives up the flag (the same Dekker pair as the idle path). No public signature
+  changed: the count comes from a new `protected virtual int ClearMailboxCounted()`. Its default clears without counting,
+  so a custom `ProcessCore` subclass behaves as before; `Actor` overrides it. Pinned by `A_send_admitted_before_stop_and_queued_after_the_exit_counts_as_dropped` (deterministic, a
   gated `ProcessCore` subclass) and `Messages_queued_at_a_crash_count_as_dropped`.
 
 ## 1.0.0 - 2026-11-04

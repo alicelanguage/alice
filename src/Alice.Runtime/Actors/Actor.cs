@@ -33,7 +33,8 @@ public sealed class Actor<T> : ProcessCore
     }
 
     protected override bool HasMessages => !mailbox.IsEmpty;
-    protected override int ClearMailbox() { int n = 0; while (mailbox.TryDequeue(out _)) n++; return n; }
+    protected override void ClearMailbox() => ClearMailboxCounted();
+    protected override int ClearMailboxCounted() { int n = 0; while (mailbox.TryDequeue(out _)) n++; return n; }
 }
 
 /// <summary>
@@ -70,7 +71,8 @@ public sealed class Actor<S, T> : ProcessCore
     }
 
     protected override bool HasMessages => !mailbox.IsEmpty;
-    protected override int ClearMailbox() { int n = 0; while (mailbox.TryDequeue(out _)) n++; return n; }
+    protected override void ClearMailbox() => ClearMailboxCounted();
+    protected override int ClearMailboxCounted() { int n = 0; while (mailbox.TryDequeue(out _)) n++; return n; }
     protected override void Reinit() => state = init();
 
     /// <summary>Drains the mailbox, stops, and returns the final state.</summary>

@@ -101,7 +101,8 @@ public class ActorTests(ITestOutputHelper output)
         }
 
         protected override bool HasMessages => !box.IsEmpty;
-        protected override int ClearMailbox() { int n = 0; while (box.TryDequeue(out _)) n++; return n; }
+        protected override void ClearMailbox() => ClearMailboxCounted();
+        protected override int ClearMailboxCounted() { int n = 0; while (box.TryDequeue(out _)) n++; return n; }
     }
 
     [Fact]

@@ -40,8 +40,12 @@ public abstract class ProcessCore : IThreadPoolWorkItem
     /// <summary>Handles one queued message; false when the mailbox is empty.</summary>
     protected abstract bool HandleOne();
     protected abstract bool HasMessages { get; }
-    /// <summary>Empties the mailbox and returns how many messages it removed (they count as dropped).</summary>
-    protected abstract int ClearMailbox();
+    protected abstract void ClearMailbox();
+    /// <summary>
+    /// Empties the mailbox and returns how many messages it removed; they count as dropped. The default clears without
+    /// counting (returns 0), so a subclass written against 1.0.0 keeps working; the runtime's processes override it.
+    /// </summary>
+    protected virtual int ClearMailboxCounted() { ClearMailbox(); return 0; }
     /// <summary>Fresh state for a restart.</summary>
     protected virtual void Reinit() { }
     /// <summary>Runs once when the process dies, before anyone is notified.</summary>
@@ -119,7 +123,7 @@ public abstract class ProcessCore : IThreadPoolWorkItem
     /// <summary>Clears the mailbox and counts what it held: an admitted message is handled or counted, never lost silently.</summary>
     void Drop()
     {
-        int n = ClearMailbox();
+        int n = ClearMailboxCounted();
         if (n != 0) Interlocked.Add(ref dropped, n);
     }
 
