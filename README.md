@@ -13,7 +13,7 @@
 
 ---
 
-> **Status: 1.0 release candidate** (`1.0.0-rc.1`). The language, the guarantees in [INVARIANTS.md](INVARIANTS.md)
+> **Status: Alice 1.0.0** released. The language, the guarantees in [INVARIANTS.md](INVARIANTS.md)
 > and the CLI are what 1.0 will ship; what is left is listed in the [1.0 checklist](docs/releases.md#10-release-checklist).
 
 Alice is a programming language for .NET. You write blocks, `case/in` and DSLs; the compiler infers static
@@ -117,7 +117,7 @@ irm https://alice-lang.org/install.ps1 | iex          # Windows PowerShell
 ```
 
 The installer verifies its SHA-256 and fetches the .NET 10 SDK if you need it. It installs the latest stable
-release; for the release candidate add `--version 1.0.0-rc.1` (or set `ALICE_VERSION=1.0.0-rc.1`). Then:
+release (the latest stable). For a specific version, add `--version X.Y.Z` or set `ALICE_VERSION=X.Y.Z`. Then:
 
 ```bash
 alice                      # REPL

@@ -37,7 +37,7 @@ dotnet run --project src/Alice.Cli -- emit file.al
 - Race checks and the purity gate decide parallelization: never parallelize code not proven pure.
 - Compiler and runtime are pure C#; no native code.
 - TDD: failing test first.
-- Version stays `0.10.x`-`0.19.x`.
+- Version follows semver: 1.x for compatible changes, 2.0 for breaking changes.
 - Never touch `archicture/user/`.
 
 Docs: `archicture/` (ADRs, module notes), `docs/` (language, errors, performance, tooling, getting started).

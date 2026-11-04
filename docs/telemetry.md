@@ -1,6 +1,6 @@
 # Telemetry
 
-> Disabled in 0.14.0: the CLI never asks, records or sends. `alice telemetry` reports that it is disabled.
+> Disabled in 1.0.0: the CLI never asks, records or sends. `alice telemetry` reports that it is disabled.
 
 The `alice` CLI can send anonymous usage data, **only if you say yes**. It is off by default. Programs you compile with
 Alice never contain telemetry and never send anything; this concerns the CLI and compiler tooling only (ADR 0031).
@@ -51,7 +51,7 @@ the CLI writes (`TelemetryTests.EventJsonHasOnlyDocumentedFields`), so a field c
 | `schema` | `1` | policy/format version |
 | `install_id` | `"9f2c…"` (32 hex) | random, regenerable |
 | `command` | `"build"`, `"self update"` | from a fixed list; arguments, paths and typos are never sent (`other`) |
-| `alice_version` | `"0.14.0"` | |
+| `alice_version` | `"1.0.0"` | |
 | `os` | `"linux"` | `linux`, `windows`, `macos`, `other` |
 | `arch` | `"x64"` | |
 | `dotnet` | `"10.0.4"` | runtime version |

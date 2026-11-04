@@ -120,3 +120,57 @@ Values typed `dynamic` load the C# runtime binder (tens of milliseconds). Alice 
   Passed straight to a borrowing parameter (`dist(source(n), source(m))`), it lives in a temporary for the
   statement and is released after it (0.13.0).
 - Reuse buffers across iterations when they are large: `stackalloc` covers only small, fixed-size arrays.
+
+## Affine arenas (ADR 0037, 0.13+)
+
+Sum types (`enum Shape ... end`) whose payload fields are all unmanaged (numbers, `Bool`, `Char`, structs of those) or other such sum types can be kept in per-type struct arenas instead of one GC object per node. A variant with no fields or one small field (≤32 bits) packs into the 64-bit term itself and never allocates.
+
+### When arenas apply
+
+The compiler infers arena eligibility: a sum type qualifies when:
+- Every payload field is unmanaged or another arena-eligible sum type (recursion allowed)
+- Values are used **affinely**: consumed by one `case`, passed once to Alice methods, returned, assigned, or built into another node
+- No value escapes to: fields, collections, nullables (`Tree?`), generics, blocks/lambdas, .NET calls, `==`/`hash`/`to_s`, string interpolation, or `rescue`/`ensure`
+
+Any escape demotes the type to sealed records everywhere in the program. The type still runs correctly, at record speed.
+
+### `affine enum`: required arenas
+
+`affine enum Tree ...` makes arena form a requirement: escapes become compile errors (AL0240-AL0243) instead of silent demotion:
+
+```crystal
+affine enum Tree
+  Leaf(v : UInt32)
+  Node(l : Tree, r : Tree)
+end
+
+def total(t : Tree) : UInt32
+  case t
+  when Tree::Leaf(v) then v
+  when Tree::Node(l, r) then total(l) &+ total(r)
+  end
+end
+```
+
+### Per-thread regions and `scope`
+
+- Each thread has its own arena slab for each `affine enum` type
+- `scope ... end` is a region: slots allocated inside are reset at `end`
+- Only the thread that allocated a node may free it
+- A node read on another thread is retained until the enclosing region ends
+
+```crystal
+scope
+  t = build_tree(n)
+  process(t)
+end  # all slots allocated in this region are freed here
+```
+
+### Performance
+
+Measured on tree benchmarks (benchmarks/bend2/results/arena.md):
+- **tree-radix**: 1.3x faster than GC records, 4x less memory (401 MB vs 1649 MB)  
+- **tree-matmul**: 1.2x faster, 2x less memory
+- Packed variants (no fields or ≤32-bit payload) have zero allocation
+
+See [language.md](language.md#affine-enum-sum-types-in-an-arena-adr-0037) for the full specification.
