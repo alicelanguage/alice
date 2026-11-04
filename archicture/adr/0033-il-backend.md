@@ -1,7 +1,9 @@
 # ADR 0033: Direct IL backend through System.Reflection.Metadata
 
-Status: Accepted, implemented: IL is the default backend (1.0.0); the C# printer remains the differential oracle
-becomes "single IR (AIR, ADR 0032), IL-first".
+Status: Accepted; implemented for loose files in 1.0.2, package builds in 1.1. Amends ADR 0001 and ADR 0007:
+"single Roslyn backend" becomes "single IR (AIR, ADR 0032), IL-first". The C# printer remains the differential oracle.
+
+`alice run`, `alice build <file>` and `alice emit --il` compile through the IL backend by default (1.0.2; in 1.0.0/1.0.1 only `emit --il` did, and plain `alice emit` still prints the C# printer's output). Workspace/package builds (alice.toml, Alice.Sdk) use the C# printer until 1.1. `--backend csharp` and `ALICE_BACKEND=csharp` select the printer for loose files; `[build] backend` in alice.toml is accepted and has no effect until package builds get the IL backend in 1.1. Programs the IL backend cannot compile yet fall back to C# with a one-line `note:` on stderr.
 
 Today Alice prints C# and Roslyn emits IL. Roslyn is also the real type checker: nullable flow analysis (CS8600-CS8625
 as errors is Alice null safety), `var` inference, overload resolution and generic inference finish what the binder

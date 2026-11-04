@@ -185,6 +185,19 @@ public class ProveCliTests : IDisposable
         Assert.Equal(["add_overflows", "fine", "wrong"], Prove.CheckSmt(files, []).Select(x => x.Rule));
     }
     [Fact]
+    public void A_plain_prove_skips_directories_marked_alice_noprove()
+    {
+        // tools/fuzz/findings holds fuzzer inputs that do not compile: a plain `alice prove` at the root must not read them
+        File.WriteAllText("RULES.al", "rule ok(x in 0..9)\n  x >= 0\nend\n");
+        Directory.CreateDirectory(Path.Combine("tools", "findings"));
+        File.WriteAllText(Path.Combine("tools", "findings", "broken.al"), "x = \"a#{\"b\n");
+        Assert.Equal(1, Cli("prove").Code);   // unmarked: the broken input is compiled with the rules
+        File.WriteAllText(Path.Combine("tools", "findings", CompileCommands.NoProveMarker), "");
+        Assert.Equal(0, Cli("prove").Code);
+        Assert.Equal(0, Cli("prove", "--check").Code);
+    }
+
+    [Fact]
     public void Check_verifies_certificates_when_proof_cert_exists()
     {
         if (!ProveZ3.Available() || Alice.Cli.Proof.SatCert.Unavailable() != null) return;

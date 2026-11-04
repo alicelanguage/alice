@@ -491,8 +491,11 @@ public static class CompileCommands
         return 0;
     }
 
+    /// <summary>A file that keeps its directory (and below) out of a plain `alice prove`'s source scan.</summary>
+    public const string NoProveMarker = ".alice-noprove";
+
     /// <summary>`alice prove [files] [--check] [--smt] [--timeout SECONDS] [--format text|json]`: every .al file under the
-    /// current directory by default.</summary>
+    /// current directory by default, except other packages (alice.toml) and directories marked <see cref="NoProveMarker"/>.</summary>
     public static int ProveCmd(List<string> a)
     {
         a = [.. a];
@@ -506,11 +509,12 @@ public static class CompileCommands
                 ? TimeSpan.FromSeconds(t) : throw new UsageException($"--timeout {secs} is not a number of seconds", "e.g. --timeout 30 (per rule)");
         var o = Parse(a);
         // this package's sources: nested directories with their own alice.toml (examples, workspace members) are other
-        // packages, with their own dependencies and their own RULES.al
+        // packages, with their own dependencies and their own RULES.al; a directory holding a `.alice-noprove` marker
+        // (tools/fuzz/findings: fuzzer inputs that are meant not to compile) is not source at all
         static bool OwnPackage(string f)
         {
             for (var d = Path.GetDirectoryName(Path.GetFullPath(f)); d != null && d != Path.GetFullPath("."); d = Path.GetDirectoryName(d))
-                if (File.Exists(Path.Combine(d, Manifest.FileName))) return false;
+                if (File.Exists(Path.Combine(d, Manifest.FileName)) || File.Exists(Path.Combine(d, NoProveMarker))) return false;
             return true;
         }
         var paths = o.Files.Count > 0 ? o.Files : Directory.GetFiles(".", "*.al", SearchOption.AllDirectories)

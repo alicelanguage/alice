@@ -1,6 +1,8 @@
 # Performance model
 
-Alice compiles to .NET IL (ADR 0033, default since 1.0.0), rewriting common source patterns into the IL shape a hand-optimizing C# author would write (ADR 0007). Memory and GC: [heap and GC](heap-gc.md). Parallel recursion: [fork/join](fork-join.md). Inspect with `alice emit file.al`. Code: `src/Alice.Compiler/Lowering/`. Tests: `tests/Alice.Tests/Compiler/`.
+Alice compiles to .NET IL (ADR 0033), rewriting common source patterns into the IL shape a hand-optimizing C# author would write (ADR 0007). Memory and GC: [heap and GC](heap-gc.md). Parallel recursion: [fork/join](fork-join.md). Inspect with `alice emit file.al`. Code: `src/Alice.Compiler/Lowering/`. Tests: `tests/Alice.Tests/Compiler/`.
+
+`alice run`, `alice build <file>` and `alice emit --il` compile through the IL backend by default (1.0.2; in 1.0.0/1.0.1 only `emit --il` did, and plain `alice emit` still prints the C# printer's output). Workspace/package builds (alice.toml, Alice.Sdk) use the C# printer until 1.1. `--backend csharp` and `ALICE_BACKEND=csharp` select the printer for loose files; `[build] backend` in alice.toml is accepted and has no effect until package builds get the IL backend in 1.1. Programs the IL backend cannot compile yet fall back to C# with a one-line `note:` on stderr.
 
 ## Pipeline
 

@@ -87,6 +87,8 @@ with the tests that pin it.
 Avalonia, WebAssembly. C# projects reference Alice libraries and the other way round. Alice compiles to
 .NET assemblies with debug info, and errors point at your `.al` lines.
 
+`alice run`, `alice build <file>` and `alice emit --il` compile through the IL backend by default (1.0.2; in 1.0.0/1.0.1 only `emit --il` did, and plain `alice emit` still prints the C# printer's output). Workspace/package builds (alice.toml, Alice.Sdk) use the C# printer until 1.1. `--backend csharp` and `ALICE_BACKEND=csharp` select the printer for loose files; `[build] backend` in alice.toml is accepted and has no effect until package builds get the IL backend in 1.1. Programs the IL backend cannot compile yet fall back to C# with a one-line `note:` on stderr.
+
 ## Made with Alice
 
 | [Celeste Classic](samples/celeste) | [Ray tracer](samples/raytracer) |
