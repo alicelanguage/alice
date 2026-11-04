@@ -82,4 +82,22 @@ public class ParserRegressionTests
         var twice = Formatter.Format(once);
         Assert.Equal(once, twice);
     }
+
+    [Fact]
+    public void P10_hex_binary_octal_literals_in_rule_ranges_parse_correctly()
+    {
+        // Hex, binary, and octal literals in rule domains: the fix makes them parse (not crash),
+        // so incomplete rules like "rule r(x in 0x10)" still fail with a diagnostic, not a crash.
+        var e1 = ParseError("rule r(x in 0x10)");
+        Assert.IsType<CompileException>(e1);  // expected end, but it parsed the literal
+        
+        var e2 = ParseError("rule r(x in -0x1000..0x1000)");
+        Assert.IsType<CompileException>(e2);
+        
+        var e3 = ParseError("rule r(x in 0b1010)");
+        Assert.IsType<CompileException>(e3);
+        
+        var e4 = ParseError("rule r(x in 0o77)");
+        Assert.IsType<CompileException>(e4);
+    }
 }

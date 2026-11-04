@@ -161,14 +161,27 @@ public sealed partial class Parser
         return m;
     }
 
+
     long SignedLiteral()
     {
         bool neg = false;
         if (IsOp("-")) { Next(); neg = true; }
         if (t[p].Kind != "int") throw Err("rule domain bounds are integer literals");
         var text = Next().Text.Replace("_", "");
-        try { long v = long.Parse(text); return neg ? -v : v; }
-        catch (FormatException) { throw Err($"invalid integer literal '{text}"); }
+        try
+        {
+            long v;
+            if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                v = Convert.ToInt64(text.Substring(2), 16);
+            else if (text.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+                v = Convert.ToInt64(text.Substring(2), 2);
+            else if (text.StartsWith("0o", StringComparison.OrdinalIgnoreCase))
+                v = Convert.ToInt64(text.Substring(2), 8);
+            else
+                v = long.Parse(text);
+            return neg ? -v : v;
+        }
+        catch (Exception) { throw Err($"invalid integer literal '{text}'"); }
     }
 
     bool IsDefStart() => IsKw("def") || ((IsKw("private") || IsKw("protected") || IsKw("abstract") || IsKw("async") || IsKw("pure") || IsKw("safe") || IsKw("unsafe") || IsKw("partial") || IsKw("inline")) && (Peek(1).Text == "def" || Peek(2).Text == "def" || Peek(3).Text == "def"))
