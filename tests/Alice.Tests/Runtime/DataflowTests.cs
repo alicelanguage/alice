@@ -352,19 +352,26 @@ public class DataflowTests(ITestOutputHelper output)
     public void Replicated_stage_runs_batches_in_parallel()
     {
         if (Environment.ProcessorCount < 4) return;
-        int running = 0, peak = 0;
-        var g = new Graph(capacity: 64, batch: 8);
-        g.Source(Range(400)).Replicate(0, (ref int _, ReadOnlySpan<long> xs, ref RingWriter<long> w) =>
+        // the workers are pool work items: while the parallel suite keeps a 4-core runner's pool busy they can run one
+        // at a time (ubuntu-24.04: peak 1), so a few runs may be needed to see overlap; none may exceed 4 workers
+        var peaks = new List<int>();
+        for (int attempt = 0; attempt < 5 && !peaks.Any(p => p > 1); attempt++)
         {
-            int now = Interlocked.Increment(ref running);
-            int p;
-            while ((p = Volatile.Read(ref peak)) < now && Interlocked.CompareExchange(ref peak, now, p) != p) { }
-            Thread.Sleep(2);
-            Interlocked.Decrement(ref running);
-            w.Write(xs);
-        }, workers: 4).Sink(0, static (ref int _, ReadOnlySpan<long> _) => { });
-        RunWithin(g);
-        Assert.True(peak is > 1 and <= 4, $"peak {peak}");
+            int running = 0, peak = 0;
+            var g = new Graph(capacity: 64, batch: 8);
+            g.Source(Range(400)).Replicate(0, (ref int _, ReadOnlySpan<long> xs, ref RingWriter<long> w) =>
+            {
+                int now = Interlocked.Increment(ref running);
+                int p;
+                while ((p = Volatile.Read(ref peak)) < now && Interlocked.CompareExchange(ref peak, now, p) != p) { }
+                Thread.Sleep(2);
+                Interlocked.Decrement(ref running);
+                w.Write(xs);
+            }, workers: 4).Sink(0, static (ref int _, ReadOnlySpan<long> _) => { });
+            RunWithin(g);
+            peaks.Add(peak);
+        }
+        Assert.True(peaks.Any(p => p > 1) && peaks.All(p => p <= 4), $"peaks {string.Join(", ", peaks)}");
     }
 
     [Fact]
