@@ -842,7 +842,7 @@ puts b.join.kind                               # linked
 |---|---|
 | `Actor(T).new(handler)` | stateless actor; handler `->(m : T) { }` |
 | `Actor(S, T).new(init, handler)` | state built by `init` inside the actor (and on every restart); handler returns the next state |
-| `send(m)` | enqueue; dropped (counted in `dropped_messages`) when dead or stopping |
+| `send(m)` | enqueue; dropped (counted in `dropped_messages`) when dead or stopping, or still queued when the process dies |
 | `stop` / `finish` | drain, exit normally, wait; `finish` returns the final state |
 | `kill`, `join`, `join(ms)`, `alive?`, `exit_reason`, `restarts`, `id` | lifecycle |
 | `link(p)`, `unlink(p)`, `on_exit { \|r\| }` | links and monitors; `r.kind` is normal, crash, killed, shutdown, linked or max_restarts |

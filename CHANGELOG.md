@@ -14,6 +14,12 @@
   dedicated threads: as spinning `Parallel.For` pool threads they took the pool's workers, and the Windows CI run
   41849746848 counted 4 late turns as stranded. The handoff protocol has no remaining hole: with the fences removed the
   test still catches real strands.
+- fix: actors now count every message they admit but never handle in `dropped_messages`. Before, a mailbox cleared by
+  a crash, `kill` or restart was not counted. A send admitted just before `stop` that enqueued after the final drain
+  stayed in the dead mailbox, unhandled and uncounted. A dead process's turn now clears and counts what arrives late,
+  and re-checks the mailbox when it gives up the flag (the same Dekker pair as the idle path). `ClearMailbox` returns
+  the count. Pinned by `A_send_admitted_before_stop_and_queued_after_the_exit_counts_as_dropped` (deterministic, a
+  gated `ProcessCore` subclass) and `Messages_queued_at_a_crash_count_as_dropped`.
 
 ## 1.0.0 - 2026-11-04
 - fix: IL backend async methods and async iterators: a `finally`/`ensure` around an `await` or `yield` ran twice when the

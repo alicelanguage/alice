@@ -96,5 +96,5 @@ public sealed class Supervisor : ProcessCore
 
     protected override bool HandleOne() => false;
     protected override bool HasMessages => false;
-    protected override void ClearMailbox() { }
+    protected override int ClearMailbox() => 0;
 }

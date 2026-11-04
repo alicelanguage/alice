@@ -33,14 +33,15 @@ public abstract class ProcessCore : IThreadPoolWorkItem
     public ExitReason? exit_reason { get; private set; }
     /// <summary>Times a supervisor restarted this process.</summary>
     public int restarts { get; private set; }
-    /// <summary>Messages refused because the process was dead or stopping.</summary>
+    /// <summary>Messages refused because the process was dead or stopping, plus admitted ones it died without handling.</summary>
     public long dropped_messages => Interlocked.Read(ref dropped);
     public bool IsAlive => Volatile.Read(ref status) == Alive;
 
     /// <summary>Handles one queued message; false when the mailbox is empty.</summary>
     protected abstract bool HandleOne();
     protected abstract bool HasMessages { get; }
-    protected abstract void ClearMailbox();
+    /// <summary>Empties the mailbox and returns how many messages it removed (they count as dropped).</summary>
+    protected abstract int ClearMailbox();
     /// <summary>Fresh state for a restart.</summary>
     protected virtual void Reinit() { }
     /// <summary>Runs once when the process dies, before anyone is notified.</summary>
@@ -69,13 +70,13 @@ public abstract class ProcessCore : IThreadPoolWorkItem
         int n = 0;
         while (true)
         {
-            if (Volatile.Read(ref status) != Alive) { Volatile.Write(ref scheduled, 0); return; }
+            if (Volatile.Read(ref status) != Alive) { Drop(); Release(); return; }
             bool got;
             try { got = HandleOne(); }
             catch (Exception e)
             {
                 bool died = Kill(ExitReason.Crash(e));
-                Volatile.Write(ref scheduled, 0);   // before notifying: a supervisor may restart us on this thread
+                Release();   // before notifying: a supervisor may restart us on this thread
                 if (died) Propagate(exit_reason!);
                 return;
             }
@@ -84,7 +85,7 @@ public abstract class ProcessCore : IThreadPoolWorkItem
                 if (Volatile.Read(ref stopping) == 1)
                 {
                     bool died = Kill(ExitReason.Normal);
-                    Volatile.Write(ref scheduled, 0);
+                    Release();
                     if (died) Propagate(ExitReason.Normal);
                     return;
                 }
@@ -102,6 +103,26 @@ public abstract class ProcessCore : IThreadPoolWorkItem
         }
     }
 
+    /// <summary>
+    /// Gives up the turn of a dead process. A sender admitted just before the death may enqueue after the mailbox was
+    /// cleared while its Schedule still saw this turn, so the reset is re-checked as on the idle path (the same Dekker
+    /// pair). The winner requeues instead of looping: the caller may still have to notify a supervisor that restarts this
+    /// process on this thread, and Restart waits for the flag.
+    /// </summary>
+    void Release()
+    {
+        Interlocked.Exchange(ref scheduled, 0);
+        if (HasMessages && Interlocked.CompareExchange(ref scheduled, 1, 0) == 0)
+            ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
+    }
+
+    /// <summary>Clears the mailbox and counts what it held: an admitted message is handled or counted, never lost silently.</summary>
+    void Drop()
+    {
+        int n = ClearMailbox();
+        if (n != 0) Interlocked.Add(ref dropped, n);
+    }
+
     /// <summary>Alive -> Dead exactly once; the winner records the reason and drops the mailbox.</summary>
     bool Kill(ExitReason reason)
     {
@@ -112,7 +133,7 @@ public abstract class ProcessCore : IThreadPoolWorkItem
             propagating = true;
         }
         exit_reason = reason;
-        ClearMailbox();
+        Drop();
         return true;
     }
 
@@ -159,7 +180,7 @@ public abstract class ProcessCore : IThreadPoolWorkItem
     {
         var sw = new SpinWait();
         while (Volatile.Read(ref scheduled) != 0) sw.SpinOnce();   // the old turn must be over: one consumer only
-        ClearMailbox();
+        Drop();   // late mail of the dead incarnation
         Reinit();
         exit_reason = null;
         Volatile.Write(ref stopping, 0);

@@ -38,7 +38,70 @@ public class ActorTests(ITestOutputHelper output)
         Assert.Equal(15, seen.get());
         Assert.False(bad.IsAlive);
         bad.send(9);   // a dead process refuses mail instead of throwing
-        Assert.Equal(1, bad.dropped_messages);
+        // 4 and 5 died in the mailbox (or were refused, if the crash came first) and 9 was refused: each one counted once.
+        // A late enqueue of an admitted 4 or 5 is dropped by the dead process's next turn, so the count may settle after join.
+        Until(() => bad.dropped_messages == 3);
+    }
+
+    [Fact]
+    public void Messages_queued_at_a_crash_count_as_dropped()
+    {
+        using var hold = new ManualResetEventSlim();
+        var bad = new Actor<int>(m => { if (m == 1) { hold.Wait(); throw new InvalidOperationException("boom"); } });
+        for (int i = 1; i <= 4; i++) bad.send(i);   // 1 is being handled, 2..4 wait in the mailbox
+        hold.Set();
+        Assert.Equal("crash", bad.join().kind);
+        Assert.Equal(3, bad.dropped_messages);
+    }
+
+    /// <summary>
+    /// A send admitted before <c>stop</c> but enqueued after the final drain (and after the process died) used to sit in
+    /// the dead mailbox forever, never handled and never counted. <see cref="GatedProcess"/> pauses the send between
+    /// <c>Admit</c> and the enqueue, so the window opens every run. The runtime needs no hook for that: the process is a
+    /// plain <see cref="ProcessCore"/> subclass.
+    /// </summary>
+    [Fact]
+    public void A_send_admitted_before_stop_and_queued_after_the_exit_counts_as_dropped()
+    {
+        var p = new GatedProcess();
+        var sender = new Thread(() => p.SendGated(7)) { IsBackground = true };
+        sender.Start();
+        Assert.True(p.Admitted.Wait(T));
+        p.stop();                       // drains an empty mailbox and exits normally while the send is still in flight
+        Assert.False(p.IsAlive);
+        p.Go.Set();                     // the admitted send enqueues into the dead mailbox and schedules
+        Assert.True(sender.Join(T));
+        Until(() => p.dropped_messages == 1 && p.Queued == 0);
+        Assert.Equal(0, p.Handled);
+    }
+
+    /// <summary>A minimal process whose send can pause between admission and enqueue.</summary>
+    sealed class GatedProcess : ProcessCore
+    {
+        readonly System.Collections.Concurrent.ConcurrentQueue<int> box = new();
+        public readonly ManualResetEventSlim Admitted = new(), Go = new();
+        int handled;
+        public int Handled => Volatile.Read(ref handled);
+        public int Queued => box.Count;
+
+        public void SendGated(int m)
+        {
+            if (!Admit()) return;
+            Admitted.Set();
+            Go.Wait();
+            box.Enqueue(m);
+            Schedule();
+        }
+
+        protected override bool HandleOne()
+        {
+            if (!box.TryDequeue(out _)) return false;
+            Interlocked.Increment(ref handled);
+            return true;
+        }
+
+        protected override bool HasMessages => !box.IsEmpty;
+        protected override int ClearMailbox() { int n = 0; while (box.TryDequeue(out _)) n++; return n; }
     }
 
     [Fact]
