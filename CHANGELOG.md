@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 1.0.0-rc.1 - 2026-11-02
+## 1.0.0 - 2026-11-04
 - Checkable proof certificates (ADR 0042): `alice prove --smt` produces independently verifiable certificates when a proof-emitting SAT solver (CaDiCaL 1.7+) is available. Each certificate contains the rule's symbolic IR (Alice.Check terms), the Tseitin-encoded CNF, and an LRAT proof from the SAT solver. The standalone `alice-check` tool (<600 lines, no compiler/runtime dependencies) verifies: (1) the LRAT proof refutes the CNF, (2) the CNF matches the re-derived bit-blast of the IR, (3) hashes match. `alice prove --check` re-validates all certificates. `PROOF.cert` (Brotli-compressed) accompanies `PROOF.al`. Trusted computing base for certificate mode: Alice's rule-to-IR translation + alice-check (vs. enumeration: compiler+runtime, --smt without certs: +Z3). docs/proofs.md, alice-check executable, tests/Alice.Check.Tests (46 tests), differential fuzz extended to certificates.
 
 - perf: Bend 2 runtime suite re-measured on Intel Xeon 8488C, .NET 10.0.114, commit 1746ce4 (benchmarks/bend2/results/summary.md). Serial geomean Alice/C 1.54x (16 workloads), parallel speedup 8.8-21.0x on 32 cores; all checksums match C. bend-vs suite unchanged (Bend not available on this machine).
