@@ -208,19 +208,23 @@ public class CoreNetAllocationTests
 
         public static class EchoAllocation
         {
+            static bool Copy;   // `copy`: the negative check, one array per message
+
             static async ValueTask Echo(StreamSocket c, CancellationToken ct)
             {
                 var buf = ArrayPool<byte>.Shared.Rent(4096);
                 try
                 {
                     int n;
-                    while ((n = await c.ReadAsync(buf, ct)) > 0) await c.WriteAsync(buf.AsMemory(0, n), ct);
+                    while ((n = await c.ReadAsync(buf, ct)) > 0)
+                        await c.WriteAsync(Copy ? (Memory<byte>)buf.AsMemory(0, n).ToArray() : buf.AsMemory(0, n), ct);
                 }
                 finally { ArrayPool<byte>.Shared.Return(buf); }
             }
 
-            public static void Main()
+            public static void Main(string[] args)
             {
+                Copy = args.Length > 0 && args[0] == "copy";
                 using var srv = TcpServer.Listen(0);
                 using var cts = new CancellationTokenSource();
                 var serving = srv.ServeAsync(Echo, cts.Token);
@@ -257,30 +261,18 @@ public class CoreNetAllocationTests
     [Fact]
     public void Echo_with_256_connections_allocates_nothing_per_message()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "alice-echo-alloc-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        var exe = ChildRun.CSharp(EchoProgram, "EchoAllocation");
+        static List<long> Windows(string output, out string line)
         {
-            var runtime = typeof(TcpServer).Assembly.Location;
-            File.WriteAllBytes(Path.Combine(dir, "EchoAllocation.dll"), Alice.Compiler.AliceCompiler.Emit([EchoProgram], "EchoAllocation", exe: true));   // references the host's TPA, Alice.Runtime included
-            File.Copy(runtime, Path.Combine(dir, Path.GetFileName(runtime)));
-            string major = Environment.Version.Major.ToString();
-            File.WriteAllText(Path.Combine(dir, "EchoAllocation.runtimeconfig.json"),
-                """{"runtimeOptions":{"tfm":"netMAJOR.0","framework":{"name":"Microsoft.NETCore.App","version":"MAJOR.0.0"}}}""".Replace("MAJOR", major));
-            var psi = new System.Diagnostics.ProcessStartInfo("dotnet") { WorkingDirectory = dir };
-            psi.ArgumentList.Add(Path.Combine(dir, "EchoAllocation.dll"));
-            var (code, output) = Alice.Tests.Integration.ChildProcess.Run(psi, timeoutMinutes: 5);
-            Assert.True(code == 0, output);
-            var line = output.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("windows: "));
-            var windows = line["windows: ".Length..].Split(' ').Select(long.Parse).ToList();
-            // 25,600 echoed messages per window: one window at 0 B shows the steady state allocates nothing
-            // (a window can still see the pool's one-time growth, which does not repeat)
-            Assert.True(windows.Min() == 0, $"bytes per window of 25,600 echoed messages: {line}");
+            line = output.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("windows: "));
+            return line["windows: ".Length..].Split(' ').Select(long.Parse).ToList();
         }
-        finally
-        {
-            try { Directory.Delete(dir, true); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-        }
+        // 25,600 echoed messages per window: one window at 0 B shows the steady state allocates nothing
+        // (a window can still see the pool's one-time growth, which does not repeat)
+        var windows = Windows(ChildRun.Run(exe, "EchoAllocation"), out var line);
+        Assert.True(windows.Min() == 0, $"bytes per window of 25,600 echoed messages: {line}");
+        // negative check: one copy per message shows in every window (88 B x 25,600)
+        var copying = Windows(ChildRun.Run(exe, "EchoAllocation", null, "copy"), out var copyLine);
+        Assert.True(copying.Count == 5 && copying.Min() >= 25_600 * 64, $"a copy per message must show: {copyLine}");
     }
 }

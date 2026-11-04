@@ -351,14 +351,6 @@ puts "#{e}"
         Assert.Equal(records, shallow);
     }
 
-    static long Steady(Func<int, uint> run, int n, uint expect)
-    {
-        for (int i = 0; i < 20; i++) Assert.Equal(expect, run(n));
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 50; i++) run(n);
-        return GC.GetAllocatedBytesForCurrentThread() - before;
-    }
-
     static Func<int, uint> Run(Assembly asm) =>
         asm.GetType("Program")!.GetMethod("run", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.CreateDelegate<Func<int, uint>>();
 
@@ -455,9 +447,52 @@ puts s
         string src = Tree.Replace("puts run(ARGV.size > 0 ? ARGV[0].to_i : 10)\n", "");
         uint expect = 0;
         for (uint x = 1u << 16; x < 2u << 16; x++) expect += x;   // leaves of build(16, 1); 70 leaking runs would outgrow the first 2^20-slot chunk
-        var cs = Affine(() => AliceCompiler.Load(AliceCompiler.Emit([AliceCompiler.Transpile(src)], "alloc", exe: false)));
-        Assert.Equal(0, Steady(Run(cs), 16, expect));
-        var il = AliceCompiler.Load(IlImage([new SourceFile("main.al", src)], "allocil", exe: false));
-        Assert.Equal(0, Steady(Run(il), 16, expect));
+        // negative check: the same tree plus one string per run must read > 0 (not a small number: .NET caches those strings)
+        string leaky = src.Replace("  s = total(t, 0_u32)\n", "  s = total(t, 0_u32) &+ (n * 100_000).to_s.size.to_u32\n");
+        Assert.NotEqual(src, leaky);
+        var cs = Affine(() => AliceCompiler.Emit([AliceCompiler.Transpile(src)], "alloc", exe: false));
+        var il = IlImage([new SourceFile("main.al", src)], "allocil", exe: false);
+        var leak = Affine(() => AliceCompiler.Emit([AliceCompiler.Transpile(leaky)], "allocleak", exe: false));
+        // measured in a child process that runs nothing else (Runtime/ChildRun.cs): in the test host another
+        // thread's GC can retire this thread's allocation context, and 2,392 B showed up on a run that allocates nothing
+        var output = Alice.Tests.Runtime.ChildRun.Run(Alice.Tests.Runtime.ChildRun.CSharp(SteadyHost, "steady"), "steady",
+            [("alloc", cs), ("allocil", il), ("allocleak", leak)], "alloc", "allocil", "allocleak");
+        var rows = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim().Split(' ')).Where(r => r.Length == 3)
+            .ToDictionary(r => r[0], r => (Result: uint.Parse(r[1]), Bytes: long.Parse(r[2])));
+        Assert.True(rows.Count == 3, output);
+        Assert.Equal((expect, 0L), rows["alloc"]);
+        Assert.Equal((expect, 0L), rows["allocil"]);
+        Assert.True(rows["allocleak"].Bytes >= 50 * 24, $"one string per run must show: {output}");
     }
+
+    // the child: per image, 20 warm-up runs of run(16), then the least bytes this thread allocates over a window of 50
+    // more runs, up to 5 windows. A fresh process allocates once while it tiers the code up (1,888 B in its first
+    // window, 0 after); an allocation per run shows in every window (the negative check)
+    const string SteadyHost = """
+        using System;
+        using System.IO;
+        using System.Reflection;
+
+        public static class Steady
+        {
+            public static void Main(string[] args)
+            {
+                foreach (var name in args)
+                {
+                    var asm = Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, name + ".dll"));
+                    var run = asm.GetType("Program")!.GetMethod("run", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)!.CreateDelegate<Func<int, uint>>();
+                    uint first = 0;
+                    for (int i = 0; i < 20; i++) first = run(16);
+                    long least = long.MaxValue;
+                    for (int w = 0; w < 5 && least != 0; w++)
+                    {
+                        long before = GC.GetAllocatedBytesForCurrentThread();
+                        for (int i = 0; i < 50; i++) run(16);
+                        least = Math.Min(least, GC.GetAllocatedBytesForCurrentThread() - before);
+                    }
+                    Console.WriteLine($"{name} {first} {least}");
+                }
+            }
+        }
+        """;
 }

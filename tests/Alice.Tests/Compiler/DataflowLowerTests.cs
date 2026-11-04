@@ -190,8 +190,9 @@ public class DataflowLowerAllocationTests
     [Fact]
     public void No_allocation_per_item()
     {
-        static string Prog(int n) => $$"""
-            total = 0_i64
+        // one process per program, running nothing else (Runtime/ChildRun.cs): the counter is process-wide (the graph
+        // runs on pool threads), and in the test host other threads allocate about 1.7 KB/s on their own
+        static string Prog(string stage) => $$"""
             def go(n : Int32) : Int64
               t = 0_i64
               dataflow do
@@ -200,25 +201,35 @@ public class DataflowLowerAllocationTests
                     out << i
                   end
                 }
-                b = a.stage { |x, out| out << x.to_i64 }
+                b = a.stage { |x, out| out << {{stage}} }
                 b.sink { |v| t += v }
               end
               t
             end
             go(1000)
-            a0 = GC.GetTotalAllocatedBytes(true)
-            total = go({{n}})
-            puts GC.GetTotalAllocatedBytes(true) - a0
+            for k in 0...3
+              a0 = GC.GetTotalAllocatedBytes(true)
+              go(10_000)
+              a1 = GC.GetTotalAllocatedBytes(true)
+              go(1_000_000)
+              a2 = GC.GetTotalAllocatedBytes(true)
+              puts "#{a1 - a0} #{a2 - a1}"
+            end
             """;
-        // process-wide counter (the graph runs on pool threads): this class runs alone, and the least of a few runs
-        // discards a window in which the GC or the runtime allocated on its own
-        long small = long.MaxValue, big = long.MaxValue;
-        for (int k = 0; k < Alice.Tests.Runtime.AllocationProbe.Attempts && !(big < small + 64 * 1024); k++)
+        static (long Small, long Big, string Output) Measure(string stage)
         {
-            small = Math.Min(small, long.Parse(Run(Prog(10_000))));
-            big = Math.Min(big, long.Parse(Run(Prog(1_000_000))));
+            var output = Alice.Tests.Runtime.ChildRun.Run(AliceCompiler.Emit([AliceCompiler.Transpile(Prog(stage))], "main", exe: true), "main");
+            var rows = output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim().Split(' ').Select(long.Parse).ToArray()).ToList();
+            Assert.True(rows.Count == 3, output);
+            return (rows.Min(r => r[0]), rows.Min(r => r[1]), output);
         }
-        // 100x the items: allocation is per graph (rings, nodes, spills), not per item
-        Assert.True(big < small + 64 * 1024, $"10k items: {small} B, 1M items: {big} B");
+        // 100x the items, the same bytes up to one small object: what a graph allocates (rings, nodes, spills, about
+        // 100 KB) does not grow with its items. Measured in the child: 102,928 B for 10k items, 102,952 B for 1M (one
+        // 24 B object more per long run, from the runtime's dataflow scheduler); 1 B per item would be 990 KB
+        var (small, big, o) = Measure("x.to_i64");
+        Assert.True(big - small <= 128, $"bytes per graph run (10k items, 1M items):\n{o}");
+        // negative check: one string per item shows as about 24 MB more for the 990k extra items
+        var (lsmall, lbig, lo) = Measure("x.to_s.size.to_i64");
+        Assert.True(lbig - lsmall >= 990_000 * 24, $"one string per item must show:\n{lo}");
     }
 }

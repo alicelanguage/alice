@@ -107,6 +107,7 @@ public sealed class ClrTypes
         {
             var lib = Path.Combine(Path.GetDirectoryName(parent)!, "lib", tfm, file);
             if (File.Exists(lib)) return lib;
+            if (SharedFrameworkOf(Path.GetDirectoryName(parent)!, file) is { } shared) return shared;
         }
         if (tfm is "ref" or "refint" && parent != null)   // a project's obj/<cfg>/<tfm>/ref/X.dll -> obj/<cfg>/<tfm>/X.dll
         {
@@ -114,6 +115,27 @@ public sealed class ClrTypes
             if (File.Exists(impl)) return impl;
         }
         return r;
+    }
+
+    /// <summary>A framework reference pack (`dotnet/packs/Microsoft.AspNetCore.App.Ref/10.0.14/ref/net10.0/X.dll`) ->
+    /// the installed shared framework's X.dll (`dotnet/shared/Microsoft.AspNetCore.App/10.0.14/`, or the newest
+    /// installed version with the same major). Microsoft.NETCore.App is left alone: the running runtime is it.</summary>
+    static string? SharedFrameworkOf(string versionDir, string file)
+    {
+        var packDir = Path.GetDirectoryName(versionDir);
+        var packs = packDir == null ? null : Path.GetDirectoryName(packDir);
+        string pack = packDir == null ? "" : Path.GetFileName(packDir);
+        if (packs == null || Path.GetFileName(packs) != "packs" || !pack.EndsWith(".Ref") || pack == "Microsoft.NETCore.App.Ref") return null;
+        var shared = Path.Combine(Path.GetDirectoryName(packs)!, "shared", pack[..^".Ref".Length]);
+        if (!Directory.Exists(shared)) return null;
+        string version = Path.GetFileName(versionDir);
+        var exact = Path.Combine(shared, version, file);
+        if (File.Exists(exact)) return exact;
+        string major = version.Split('.')[0] + ".";
+        return Directory.GetDirectories(shared)
+            .Where(d => Path.GetFileName(d).StartsWith(major) && Version.TryParse(Path.GetFileName(d).Split('-')[0], out _))
+            .OrderByDescending(d => Version.Parse(Path.GetFileName(d).Split('-')[0]))
+            .Select(d => Path.Combine(d, file)).FirstOrDefault(File.Exists);
     }
 
     void LoadAll()
@@ -155,6 +177,15 @@ public sealed class ClrTypes
         return r;
     }
 
+    /// <summary><paramref name="a"/>.GetType without throwing when the name is a type forward into an assembly the
+    /// runtime cannot load: next to a loaded facade it may find only a reference assembly (BadImageFormatException,
+    /// windows-2025: Microsoft.Extensions.Logging.Abstractions from the ASP.NET reference pack) or nothing.</summary>
+    static Type? TypeIn(Assembly a, string name)
+    {
+        try { return a.GetType(name, false); }
+        catch (Exception e) when (e is BadImageFormatException or FileLoadException or FileNotFoundException or TypeLoadException) { return null; }
+    }
+
     Type? Search(string name, int arity, IReadOnlyCollection<string> usings)
     {
         if (name.StartsWith("global::")) name = name.Substring(8);
@@ -165,12 +196,12 @@ public sealed class ClrTypes
         {
             foreach (var a in asms)
             {
-                var t = a.GetType(c + suffix, false);
+                var t = TypeIn(a, c + suffix);
                 if (t != null && t.IsPublic) return t;
                 int dot = c.LastIndexOf('.');
                 if (dot > 0)
                 {
-                    t = a.GetType(c.Substring(0, dot) + "+" + c.Substring(dot + 1) + suffix, false);
+                    t = TypeIn(a, c.Substring(0, dot) + "+" + c.Substring(dot + 1) + suffix);
                     if (t != null && (t.IsNestedPublic || t.IsPublic)) return t;
                 }
             }
