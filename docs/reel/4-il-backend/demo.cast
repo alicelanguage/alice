@@ -1,0 +1,12 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1793751062, "idle_time_limit": 2.0, "env": {"SHELL": "/bin/bash", "TERM": null}}
+[1.004888, "o", "$ dotnet /work/wt/demo-reel/src/Alice.Cli/bin/Release/net10.0/alice.dll emit --il lexer.al 2>&1 | head -20\r\n"]
+[3.597311, "o", ".assembly lexer // 1.0.0.0\r\n.entrypoint Program::Main\r\n\r\n.class public abstract sealed beforefieldinit Program extends [System.Runtime]System.Object\r\n{\r\n  .method public static hidebysig uint32 prng(uint32 x) AggressiveOptimization\r\n  {\r\n      .locals ([0] uint32 b, [1] uint32 d)\r\n      // lexer.al:7:3\r\n      ldarg 0\r\n      ldarg 0\r\n      ldc.i4 13\r\n      shl\r\n      xor\r\n      stloc 0 // b\r\n      // lexer.al:8:3\r\n      ldloc 0 // b\r\n      ldloc 0 // b\r\n      ldc.i4 17\r\n      shr.un\r\n"]
+[6.612959, "o", "$ # IL backend:\r\n"]
+[7.113959, "o", "$ taskset -c 4,20 env ALICE_PAR=0 dotnet /work/wt/demo-reel/src/Alice.Cli/bin/Release/net10.0/alice.dll run --backend il lexer.al\r\n"]
+[11.572743, "o", "2401049475\r\n"]
+[13.589149, "o", "$ # C# backend:\r\n"]
+[14.090439, "o", "$ taskset -c 4,20 env ALICE_PAR=0 dotnet /work/wt/demo-reel/src/Alice.Cli/bin/Release/net10.0/alice.dll run --backend csharp lexer.al\r\n"]
+[14.877044, "o", "Compiling lexer…\r\n"]
+[16.461232, "o", "   Compiling lexer (1.76s)\r\n"]
+[16.462287, "o", "     Running lexer\r\n"]
+[18.403572, "o", "2401049475\r\n"]

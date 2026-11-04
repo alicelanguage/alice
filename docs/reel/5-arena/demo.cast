@@ -1,0 +1,7 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1793751090, "idle_time_limit": 2.0, "env": {"SHELL": "/bin/bash", "TERM": null}}
+[1.005518, "o", "$ dotnet /work/wt/demo-reel/src/Alice.Cli/bin/Release/net10.0/alice.dll explain symreg.al 2>&1 | grep -A2 \"enum Expr\"\r\n"]
+[2.021744, "o", "│ enum Expr          │ arena                                                  │\r\n╰────────────────────┴────────────────────────────────────────────────────────╯\r\n"]
+[4.030376, "o", "$ # With arena:\r\n"]
+[4.531325, "o", "$ /usr/bin/time -v taskset -c 4,20 env ALICE_PAR=0 dotnet /work/wt/demo-reel/src/Alice.Cli/bin/Release/net10.0/alice.dll run symreg.al 18 110 2>&1 | grep -E \"(sum|Maximum|User time)\"\r\n"]
+[7.035377, "o", "$ # Without arena (records):\r\n"]
+[7.536491, "o", "$ /usr/bin/time -v taskset -c 4,20 env ALICE_PAR=0 ALICE_NO_ARENA=1 dotnet /work/wt/demo-reel/src/Alice.Cli/bin/Release/net10.0/alice.dll run symreg.al 18 110 2>&1 | grep -E \"(sum|Maximum|User time)\"\r\n"]
