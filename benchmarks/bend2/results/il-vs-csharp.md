@@ -2,7 +2,7 @@
 
 ## 1.0.1 re-run (2026-11-04, commit b2e41c8 (v1.0.1))
 
-Same machine (the forge, .NET SDK 10.0.114). Serial: `taskset -c 11,27 env ALICE_PAR=0`, cold process, hyperfine `-N -w 1 -r 5`, median ms; the two images of each workload interleaved (run 2 of summary.md, load average 8.0-8.8). IL = `alice emit --il`; C# = `alice build` (which uses the C# backend for loose files in 1.0.1, see summary.md). Checksums identical for every image and run. Ratios IL / C# (< 1: IL faster). Raw: [1.0.1/il/](1.0.1/il/).
+Same machine (the forge, .NET SDK 10.0.114). Serial: `taskset -c 11,27 env ALICE_PAR=0`, cold process, hyperfine `-N -w 1 -r 5`, median ms; the two images of each workload interleaved (run 2 of summary.md, load average 8.0-8.8). IL = `alice emit --il`; C# = `alice build` (which used the C# backend for loose files before 1.0.2, see summary.md; from 1.0.2 `alice build` produces the IL image and `--backend csharp` the C# one). Checksums identical for every image and run. Ratios IL / C# (< 1: IL faster). Raw: [1.0.1/il/](1.0.1/il/).
 
 | workload | C# ms | IL ms | IL / C# | R2 (2026-11-03) |
 |---|---:|---:|---:|---:|

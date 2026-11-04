@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+
+## 1.0.2 - 2026-11-04
+- fix: `alice run` and `alice build` on loose files now compile through the IL backend, the 1.0 default (ADR 0033). 1.0.0 and 1.0.1 resolved `--backend` / `ALICE_BACKEND` and dropped the result, so both commands always used the C# printer + Roslyn (only `alice emit --il` reached the IL backend). One `Backend` call in `CompileCommands` feeds both; `--backend csharp` and `ALICE_BACKEND=csharp` select C#. A program the IL backend cannot compile yet (e.g. a C `Callback` parameter, `examples/interop/libc.al`) or one with `@[Native]` C uses the C# image with a one-line `note:` on stderr, never silently. The status line names the backend (`Compiling main (il, 1.3s)`); an IL build writes its `.pdb`; the run cache keys on the backend. `alice check` stays on the C# diagnostic gate. Package and workspace builds (alice.toml, MSBuild) still compile the generated C#. Pinned by `BackendSelectionTests`.
+- perf: typed JSON readers (`from_json`, `JSON.parse(T, ...)`) are fast again: since 1.0.0 every field-name miss re-encoded the name to UTF-8 and every empty array allocated 4 slots (benchmarks/core/json twitter typed-gen 0.60 -> 1.44 ms, citm_catalog 0.85 -> 1.17 ms, both C# and IL). Names are now grouped by UTF-8 length and compared with `JsonMap.IsAscii` (length first), and `JsonMap.NewArray` starts empty: twitter 0.66 ms, citm_catalog 0.96 ms (STJ source-gen 1.16 / 4.46 ms), allocations back to 342832 / 862048 B. Pinned by `Readers_match_names_by_length_and_empty_arrays_allocate_nothing`.
 - benchmarks re-run on 1.0.1 (b2e41c8, the forge, 2026-11-04): bend2 serial for all 16 workloads with the IL image (`alice emit --il`), the C# image and C; IL vs C# backend (geomean 0.963); arena ports vs records; Alice Core regex, JSON and library modules. Raw hyperfine files in `benchmarks/bend2/results/1.0.1/`, `benchmarks/core/results/1.0.1/`. `bend2/report.py` reads the serial core pair from `results/serial_cpus.txt` (written by `run.sh`). The all-core tables are not re-run yet.
 
 ## 1.0.1 - 2026-11-04

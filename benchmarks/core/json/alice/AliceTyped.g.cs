@@ -66,17 +66,32 @@ internal static AlTwitter __json_R2_AlTwitter(ref global::Alice.Core.Json.JsonIt
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "statuses"))
+        int len = n.Length;
+        if (len == 8)
         {
-            f0 = __json_R0_AlStatus__(ref r);
-            h0 = true;
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "statuses"))
+            {
+                f0 = __json_R0_AlStatus__(ref r);
+                h0 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
         }
         else
         {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "search_metadata"))
+            if (len == 15)
             {
-                f1 = __json_R1_AlSearchMetadata(ref r);
-                h1 = true;
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "search_metadata"))
+                {
+                    f1 = __json_R1_AlSearchMetadata(ref r);
+                    h1 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
             }
             else
             {
@@ -166,63 +181,102 @@ internal static AlSearchMetadata __json_R1_AlSearchMetadata(ref global::Alice.Co
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "completed_in"))
+        int len = n.Length;
+        if (len == 5)
         {
-            f0 = __json_R4_double(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "max_id"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "query"))
             {
-                f1 = __json_R5_ulong(ref r);
-                h1 = true;
+                f4 = __json_R6_string(ref r);
+                h4 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "max_id_str"))
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "count"))
                 {
-                    f2 = __json_R6_string(ref r);
-                    h2 = true;
+                    f6 = __json_R7_uint(ref r);
+                    h6 = true;
                 }
                 else
                 {
-                    if (global::Alice.Core.Json.JsonMap.Is(n, "next_results"))
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+        }
+        else
+        {
+            if (len == 6)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "max_id"))
+                {
+                    f1 = __json_R5_ulong(ref r);
+                    h1 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+            else
+            {
+                if (len == 8)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "since_id"))
                     {
-                        f3 = __json_R6_string(ref r);
-                        h3 = true;
+                        f7 = __json_R5_ulong(ref r);
+                        h7 = true;
                     }
                     else
                     {
-                        if (global::Alice.Core.Json.JsonMap.Is(n, "query"))
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+                else
+                {
+                    if (len == 10)
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "max_id_str"))
                         {
-                            f4 = __json_R6_string(ref r);
-                            h4 = true;
+                            f2 = __json_R6_string(ref r);
+                            h2 = true;
                         }
                         else
                         {
-                            if (global::Alice.Core.Json.JsonMap.Is(n, "refresh_url"))
+                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                        }
+                    }
+                    else
+                    {
+                        if (len == 11)
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "refresh_url"))
                             {
                                 f5 = __json_R6_string(ref r);
                                 h5 = true;
                             }
                             else
                             {
-                                if (global::Alice.Core.Json.JsonMap.Is(n, "count"))
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                            }
+                        }
+                        else
+                        {
+                            if (len == 12)
+                            {
+                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "completed_in"))
                                 {
-                                    f6 = __json_R7_uint(ref r);
-                                    h6 = true;
+                                    f0 = __json_R4_double(ref r);
+                                    h0 = true;
                                 }
                                 else
                                 {
-                                    if (global::Alice.Core.Json.JsonMap.Is(n, "since_id"))
+                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "next_results"))
                                     {
-                                        f7 = __json_R5_ulong(ref r);
-                                        h7 = true;
+                                        f3 = __json_R6_string(ref r);
+                                        h3 = true;
                                     }
                                     else
                                     {
-                                        if (global::Alice.Core.Json.JsonMap.Is(n, "since_id_str"))
+                                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "since_id_str"))
                                         {
                                             f8 = __json_R6_string(ref r);
                                             h8 = true;
@@ -233,6 +287,10 @@ internal static AlSearchMetadata __json_R1_AlSearchMetadata(ref global::Alice.Co
                                         }
                                     }
                                 }
+                            }
+                            else
+                            {
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
                             }
                         }
                     }
@@ -354,146 +412,238 @@ internal static AlStatus __json_R3_AlStatus(ref global::Alice.Core.Json.JsonIter
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "metadata"))
+        int len = n.Length;
+        if (len == 2)
         {
-            f0 = __json_R8_AlMetadata(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "created_at"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "id"))
             {
-                f1 = __json_R6_string(ref r);
-                h1 = true;
+                f2 = __json_R5_ulong(ref r);
+                h2 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 4)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "text"))
                 {
-                    f2 = __json_R5_ulong(ref r);
-                    h2 = true;
+                    f4 = __json_R6_string(ref r);
+                    h4 = true;
                 }
                 else
                 {
-                    if (global::Alice.Core.Json.JsonMap.Is(n, "id_str"))
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "user"))
+                    {
+                        f10 = __json_R12_AlUser(ref r);
+                        h10 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "lang"))
+                        {
+                            f16 = __json_R6_string(ref r);
+                            h16 = true;
+                        }
+                        else
+                        {
+                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                if (len == 6)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "id_str"))
                     {
                         f3 = __json_R6_string(ref r);
                         h3 = true;
                     }
                     else
                     {
-                        if (global::Alice.Core.Json.JsonMap.Is(n, "text"))
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "source"))
                         {
-                            f4 = __json_R6_string(ref r);
-                            h4 = true;
+                            f5 = __json_R6_string(ref r);
+                            h5 = true;
                         }
                         else
                         {
-                            if (global::Alice.Core.Json.JsonMap.Is(n, "source"))
+                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                        }
+                    }
+                }
+                else
+                {
+                    if (len == 8)
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "metadata"))
+                        {
+                            f0 = __json_R8_AlMetadata(ref r);
+                            h0 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "entities"))
                             {
-                                f5 = __json_R6_string(ref r);
-                                h5 = true;
+                                f13 = __json_R13_AlEntities(ref r);
+                                h13 = true;
                             }
                             else
                             {
-                                if (global::Alice.Core.Json.JsonMap.Is(n, "truncated"))
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (len == 9)
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "truncated"))
+                            {
+                                f6 = __json_R9_bool(ref r);
+                                h6 = true;
+                            }
+                            else
+                            {
+                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "favorited"))
                                 {
-                                    f6 = __json_R9_bool(ref r);
-                                    h6 = true;
+                                    f14 = __json_R9_bool(ref r);
+                                    h14 = true;
                                 }
                                 else
                                 {
-                                    if (global::Alice.Core.Json.JsonMap.Is(n, "in_reply_to_status_id"))
+                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "retweeted"))
                                     {
-                                        f7 = __json_R10_ulong_(ref r);
-                                        h7 = true;
+                                        f15 = __json_R9_bool(ref r);
+                                        h15 = true;
                                     }
                                     else
                                     {
-                                        if (global::Alice.Core.Json.JsonMap.Is(n, "in_reply_to_user_id"))
+                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (len == 10)
+                            {
+                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "created_at"))
+                                {
+                                    f1 = __json_R6_string(ref r);
+                                    h1 = true;
+                                }
+                                else
+                                {
+                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                }
+                            }
+                            else
+                            {
+                                if (len == 13)
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "retweet_count"))
+                                    {
+                                        f11 = __json_R7_uint(ref r);
+                                        h11 = true;
+                                    }
+                                    else
+                                    {
+                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                    }
+                                }
+                                else
+                                {
+                                    if (len == 14)
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "favorite_count"))
                                         {
-                                            f8 = __json_R10_ulong_(ref r);
-                                            h8 = true;
+                                            f12 = __json_R7_uint(ref r);
+                                            h12 = true;
                                         }
                                         else
                                         {
-                                            if (global::Alice.Core.Json.JsonMap.Is(n, "in_reply_to_screen_name"))
+                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if (len == 16)
+                                        {
+                                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "retweeted_status"))
                                             {
-                                                f9 = __json_R11_string_(ref r);
-                                                h9 = true;
+                                                f18 = __json_R15_AlStatus_(ref r);
+                                                h18 = true;
                                             }
                                             else
                                             {
-                                                if (global::Alice.Core.Json.JsonMap.Is(n, "user"))
+                                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            if (len == 18)
+                                            {
+                                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "possibly_sensitive"))
                                                 {
-                                                    f10 = __json_R12_AlUser(ref r);
-                                                    h10 = true;
+                                                    f17 = __json_R14_bool_(ref r);
+                                                    h17 = true;
                                                 }
                                                 else
                                                 {
-                                                    if (global::Alice.Core.Json.JsonMap.Is(n, "retweet_count"))
+                                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                }
+                                            }
+                                            else
+                                            {
+                                                if (len == 19)
+                                                {
+                                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "in_reply_to_user_id"))
                                                     {
-                                                        f11 = __json_R7_uint(ref r);
-                                                        h11 = true;
+                                                        f8 = __json_R10_ulong_(ref r);
+                                                        h8 = true;
                                                     }
                                                     else
                                                     {
-                                                        if (global::Alice.Core.Json.JsonMap.Is(n, "favorite_count"))
+                                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    if (len == 21)
+                                                    {
+                                                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "in_reply_to_status_id"))
                                                         {
-                                                            f12 = __json_R7_uint(ref r);
-                                                            h12 = true;
+                                                            f7 = __json_R10_ulong_(ref r);
+                                                            h7 = true;
                                                         }
                                                         else
                                                         {
-                                                            if (global::Alice.Core.Json.JsonMap.Is(n, "entities"))
+                                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        if (len == 23)
+                                                        {
+                                                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "in_reply_to_screen_name"))
                                                             {
-                                                                f13 = __json_R13_AlEntities(ref r);
-                                                                h13 = true;
+                                                                f9 = __json_R11_string_(ref r);
+                                                                h9 = true;
                                                             }
                                                             else
                                                             {
-                                                                if (global::Alice.Core.Json.JsonMap.Is(n, "favorited"))
-                                                                {
-                                                                    f14 = __json_R9_bool(ref r);
-                                                                    h14 = true;
-                                                                }
-                                                                else
-                                                                {
-                                                                    if (global::Alice.Core.Json.JsonMap.Is(n, "retweeted"))
-                                                                    {
-                                                                        f15 = __json_R9_bool(ref r);
-                                                                        h15 = true;
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        if (global::Alice.Core.Json.JsonMap.Is(n, "lang"))
-                                                                        {
-                                                                            f16 = __json_R6_string(ref r);
-                                                                            h16 = true;
-                                                                        }
-                                                                        else
-                                                                        {
-                                                                            if (global::Alice.Core.Json.JsonMap.Is(n, "possibly_sensitive"))
-                                                                            {
-                                                                                f17 = __json_R14_bool_(ref r);
-                                                                                h17 = true;
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                if (global::Alice.Core.Json.JsonMap.Is(n, "retweeted_status"))
-                                                                                {
-                                                                                    f18 = __json_R15_AlStatus_(ref r);
-                                                                                    h18 = true;
-                                                                                }
-                                                                                else
-                                                                                {
-                                                                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
+                                                                global::Alice.Core.Json.JsonMap.Skip(ref r);
                                                             }
+                                                        }
+                                                        else
+                                                        {
+                                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
                                                         }
                                                     }
                                                 }
@@ -660,17 +810,32 @@ internal static AlMetadata __json_R8_AlMetadata(ref global::Alice.Core.Json.Json
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "result_type"))
+        int len = n.Length;
+        if (len == 11)
         {
-            f0 = __json_R6_string(ref r);
-            h0 = true;
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "result_type"))
+            {
+                f0 = __json_R6_string(ref r);
+                h0 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
         }
         else
         {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "iso_language_code"))
+            if (len == 17)
             {
-                f1 = __json_R6_string(ref r);
-                h1 = true;
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "iso_language_code"))
+                {
+                    f1 = __json_R6_string(ref r);
+                    h1 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
             }
             else
             {
@@ -796,146 +961,238 @@ internal static AlUser __json_R12_AlUser(ref global::Alice.Core.Json.JsonIterato
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+        int len = n.Length;
+        if (len == 2)
         {
-            f0 = __json_R5_ulong(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "id_str"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "id"))
             {
-                f1 = __json_R6_string(ref r);
-                h1 = true;
+                f0 = __json_R5_ulong(ref r);
+                h0 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 4)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "name"))
                 {
                     f2 = __json_R6_string(ref r);
                     h2 = true;
                 }
                 else
                 {
-                    if (global::Alice.Core.Json.JsonMap.Is(n, "screen_name"))
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "lang"))
                     {
-                        f3 = __json_R6_string(ref r);
-                        h3 = true;
+                        f17 = __json_R6_string(ref r);
+                        h17 = true;
                     }
                     else
                     {
-                        if (global::Alice.Core.Json.JsonMap.Is(n, "location"))
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+            }
+            else
+            {
+                if (len == 6)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "id_str"))
+                    {
+                        f1 = __json_R6_string(ref r);
+                        h1 = true;
+                    }
+                    else
+                    {
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+                else
+                {
+                    if (len == 8)
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "location"))
                         {
                             f4 = __json_R6_string(ref r);
                             h4 = true;
                         }
                         else
                         {
-                            if (global::Alice.Core.Json.JsonMap.Is(n, "description"))
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "verified"))
                             {
-                                f5 = __json_R6_string(ref r);
-                                h5 = true;
+                                f15 = __json_R9_bool(ref r);
+                                h15 = true;
                             }
                             else
                             {
-                                if (global::Alice.Core.Json.JsonMap.Is(n, "protected"))
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (len == 9)
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "protected"))
+                            {
+                                f6 = __json_R9_bool(ref r);
+                                h6 = true;
+                            }
+                            else
+                            {
+                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "time_zone"))
                                 {
-                                    f6 = __json_R9_bool(ref r);
-                                    h6 = true;
+                                    f13 = __json_R11_string_(ref r);
+                                    h13 = true;
                                 }
                                 else
                                 {
-                                    if (global::Alice.Core.Json.JsonMap.Is(n, "followers_count"))
+                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            if (len == 10)
+                            {
+                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "created_at"))
+                                {
+                                    f10 = __json_R6_string(ref r);
+                                    h10 = true;
+                                }
+                                else
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "utc_offset"))
                                     {
-                                        f7 = __json_R5_ulong(ref r);
-                                        h7 = true;
+                                        f12 = __json_R16_int_(ref r);
+                                        h12 = true;
                                     }
                                     else
                                     {
-                                        if (global::Alice.Core.Json.JsonMap.Is(n, "friends_count"))
+                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                if (len == 11)
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "screen_name"))
+                                    {
+                                        f3 = __json_R6_string(ref r);
+                                        h3 = true;
+                                    }
+                                    else
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "description"))
                                         {
-                                            f8 = __json_R5_ulong(ref r);
-                                            h8 = true;
+                                            f5 = __json_R6_string(ref r);
+                                            h5 = true;
                                         }
                                         else
                                         {
-                                            if (global::Alice.Core.Json.JsonMap.Is(n, "listed_count"))
+                                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "geo_enabled"))
                                             {
-                                                f9 = __json_R5_ulong(ref r);
-                                                h9 = true;
+                                                f14 = __json_R9_bool(ref r);
+                                                h14 = true;
                                             }
                                             else
                                             {
-                                                if (global::Alice.Core.Json.JsonMap.Is(n, "created_at"))
+                                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                            }
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    if (len == 12)
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "listed_count"))
+                                        {
+                                            f9 = __json_R5_ulong(ref r);
+                                            h9 = true;
+                                        }
+                                        else
+                                        {
+                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        if (len == 13)
+                                        {
+                                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "friends_count"))
+                                            {
+                                                f8 = __json_R5_ulong(ref r);
+                                                h8 = true;
+                                            }
+                                            else
+                                            {
+                                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            if (len == 14)
+                                            {
+                                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "statuses_count"))
                                                 {
-                                                    f10 = __json_R6_string(ref r);
-                                                    h10 = true;
+                                                    f16 = __json_R5_ulong(ref r);
+                                                    h16 = true;
                                                 }
                                                 else
                                                 {
-                                                    if (global::Alice.Core.Json.JsonMap.Is(n, "favourites_count"))
+                                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                }
+                                            }
+                                            else
+                                            {
+                                                if (len == 15)
+                                                {
+                                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "followers_count"))
                                                     {
-                                                        f11 = __json_R5_ulong(ref r);
-                                                        h11 = true;
+                                                        f7 = __json_R5_ulong(ref r);
+                                                        h7 = true;
                                                     }
                                                     else
                                                     {
-                                                        if (global::Alice.Core.Json.JsonMap.Is(n, "utc_offset"))
+                                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    if (len == 16)
+                                                    {
+                                                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "favourites_count"))
                                                         {
-                                                            f12 = __json_R16_int_(ref r);
-                                                            h12 = true;
+                                                            f11 = __json_R5_ulong(ref r);
+                                                            h11 = true;
                                                         }
                                                         else
                                                         {
-                                                            if (global::Alice.Core.Json.JsonMap.Is(n, "time_zone"))
+                                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        if (len == 17)
+                                                        {
+                                                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "profile_image_url"))
                                                             {
-                                                                f13 = __json_R11_string_(ref r);
-                                                                h13 = true;
+                                                                f18 = __json_R6_string(ref r);
+                                                                h18 = true;
                                                             }
                                                             else
                                                             {
-                                                                if (global::Alice.Core.Json.JsonMap.Is(n, "geo_enabled"))
-                                                                {
-                                                                    f14 = __json_R9_bool(ref r);
-                                                                    h14 = true;
-                                                                }
-                                                                else
-                                                                {
-                                                                    if (global::Alice.Core.Json.JsonMap.Is(n, "verified"))
-                                                                    {
-                                                                        f15 = __json_R9_bool(ref r);
-                                                                        h15 = true;
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        if (global::Alice.Core.Json.JsonMap.Is(n, "statuses_count"))
-                                                                        {
-                                                                            f16 = __json_R5_ulong(ref r);
-                                                                            h16 = true;
-                                                                        }
-                                                                        else
-                                                                        {
-                                                                            if (global::Alice.Core.Json.JsonMap.Is(n, "lang"))
-                                                                            {
-                                                                                f17 = __json_R6_string(ref r);
-                                                                                h17 = true;
-                                                                            }
-                                                                            else
-                                                                            {
-                                                                                if (global::Alice.Core.Json.JsonMap.Is(n, "profile_image_url"))
-                                                                                {
-                                                                                    f18 = __json_R6_string(ref r);
-                                                                                    h18 = true;
-                                                                                }
-                                                                                else
-                                                                                {
-                                                                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
+                                                                global::Alice.Core.Json.JsonMap.Skip(ref r);
                                                             }
+                                                        }
+                                                        else
+                                                        {
+                                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
                                                         }
                                                     }
                                                 }
@@ -1084,24 +1341,46 @@ internal static AlEntities __json_R13_AlEntities(ref global::Alice.Core.Json.Jso
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "hashtags"))
+        int len = n.Length;
+        if (len == 4)
         {
-            f0 = __json_R17_AlHashtag__(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "urls"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "urls"))
             {
                 f1 = __json_R18_AlUrl__(ref r);
                 h1 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "user_mentions"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 8)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "hashtags"))
                 {
-                    f2 = __json_R19_AlMention__(ref r);
-                    h2 = true;
+                    f0 = __json_R17_AlHashtag__(ref r);
+                    h0 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+            else
+            {
+                if (len == 13)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "user_mentions"))
+                    {
+                        f2 = __json_R19_AlMention__(ref r);
+                        h2 = true;
+                    }
+                    else
+                    {
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
                 }
                 else
                 {
@@ -1309,17 +1588,32 @@ internal static AlHashtag __json_R21_AlHashtag(ref global::Alice.Core.Json.JsonI
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "text"))
+        int len = n.Length;
+        if (len == 4)
         {
-            f0 = __json_R6_string(ref r);
-            h0 = true;
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "text"))
+            {
+                f0 = __json_R6_string(ref r);
+                h0 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
         }
         else
         {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "indices"))
+            if (len == 7)
             {
-                f1 = __json_R24_uint__(ref r);
-                h1 = true;
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "indices"))
+                {
+                    f1 = __json_R24_uint__(ref r);
+                    h1 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
             }
             else
             {
@@ -1369,31 +1663,60 @@ internal static AlUrl __json_R22_AlUrl(ref global::Alice.Core.Json.JsonIterator 
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "url"))
+        int len = n.Length;
+        if (len == 3)
         {
-            f0 = __json_R6_string(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "expanded_url"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "url"))
             {
-                f1 = __json_R6_string(ref r);
-                h1 = true;
+                f0 = __json_R6_string(ref r);
+                h0 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "display_url"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 7)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "indices"))
                 {
-                    f2 = __json_R6_string(ref r);
-                    h2 = true;
+                    f3 = __json_R24_uint__(ref r);
+                    h3 = true;
                 }
                 else
                 {
-                    if (global::Alice.Core.Json.JsonMap.Is(n, "indices"))
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+            else
+            {
+                if (len == 11)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "display_url"))
                     {
-                        f3 = __json_R24_uint__(ref r);
-                        h3 = true;
+                        f2 = __json_R6_string(ref r);
+                        h2 = true;
+                    }
+                    else
+                    {
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+                else
+                {
+                    if (len == 12)
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "expanded_url"))
+                        {
+                            f1 = __json_R6_string(ref r);
+                            h1 = true;
+                        }
+                        else
+                        {
+                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                        }
                     }
                     else
                     {
@@ -1459,38 +1782,74 @@ internal static AlMention __json_R23_AlMention(ref global::Alice.Core.Json.JsonI
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "screen_name"))
+        int len = n.Length;
+        if (len == 2)
         {
-            f0 = __json_R6_string(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "id"))
             {
-                f1 = __json_R6_string(ref r);
-                h1 = true;
+                f2 = __json_R5_ulong(ref r);
+                h2 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 4)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "name"))
                 {
-                    f2 = __json_R5_ulong(ref r);
-                    h2 = true;
+                    f1 = __json_R6_string(ref r);
+                    h1 = true;
                 }
                 else
                 {
-                    if (global::Alice.Core.Json.JsonMap.Is(n, "id_str"))
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+            else
+            {
+                if (len == 6)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "id_str"))
                     {
                         f3 = __json_R6_string(ref r);
                         h3 = true;
                     }
                     else
                     {
-                        if (global::Alice.Core.Json.JsonMap.Is(n, "indices"))
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+                else
+                {
+                    if (len == 7)
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "indices"))
                         {
                             f4 = __json_R24_uint__(ref r);
                             h4 = true;
+                        }
+                        else
+                        {
+                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                        }
+                    }
+                    else
+                    {
+                        if (len == 11)
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "screen_name"))
+                            {
+                                f0 = __json_R6_string(ref r);
+                                h0 = true;
+                            }
+                            else
+                            {
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                            }
                         }
                         else
                         {
@@ -1573,10 +1932,10 @@ internal static void __json_W24_uint__(ref global::Alice.Core.Json.JsonWriter w,
     }
     global::Alice.Core.Json.JsonMap.EndArray(ref w);
 }
-#line 41 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 41 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
 public static AlTwitter twitter(byte[] s)
 {
-#line 41 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 41 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
     return global::Alice.Core.Json.JsonMap.Parse<AlTwitter>(s, __json_R2_AlTwitter);
 }
 internal static AlCanada __json_R26_AlCanada(ref global::Alice.Core.Json.JsonIterator r)
@@ -1593,17 +1952,32 @@ internal static AlCanada __json_R26_AlCanada(ref global::Alice.Core.Json.JsonIte
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "type"))
+        int len = n.Length;
+        if (len == 4)
         {
-            f0 = __json_R6_string(ref r);
-            h0 = true;
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "type"))
+            {
+                f0 = __json_R6_string(ref r);
+                h0 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
         }
         else
         {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "features"))
+            if (len == 8)
             {
-                f1 = __json_R25_AlFeature__(ref r);
-                h1 = true;
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "features"))
+                {
+                    f1 = __json_R25_AlFeature__(ref r);
+                    h1 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
             }
             else
             {
@@ -1681,24 +2055,46 @@ internal static AlFeature __json_R27_AlFeature(ref global::Alice.Core.Json.JsonI
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "type"))
+        int len = n.Length;
+        if (len == 4)
         {
-            f0 = __json_R6_string(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "properties"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "type"))
             {
-                f1 = __json_R28_AlProps(ref r);
-                h1 = true;
+                f0 = __json_R6_string(ref r);
+                h0 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "geometry"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 8)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "geometry"))
                 {
                     f2 = __json_R29_AlGeometry(ref r);
                     h2 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+            else
+            {
+                if (len == 10)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "properties"))
+                    {
+                        f1 = __json_R28_AlProps(ref r);
+                        h1 = true;
+                    }
+                    else
+                    {
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
                 }
                 else
                 {
@@ -1749,10 +2145,18 @@ internal static AlProps __json_R28_AlProps(ref global::Alice.Core.Json.JsonItera
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+        int len = n.Length;
+        if (len == 4)
         {
-            f0 = __json_R6_string(ref r);
-            h0 = true;
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "name"))
+            {
+                f0 = __json_R6_string(ref r);
+                h0 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
         }
         else
         {
@@ -1791,17 +2195,32 @@ internal static AlGeometry __json_R29_AlGeometry(ref global::Alice.Core.Json.Jso
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "type"))
+        int len = n.Length;
+        if (len == 4)
         {
-            f0 = __json_R6_string(ref r);
-            h0 = true;
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "type"))
+            {
+                f0 = __json_R6_string(ref r);
+                h0 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
         }
         else
         {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "coordinates"))
+            if (len == 11)
             {
-                f1 = __json_R30_double______(ref r);
-                h1 = true;
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "coordinates"))
+                {
+                    f1 = __json_R30_double______(ref r);
+                    h1 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
             }
             else
             {
@@ -1923,10 +2342,10 @@ internal static void __json_W32_double__(ref global::Alice.Core.Json.JsonWriter 
     }
     global::Alice.Core.Json.JsonMap.EndArray(ref w);
 }
-#line 42 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 42 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
 public static AlCanada canada(byte[] s)
 {
-#line 42 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 42 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
     return global::Alice.Core.Json.JsonMap.Parse<AlCanada>(s, __json_R26_AlCanada);
 }
 internal static AlCitm __json_R37_AlCitm(ref global::Alice.Core.Json.JsonIterator r)
@@ -1961,87 +2380,144 @@ internal static AlCitm __json_R37_AlCitm(ref global::Alice.Core.Json.JsonIterato
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "areaNames"))
+        int len = n.Length;
+        if (len == 6)
         {
-            f0 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "audienceSubCategoryNames"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "events"))
             {
-                f1 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
-                h1 = true;
+                f3 = __json_R34_System_Collections_Generic_Dictionary_string__AlEvent_(ref r);
+                h3 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "blockNames"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 9)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "areaNames"))
                 {
-                    f2 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
-                    h2 = true;
+                    f0 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                    h0 = true;
                 }
                 else
                 {
-                    if (global::Alice.Core.Json.JsonMap.Is(n, "events"))
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+            else
+            {
+                if (len == 10)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "blockNames"))
                     {
-                        f3 = __json_R34_System_Collections_Generic_Dictionary_string__AlEvent_(ref r);
-                        h3 = true;
+                        f2 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                        h2 = true;
                     }
                     else
                     {
-                        if (global::Alice.Core.Json.JsonMap.Is(n, "performances"))
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "topicNames"))
+                        {
+                            f8 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                            h8 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "venueNames"))
+                            {
+                                f10 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                h10 = true;
+                            }
+                            else
+                            {
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if (len == 12)
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "performances"))
                         {
                             f4 = __json_R35_AlPerformance__(ref r);
                             h4 = true;
                         }
                         else
                         {
-                            if (global::Alice.Core.Json.JsonMap.Is(n, "seatCategoryNames"))
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "subjectNames"))
                             {
-                                f5 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
-                                h5 = true;
+                                f7 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                h7 = true;
                             }
                             else
                             {
-                                if (global::Alice.Core.Json.JsonMap.Is(n, "subTopicNames"))
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (len == 13)
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "subTopicNames"))
+                            {
+                                f6 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                h6 = true;
+                            }
+                            else
+                            {
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                            }
+                        }
+                        else
+                        {
+                            if (len == 14)
+                            {
+                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "topicSubTopics"))
                                 {
-                                    f6 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
-                                    h6 = true;
+                                    f9 = __json_R36_System_Collections_Generic_Dictionary_string__ulong___(ref r);
+                                    h9 = true;
                                 }
                                 else
                                 {
-                                    if (global::Alice.Core.Json.JsonMap.Is(n, "subjectNames"))
+                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                }
+                            }
+                            else
+                            {
+                                if (len == 17)
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "seatCategoryNames"))
                                     {
-                                        f7 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
-                                        h7 = true;
+                                        f5 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                        h5 = true;
                                     }
                                     else
                                     {
-                                        if (global::Alice.Core.Json.JsonMap.Is(n, "topicNames"))
+                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                    }
+                                }
+                                else
+                                {
+                                    if (len == 24)
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "audienceSubCategoryNames"))
                                         {
-                                            f8 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
-                                            h8 = true;
+                                            f1 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
+                                            h1 = true;
                                         }
                                         else
                                         {
-                                            if (global::Alice.Core.Json.JsonMap.Is(n, "topicSubTopics"))
-                                            {
-                                                f9 = __json_R36_System_Collections_Generic_Dictionary_string__ulong___(ref r);
-                                                h9 = true;
-                                            }
-                                            else
-                                            {
-                                                if (global::Alice.Core.Json.JsonMap.Is(n, "venueNames"))
-                                                {
-                                                    f10 = __json_R33_System_Collections_Generic_Dictionary_string__string_(ref r);
-                                                    h10 = true;
-                                                }
-                                                else
-                                                {
-                                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
-                                                }
-                                            }
+                                            global::Alice.Core.Json.JsonMap.Skip(ref r);
                                         }
+                                    }
+                                    else
+                                    {
+                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
                                     }
                                 }
                             }
@@ -2272,67 +2748,96 @@ internal static AlEvent __json_R38_AlEvent(ref global::Alice.Core.Json.JsonItera
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "description"))
+        int len = n.Length;
+        if (len == 2)
         {
-            f0 = __json_R11_string_(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "id"))
             {
                 f1 = __json_R5_ulong(ref r);
                 h1 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "logo"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 4)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "logo"))
                 {
                     f2 = __json_R11_string_(ref r);
                     h2 = true;
                 }
                 else
                 {
-                    if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "name"))
                     {
                         f3 = __json_R6_string(ref r);
                         h3 = true;
                     }
                     else
                     {
-                        if (global::Alice.Core.Json.JsonMap.Is(n, "subTopicIds"))
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+            }
+            else
+            {
+                if (len == 8)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "subtitle"))
+                    {
+                        f6 = __json_R11_string_(ref r);
+                        h6 = true;
+                    }
+                    else
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "topicIds"))
                         {
-                            f4 = __json_R40_ulong__(ref r);
-                            h4 = true;
+                            f7 = __json_R40_ulong__(ref r);
+                            h7 = true;
                         }
                         else
                         {
-                            if (global::Alice.Core.Json.JsonMap.Is(n, "subjectCode"))
+                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                        }
+                    }
+                }
+                else
+                {
+                    if (len == 11)
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "description"))
+                        {
+                            f0 = __json_R11_string_(ref r);
+                            h0 = true;
+                        }
+                        else
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "subTopicIds"))
                             {
-                                f5 = __json_R11_string_(ref r);
-                                h5 = true;
+                                f4 = __json_R40_ulong__(ref r);
+                                h4 = true;
                             }
                             else
                             {
-                                if (global::Alice.Core.Json.JsonMap.Is(n, "subtitle"))
+                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "subjectCode"))
                                 {
-                                    f6 = __json_R11_string_(ref r);
-                                    h6 = true;
+                                    f5 = __json_R11_string_(ref r);
+                                    h5 = true;
                                 }
                                 else
                                 {
-                                    if (global::Alice.Core.Json.JsonMap.Is(n, "topicIds"))
-                                    {
-                                        f7 = __json_R40_ulong__(ref r);
-                                        h7 = true;
-                                    }
-                                    else
-                                    {
-                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
-                                    }
+                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
                                 }
                             }
                         }
+                    }
+                    else
+                    {
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
                     }
                 }
             }
@@ -2410,71 +2915,128 @@ internal static AlPerformance __json_R39_AlPerformance(ref global::Alice.Core.Js
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "eventId"))
+        int len = n.Length;
+        if (len == 2)
         {
-            f0 = __json_R5_ulong(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "id"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "id"))
             {
                 f1 = __json_R5_ulong(ref r);
                 h1 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "logo"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 4)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "logo"))
                 {
                     f2 = __json_R11_string_(ref r);
                     h2 = true;
                 }
                 else
                 {
-                    if (global::Alice.Core.Json.JsonMap.Is(n, "name"))
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "name"))
                     {
                         f3 = __json_R11_string_(ref r);
                         h3 = true;
                     }
                     else
                     {
-                        if (global::Alice.Core.Json.JsonMap.Is(n, "prices"))
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+            }
+            else
+            {
+                if (len == 5)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "start"))
+                    {
+                        f7 = __json_R5_ulong(ref r);
+                        h7 = true;
+                    }
+                    else
+                    {
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
+                }
+                else
+                {
+                    if (len == 6)
+                    {
+                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "prices"))
                         {
                             f4 = __json_R41_AlPrice__(ref r);
                             h4 = true;
                         }
                         else
                         {
-                            if (global::Alice.Core.Json.JsonMap.Is(n, "seatCategories"))
+                            global::Alice.Core.Json.JsonMap.Skip(ref r);
+                        }
+                    }
+                    else
+                    {
+                        if (len == 7)
+                        {
+                            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "eventId"))
                             {
-                                f5 = __json_R42_AlSeatCategory__(ref r);
-                                h5 = true;
+                                f0 = __json_R5_ulong(ref r);
+                                h0 = true;
                             }
                             else
                             {
-                                if (global::Alice.Core.Json.JsonMap.Is(n, "seatMapImage"))
+                                global::Alice.Core.Json.JsonMap.Skip(ref r);
+                            }
+                        }
+                        else
+                        {
+                            if (len == 9)
+                            {
+                                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "venueCode"))
                                 {
-                                    f6 = __json_R11_string_(ref r);
-                                    h6 = true;
+                                    f8 = __json_R6_string(ref r);
+                                    h8 = true;
                                 }
                                 else
                                 {
-                                    if (global::Alice.Core.Json.JsonMap.Is(n, "start"))
+                                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                }
+                            }
+                            else
+                            {
+                                if (len == 12)
+                                {
+                                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "seatMapImage"))
                                     {
-                                        f7 = __json_R5_ulong(ref r);
-                                        h7 = true;
+                                        f6 = __json_R11_string_(ref r);
+                                        h6 = true;
                                     }
                                     else
                                     {
-                                        if (global::Alice.Core.Json.JsonMap.Is(n, "venueCode"))
+                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                                    }
+                                }
+                                else
+                                {
+                                    if (len == 14)
+                                    {
+                                        if (global::Alice.Core.Json.JsonMap.IsAscii(n, "seatCategories"))
                                         {
-                                            f8 = __json_R6_string(ref r);
-                                            h8 = true;
+                                            f5 = __json_R42_AlSeatCategory__(ref r);
+                                            h5 = true;
                                         }
                                         else
                                         {
                                             global::Alice.Core.Json.JsonMap.Skip(ref r);
                                         }
+                                    }
+                                    else
+                                    {
+                                        global::Alice.Core.Json.JsonMap.Skip(ref r);
                                     }
                                 }
                             }
@@ -2644,24 +3206,46 @@ internal static AlPrice __json_R43_AlPrice(ref global::Alice.Core.Json.JsonItera
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "amount"))
+        int len = n.Length;
+        if (len == 6)
         {
-            f0 = __json_R5_ulong(ref r);
-            h0 = true;
-        }
-        else
-        {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "audienceSubCategoryId"))
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "amount"))
             {
-                f1 = __json_R5_ulong(ref r);
-                h1 = true;
+                f0 = __json_R5_ulong(ref r);
+                h0 = true;
             }
             else
             {
-                if (global::Alice.Core.Json.JsonMap.Is(n, "seatCategoryId"))
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
+        }
+        else
+        {
+            if (len == 14)
+            {
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "seatCategoryId"))
                 {
                     f2 = __json_R5_ulong(ref r);
                     h2 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
+            }
+            else
+            {
+                if (len == 21)
+                {
+                    if (global::Alice.Core.Json.JsonMap.IsAscii(n, "audienceSubCategoryId"))
+                    {
+                        f1 = __json_R5_ulong(ref r);
+                        h1 = true;
+                    }
+                    else
+                    {
+                        global::Alice.Core.Json.JsonMap.Skip(ref r);
+                    }
                 }
                 else
                 {
@@ -2714,17 +3298,32 @@ internal static AlSeatCategory __json_R44_AlSeatCategory(ref global::Alice.Core.
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "areas"))
+        int len = n.Length;
+        if (len == 5)
         {
-            f0 = __json_R45_AlArea__(ref r);
-            h0 = true;
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "areas"))
+            {
+                f0 = __json_R45_AlArea__(ref r);
+                h0 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
         }
         else
         {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "seatCategoryId"))
+            if (len == 14)
             {
-                f1 = __json_R5_ulong(ref r);
-                h1 = true;
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "seatCategoryId"))
+                {
+                    f1 = __json_R5_ulong(ref r);
+                    h1 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
             }
             else
             {
@@ -2800,17 +3399,32 @@ internal static AlArea __json_R46_AlArea(ref global::Alice.Core.Json.JsonIterato
         {
             break;
         }
-        if (global::Alice.Core.Json.JsonMap.Is(n, "areaId"))
+        int len = n.Length;
+        if (len == 6)
         {
-            f0 = __json_R5_ulong(ref r);
-            h0 = true;
+            if (global::Alice.Core.Json.JsonMap.IsAscii(n, "areaId"))
+            {
+                f0 = __json_R5_ulong(ref r);
+                h0 = true;
+            }
+            else
+            {
+                global::Alice.Core.Json.JsonMap.Skip(ref r);
+            }
         }
         else
         {
-            if (global::Alice.Core.Json.JsonMap.Is(n, "blockIds"))
+            if (len == 8)
             {
-                f1 = __json_R40_ulong__(ref r);
-                h1 = true;
+                if (global::Alice.Core.Json.JsonMap.IsAscii(n, "blockIds"))
+                {
+                    f1 = __json_R40_ulong__(ref r);
+                    h1 = true;
+                }
+                else
+                {
+                    global::Alice.Core.Json.JsonMap.Skip(ref r);
+                }
             }
             else
             {
@@ -2842,28 +3456,28 @@ internal static void __json_W46_AlArea(ref global::Alice.Core.Json.JsonWriter w,
     __json_W40_ulong__(ref w, v.blockIds);
     global::Alice.Core.Json.JsonMap.EndObject(ref w);
 }
-#line 43 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 43 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
 public static AlCitm citm(byte[] s)
 {
-#line 43 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 43 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
     return global::Alice.Core.Json.JsonMap.Parse<AlCitm>(s, __json_R37_AlCitm);
 }
-#line 44 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 44 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
 public static string write(AlTwitter t)
 {
-#line 44 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 44 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
     return global::Alice.Core.Json.JsonMap.ToJson<AlTwitter>(t, __json_W2_AlTwitter);
 }
-#line 45 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 45 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
 public static string write(AlCanada c)
 {
-#line 45 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 45 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
     return global::Alice.Core.Json.JsonMap.ToJson<AlCanada>(c, __json_W26_AlCanada);
 }
-#line 46 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 46 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
 public static string write(AlCitm c)
 {
-#line 46 "/work/wt/core-json/benchmarks/core/json/alice/typed.al"
+#line 46 "/work/wt/build-backend/benchmarks/core/json/alice/typed.al"
     return global::Alice.Core.Json.JsonMap.ToJson<AlCitm>(c, __json_W37_AlCitm);
 }
 }

@@ -169,6 +169,31 @@ public class JsonMappingTests
     }
 
     [Fact]
+    public void Readers_match_names_by_length_and_empty_arrays_allocate_nothing()
+    {
+        // 1.0.2: field names grouped by UTF-8 length, IsAscii (length first) for ASCII names, an empty buffer for
+        // arrays (the 1.0.0 chain re-encoded the name on every miss and allocated 4 slots per empty array:
+        // benchmarks/core/json twitter typed 0.60 -> 1.44 ms)
+        var src = """
+            record Row(ab : Int32, cd : Int32, xyz : String, items : Array(Int64), longer_name : Array(String))
+            r = Row.from_json("{\"zz\": 9, \"cd\": 2, \"qqq\": [1], \"xyz\": \"s\", \"items\": [], \"longer_name\": [\"a\", \"b\", \"c\", \"d\", \"e\"], \"ab\": 1, \"abc\": null}")
+            puts r.ab + r.cd, r.xyz, r.items.size, r.longer_name.size, r.longer_name[4]
+            puts to_json(r)
+            """;
+        string expected = "3\ns\n0\n5\ne\n{\"ab\":1,\"cd\":2,\"xyz\":\"s\",\"items\":[],\"longer_name\":[\"a\",\"b\",\"c\",\"d\",\"e\"]}";
+        Assert.Equal(expected, Run(src));
+        var res = AirToIl.Compile([new SourceFile("main.al", src)], "jsonlen", exe: true);
+        Assert.True(res.Ok, "IL backend: " + string.Join("\n", res.Errors.Select(e => e.Message)));
+        Assert.Equal(expected, AliceCompiler.Invoke(AliceCompiler.Load(res.Pe!), []).Trim().ReplaceLineEndings("\n"));
+        var cs = AliceCompiler.Transpile(src, "main.al");
+        Assert.Contains("int len = n.Length;", cs);
+        Assert.Contains("JsonMap.IsAscii(n, \"longer_name\")", cs);
+        Assert.DoesNotContain("JsonMap.Is(n,", cs);
+        Assert.Empty(Alice.Core.Json.JsonMap.NewArray<long>());
+        Assert.Equal(4, Alice.Core.Json.JsonMap.Grow(Alice.Core.Json.JsonMap.NewArray<long>()).Length);
+    }
+
+    [Fact]
     public void A_variant_field_named_type_is_AL0250()
     {
         var e = Assert.ThrowsAny<Exception>(() => AliceCompiler.Run("enum Ev\n  Click(type : String)\nend\nputs to_json(Ev::Click(\"x\"))"));

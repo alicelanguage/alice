@@ -83,6 +83,10 @@ public sealed partial class Lowerer
     static MArg RefW() => new() { Prefix = "ref ", E = JW() };
     static MCall On(MExpr target, string name, params MExpr[] args) => new() { Target = target, Name = name, Args = args.ToList() };
     static MCall Map(string name, params MExpr[] args) => On(JMap(), name, args);
+
+    /// <summary>The raw name <paramref name="raw"/> equals <paramref name="name"/>: <c>IsAscii</c> (length first, then a
+    /// vectorized compare) for ASCII names, <c>Is</c> (UTF-8 aware) otherwise.</summary>
+    static MCall JIs(MExpr raw, string name) => Map(name.All(ch => ch < 0x80) ? "IsAscii" : "Is", raw, S(name));
     static MCall Self(string name, AirType? ret, params MExpr[] args) => new() { Name = name, Args = args.ToList(), Type = ret };
     static MExprStmt Do(MExpr e) => new() { E = e };
     static AirConst S(string s) => AirConst.Of(s);
@@ -267,7 +271,7 @@ public sealed partial class Lowerer
         foreach (var vs in s.Variants)
         {
             var vt = AirOf(vs.Type, vs.Type.Cs);
-            read.Add(new MIf { Cond = Map("Is", tag, S(vs.Name)), Then = { new MReturn { Value = Self(JUse(vs.Type, 'R'), vt, RefR()) } } });
+            read.Add(new MIf { Cond = JIs(tag, vs.Name), Then = { new MReturn { Value = Self(JUse(vs.Type, 'R'), vt, RefR()) } } });
             write.Add(new MIf
             {
                 Cond = new MIs { E = v, TypeCs = vs.Type.Cs },
@@ -337,18 +341,29 @@ public sealed partial class Lowerer
         }
         read.Add(Do(Map("StartObject", RefR())));
         var n = new AirLocalRef("n", JSpan);
-        List<MStmt> chain = [Do(Map("Skip", RefR()))];
-        for (int i = fields.Count - 1; i >= 0; i--)
+        // the names grouped by UTF-8 length: one compare picks the group (a jump table under IL, SwitchLower), then
+        // only same-length names are compared, as the hand-written readers' length switch does
+        var len = new AirLocalRef("len", AirLeaf.Int);
+        List<MStmt> Skip() => [Do(Map("Skip", RefR()))];
+        List<MStmt> chain = Skip();
+        var byLen = Enumerable.Range(0, fields.Count).Where(i => used[i])
+            .GroupBy(i => System.Text.Encoding.UTF8.GetByteCount(fields[i].Name)).OrderBy(g => g.Key).ToList();
+        for (int g = byLen.Count - 1; g >= 0; g--)
         {
-            if (!used[i]) continue;
-            chain = [new MIf
-            {
-                Cond = Map("Is", n, S(fields[i].Name)),
-                Then = { new MAssign { Target = F(i), Value = Self(JUse(fields[i].Type, 'R'), fts[i], RefR()) }, new MAssign { Target = new AirLocalRef("h" + i, AirLeaf.Bool), Value = AirConst.Bool(true) } },
-                Else = chain,
-            }];
+            List<MStmt> inner = Skip();
+            foreach (int i in byLen[g].Reverse())
+                inner = [new MIf
+                {
+                    Cond = JIs(n, fields[i].Name),
+                    Then = { new MAssign { Target = F(i), Value = Self(JUse(fields[i].Type, 'R'), fts[i], RefR()) }, new MAssign { Target = new AirLocalRef("h" + i, AirLeaf.Bool), Value = AirConst.Bool(true) } },
+                    Else = inner,
+                }];
+            var test = new MIf { Cond = Bin(AirBinOp.Eq, len, AirConst.Int(byLen[g].Key)), Else = chain };
+            test.Then.AddRange(inner);
+            chain = [test];
         }
         var loop = new MWhile { Cond = AirConst.Bool(true), Body = { PropertyOrBreak(n) } };
+        if (byLen.Count > 0) loop.Body.Add(new MDecl { Name = "len", TypeCs = "int", Init = new MMember { Target = n, Name = "Length", Type = AirLeaf.Int } });
         loop.Body.AddRange(chain);
         read.Add(loop);
         for (int i = 0; i < fields.Count; i++)

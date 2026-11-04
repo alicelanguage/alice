@@ -69,13 +69,21 @@ public static class CompileCommands
 
     static Dictionary<string, string> Sources(List<SourceFile> files) => files.ToDictionary(f => f.Path, f => f.Text);
 
-    /// <summary>Compile Alice sources to an in-memory IL image, rendering diagnostics on failure.</summary>
-    static byte[]? CompileFiles(List<SourceFile> files, string name, bool exe, List<string> refs, string? nativeDir = null, Action? onNative = null, bool strict = false)
+    /// <summary>The image of one compile and the backend that produced it ("il" or "csharp"); Pdb only from IL.</summary>
+    sealed record Compiled(byte[] Image, string Backend, byte[]? Pdb);
+
+    /// <summary>
+    /// Compile Alice sources to an in-memory IL image, rendering diagnostics on failure. <paramref name="backend"/> is
+    /// <see cref="ResolveBackend"/>'s choice: "il" (ADR 0033, the default) emits through AirToIl after the C# path's
+    /// diagnostic gate (whose Roslyn image is the "csharp" result). A program the IL backend cannot compile yet
+    /// (unsupported nodes) or one with @[Native] C uses the gate's C# image, with a one-line note: never silently.
+    /// </summary>
+    static Compiled? CompileFiles(List<SourceFile> files, string name, bool exe, List<string> refs, string backend, string? nativeDir = null, Action? onNative = null, bool strict = false)
     {
         try
         {
             var sw = Stopwatch.StartNew();
-            var image = UiH.Spin($"{T("compiling")} {name}…", () =>
+            var result = UiH.Spin($"{T("compiling")} {name}…", () =>
             {
                 var (img, c) = CompileCSharp(files, name, exe, refs, strict);
                 // @[Native] functions: clang -O3 -march=native; without a C compiler the managed bodies run instead
@@ -86,10 +94,30 @@ public static class CompileCommands
                     if (AliceCompiler.BuildNativeLibrary(c, dir, name + "_native")) Alice.Runtime.NativeLibs.AddSearchPath(dir);
                     else Console.Error.WriteLine("warning: no C compiler found; @[Native] functions use their managed fallback");
                 }
-                return img;
+                if (backend != "il") return new Compiled(img, "csharp", null);
+                if (c != null)
+                {
+                    Console.Error.WriteLine("note: @[Native] functions are compiled with the csharp backend (--backend csharp silences this)");
+                    return new Compiled(img, "csharp", null);
+                }
+                var ph = Stopwatch.StartNew();
+                string why;
+                try
+                {
+                    var res = Alice.Compiler.Backend.Il.AirToIl.Compile(files, name, exe, refs);
+                    Alice.Cli.Telemetry.TelemetrySession.Phase("il", ph.ElapsedMilliseconds);
+                    if (res.Ok) return new Compiled(res.Pe!, "il", res.Pdb);
+                    why = res.Errors[0].Message + (res.Errors.Count > 1 ? $" (+{res.Errors.Count - 1} more)" : "");
+                }
+                catch (Exception e) when (e is not OutOfMemoryException)   // the program passed the gate: an IL backend gap
+                {
+                    why = $"{e.GetType().Name}: {e.Message}";
+                }
+                Console.Error.WriteLine($"note: the il backend does not support {why}; compiled with the csharp backend (--backend csharp silences this)");
+                return new Compiled(img, "csharp", null);
             });
-            UiH.Status(T("compiling"), $"{name} ({UiH.Elapsed(sw)})");
-            return image;
+            UiH.Status(T("compiling"), $"{name} ({result.Backend}, {UiH.Elapsed(sw)})");
+            return result;
         }
         catch (CompileException e)
         {
@@ -117,18 +145,18 @@ public static class CompileCommands
     public static int RunCmd(List<string> a)
     {
         if (WasmTarget(a)) return WasmCommands.RunAlice(a);   // ADR 0034: native wasm backend (runtime = "alice")
-        string? flagBackend = TakeOption(a, "--backend");
-        string backend = ResolveBackend(flagBackend, null);
+        string backend = Backend(a);
         var o = Parse(a);
-        if (o.Files.Count == 0) return RunProject(o, backend);
+        if (o.Files.Count == 0) return RunProject(o);
         var files = Read(o.Files);
         string name = Path.GetFileNameWithoutExtension(o.Files[0]);
-        string? key = RunCache.Enabled && !o.Strict ? RunCache.Key(files, name, o.Refs) : null;   // a cached image skipped the strict check
+        // a cached image skipped the strict check; the backend is part of the key (an IL and a C# image differ)
+        string? key = RunCache.Enabled && !o.Strict ? RunCache.Key(files, name + "|backend=" + backend, o.Refs) : null;
         var image = key != null ? RunCache.TryGet(key) : null;
         if (image == null)
         {
             bool native = false;
-            image = CompileFiles(files, name, true, o.Refs, onNative: () => native = true, strict: o.Strict);
+            image = CompileFiles(files, name, true, o.Refs, backend, onNative: () => native = true, strict: o.Strict)?.Image;
             if (image == null) return 1;
             if (key != null && !native) RunCache.Put(key, image);   // a native library lives beside the run, not in the image
         }
@@ -154,6 +182,13 @@ public static class CompileCommands
         throw new UsageException($"unknown target `{t}`", "--target wasm32 | wasm32-wasi");
     }
 
+    /// <summary>
+    /// The backend of `alice run` / `alice build` on loose files: `--backend il|csharp` (removed from the arguments),
+    /// else ALICE_BACKEND, else IL. The one place the CLI resolves it (1.0.0 resolved it and dropped the result, so
+    /// every command compiled through C#).
+    /// </summary>
+    static string Backend(List<string> a) => ResolveBackend(TakeOption(a, "--backend"), null);
+
     /// <summary>Backend choice (precedence: flag > toml > env > default IL).</summary>
     static string ResolveBackend(string? flag, string? toml)
     {
@@ -162,7 +197,11 @@ public static class CompileCommands
             if (flag is not ("csharp" or "il")) throw new UsageException($"unknown backend `{flag}`", "--backend il | csharp");
             return flag;
         }
-        if (toml is not null) return toml;
+        if (toml is not null)
+        {
+            if (toml is not ("csharp" or "il")) throw new UsageException($"[build] backend = \"{toml}\" is not a backend", "use \"il\" or \"csharp\"");
+            return toml;
+        }
         string? env = Environment.GetEnvironmentVariable("ALICE_BACKEND");
         if (env is not null)
         {
@@ -199,23 +238,6 @@ public static class CompileCommands
             Ui.DiagnosticRenderer.Render(e.Diagnostics, Sources(files));
             return null;
         }
-    }
-
-    static int RunIl(Options o)
-    {
-        var files = Read(o.Files);
-        string name = Path.GetFileNameWithoutExtension(o.Files[0]);
-        var res = CompileIl(files, name, o.Refs, o.Strict);
-        if (res == null) return 1;
-        var entry = AliceCompiler.Load(res.Pe!).EntryPoint;
-        if (entry == null) return 0;
-        try { entry.Invoke(null, [o.Rest.ToArray()]); }
-        catch (System.Reflection.TargetInvocationException e) when (e.InnerException != null)
-        {
-            Ui.Ui.Error($"{e.InnerException.GetType().Name}: {e.InnerException.Message}");
-            return 101;
-        }
-        return 0;
     }
 
     /// <summary>Builds every workspace member, dependencies first.</summary>
@@ -266,7 +288,7 @@ public static class CompileCommands
         } : null;
     }
 
-    static int RunProject(Options o, string? backend = null)
+    static int RunProject(Options o)
     {
         string where = o.Project ?? ".";
         if (Workspace.IsWorkspaceRoot(where))
@@ -297,6 +319,7 @@ public static class CompileCommands
     public static int Build(List<string> a)
     {
         if (WasmTarget(a)) return WasmCommands.BuildAlice(a);   // ADR 0034: native wasm backend (runtime = "alice")
+        string backend = Backend(a);
         var o = Parse(a);
         if (o.Files.Count == 0)
         {
@@ -315,10 +338,13 @@ public static class CompileCommands
         if (o.Native) return NativeSingle(files, name, dir, o.Refs);
         var cs = AliceCompiler.TranspileAll(files, o.Refs);
         bool exe = cs.Any(c => c.Contains("public static void Main(string[] ARGV)"));
-        var image = CompileFiles(files, name, exe, o.Refs, dir, strict: o.Strict);
-        if (image == null) return 1;
+        var built = CompileFiles(files, name, exe, o.Refs, backend, dir, strict: o.Strict);
+        if (built == null) return 1;
         var dll = Path.Combine(dir, name + ".dll");
-        File.WriteAllBytes(dll, image);
+        File.WriteAllBytes(dll, built.Image);
+        var pdb = Path.Combine(dir, name + ".pdb");
+        if (built.Pdb != null) File.WriteAllBytes(pdb, built.Pdb);
+        else File.Delete(pdb);   // an IL build's pdb would not match a C# image
         var rt = typeof(Alice.Runtime.Prelude).Assembly.Location;
         File.Copy(rt, Path.Combine(dir, Path.GetFileName(rt)), true);
         foreach (var r in o.Refs) File.Copy(r, Path.Combine(dir, Path.GetFileName(r)), true);
@@ -459,7 +485,7 @@ public static class CompileCommands
         if (paths.Count == 0) throw new UsageException(T("no.files"), T("hint.no.project"));
         var files = Read(paths);
         var sw = Stopwatch.StartNew();
-        var image = CompileFiles(files, "check", false, o.Refs, strict: o.Strict);
+        var image = CompileFiles(files, "check", false, o.Refs, "csharp", strict: o.Strict);   // diagnostics only: the C# gate
         if (image == null) return 1;
         UiH.Status(T("finished"), $"{T("checking")} {files.Count} file(s) ({UiH.Elapsed(sw)})");
         return 0;

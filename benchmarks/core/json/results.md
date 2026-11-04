@@ -1,5 +1,25 @@
 # Alice.Core.Json on the forge (2026-11-03)
 
+## Fix in 1.0.2 (2026-11-04): typed-gen regression
+
+Cause (bisected with the same runtime build and both generated files): commit 2f96ecb (C2.5 under IL) replaced the
+generated readers' length `switch` + `SequenceEqual("..."u8)` with an `if` chain of `JsonMap.Is(n, "name")` for both
+backends. `Is` re-encoded the name to UTF-8 on every miss where the raw name was longer, and `JsonMap.NewArray`
+allocated 4 slots for every empty array. Same runtime, twitter typed-gen: b9716e8 mapping 0.58-0.60 ms (342832 B),
+2f96ecb mapping 1.44-1.53 ms (365624 B). Not the IL default (`run.sh` builds `alice emit` C#, and the IL default was
+not wired before 1.0.2) and not ClosureConvert. Fix: names grouped by UTF-8 length, `JsonMap.IsAscii` (length first),
+`NewArray` starts empty (src/Alice.Compiler/Lowering/Lowerer.Json.cs, src/Alice.Runtime/Core/Json/Mapping/JsonMap.cs).
+`run.sh 3`, `PIN="taskset -c 9,25"`, load average ~9: raw `results/raw-20261104T203601Z.txt`.
+
+| case | input | engine | ms | GB/s | alloc B/call |
+|---|---|---|---:|---:|---:|
+| json-typed | canada | alice/typed-gen | 4.6060 | 0.489 | 7143728 |
+| json-typed | citm_catalog | alice/typed-gen | 0.9590 | 1.801 | 862048 |
+| json-typed | citm_catalog | stj/sourcegen | 4.4573 | 0.388 | 1083280 |
+| json-typed | twitter | alice/typed-gen | 0.6620 | 0.954 | 342832 |
+| json-typed | twitter | alice/typed-hand | 0.6260 | 1.009 | 355000 |
+| json-typed | twitter | stj/sourcegen | 1.1576 | 0.545 | 356392 |
+
 ## Re-run on 1.0.1 (2026-11-04, commit b2e41c8 (v1.0.1))
 
 `run.sh 3` with `PIN="taskset -c 9,25"`: median of 3 rounds, each the median of 15 timed calls after >= 1 s warm-up,
@@ -8,7 +28,7 @@ Raw: `results/raw-20261104T173823Z.txt`.
 
 Changed against the previous run: `json-typed` with the generated mapping (`alice/typed-gen`) is slower on twitter
 (1.52 vs 0.64 ms, now behind STJ's 1.22 ms) and citm_catalog (1.30 vs 0.92 ms), and allocates more there; the hand
-mapping (`typed-hand`) did not change. Not investigated in this run.
+mapping (`typed-hand`) did not change. Fixed in 1.0.2 (section above).
 
 | case | input | engine | ms | GB/s | alloc B/call |
 |---|---|---|---:|---:|---:|

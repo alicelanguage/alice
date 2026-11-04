@@ -273,6 +273,15 @@ public static class JsonMap
         return true;
     }
 
+    /// <summary>
+    /// <see cref="Is"/> for an ASCII <paramref name="name"/> (the compiler picks it when every char is below 0x80): a
+    /// length mismatch is false at once. <see cref="Is"/> had to re-encode the name whenever the raw name was longer, on
+    /// every miss of a reader's field chain (twitter typed 0.60 -> 1.44 ms in 1.0.0/1.0.1).
+    /// </summary>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static bool IsAscii(ReadOnlySpan<byte> raw, string name) =>
+        raw.Length == name.Length && System.Text.Ascii.Equals(raw, name.AsSpan());
+
     static bool Utf8Is(ReadOnlySpan<byte> raw, string name)
     {
         if (Encoding.UTF8.GetByteCount(name) != raw.Length) return false;
@@ -305,12 +314,14 @@ public static class JsonMap
         return PeekTag(ref r, tmp.Slice(0, n));
     }
 
-    /// <summary>A growing array buffer of a generated reader: the first one (4 slots).</summary>
-    public static T[] NewArray<T>() => new T[4];
+    /// <summary>A growing array buffer of a generated reader: empty (an empty JSON array allocates nothing), 4 slots at
+    /// the first <see cref="Grow"/>.</summary>
+    public static T[] NewArray<T>() => [];
 
-    /// <summary>Doubles <paramref name="items"/> (a generated reader's buffer is full).</summary>
+    /// <summary>Doubles <paramref name="items"/> (a generated reader's buffer is full); an empty buffer gets 4 slots.</summary>
     public static T[] Grow<T>(T[] items)
     {
+        if (items.Length == 0) return new T[4];
         Array.Resize(ref items, items.Length * 2);
         return items;
     }
