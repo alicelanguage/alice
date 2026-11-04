@@ -122,7 +122,9 @@ References: [.NET publishing](https://learn.microsoft.com/en-us/dotnet/core/depl
 ## NuGet packages
 
 `scripts/pack-nuget.sh [out]` builds `Alice.Sdk`, `Alice.Cli` and `Alice.Runtime` into `artifacts/nuget/`
-([ADR 0020](../archicture/adr/0020-nuget-distribution.md)). Publish them after the release checks pass:
+([ADR 0020](../archicture/adr/0020-nuget-distribution.md)). They are not published yet: publishing to nuget.org is
+planned and needs a `NUGET_API_KEY`; today users install from the release archives, or use the packages locally from
+`artifacts/nuget/` as a package source. Once a key exists, publish them after the release checks pass:
 
 ```bash
 scripts/pack-nuget.sh
