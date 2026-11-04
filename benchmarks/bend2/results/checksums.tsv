@@ -52,6 +52,12 @@ terrain	alice/1	2572468224
 terrain	alice/N	2572468224
 terrain	c/1	2572468224
 terrain	c/N	2572468224
+tree-bitonic	alice/1	3787129428
+tree-bitonic	alice/N	3787129428
+tree-bitonic	c/1	3787129428
+tree-bitonic	c/N	3787129428
+tree-bitonic	idiom/1	3787129428
+tree-bitonic	idiom/N	3787129428
 tree-matmul	alice/1	3797651056
 tree-matmul	alice/N	3797651056
 tree-matmul	c/1	3797651056
@@ -64,9 +70,3 @@ tree-radix	c/1	1998173798
 tree-radix	c/N	1998173798
 tree-radix	idiom/1	1998173798
 tree-radix	idiom/N	1998173798
-tree-bitonic	alice/1	3787129428
-tree-bitonic	alice/N	3787129428
-tree-bitonic	c/1	3787129428
-tree-bitonic	c/N	3787129428
-tree-bitonic	idiom/1	3787129428
-tree-bitonic	idiom/N	3787129428
