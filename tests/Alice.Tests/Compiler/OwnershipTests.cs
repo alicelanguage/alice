@@ -15,12 +15,13 @@ public class OwnershipTests
     static MethodInfo Compile(string src) =>
         AliceCompiler.Load(AliceCompiler.Emit([AliceCompiler.Transpile(src)], "own", exe: false)).GetType("Program")!.GetMethod("f")!;
 
+    /// <summary>Bytes per warm call: the least of a few 50-call windows (Runtime/AllocationProbe.cs). One window read
+    /// 64+ B per call on macos-15 while the suite ran in parallel: another thread's GC retired this thread's allocation
+    /// context, which does not repeat, while an allocation in the call shows in every window.</summary>
     static long AllocatedPerCall(Func<int, int> f, int arg)
     {
         for (int i = 0; i < 20; i++) f(arg);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 50; i++) f(arg);
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / 50;
+        return Alice.Tests.Runtime.AllocationProbe.Least(() => { for (int i = 0; i < 50; i++) f(arg); }) / 50;
     }
 
     // editdist's rolling rows: `previous = row` moves the row, the old previous goes back to the pool

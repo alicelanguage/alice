@@ -444,7 +444,8 @@ puts s
     [Fact]
     public void Tree_build_and_sum_allocates_nothing_in_steady_state()
     {
-        string src = Tree.Replace("puts run(ARGV.size > 0 ? ARGV[0].to_i : 10)\n", "");
+        // LF first: a Windows checkout has CRLF in the raw string, and the replacements below match "\n"
+        string src = Tree.ReplaceLineEndings("\n").Replace("puts run(ARGV.size > 0 ? ARGV[0].to_i : 10)\n", "");
         uint expect = 0;
         for (uint x = 1u << 16; x < 2u << 16; x++) expect += x;   // leaves of build(16, 1); 70 leaking runs would outgrow the first 2^20-slot chunk
         // negative check: the same tree plus one string per run must read > 0 (not a small number: .NET caches those strings)
