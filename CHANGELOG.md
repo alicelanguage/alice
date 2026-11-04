@@ -6,8 +6,8 @@
 - tests: Windows CRLF normalization in dump comparisons (ClosureConvertTests, DynSitesTests)
 - tests: Windows file handle leak in CoreFsProcessTests (enumerator disposal)
 - tests: Windows cross-drive path handling in ExecutablesTests (GetRelativePath can return absolute paths)
-- tests: macOS path normalization in ProveCliTests (/private/var symlink)
-- tests: allocation test flakes on macOS/Linux (GC settling before measurement)
+- tests: macOS path canonicalization in ProveCliTests (initialize dir from Directory.GetCurrentDirectory() after SetCurrentDirectory to resolve symlinks)
+- tests: allocation test flakes on macOS/Linux (increase CoreNetAllocationTests threshold to 2048 bytes for platform GC variance)
 - compiler: Windows DLL export declaration (__declspec(dllexport) for @[Native] functions)
 - IL backend is the default target (ADR 0033); `--backend csharp` flag, `[build] backend = "csharp"` in alice.toml, and `ALICE_BACKEND=csharp` environment variable preserve C# printer access for differential testing and debugging.
 - Checkable proof certificates (ADR 0042): `alice prove --smt` produces independently verifiable certificates when a proof-emitting SAT solver (CaDiCaL 1.7+) is available. Each certificate contains the rule's symbolic IR (Alice.Check terms), the Tseitin-encoded CNF, and an LRAT proof from the SAT solver. The standalone `alice-check` tool (<600 lines, no compiler/runtime dependencies) verifies: (1) the LRAT proof refutes the CNF, (2) the CNF matches the re-derived bit-blast of the IR, (3) hashes match. `alice prove --check` re-validates all certificates. `PROOF.cert` (Brotli-compressed) accompanies `PROOF.al`. Trusted computing base for certificate mode: Alice's rule-to-IR translation + alice-check (vs. enumeration: compiler+runtime, --smt without certs: +Z3). docs/proofs.md, alice-check executable, tests/Alice.Check.Tests (46 tests), differential fuzz extended to certificates.

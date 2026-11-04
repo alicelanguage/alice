@@ -12,13 +12,16 @@ namespace Alice.Tests.Tooling;
 [Collection("console")]
 public class ProveCliTests : IDisposable
 {
-    readonly string dir = Path.Combine(Path.GetTempPath(), "alice-prove-" + Guid.NewGuid().ToString("N"));
+    string dir;
     readonly string cwd = Directory.GetCurrentDirectory();
 
     public ProveCliTests()
     {
+        dir = Path.Combine(Path.GetTempPath(), "alice-prove-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         Directory.SetCurrentDirectory(dir);
+        // Canonicalize dir to match Directory.GetCurrentDirectory() (resolves /var -> /private/var symlink on macOS)
+        dir = Directory.GetCurrentDirectory();
     }
 
     public void Dispose()
@@ -167,7 +170,7 @@ public class ProveCliTests : IDisposable
         Assert.Equal(0, CompileCommands.ProveAfterBuild(".", null));
         File.WriteAllText("RULES.al", "rule bad(x in 0..9)\n  x > 0\nend\n");
         Assert.Equal(1, CompileCommands.ProveAfterBuild(".", null));        // a failing rule fails the build
-        Assert.Equal(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar), Directory.GetCurrentDirectory().TrimEnd(Path.DirectorySeparatorChar));
+        Assert.Equal(dir.TrimEnd(Path.DirectorySeparatorChar), Directory.GetCurrentDirectory().TrimEnd(Path.DirectorySeparatorChar));
     }
 
     [Fact]

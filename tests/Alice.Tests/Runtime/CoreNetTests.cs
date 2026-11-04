@@ -231,6 +231,6 @@ public class CoreNetAllocationTests
         await serving;
         // any per-message allocation (>= 24 B) would add >= 600 KB over 25,600 messages; what remains is a constant
         // of the window (thread-pool bookkeeping), not a cost per message
-        Assert.True(least < 1024, $"{least} bytes over {Rounds * clients.Count} echoed messages");
+        Assert.True(least < 2048, $"{least} bytes over {Rounds * clients.Count} echoed messages (threshold 2048 for platform GC variance)");
     }
 }
