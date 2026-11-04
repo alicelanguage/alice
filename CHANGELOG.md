@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.0.1 - 2026-11-04
+- fix: actors (`ProcessCore`) could strand a message: the consumer going idle (flag reset, then mailbox re-check) and a
+  sender (enqueue, then flag check) used no full fence, so on x64 both could miss each other and the message waited for
+  the next send (forge stress, one message in flight: 47-116 stranded per 4-8M rounds, now 0). A `stop` racing the idle
+  reset was lost the same way. This hung `ActorAllocationTests` in release run 41822818886 until the 10-minute blame
+  timeout. Pinned by `One_message_in_flight_is_never_stranded`; the allocation test's spin is now bounded, and the test
+  host names on stderr and kills any child process still alive at exit (Linux).
+
 ## 1.0.0 - 2026-11-04
 - fix: IL backend async methods and async iterators: a `finally`/`ensure` around an `await` or `yield` ran twice when the
   continuation resumed the machine on another thread before the suspending MoveNext left the try block (its guard
