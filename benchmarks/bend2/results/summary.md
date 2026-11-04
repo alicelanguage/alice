@@ -119,3 +119,20 @@ Each side divided by the serial C twin on its own machine (lower is better). `Al
 | tree-bitonic | 3787129428 | 3787129428 | 3787129428 | 3787129428 | yes |
 | tree-matmul | 3797651056 | 3797651056 | 3797651056 | 3797651056 | yes |
 | tree-radix | 1998173798 | 1998173798 | 1998173798 | 1998173798 | yes |
+## Gaps vs C (serial)
+
+Workloads where Alice/C > 1.2, with named causes from profiling and ablation studies (ROADMAP 1.0 criterion):
+
+- **kmeans (8.05)**: no SIMD for 8-distance kernel (clang SLP vectorization, RyuJIT scalar); GC stats trees vs C arena. Tracked: #1.1 kmeans SoA kernel.
+- **tree-bitonic (10.85)**: recursive DropDeep (arena.md: 3.2x vs shallow Drop), inlined Alloc/Take sites. Tracked: #767 arena prefetch.
+- **terrain (2.25)**: clang vectorizes noise fill (1.5x faster with `-fno-vectorize`); bounds-checked neighbour loads in Gauss-Seidel sweep. Tracked: 1.1 vectorization.
+- **tree-radix (2.05)**: recursive DropDeep, inlined Alloc/Take. Tracked: #767 arena prefetch.
+- **symreg (1.79)**: arena overhead (slower than records: 12298 vs 9778 ms in arena.md). Cause not yet identified; tracked for 1.1.
+- **tree-matmul (1.76)**: recursive DropDeep (arena.md: 1.45x vs shallow Drop), inlined Alloc/Take. Tracked: #767 arena prefetch.
+- **bfs (1.69)**: bounds checks on pooled arrays (no provable length), checked to_i32/to_u32 conversions. Tracked: 1.1 pooled-array shape.
+- **mandelbrot (1.57)**: RyuJIT branches vs clang cmov for escape freeze; clang unrolls `mit` by 3. Tracked: 1.1 unroller tuning.
+- **lexer (1.37)**: bounds checks on `buf[p]` measured as no cost; pooling overhead ~3%. Cause not yet identified; tracked for 1.1.
+- **merkle (1.33)**: Speck loop unrolled (fixed), but gap remains; 8M GC objects (296 MB) vs C arena (130 MB). Tracked: 1.1 arena shape.
+- **raytrace (1.31)**: sphere table bounds-checked vs C constant folding; 2^26 fork leaves. Tracked: 1.1 constant propagation.
+- **editdist (1.27)**: loop-carried store forwarding opportunity (il-vs-csharp.md: IL 0.75 with forwarding). Tracked: #808 store-forwarding.
+
