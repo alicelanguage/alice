@@ -209,12 +209,15 @@ public class CoreNetAllocationTests
                 c.ReadExactly(back);
             }
         }
-        for (int i = 0; i < 20; i++) Round();
+        // Extended warmup: trigger all lazy initialization in server threads and thread pool
+        for (int i = 0; i < 100; i++) Round();
+        await Task.Delay(50); // Let server background tasks settle
         // Force GC to settle platform-specific lazily-initialized objects
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
-        for (int i = 0; i < 10; i++) Round();
+        // More warmup post-GC to ensure everything is truly initialized
+        for (int i = 0; i < 50; i++) Round();
         long least = long.MaxValue;
         const int Rounds = 100;
         for (int attempt = 0; attempt < 3 && least > 0; attempt++)
@@ -231,6 +234,6 @@ public class CoreNetAllocationTests
         await serving;
         // any per-message allocation (>= 24 B) would add >= 600 KB over 25,600 messages; what remains is a constant
         // of the window (thread-pool bookkeeping), not a cost per message
-        Assert.True(least < 2048, $"{least} bytes over {Rounds * clients.Count} echoed messages (threshold 2048 for platform GC variance)");
+        Assert.True(least < 1024, $"{least} bytes over {Rounds * clients.Count} echoed messages");
     }
 }

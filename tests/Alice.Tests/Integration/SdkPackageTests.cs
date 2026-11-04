@@ -64,6 +64,7 @@ public class SdkPackageTests
         var (code, output) = DotnetRun(bad, cache, "build", "-nologo");
         Assert.NotEqual(0, code);
         Assert.Contains("AL0310", output);
+        Assert.Contains("main.al(", output);  // Compiler error shows AL source location
         Assert.DoesNotContain("CS8602", output);
     }
 }

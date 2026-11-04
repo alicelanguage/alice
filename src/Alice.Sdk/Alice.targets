@@ -71,7 +71,7 @@
   <Target Name="AliceGenerate" BeforeTargets="CoreCompile" DependsOnTargets="AlicePrepare" Condition="'@(AliceSource)' != ''"
           Inputs="@(AliceSource);$(AliceGenDir)refs.txt;$(AliceGenDir)analyzers.txt;$(AliceGenDir)sources.txt;$(AliceGenDir)flags.txt;$(AliceCompiler);$(MSBuildProjectFullPath)"
           Outputs="$(AliceGenDir)alice.stamp">
-    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen $(_AliceGenCheckArg) -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --analyzers-file &quot;$(AliceGenDir)analyzers.txt&quot; --native-lib=$(AssemblyName)_native --naming=$(AliceNaming) @(AliceSource->'&quot;%(FullPath)&quot;', ' ')" />
+    <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen $(_AliceGenCheckArg) -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --analyzers-file &quot;$(AliceGenDir)analyzers.txt&quot; --native-lib=$(AssemblyName)_native --naming=$(AliceNaming) @(AliceSource->'&quot;%(FullPath)&quot;', ' ')"  StandardOutputImportance="high" StandardErrorImportance="high" />
     <Touch Files="$(AliceGenDir)alice.stamp" AlwaysCreate="true" />
   </Target>
 
