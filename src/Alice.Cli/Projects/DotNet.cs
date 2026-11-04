@@ -29,6 +29,9 @@ public static class DotNet
         psi.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
         psi.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
         psi.Environment["AliceFromCli"] = "true";   // MSBuild property: skip rebuilding the running alice.dll (Alice.targets)   // csc messages are matched in English (CSharpErrors)
+        // repo layout (Alice.targets): `alice gen` runs this very alice.dll, never a src/Alice.Cli/bin/<Configuration>
+        // build that may be missing (CI builds Release only) or rebuilt while it runs (Windows locks loaded files)
+        if (typeof(DotNet).Assembly.Location is { Length: > 0 } self) psi.Environment["AliceRunningCompiler"] = self;
         using var p = Process.Start(psi)!;
         var diags = new List<Diagnostic>();
         var seen = new HashSet<string>();

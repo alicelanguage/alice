@@ -9,7 +9,18 @@
     <!-- alice.toml [package] naming: "alice" (snake_case, as written) or "dotnet" (public API in PascalCase) -->
     <AliceNaming Condition="'$(AliceNaming)' == ''">alice</AliceNaming>
     <AliceHome Condition="'$(AliceHome)' == ''">$(MSBuildThisFileDirectory)../</AliceHome>
-    <AliceCompiler Condition="'$(AliceCompiler)' == '' and '$(AliceCliProject)' != ''">$([System.IO.Path]::GetDirectoryName($(AliceCliProject)))/bin/$(Configuration)/net10.0/alice.dll</AliceCompiler>
+    <!-- repo layout, which alice.dll runs `alice gen`, first that applies:
+         1. under `alice build`: the alice.dll driving the build (AliceRunningCompiler, set by the CLI); it is loaded,
+            so it is never rebuilt meanwhile, and it exists whatever configuration src/Alice.Cli was built in
+         2. under `alice build` from an older CLI: bin/$(Configuration), else the other configuration's build
+         3. bin/$(Configuration) (the ProjectReference below builds it first) -->
+    <_AliceCliBin Condition="'$(AliceCliProject)' != ''">$([System.IO.Path]::GetDirectoryName($(AliceCliProject)))/bin/</_AliceCliBin>
+    <_AliceOtherConfiguration Condition="'$(Configuration)' == 'Release'">Debug</_AliceOtherConfiguration>
+    <_AliceOtherConfiguration Condition="'$(Configuration)' != 'Release'">Release</_AliceOtherConfiguration>
+    <AliceCompiler Condition="'$(AliceCompiler)' == '' and '$(_AliceCliBin)' != '' and '$(AliceFromCli)' == 'true' and '$(AliceRunningCompiler)' != '' and Exists('$(AliceRunningCompiler)')">$(AliceRunningCompiler)</AliceCompiler>
+    <AliceCompiler Condition="'$(AliceCompiler)' == '' and '$(_AliceCliBin)' != '' and '$(AliceFromCli)' == 'true' and !Exists('$(_AliceCliBin)$(Configuration)/net10.0/alice.dll') and Exists('$(_AliceCliBin)$(_AliceOtherConfiguration)/net10.0/alice.dll')">$(_AliceCliBin)$(_AliceOtherConfiguration)/net10.0/alice.dll</AliceCompiler>
+    <AliceCompiler Condition="'$(AliceCompiler)' == '' and '$(_AliceCliBin)' != ''">$(_AliceCliBin)$(Configuration)/net10.0/alice.dll</AliceCompiler>
+    <!-- installed layout and the Alice.Sdk package: the alice.dll in AliceHome, next to these targets' sdk/ folder -->
     <AliceCompiler Condition="'$(AliceCompiler)' == ''">$(AliceHome)alice.dll</AliceCompiler>
   </PropertyGroup>
 
@@ -71,6 +82,8 @@
   <Target Name="AliceGenerate" BeforeTargets="CoreCompile" DependsOnTargets="AlicePrepare" Condition="'@(AliceSource)' != ''"
           Inputs="@(AliceSource);$(AliceGenDir)refs.txt;$(AliceGenDir)analyzers.txt;$(AliceGenDir)sources.txt;$(AliceGenDir)flags.txt;$(AliceCompiler);$(MSBuildProjectFullPath)"
           Outputs="$(AliceGenDir)alice.stamp">
+    <Error Condition="!Exists('$(AliceCompiler)')"
+           Text="Alice compiler not found: '$(AliceCompiler)' does not exist (tried AliceCompiler, AliceRunningCompiler '$(AliceRunningCompiler)', $(_AliceCliBin)$(Configuration)/net10.0/alice.dll, $(_AliceCliBin)$(_AliceOtherConfiguration)/net10.0/alice.dll, $(AliceHome)alice.dll). Build src/Alice.Cli, or set AliceHome or AliceCompiler." />
     <Exec Command="dotnet &quot;$(AliceCompiler)&quot; gen $(_AliceGenCheckArg) -o &quot;$(AliceGenDir).&quot; --refs-file &quot;$(AliceGenDir)refs.txt&quot; --analyzers-file &quot;$(AliceGenDir)analyzers.txt&quot; --native-lib=$(AssemblyName)_native --naming=$(AliceNaming) @(AliceSource->'&quot;%(FullPath)&quot;', ' ')"  StandardOutputImportance="high" StandardErrorImportance="high" />
     <Touch Files="$(AliceGenDir)alice.stamp" AlwaysCreate="true" />
   </Target>

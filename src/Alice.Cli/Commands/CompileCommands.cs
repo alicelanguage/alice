@@ -445,9 +445,11 @@ public static class CompileCommands
     {
         // MSB3073 ("the command alice gen exited with code 1") only repeats the Alice errors above it
         var errors = r.Diagnostics.Where(d => d.Severity == "error").ToList();
-        if (errors.Any(d => d.Code != "MSB3073")) errors.RemoveAll(d => d.Code == "MSB3073");
+        bool onlyExec = errors.Count > 0 && errors.All(d => d.Code == "MSB3073");
+        if (!onlyExec) errors.RemoveAll(d => d.Code == "MSB3073");
+        // nothing but "alice gen exited with code N": what the command printed is the only clue, so show it
+        if (r.Diagnostics.Count == 0 || onlyExec) foreach (var l in r.Output.Where(l => !l.Contains("MSB3073")).TakeLast(30)) Console.Error.WriteLine(l);
         if (r.Diagnostics.Count > 0) Ui.DiagnosticRenderer.Render(errors);
-        else foreach (var l in r.Output.TakeLast(30)) Console.Error.WriteLine(l);
     }
 
     public static int Check(List<string> a)

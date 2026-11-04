@@ -127,8 +127,21 @@ public static class App
             Telemetry.TelemetrySession.Crash(e);
             // last resort: a bug or environment failure is still one readable line, the trace only on request
             Ui.Ui.Error(T("internal", e.Message), Verbose ? e.ToString() : T("hint.verbose"));
+            // `alice gen` runs under MSBuild Exec, which logs only canonical "origin : error : text" lines as errors
+            // (`alice build` runs MSBuild quiet): without this line a crash surfaced as a bare MSB3073
+            if (args[0] == "gen") Console.WriteLine($"alice gen : error : {T("internal", InternalSummary(e))}");
             return 70;
         }
+    }
+
+    /// <summary>One line for a build log: exception type, message and the innermost frames (a log has no --verbose).</summary>
+    internal static string InternalSummary(Exception e)
+    {
+        var inner = e;
+        while (inner.InnerException != null) inner = inner.InnerException;
+        var frames = (inner.StackTrace ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(3);
+        string where = string.Join(" | ", frames);
+        return $"{inner.GetType().FullName}: {inner.Message.ReplaceLineEndings(" ")}" + (where.Length > 0 ? $" | {where}" : "");
     }
 
     static int RunLsp(List<string> args)

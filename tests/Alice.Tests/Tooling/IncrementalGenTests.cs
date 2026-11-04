@@ -42,6 +42,26 @@ public class IncrementalGenTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public void Native_lib_without_native_functions_writes_no_c_and_needs_no_clang()
+    {
+        // Alice.targets passes --native-lib=<Assembly>_native to every package; with no @[Native] function there is
+        // no C file, so the AliceNative target (clang) never runs, on any OS
+        var dir = Path.Combine(Path.GetTempPath(), "alice-gen-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var src = Path.Combine(dir, "main.al");
+            File.WriteAllText(src, "def twice(x : Int32) : Int32\n  x * 2\nend\nputs twice(21)\n");
+            var outDir = Path.Combine(dir, "out");
+            Assert.Equal(0, Alice.Cli.App.Run(["--lang", "en", "gen", "--no-check", "-o", outDir, "--native-lib=Api_native", src]));
+            Assert.True(File.Exists(Path.Combine(outDir, "main.al.g.cs")));
+            Assert.Empty(Directory.GetFiles(outDir, "*.c"));
+            Assert.Null(Alice.Compiler.AliceCompiler.TranspileFull([new Alice.Compiler.SourceFile(src, File.ReadAllText(src))], null, "Api_native").C);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }
 
 /// <summary>`#line` maps lines only: errors that come from the generated C# point at the name they quote in the Alice line.</summary>
