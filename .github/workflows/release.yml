@@ -84,7 +84,7 @@ jobs:
       ${{ !cancelled() && needs.version.result == 'success' && needs.version.outputs.changed == 'true' &&
           (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 40  # macOS arm runners need more time for NuGet restore + ReadyToRun publish + smoke tests
     strategy:
       fail-fast: false
       matrix:

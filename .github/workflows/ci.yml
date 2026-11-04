@@ -24,7 +24,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45  # macOS runners need more time for the full test suite
     strategy:
       fail-fast: false
       matrix:
