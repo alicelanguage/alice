@@ -179,6 +179,38 @@ public class ActorTests(ITestOutputHelper output)
         Assert.Equal((long)P * M, all);
         output.WriteLine($"{P} actors: {P * M / sw.Elapsed.TotalSeconds / 1e6:F1} M msgs/s");
     }
+
+    /// <summary>
+    /// One message in flight at a time is the worst case for the idle handoff: every send races the consumer resetting
+    /// its scheduled flag. Before the full fences in <c>ProcessCore.Schedule</c>/<c>Execute</c> a message was stranded
+    /// about once per 110k rounds on the forge (x64 store-load reordering), which hung the steady-state allocation test
+    /// in CI (release run 41822818886) until the 10-minute blame timeout.
+    /// </summary>
+    [Fact]
+    public void One_message_in_flight_is_never_stranded()
+    {
+        const int W = 4, R = 250_000;
+        long stranded = 0;
+        var sw = Stopwatch.StartNew();
+        Parallel.For(0, W, new ParallelOptions { MaxDegreeOfParallelism = W }, w =>
+        {
+            int i = 0;
+            var a = new Actor<int>(_ => Volatile.Write(ref i, i + 1));
+            for (int k = 0; k < R && Interlocked.Read(ref stranded) == 0; k++)
+            {
+                a.send(k);
+                long end = Stopwatch.GetTimestamp() + 2 * Stopwatch.Frequency;
+                while (Volatile.Read(ref i) <= k)
+                {
+                    if (Stopwatch.GetTimestamp() > end) { Interlocked.Increment(ref stranded); break; }
+                    Thread.SpinWait(8);
+                }
+            }
+            a.kill();
+        });
+        output.WriteLine($"{W} x {R} one-in-flight rounds in {sw.Elapsed.TotalSeconds:F1} s");
+        Assert.Equal(0, Interlocked.Read(ref stranded));
+    }
 }
 
 /// <summary>
@@ -217,7 +249,7 @@ public class ActorAllocationTests(ITestOutputHelper output)
         for (int k = 1000; k < N; k++)
         {
             a.send(k);
-            if ((k & 63) == 0) while (Volatile.Read(ref i) <= k) Thread.SpinWait(8);   // steady state: the consumer keeps up
+            if ((k & 63) == 0) SpinUntilHandled(ref i, k);   // steady state: the consumer keeps up
         }
         long sendBytes = GC.GetAllocatedBytesForCurrentThread() - before;
         a.stop();
@@ -232,6 +264,17 @@ public class ActorAllocationTests(ITestOutputHelper output)
     // a burst that outruns the consumer grows the queue by a segment (memory for the backlog, not per message):
     // O(1) pool bookkeeping, 0 per message
     static bool SendOk(long sendBytes) => sendBytes < 1024;
+
+    /// <summary>Spins until message <paramref name="k"/> was handled; a stranded message fails fast instead of hanging.</summary>
+    static void SpinUntilHandled(ref int i, int k)
+    {
+        long end = Stopwatch.GetTimestamp() + 10 * Stopwatch.Frequency;   // no allocation on the measured thread
+        while (Volatile.Read(ref i) <= k)
+        {
+            if (Stopwatch.GetTimestamp() > end) throw new TimeoutException($"message {k} not handled within 10 s");
+            Thread.SpinWait(8);
+        }
+    }
     static bool HandleOk(int pairs, int clean) => pairs > 0 && clean >= pairs * 99 / 100;
 
     [Fact]

@@ -56,6 +56,10 @@ public abstract class ProcessCore : IThreadPoolWorkItem
 
     protected void Schedule()
     {
+        // Dekker pair with the idle path of Execute: the enqueue must be globally visible before the flag is read.
+        // Without the fence a consumer that just reset the flag and saw an empty mailbox, and this sender that still
+        // saw the flag set, both walk away and the message is stranded (x64 lets a store pass a later load).
+        Interlocked.MemoryBarrier();
         if (Volatile.Read(ref scheduled) == 0 && Interlocked.CompareExchange(ref scheduled, 1, 0) == 0)
             ThreadPool.UnsafeQueueUserWorkItem(this, preferLocal: false);
     }
@@ -84,9 +88,10 @@ public abstract class ProcessCore : IThreadPoolWorkItem
                     if (died) Propagate(ExitReason.Normal);
                     return;
                 }
-                Volatile.Write(ref scheduled, 0);
-                // a send may have raced the flag reset; take the turn back if so
-                if (HasMessages && Interlocked.CompareExchange(ref scheduled, 1, 0) == 0) continue;
+                // full fence (see Schedule): the reset must be visible before the mailbox and the stop flag are re-read
+                Interlocked.Exchange(ref scheduled, 0);
+                // a send or a stop may have raced the flag reset (its CAS saw us still scheduled); take the turn back
+                if ((HasMessages || Volatile.Read(ref stopping) == 1) && Interlocked.CompareExchange(ref scheduled, 1, 0) == 0) continue;
                 return;
             }
             if (++n == Batch)
