@@ -134,14 +134,20 @@ public static class App
         }
     }
 
-    /// <summary>One line for a build log: exception type, message and the innermost frames (a log has no --verbose).</summary>
+    /// <summary>One line for a build log (a log has no --verbose): every exception in the chain with its type and
+    /// message, then the first frames of the outermost one that has a trace.</summary>
     internal static string InternalSummary(Exception e)
     {
-        var inner = e;
-        while (inner.InnerException != null) inner = inner.InnerException;
-        var frames = (inner.StackTrace ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(3);
+        var chain = new List<string>();
+        string? trace = null;
+        for (var x = e; x != null; x = x.InnerException)
+        {
+            chain.Add($"{x.GetType().FullName}: {x.Message.ReplaceLineEndings(" ")}");
+            trace ??= x.StackTrace;
+        }
+        var frames = (trace ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(8);
         string where = string.Join(" | ", frames);
-        return $"{inner.GetType().FullName}: {inner.Message.ReplaceLineEndings(" ")}" + (where.Length > 0 ? $" | {where}" : "");
+        return string.Join(" ---> ", chain) + (where.Length > 0 ? $" | {where}" : "");
     }
 
     static int RunLsp(List<string> args)
