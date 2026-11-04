@@ -9,6 +9,11 @@
   reset was lost the same way. This hung `ActorAllocationTests` in release run 41822818886 until the 10-minute blame
   timeout. Pinned by `One_message_in_flight_is_never_stranded`; the allocation test's spin is now bounded, and the test
   host names on stderr and kills any child process still alive at exit (Linux).
+- tests: `One_message_in_flight_is_never_stranded` now counts a message as stranded only when it stays unhandled while
+  the actor is idle (no turn queued or running) for 2 s. A message that is merely late passes. Its producers run on
+  dedicated threads: as spinning `Parallel.For` pool threads they took the pool's workers, and the Windows CI run
+  41849746848 counted 4 late turns as stranded. The handoff protocol has no remaining hole: with the fences removed the
+  test still catches real strands.
 
 ## 1.0.0 - 2026-11-04
 - fix: IL backend async methods and async iterators: a `finally`/`ensure` around an `await` or `yield` ran twice when the

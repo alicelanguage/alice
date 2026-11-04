@@ -186,30 +186,90 @@ public class ActorTests(ITestOutputHelper output)
     /// about once per 110k rounds on the forge (x64 store-load reordering), which hung the steady-state allocation test
     /// in CI (release run 41822818886) until the 10-minute blame timeout.
     /// </summary>
+    /// <remarks>
+    /// The verdict does not depend on timing. A message that is not handled within 2 s only counts as late. It is
+    /// stranded when it stays unhandled while the process is idle (<c>scheduled == 0</c>: no turn queued or running) for a
+    /// whole <see cref="Settle"/> window. Nothing can run it then: its sender has returned, and a consumer that went idle
+    /// takes the turn back within a few instructions. The producers run on dedicated threads. In CI run 41849746848
+    /// (Windows) they ran as spinning <c>Parallel.For</c> pool threads and took the pool's worker threads, so the actors'
+    /// work items waited for thread injection past the 2 s deadline and 4 late turns were counted as stranded. The forge
+    /// reproduces that when pinned to 1 or 2 cores (old test: 1-2 "stranded" per run, 6 of 6 runs). The test still
+    /// catches real strands: with the two fences removed it reports 1 at 4 cores and 3 at 32 cores.
+    /// </remarks>
     [Fact]
     public void One_message_in_flight_is_never_stranded()
     {
-        const int W = 4, R = 250_000;
-        long stranded = 0;
+        // one core per producer and one per consumer: spinning producers beyond that only starve the pool of CPU
+        int W = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
+        const int R = 250_000;
+        long stranded = 0, hung = 0, late = 0;
         var sw = Stopwatch.StartNew();
-        Parallel.For(0, W, new ParallelOptions { MaxDegreeOfParallelism = W }, w =>
+        var producers = new Thread[W];
+        for (int w = 0; w < W; w++)
         {
-            int i = 0;
-            var a = new Actor<int>(_ => Volatile.Write(ref i, i + 1));
-            for (int k = 0; k < R && Interlocked.Read(ref stranded) == 0; k++)
+            producers[w] = new Thread(() =>
             {
-                a.send(k);
-                long end = Stopwatch.GetTimestamp() + 2 * Stopwatch.Frequency;
-                while (Volatile.Read(ref i) <= k)
+                int i = 0;
+                var a = new Actor<int>(_ => Volatile.Write(ref i, i + 1));
+                for (int k = 0; k < R && Interlocked.Read(ref stranded) + Interlocked.Read(ref hung) == 0; k++)
                 {
-                    if (Stopwatch.GetTimestamp() > end) { Interlocked.Increment(ref stranded); break; }
-                    Thread.SpinWait(8);
+                    a.send(k);
+                    int kk = k, spins = 0;
+                    long end = Stopwatch.GetTimestamp() + 2 * Stopwatch.Frequency;
+                    while (Volatile.Read(ref i) <= k)
+                    {
+                        if (Stopwatch.GetTimestamp() > end)
+                        {
+                            switch (Verdict(a, () => Volatile.Read(ref i) > kk))
+                            {
+                                case Wait.Late: Interlocked.Increment(ref late); break;
+                                case Wait.Stranded: Interlocked.Increment(ref stranded); break;
+                                default: Interlocked.Increment(ref hung); break;
+                            }
+                            break;
+                        }
+                        // spin tight to race the idle handoff, then sleep so a waiting producer cannot starve the pool of CPU
+                        if (++spins < 2000) Thread.SpinWait(8); else Thread.Sleep(spins < 2100 ? 0 : 1);
+                    }
                 }
-            }
-            a.kill();
-        });
-        output.WriteLine($"{W} x {R} one-in-flight rounds in {sw.Elapsed.TotalSeconds:F1} s");
+                a.kill();
+            }) { IsBackground = true, Name = $"producer {w}" };
+            producers[w].Start();
+        }
+        foreach (var t in producers) t.Join();
+        output.WriteLine($"{W} x {R} one-in-flight rounds in {sw.Elapsed.TotalSeconds:F1} s; late (handled after 2 s): {late}");
         Assert.Equal(0, Interlocked.Read(ref stranded));
+        Assert.Equal(0, Interlocked.Read(ref hung));
+    }
+
+    enum Wait { Late, Stranded, Hung }
+
+    static readonly TimeSpan Settle = TimeSpan.FromSeconds(2), Hang = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Classifies a message that missed the fast deadline. Late means it was handled eventually. Stranded means it stayed
+    /// unhandled while the process was idle (no turn queued or running) for <see cref="Settle"/> without a break. Hung
+    /// means a turn stayed queued or running for <see cref="Hang"/> without handling it.
+    /// The flag is read by reflection, so the runtime needs no test hook.
+    /// </summary>
+    static Wait Verdict(ProcessCore a, Func<bool> handled)
+    {
+        var flag = typeof(ProcessCore).GetField("scheduled", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?? throw new InvalidOperationException("ProcessCore.scheduled not found");
+        var total = Stopwatch.StartNew();
+        Stopwatch? idle = null;
+        while (!handled())
+        {
+            if ((int)flag.GetValue(a)! == 0)
+            {
+                idle ??= Stopwatch.StartNew();
+                if (idle.Elapsed > Settle) return handled() ? Wait.Late : Wait.Stranded;
+            }
+            else idle = null;
+            if (total.Elapsed > Hang) return Wait.Hung;
+            Thread.Sleep(5);
+        }
+        return Wait.Late;
     }
 }
 
