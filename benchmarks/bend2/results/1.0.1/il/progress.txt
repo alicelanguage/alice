@@ -1,0 +1,16 @@
+18:53:22 done bfs load 8.39
+18:55:38 done editdist load 8.62
+18:58:53 done gameoflife load 8.59
+18:59:13 done hashmap load 8.56
+19:04:22 done kmeans load 8.59
+19:04:49 done lexer load 8.56
+19:05:39 done mandelbrot load 8.13
+19:07:37 done merkle load 8.37
+19:09:30 done nbody load 8.31
+19:11:01 done queens load 8.73
+19:13:20 done raytrace load 8.80
+19:15:14 done symreg load 8.41
+19:16:37 done terrain load 8.66
+19:45:29 done tree-bitonic load 7.95
+19:47:50 done tree-matmul load 8.05
+19:51:17 done tree-radix load 8.14

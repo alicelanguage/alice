@@ -1,0 +1,15 @@
+merkle	arena	3104235417
+merkle	records	3104235417
+merkle	c	3104235417
+symreg	arena	2383953211
+symreg	records	2383953211
+symreg	c	2383953211
+tree-matmul	arena	3797651056
+tree-matmul	records	3797651056
+tree-matmul	c	3797651056
+tree-radix	arena	1998173798
+tree-radix	records	1998173798
+tree-radix	c	1998173798
+tree-bitonic	arena	3787129428
+tree-bitonic	records	3787129428
+tree-bitonic	c	3787129428

@@ -1,0 +1,5 @@
+17:37:51 done merkle load 11.62
+17:39:29 done symreg load 10.68
+17:42:27 done tree-matmul load 14.16
+17:45:46 done tree-radix load 13.18
+18:08:22 done tree-bitonic load 11.84

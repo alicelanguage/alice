@@ -1,5 +1,42 @@
 # Alice Core regex vs System.Text.RegularExpressions
 
+## Re-run on 1.0.1 (2026-11-04, commit b2e41c8 (v1.0.1))
+
+- Machine: the forge, AWS c7i.8xlarge, Intel Xeon Platinum 8488C (Sapphire Rapids, AVX-512), 32 vCPU, 61 GiB, Arch Linux (kernel 7.2.11), .NET SDK 10.0.114 (runtime 10.0.14). Shared box: a fuzz job on cpus 29-31 and other agents' builds; load average 8.2-11.1 during the run.
+- Pinning: `taskset -c 9,25` (one physical core). Engines one after another, never in parallel; same commands and
+  protocol as the previous run (regex-redux `WARM_N=3 TIMED=5`; rebar counts warm >= 1 s and >= 50 calls, median of 15).
+- Raw: [`../results/1.0.1/regex.txt`](../results/1.0.1/regex.txt); every row below is from that file.
+
+| Case | Input | Alice UTF-8 ms | Alice UTF-16 ms | .NET Compiled ms | .NET NonBacktracking ms | Compiled / Alice UTF-16 | Compiled / Alice UTF-8 | Alice B/call (UTF-8, UTF-16) | Checksum |
+|---|---|---|---|---|---|---|---|---|---|
+| regex-redux | fasta-5M | 568 | 851 | 4122 | 5012 | 4.84x | 7.26x | 3824, 1163257384 | 20941027388361 |
+| count:literal | rebar-en-sampled | 0.0312 | 0.0628 | 0.0650 | 0.0947 | 1.04x | 2.08x | 0, 0 | 513 |
+| count:literal-alt | rebar-en-sampled | 0.1030 | 0.1007 | 0.3086 | 0.4916 | 3.06x | 3.00x | 0, 0 | 714 |
+| count:literal-i | rebar-en-sampled | 0.0627 | 0.0654 | 0.0672 | 2.8 | 1.03x | 1.07x | 0, 0 | 522 |
+| count:words | rebar-en-sampled | 5.8 | 6.0 | 7.6 | 19.6 | 1.27x | 1.31x | 0, 0 | 175218 / .NET 175191 |
+| count:ing-suffix | rebar-en-sampled | 1.9 | 2.0 | 6.7 | 8.6 | 3.40x | 3.46x | 0, 0 | 4808 |
+| count:aws-keys | rebar-en-sampled | 0.0251 | 0.0470 | 0.0434 | 0.0569 | 0.92x | 1.73x | 0, 0 | 0 |
+| count:bounded-repeat | rebar-en-sampled | 2.3 | 2.3 | 9.5 | 8.1 | 4.12x | 4.20x | 0, 0 | 11434 |
+| count:unicode-upper | rebar-en-sampled | 2.0 | 2.1 | 1.8 | 6.1 | 0.86x | 0.92x | 0, 0 | 33237 |
+| count:time | rebar-en-sampled | 0.0236 | 0.0385 | 0.0445 | 0.0410 | 1.16x | 1.89x | 0, 0 | 37 |
+| count:literal | rebar-sherlock | 0.0174 | 0.0350 | 0.0332 | 0.0415 | 0.95x | 1.91x | 0, 0 | 91 |
+| count:literal-alt | rebar-sherlock | 0.0496 | 0.0438 | 0.0986 | 0.1694 | 2.25x | 1.99x | 0, 0 | 105 |
+| count:literal-i | rebar-sherlock | 0.0260 | 0.0326 | 0.0326 | 1.8 | 1.00x | 1.25x | 0, 0 | 96 |
+| count:words | rebar-sherlock | 3.9 | 3.9 | 4.7 | 10.1 | 1.19x | 1.20x | 0, 0 | 109222 / .NET 109214 |
+| count:ing-suffix | rebar-sherlock | 1.3 | 1.3 | 4.2 | 4.1 | 3.14x | 3.25x | 0, 0 | 2824 |
+| count:aws-keys | rebar-sherlock | 0.0164 | 0.0273 | 0.0242 | 0.0276 | 0.89x | 1.48x | 0, 0 | 0 |
+| count:bounded-repeat | rebar-sherlock | 1.6 | 1.6 | 6.4 | 5.3 | 4.11x | 4.02x | 0, 0 | 9401 |
+| count:unicode-upper | rebar-sherlock | 0.6817 | 0.7235 | 0.6117 | 1.8 | 0.85x | 0.90x | 0, 0 | 9451 |
+| count:time | rebar-sherlock | 0.0122 | 0.0184 | 0.0235 | 0.0216 | 1.28x | 1.93x | 0, 0 | 8 |
+
+Checksums: regex-redux prints 50833411 / 50000000 / 27388361 on every engine (20941027388361 above is their
+concatenation, as before); every count equals .NET's except `words` (ASCII `\w` by design, as before). 0 bytes per call
+on every count row.
+
+## Previous runs
+
+The sections below are the earlier runs, kept as published.
+
 ADR 0036, engine in `src/Alice.Runtime/Core/Text/Regex/`, driver `benchmarks/core/regex/core-driver`, .NET side
 `benchmarks/core/baselines/dotnet` (same RESULT protocol, see `../README.md` "Method").
 

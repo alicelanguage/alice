@@ -1,0 +1,147 @@
+Model name:                              Intel(R) Xeon(R) Platinum 8488C
+agggtaaa|tttaccct 356
+[cgt]gggtaaa|tttaccc[acg] 1250
+a[act]ggtaaa|tttacc[agt]t 4252
+ag[act]gtaaa|tttac[agt]ct 2894
+agg[act]taaa|ttta[agt]cct 5435
+aggg[acg]aaa|ttt[cgt]ccct 1537
+agggt[cgt]aa|tt[acg]accct 1431
+agggta[cgt]a|t[acg]taccct 1608
+agggtaa[cgt]|[acg]ttaccct 2178
+
+50833411
+50000000
+27388361
+RESULT alice/utf8 regex-redux fasta-5M 567.6511 89.6 3824 20941027388361
+agggtaaa|tttaccct 356
+[cgt]gggtaaa|tttaccc[acg] 1250
+a[act]ggtaaa|tttacc[agt]t 4252
+ag[act]gtaaa|tttac[agt]ct 2894
+agg[act]taaa|ttta[agt]cct 5435
+aggg[acg]aaa|ttt[cgt]ccct 1537
+agggt[cgt]aa|tt[acg]accct 1431
+agggta[cgt]a|t[acg]taccct 1608
+agggtaa[cgt]|[acg]ttaccct 2178
+
+50833411
+50000000
+27388361
+RESULT alice/utf16 regex-redux fasta-5M 850.7189 59.8 1163257384 20941027388361
+agggtaaa|tttaccct 356
+[cgt]gggtaaa|tttaccc[acg] 1250
+a[act]ggtaaa|tttacc[agt]t 4252
+ag[act]gtaaa|tttac[agt]ct 2894
+agg[act]taaa|ttta[agt]cct 5435
+aggg[acg]aaa|ttt[cgt]ccct 1537
+agggt[cgt]aa|tt[acg]accct 1431
+agggta[cgt]a|t[acg]taccct 1608
+agggtaa[cgt]|[acg]ttaccct 2178
+
+50833411
+50000000
+27388361
+RESULT dotnet/compiled regex-redux fasta-5M 4121.6647 12.3 554641656 20941027388361
+agggtaaa|tttaccct 356
+[cgt]gggtaaa|tttaccc[acg] 1250
+a[act]ggtaaa|tttacc[agt]t 4252
+ag[act]gtaaa|tttac[agt]ct 2894
+agg[act]taaa|ttta[agt]cct 5435
+aggg[acg]aaa|ttt[cgt]ccct 1537
+agggt[cgt]aa|tt[acg]accct 1431
+agggta[cgt]a|t[acg]taccct 1608
+agggtaa[cgt]|[acg]ttaccct 2178
+
+50833411
+50000000
+27388361
+RESULT dotnet/nonbacktracking regex-redux fasta-5M 5011.7447 10.1 554641656 20941027388361
+RESULT alice/utf8 count:literal rebar-en-sampled 0.0312 28821.5 0 513
+RESULT alice/utf16 count:literal rebar-en-sampled 0.0628 14319.0 0 513
+RESULT alice/utf8 count:literal-alt rebar-en-sampled 0.1030 8730.4 0 714
+RESULT alice/utf16 count:literal-alt rebar-en-sampled 0.1007 8929.8 0 714
+RESULT alice/utf8 count:literal-i rebar-en-sampled 0.0627 14341.8 0 522
+RESULT alice/utf16 count:literal-i rebar-en-sampled 0.0654 13749.7 0 522
+RESULT alice/utf8 count:words rebar-en-sampled 5.7764 155.7 0 175218
+RESULT alice/utf16 count:words rebar-en-sampled 5.9796 150.4 0 175218
+RESULT alice/utf8 count:ing-suffix rebar-en-sampled 1.9247 467.2 0 4808
+RESULT alice/utf16 count:ing-suffix rebar-en-sampled 1.9626 458.2 0 4808
+RESULT alice/utf8 count:aws-keys rebar-en-sampled 0.0251 35826.0 0 0
+RESULT alice/utf16 count:aws-keys rebar-en-sampled 0.0470 19132.6 0 0
+RESULT alice/utf8 count:bounded-repeat rebar-en-sampled 2.2562 398.6 0 11434
+RESULT alice/utf16 count:bounded-repeat rebar-en-sampled 2.3046 390.2 0 11434
+RESULT alice/utf8 count:unicode-upper rebar-en-sampled 1.9918 451.5 0 33237
+RESULT alice/utf16 count:unicode-upper rebar-en-sampled 2.1484 418.6 0 33237
+RESULT alice/utf8 count:time rebar-en-sampled 0.0236 38103.1 0 37
+RESULT alice/utf16 count:time rebar-en-sampled 0.0385 23356.7 0 37
+RESULT dotnet/interpreted count:literal rebar-en-sampled 0.0833 10795.1 0 513
+RESULT dotnet/interpreted count:literal-alt rebar-en-sampled 1.6450 546.6 0 714
+RESULT dotnet/interpreted count:literal-i rebar-en-sampled 2.7914 322.1 0 522
+RESULT dotnet/interpreted count:words rebar-en-sampled 13.7050 65.6 0 175191
+RESULT dotnet/interpreted count:ing-suffix rebar-en-sampled 18.6285 48.3 0 4808
+RESULT dotnet/interpreted count:aws-keys rebar-en-sampled 0.1870 4808.7 0 0
+RESULT dotnet/interpreted count:bounded-repeat rebar-en-sampled 18.5759 48.4 0 11434
+RESULT dotnet/interpreted count:unicode-upper rebar-en-sampled 4.5428 197.9 0 33237
+RESULT dotnet/interpreted count:time rebar-en-sampled 0.1145 7853.6 0 37
+RESULT dotnet/compiled count:literal rebar-en-sampled 0.0650 13834.3 0 513
+RESULT dotnet/compiled count:literal-alt rebar-en-sampled 0.3086 2913.9 0 714
+RESULT dotnet/compiled count:literal-i rebar-en-sampled 0.0672 13381.4 0 522
+RESULT dotnet/compiled count:words rebar-en-sampled 7.5845 118.6 0 175191
+RESULT dotnet/compiled count:ing-suffix rebar-en-sampled 6.6676 134.9 0 4808
+RESULT dotnet/compiled count:aws-keys rebar-en-sampled 0.0434 20719.6 0 0
+RESULT dotnet/compiled count:bounded-repeat rebar-en-sampled 9.4850 94.8 0 11434
+RESULT dotnet/compiled count:unicode-upper rebar-en-sampled 1.8394 488.9 0 33237
+RESULT dotnet/compiled count:time rebar-en-sampled 0.0445 20207.5 0 37
+RESULT dotnet/nonbacktracking count:literal rebar-en-sampled 0.0947 9495.6 0 513
+RESULT dotnet/nonbacktracking count:literal-alt rebar-en-sampled 0.4916 1829.2 0 714
+RESULT dotnet/nonbacktracking count:literal-i rebar-en-sampled 2.8241 318.4 0 522
+RESULT dotnet/nonbacktracking count:words rebar-en-sampled 19.6175 45.8 0 175191
+RESULT dotnet/nonbacktracking count:ing-suffix rebar-en-sampled 8.5891 104.7 0 4808
+RESULT dotnet/nonbacktracking count:aws-keys rebar-en-sampled 0.0569 15803.7 0 0
+RESULT dotnet/nonbacktracking count:bounded-repeat rebar-en-sampled 8.1163 110.8 0 11434
+RESULT dotnet/nonbacktracking count:unicode-upper rebar-en-sampled 6.0548 148.5 0 33237
+RESULT dotnet/nonbacktracking count:time rebar-en-sampled 0.0410 21932.5 0 37
+RESULT alice/utf8 count:literal rebar-sherlock 0.0174 34191.6 0 91
+RESULT alice/utf16 count:literal rebar-sherlock 0.0350 16998.1 0 91
+RESULT alice/utf8 count:literal-alt rebar-sherlock 0.0496 11994.6 0 105
+RESULT alice/utf16 count:literal-alt rebar-sherlock 0.0438 13582.9 0 105
+RESULT alice/utf8 count:literal-i rebar-sherlock 0.0260 22882.0 0 96
+RESULT alice/utf16 count:literal-i rebar-sherlock 0.0326 18249.5 0 96
+RESULT alice/utf8 count:words rebar-sherlock 3.9122 152.1 0 109222
+RESULT alice/utf16 count:words rebar-sherlock 3.9323 151.3 0 109222
+RESULT alice/utf8 count:ing-suffix rebar-sherlock 1.2848 463.1 0 2824
+RESULT alice/utf16 count:ing-suffix rebar-sherlock 1.3282 447.9 0 2824
+RESULT alice/utf8 count:aws-keys rebar-sherlock 0.0164 36276.4 0 0
+RESULT alice/utf16 count:aws-keys rebar-sherlock 0.0273 21792.4 0 0
+RESULT alice/utf8 count:bounded-repeat rebar-sherlock 1.6011 371.6 0 9401
+RESULT alice/utf16 count:bounded-repeat rebar-sherlock 1.5677 379.5 0 9401
+RESULT alice/utf8 count:unicode-upper rebar-sherlock 0.6817 872.7 0 9451
+RESULT alice/utf16 count:unicode-upper rebar-sherlock 0.7235 822.3 0 9451
+RESULT alice/utf8 count:time rebar-sherlock 0.0122 48765.0 0 8
+RESULT alice/utf16 count:time rebar-sherlock 0.0184 32333.3 0 8
+RESULT dotnet/interpreted count:literal rebar-sherlock 0.0397 14985.7 0 91
+RESULT dotnet/interpreted count:literal-alt rebar-sherlock 0.6450 922.4 0 105
+RESULT dotnet/interpreted count:literal-i rebar-sherlock 1.9005 313.0 0 96
+RESULT dotnet/interpreted count:words rebar-sherlock 8.9013 66.8 0 109214
+RESULT dotnet/interpreted count:ing-suffix rebar-sherlock 12.7411 46.7 0 2824
+RESULT dotnet/interpreted count:aws-keys rebar-sherlock 0.0576 10328.7 0 0
+RESULT dotnet/interpreted count:bounded-repeat rebar-sherlock 12.3800 48.1 0 9401
+RESULT dotnet/interpreted count:unicode-upper rebar-sherlock 1.8481 321.9 0 9451
+RESULT dotnet/interpreted count:time rebar-sherlock 0.0432 13771.6 0 8
+RESULT dotnet/compiled count:literal rebar-sherlock 0.0332 17919.7 0 91
+RESULT dotnet/compiled count:literal-alt rebar-sherlock 0.0986 6033.8 0 105
+RESULT dotnet/compiled count:literal-i rebar-sherlock 0.0326 18249.5 0 96
+RESULT dotnet/compiled count:words rebar-sherlock 4.6956 126.7 0 109214
+RESULT dotnet/compiled count:ing-suffix rebar-sherlock 4.1703 142.7 0 2824
+RESULT dotnet/compiled count:aws-keys rebar-sherlock 0.0242 24584.0 0 0
+RESULT dotnet/compiled count:bounded-repeat rebar-sherlock 6.4368 92.4 0 9401
+RESULT dotnet/compiled count:unicode-upper rebar-sherlock 0.6117 972.6 0 9451
+RESULT dotnet/compiled count:time rebar-sherlock 0.0235 25316.3 0 8
+RESULT dotnet/nonbacktracking count:literal rebar-sherlock 0.0415 14335.7 0 91
+RESULT dotnet/nonbacktracking count:literal-alt rebar-sherlock 0.1694 3512.0 0 105
+RESULT dotnet/nonbacktracking count:literal-i rebar-sherlock 1.8175 327.3 0 96
+RESULT dotnet/nonbacktracking count:words rebar-sherlock 10.0792 59.0 0 109214
+RESULT dotnet/nonbacktracking count:ing-suffix rebar-sherlock 4.1424 143.6 0 2824
+RESULT dotnet/nonbacktracking count:aws-keys rebar-sherlock 0.0276 21555.5 0 0
+RESULT dotnet/nonbacktracking count:bounded-repeat rebar-sherlock 5.2528 113.3 0 9401
+RESULT dotnet/nonbacktracking count:unicode-upper rebar-sherlock 1.8277 325.5 0 9451
+RESULT dotnet/nonbacktracking count:time rebar-sherlock 0.0216 27543.2 0 8
