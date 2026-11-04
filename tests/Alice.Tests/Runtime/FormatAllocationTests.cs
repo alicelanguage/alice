@@ -8,9 +8,7 @@ public class FormatAllocationTests
     static long Allocated(Func<string> f)
     {
         for (int i = 0; i < 100; i++) f();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) f();
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / 100;
+        return AllocationProbe.Least(() => { for (int i = 0; i < 100; i++) f(); }) / 100;   // least of a few windows
     }
 
     static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;

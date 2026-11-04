@@ -28,9 +28,7 @@ public class SharingTests
         var build = AliceCompiler.Load(AliceCompiler.Emit([cs], "share", exe: false)).GetType("Program")!.GetMethod("build")!;
         var f = build.CreateDelegate<Func<int, object>>();
         for (int i = 0; i < 20; i++) f(10);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        f(10);
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        long bytes = Alice.Tests.Runtime.AllocationProbe.Least(() => f(10));   // least of a few windows
         Assert.True(bytes < 1023 * 40, $"1023 inner nodes only (got {bytes} bytes)");   // 2047 nodes unshared
     }
 

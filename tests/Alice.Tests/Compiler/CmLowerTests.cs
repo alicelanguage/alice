@@ -621,9 +621,8 @@ public class CmLowerTests
             GC.WaitForPendingFinalizers();
             GC.Collect();
             for (int i = 0; i < 10; i++) f(xs, arr);
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 50; i++) f(xs, arr);
-            Assert.True(GC.GetAllocatedBytesForCurrentThread() - before == 0, name + " allocates");
+            long bytes = Alice.Tests.Runtime.AllocationProbe.Least(() => { for (int i = 0; i < 50; i++) f(xs, arr); });   // least of a few windows
+            Assert.True(bytes == 0, $"{name} allocates {bytes} B");
         }
     }
 

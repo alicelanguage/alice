@@ -503,9 +503,7 @@ public class ArenaTests
     static long Allocated(Action f)
     {
         for (int i = 0; i < 5; i++) f();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 20; i++) f();
-        return GC.GetAllocatedBytesForCurrentThread() - before;
+        return AllocationProbe.Least(() => { for (int i = 0; i < 20; i++) f(); });   // least of a few windows
     }
 
     [Fact]

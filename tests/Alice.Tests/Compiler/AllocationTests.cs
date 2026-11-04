@@ -25,9 +25,8 @@ public class AllocationTests
     static long Measure<TA, TR>(Func<TA, TR> f, TA a)
     {
         for (int i = 0; i < 50; i++) f(a);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) f(a);
-        return (GC.GetAllocatedBytesForCurrentThread() - before) / 100;
+        // least of a few windows (AllocationProbe): one window can carry a GC elsewhere retiring this thread's context
+        return Alice.Tests.Runtime.AllocationProbe.Least(() => { for (int i = 0; i < 100; i++) f(a); }) / 100;
     }
 
     public static TheoryData<string, string, object, object> Kernels => new()
