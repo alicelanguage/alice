@@ -184,6 +184,24 @@ public class ProveCliTests : IDisposable
         Assert.True(r["fine"].Proven);
         Assert.Equal(["add_overflows", "fine", "wrong"], Prove.CheckSmt(files, []).Select(x => x.Rule));
     }
+    [Fact]
+    public void Check_verifies_certificates_when_proof_cert_exists()
+    {
+        if (!ProveZ3.Available() || Alice.Cli.Proof.SatCert.Unavailable() != null) return;
+        // Create a rule and prove it with --smt to generate PROOF.cert
+        File.WriteAllText("RULES.al", "rule ok(x in 0..9)\n  x >= 0\nend\n");
+        var (code, output) = Cli("prove", "--smt");
+        Assert.Equal(0, code);
+        Assert.True(File.Exists("PROOF.al"));
+        Assert.True(File.Exists("PROOF.cert"));
+        // --check without --smt should still verify the certificate
+        Assert.Equal(0, Cli("prove", "--check", "RULES.al").Code);
+        // Corrupt the certificate and --check should fail
+        File.WriteAllBytes("PROOF.cert", new byte[] { 0, 1, 2, 3 });
+        var checkResult = Cli("prove", "--check", "RULES.al");
+        Assert.NotEqual(0, checkResult.Code);
+    }
+
 }
 
 /// <summary>`alice agents --write`: the AGENTS.md block tells an agent to gate commits on the rules and how to read a counterexample.</summary>

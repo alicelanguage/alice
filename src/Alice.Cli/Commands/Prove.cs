@@ -335,7 +335,7 @@ public static class Prove
         string certPath = Path.Combine(dir, Alice.Check.Cert.FileName);
         List<Alice.Check.CertEntry> certs = [];
         byte[]? existing = checkOnly ? File.Exists(certPath) ? File.ReadAllBytes(certPath) : Array.Empty<byte>() : null;
-        var results = smt ? CheckSmt(files, refs, timeout, existing, out certs) : Check(files, refs, timeout);
+        var results = (smt || (checkOnly && existing != null && existing.Length > 0)) ? CheckSmt(files, refs, timeout, existing, out certs) : Check(files, refs, timeout);
         bool ok = results.All(r => r.Proven);
         string cert = Certificate(files, results), path = Path.Combine(dir, ProofFile);
         bool stale = false;

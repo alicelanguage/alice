@@ -120,12 +120,16 @@ public class ParKernelTests
         var xs = new int[1 << 20];
         var sum = new Sum { Xs = xs };
         Func<long, long, long> add = static (a, b) => a + b;
-        for (int i = 0; i < 4; i++)   // warm the pool, the JIT and this thread's job slots
+        for (int i = 0; i < 20; i++)   // warm the pool, the JIT, this thread's job slots, and thread-pool bookkeeping
         {
             Par.Range(1 << 20, ref nop, 8192);
             Par.Reduce(xs.Length, ref sum, add, 8192);
             Fib.Run(24);
         }
+        // Force GC to settle platform-specific lazy initialization
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
         Assert.Equal(0, AllocationProbe.Least(() => Par.Range(1000, ref nop, 1)));
         var f10 = new Fib { N = 10 };
         var f9 = new Fib { N = 9 };
