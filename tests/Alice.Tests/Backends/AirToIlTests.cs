@@ -462,4 +462,95 @@ puts f(1_u32, 2_u32)
             }
         }
     }
+
+    // ------------------------------------------------------------------ CLR generic method inference (D1.11)
+
+    [Fact]
+    public void Clr_generic_method_inferred_from_array_or_list() => Differential("""
+        using Alice.Runtime
+        xs = [1.0, 2.0, 3.0, 4.0]
+        puts Simd.Dot(xs, xs)
+        ys : Array(Double) = [5.0, 6.0]
+        puts Simd.Sum(ys)
+        """);
+
+    [Fact]
+    public void Clr_generic_method_inferred_from_scalar() => Differential("""
+        def apply<T>(x : T, f : Func(T, T)) : T
+          f.(x)
+        end
+        puts apply(5, ->(x : Int32) { x * 2 })
+        puts apply("hi", ->(s : String) { s + "!" })
+        """);
+
+    [Fact]
+    public void Clr_generic_method_inferred_with_two_parameters_unifying() => Differential("""
+        puts Math.Max(3, 7)
+        puts Math.Min(2.5, 1.1)
+        """);
+
+    [Fact]
+    public void Clr_generic_method_inferred_from_lambda() => Differential("""
+        xs = [1, 2, 3, 4]
+        squared = xs.Select(->(x : Int32) { x * x }).ToList()
+        puts squared.Count
+        """);
+
+    [Fact]
+    public void Clr_generic_method_with_constraint_inferred() => Differential("""
+        using Alice.Runtime
+        xs = [10.0, 20.0, 30.0]
+        puts Simd.Sum(xs)
+        ys = [1_i64, 2_i64, 3_i64]
+        puts Simd.Sum(ys)
+        """);
+
+    [Fact]
+    public void Clr_generic_method_with_nested_generic_inferred() => Differential("""
+        matrix = [[1, 2], [3, 4]]
+        puts matrix[0][1]
+        flat = matrix.SelectMany(->(row : Array(Int32)) { row }).ToList()
+        puts flat.Count
+        """);
+
+    // ------------------------------------------------------------------ two-phase inference (T from receiver/args, R from lambda)
+
+    [Fact]
+    public void Two_phase_inference_map_with_lambda() => Differential("""
+        xs = [1, 2, 3]
+        ys = xs.map { |x| x * 2.0 }
+        puts ys[0]
+        puts ys.size
+        """);
+
+    [Fact]
+    public void Two_phase_inference_map_returns_tuple() => Differential("""
+        xs = [1, 2, 3]
+        pairs = xs.map { |x| (x, x * 2) }
+        puts pairs[0].Item1
+        puts pairs[0].Item2
+        """);
+
+    [Fact]
+    public void Two_phase_inference_chained_map_select() => Differential("""
+        xs = [1, 2, 3, 4]
+        result = xs.map { |x| x * 2 }.select { |y| y > 4 }
+        puts result.size
+        puts result[0]
+        """);
+
+    [Fact]
+    public void Two_phase_inference_aggregate_two_lambdas() => Differential("""
+        xs = [1, 2, 3, 4]
+        sum = xs.Aggregate(0, ->(acc : Int32, x : Int32) { acc + x })
+        puts sum
+        """);
+
+    [Fact]
+    public void Two_phase_inference_nested_lambda() => Differential("""
+        xs = [1, 2, 3]
+        nested = xs.map { |x| [x, x * 2].map { |y| y + 1 } }
+        puts nested[0][0]
+        puts nested.size
+        """);
 }
