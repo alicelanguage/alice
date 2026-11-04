@@ -290,7 +290,7 @@ public static class Oracles
         return dll;
     }
 
-    /// <summary>Runs a process; stdout plus `&lt;exit N&gt;` (or `&lt;timeout&gt;`).</summary>
+    /// <summary>Runs a process; stdout plus `&lt;exit N&gt;` (or `&lt;timeout&gt;` or `&lt;signal N&gt;`).</summary>
     public static string RunProcess(System.Diagnostics.ProcessStartInfo psi, int timeoutMs)
     {
         psi.RedirectStandardOutput = true;
@@ -301,6 +301,8 @@ public static class Oracles
         var e = p.StandardError.ReadToEndAsync();
         if (!p.WaitForExit(timeoutMs)) { try { p.Kill(true); } catch (InvalidOperationException) { } return "<timeout>"; }
         p.WaitForExit();
+        // Exit codes > 128 on Unix indicate termination by signal (128 + signal number)
+        if (p.ExitCode > 128) return o.Result + "<signal " + (p.ExitCode - 128) + ">" + FirstLine(e.Result);
         return o.Result + (p.ExitCode != 0 ? "<exit " + p.ExitCode + ">" + FirstLine(e.Result) : "");
     }
 
