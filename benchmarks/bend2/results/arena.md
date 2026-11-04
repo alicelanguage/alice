@@ -1,5 +1,26 @@
 # Affine arenas (ADR 0037 P1.3): bend2 1:1 ports
 
+## Re-run on 1.0.1 (2026-11-04, commit b2e41c8 (v1.0.1))
+
+Serial only: pair `taskset -c 5,21`, `ALICE_PAR=0`, cold process, hyperfine `-N`, 1 warm-up + 3 runs, median ms (max),
+peak RSS MB (median), as in the first table below. Machine: the forge (Intel Xeon Platinum 8488C, 32 vCPU, Arch Linux,
+.NET SDK 10.0.114); shared box, load average 9.6-11.8 at start and end (up to ~16 during the run).
+`arena` = `alice build` of the 1:1 port (the default: arena sum types, recursive Drop); `records` = the same file
+built with `ALICE_NO_ARENA=1` (class records). Both images come from `alice build`, which in 1.0.1 compiles loose files
+with the C# backend (the IL backend is used by `alice run` and `alice emit --il`). Every run printed the C checksum. Raw: [1.0.1/arena/](1.0.1/arena/).
+
+| port | C | arena | records | arena / C | records / arena | arena RSS / records RSS | Bend / C (M4) | checksum |
+|---|---|---|---|---:|---:|---:|---:|---|
+| merkle | 6542 (7118), 130 MB | 8579 (8597), 137 MB | 8651 (8655), 318 MB | 1.31 | 1.01 | 0.43 | 1.23 | 3104235417 same |
+| symreg | 4752 (4755), 3 MB | 8399 (8435), 39 MB | 6371 (6437), 74 MB | 1.77 | 0.76 | 0.52 | 1.37 | 2383953211 same |
+| tree-matmul | 5901 (6316), 6 MB | 9893 (10103), 43 MB | 21054 (21565), 91 MB | 1.68 | 2.13 | 0.47 | 0.70 | 3797651056 same |
+| tree-radix | 7572 (7945), 214 MB | 15564 (17534), 409 MB | 15940 (16581), 1515 MB | 2.06 | 1.02 | 0.27 | 1.46 | 1998173798 same |
+| tree-bitonic | 11398 (11467), 130 MB | 120921 (120999), 366 MB | 139860 (142271), 2709 MB | 10.61 | 1.16 | 0.14 | 1.06 | 3787129428 same |
+
+## Previous runs
+
+The sections below are the earlier runs, kept as published.
+
 Serial only: pair `taskset -c 13,29`, `ALICE_PAR=0`, cold process, hyperfine `-N`, 1 warm-up + 3 runs (tree-bitonic: 1 run
 in the second table). Median ms (max), peak RSS MB (median). The box was shared with other jobs (load 11-13), so C is
 slower than in summary.md; compare ratios within a table only. Every measured run printed the C checksum.

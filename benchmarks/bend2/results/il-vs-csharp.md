@@ -1,5 +1,34 @@
 # bend2: IL backend vs C# backend (il-opt)
 
+## 1.0.1 re-run (2026-11-04, commit b2e41c8 (v1.0.1))
+
+Same machine (the forge, .NET SDK 10.0.114). Serial: `taskset -c 11,27 env ALICE_PAR=0`, cold process, hyperfine `-N -w 1 -r 5`, median ms; the two images of each workload interleaved (run 2 of summary.md, load average 8.0-8.8). IL = `alice emit --il`; C# = `alice build` (which uses the C# backend for loose files in 1.0.1, see summary.md). Checksums identical for every image and run. Ratios IL / C# (< 1: IL faster). Raw: [1.0.1/il/](1.0.1/il/).
+
+| workload | C# ms | IL ms | IL / C# | R2 (2026-11-03) |
+|---|---:|---:|---:|---:|
+| bfs | 9573 | 7526 | 0.786 | 0.735 |
+| editdist | 11210 | 8204 | 0.732 | 0.754 |
+| gameoflife | 14022 | 13818 | 0.985 | 0.922 |
+| hashmap | 1426 | 1406 | 0.986 | 0.988 |
+| kmeans | 22125 | 22126 | 1.000 | 0.989 |
+| lexer | 1970 | 1850 | 0.939 | 0.891 |
+| mandelbrot | 3589 | 3577 | 0.997 | 0.977 |
+| merkle | 8420 | 8414 | 0.999 | 0.999 |
+| nbody | 8062 | 8066 | 1.001 | 1.003 |
+| queens | 6431 | 6456 | 1.004 | 1.006 |
+| raytrace | 9999 | 9917 | 0.992 | 0.991 |
+| symreg | 8331 | 7926 | 0.951 | 1.007 |
+| terrain | 6050 | 5909 | 0.977 | 0.980 |
+| tree-bitonic | 120122 | 127188 | 1.059 | 1.106 |
+| tree-matmul | 9750 | 10424 | 1.069 | 1.093 |
+| tree-radix | 14962 | 14831 | 0.991 | 1.013 |
+
+Geomean IL / C#, serial cold: 0.963 over 16 workloads; 0.946 without the three tree ports. tree-bitonic here is the full size (R2 used size 21).
+
+## Previous runs
+
+The sections below are the earlier rounds, kept as published.
+
 ## Round 2 (2026-11-03, main f0f7614 + il-opt round 2)
 
 Same machine. Serial: `taskset -c 12,28 env ALICE_PAR=0` (cores 13,29 were shared with another worker's timing

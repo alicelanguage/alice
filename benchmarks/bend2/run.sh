@@ -54,4 +54,5 @@ hyperfine -N -w 1 -r "$RUNS" --export-json results/startup.json \
   -n "alice/1" "$ONE env ALICE_PAR=0 dotnet alice/out/$FIRST.dll 0" -n "alice/N" "dotnet alice/out/$FIRST.dll 0" >/dev/null
 echo "$FIRST" > results/startup.txt
 nproc > results/cores.txt
+echo "$SERIAL_CPUS" > results/serial_cpus.txt
 python3 report.py

@@ -49,6 +49,7 @@ names = sorted(p.stem for p in R.glob("*.json") if p.stem not in SKIP)
 data = {n: load(R / f"{n}.json") for n in names}
 bend = pins()
 cores = (R / "cores.txt").read_text().strip() if (R / "cores.txt").exists() else "N"
+serial_cpus = (R / "serial_cpus.txt").read_text().strip() if (R / "serial_cpus.txt").exists() else "14,30"
 sums = {}
 if (R / "checksums.tsv").exists():
     for line in (R / "checksums.tsv").read_text().splitlines():
@@ -67,7 +68,7 @@ def mb(x):
 
 out = ["# Bend 2 runtime suite: results", "",
        f"Median of cold-process wall time in ms (max in parentheses), peak RSS in MB (median). Serial = 1 core "
-       f"(`taskset -c 14,30`: one physical core with both hyperthreads; `ALICE_PAR=0` for Alice), parallel = all {cores} cores. "
+       f"(`taskset -c {serial_cpus}`: one physical core with both hyperthreads; `ALICE_PAR=0` for Alice), parallel = all {cores} cores. "
        "Bend columns are the pinned numbers of bend/bench/runtime/_pin_/apple_m4_max.txt: **a different machine "
        "(Apple M4 Max, 16 cores)**, for reference only; compare them through the X/C ratios, never directly.", ""]
 

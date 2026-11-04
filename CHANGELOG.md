@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- benchmarks re-run on 1.0.1 (b2e41c8, the forge, 2026-11-04): bend2 serial for all 16 workloads with the IL image (`alice emit --il`), the C# image and C; IL vs C# backend (geomean 0.963); arena ports vs records; Alice Core regex, JSON and library modules. Raw hyperfine files in `benchmarks/bend2/results/1.0.1/`, `benchmarks/core/results/1.0.1/`. `bend2/report.py` reads the serial core pair from `results/serial_cpus.txt` (written by `run.sh`). The all-core tables are not re-run yet.
 
 ## 1.0.1 - 2026-11-04
 - fix: actors (`ProcessCore`) could strand a message: the consumer going idle (flag reset, then mailbox re-check) and a

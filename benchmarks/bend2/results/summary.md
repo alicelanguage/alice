@@ -1,5 +1,94 @@
 # Bend 2 runtime suite: results
 
+## Re-run on 1.0.1 (2026-11-04, commit b2e41c8 (v1.0.1))
+
+Machine: the forge, AWS c7i.8xlarge, Intel Xeon Platinum 8488C (AVX-512), 32 vCPU, 61 GiB, Arch Linux (kernel 7.2.11), .NET SDK 10.0.114 (runtime 10.0.14), clang 23.1.4 with libomp. Shared box: a fuzz job on cpus 29-31 for the whole run and other agents' builds; load average 8.0-18.3 (run 1: C, C# images, idiomatic) and 8.0-8.8 (run 2: IL vs C# images).
+
+Method: `run.sh`'s commands, split in two runs. Serial = `taskset -c 11,27` (one physical core, both hyperthreads), `ALICE_PAR=0`, hyperfine `-N -w 1 -r 5`, median ms (max), peak RSS MB (median). Run 1 measured `alice build` images (`alice/out`), the same sources built with `--backend csharp` (`alice/out-cs`), the C twins and the idiomatic shapes, interleaved per workload. Run 2 measured the IL backend images (`alice emit --il`, `alice/out-il`) interleaved with the `alice build` images.
+
+**Backend note.** In 1.0.1 `alice build <file.al>` compiles loose files with the C# backend (Roslyn) and ignores `--backend` (src/Alice.Cli/Commands/CompileCommands.cs `Build`); only `alice run` and `alice emit --il` use the IL backend, the 1.0 default. So `alice/out` and `alice/out-cs` are the same backend (their serial medians agree: geomean 0.995), and the earlier tables of this file, built by `run.sh`, measured the C# backend too. The **Alice** column below is the IL image (what `alice run` runs); the C# column is `alice build`.
+
+Alice startup floor (`bfs 0`, IL image, serial): 27 ms. Raw files: [1.0.1/](1.0.1/).
+
+### Serial, 1 core
+
+| workload | Alice (IL) ms | Alice (C# backend) ms | C ms | Alice / C | Alice RSS | C RSS | Bend / C on M4 (reference) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| bfs | 7526 (7555) | 9573 (9590) | 5681 (5713) | 1.32 | 39 | 3 | 1.09 |
+| editdist | 8204 (8238) | 11210 (11252) | 9150 (9201) | 0.90 | 40 | 3 | 1.28 |
+| gameoflife | 13818 (13850) | 14022 (14048) | 15018 (15074) | 0.92 | 40 | 3 | 1.15 |
+| hashmap | 1406 (1413) | 1426 (1427) | 1304 (1317) | 1.08 | 39 | 3 | 4.41 |
+| kmeans | 22126 (22202) | 22125 (22163) | 2931 (3400) | 7.55 | 75 | 6 | 1.00 |
+| lexer | 1850 (1859) | 1970 (1979) | 1440 (1442) | 1.28 | 40 | 3 | 2.07 |
+| mandelbrot | 3577 (3608) | 3589 (3603) | 2288 (2298) | 1.56 | 37 | 3 | 1.19 |
+| merkle | 8414 (8445) | 8420 (8453) | 6366 (6371) | 1.32 | 137 | 130 | 1.23 |
+| nbody | 8066 (8098) | 8062 (8089) | 8642 (8970) | 0.93 | 39 | 3 | 1.12 |
+| queens | 6456 (6500) | 6431 (6440) | 5610 (5706) | 1.15 | 37 | 3 | 1.50 |
+| raytrace | 9917 (9939) | 9999 (10025) | 8048 (8074) | 1.23 | 38 | 3 | 1.27 |
+| symreg | 7926 (8309) | 8331 (8361) | 4914 (4917) | 1.61 | 40 | 3 | 1.37 |
+| terrain | 5909 (5933) | 6050 (6053) | 2829 (2832) | 2.09 | 39 | 3 | 1.01 |
+| tree-bitonic | 127188 (129884) | 120122 (120396) | 11335 (11484) | 11.22 | 366 | 130 | 1.06 |
+| tree-matmul | 10424 (10616) | 9750 (9856) | 5525 (5529) | 1.89 | 44 | 6 | 0.70 |
+| tree-radix | 14831 (15181) | 14962 (15504) | 7014 (7527) | 2.11 | 411 | 214 | 1.46 |
+
+Geomean Alice (IL) / C over the 16 workloads: 1.70. C and the IL image come from two runs on the same pair (run 1 and run 2); the C# column is from run 2.
+
+### Parallel, 32 cores
+
+Not re-run yet: the parallel runs need the box idle (load average below 6), and the fuzz job alone keeps it near 7 until 2026-11-05 02:00 UTC. The parallel tables under "Previous runs" are from 2026-11-03 (Alice 1.0.0 candidate, C# backend).
+
+### Idiomatic shape (idiomatic/<name>.al, `alice build`, C# backend)
+
+| workload | serial ms | serial / 1:1 port (same backend) |
+|---|---:|---:|
+| symreg | 3091 | 0.35 |
+| tree-bitonic | 4375 | 0.04 |
+| tree-matmul | 2317 | 0.24 |
+| tree-radix | 3770 | 0.25 |
+
+### Checksums
+
+| workload | IL | C# (`alice build`) | C# (`--backend csharp`) | C | idiomatic | match |
+|---|---|---|---|---|---|---|
+| bfs | 651176970 | 651176970 | 651176970 | 651176970 | - | yes |
+| editdist | 2229810577 | 2229810577 | 2229810577 | 2229810577 | - | yes |
+| gameoflife | 2016151040 | 2016151040 | 2016151040 | 2016151040 | - | yes |
+| hashmap | 1307803744 | 1307803744 | 1307803744 | 1307803744 | - | yes |
+| kmeans | 1616398086 | 1616398086 | 1616398086 | 1616398086 | - | yes |
+| lexer | 2401049475 | 2401049475 | 2401049475 | 2401049475 | - | yes |
+| mandelbrot | 3101455856 | 3101455856 | 3101455856 | 3101455856 | - | yes |
+| merkle | 3104235417 | 3104235417 | 3104235417 | 3104235417 | - | yes |
+| nbody | 3516450380 | 3516450380 | 3516450380 | 3516450380 | - | yes |
+| queens | 2063750025 | 2063750025 | 2063750025 | 2063750025 | - | yes |
+| raytrace | 1924309504 | 1924309504 | 1924309504 | 1924309504 | - | yes |
+| symreg | 2383953211 | 2383953211 | 2383953211 | 2383953211 | 2383953211 | yes |
+| terrain | 2572468224 | 2572468224 | 2572468224 | 2572468224 | - | yes |
+| tree-bitonic | 3787129428 | 3787129428 | 3787129428 | 3787129428 | 3787129428 | yes |
+| tree-matmul | 3797651056 | 3797651056 | 3797651056 | 3797651056 | 3797651056 | yes |
+| tree-radix | 1998173798 | 1998173798 | 1998173798 | 1998173798 | 1998173798 | yes |
+
+Every configuration printed the checksum of Bend's C twin.
+
+### Gaps vs C (serial, IL image)
+
+Workloads where Alice/C > 1.2, with named causes from profiling and ablation studies (ROADMAP 1.0 criterion):
+
+- **tree-bitonic (11.22)**: recursive DropDeep (arena.md: 3.2x vs shallow Drop), inlined Alloc/Take sites; the IL image is 6% slower than the C# one here. Tracked: #767 arena prefetch.
+- **kmeans (7.55)**: no SIMD for the 8-distance kernel (clang SLP-vectorizes it, RyuJIT stays scalar); GC stats trees vs C's arena. Tracked: 1.1 kmeans SoA kernel.
+- **tree-radix (2.11)**: recursive DropDeep, inlined Alloc/Take. Tracked: #767 arena prefetch.
+- **terrain (2.09)**: clang vectorizes the noise fill (1.5x faster with `-fno-vectorize`); bounds-checked neighbour loads in the Gauss-Seidel sweep. Tracked: 1.1 vectorization.
+- **tree-matmul (1.89)**: recursive DropDeep (arena.md: 1.45x vs shallow Drop), inlined Alloc/Take; the IL image is 7% slower than the C# one. Tracked: #767 arena prefetch.
+- **symreg (1.61)**: arena overhead (records are faster: 6371 vs 8399 ms in arena.md, 1.0.1 run). Cause not identified; tracked for 1.1.
+- **mandelbrot (1.56)**: clang unrolls `mit` by 3 and knows the 51 iterations; Alice passes `tn` as a parameter. Tracked: 1.1 unroller tuning.
+- **bfs (1.32)**: bounds checks on pooled arrays (no provable length), checked to_i32/to_u32 conversions. Tracked: 1.1 pooled-array shape.
+- **merkle (1.32)**: Speck loop unrolled (fixed), gap remains; 8M GC objects vs C's arena. Tracked: 1.1 arena shape.
+- **lexer (1.28)**: bounds checks on `buf[p]` measured as no cost; pooling overhead ~3%. Cause not identified; tracked for 1.1.
+- **raytrace (1.23)**: sphere table bounds-checked where C folds it into immediates. Tracked: 1.1 constant propagation.
+
+## Previous runs
+
+The sections below are the earlier runs (2026-11-02/03), kept as published.
+
 Median of cold-process wall time in ms (max in parentheses), peak RSS in MB (median). Serial = 1 core (`taskset -c 14,30`: one physical core with both hyperthreads; `ALICE_PAR=0` for Alice), parallel = all 32 cores. Bend columns are the pinned numbers of bend/bench/runtime/_pin_/apple_m4_max.txt: **a different machine (Apple M4 Max, 16 cores)**, for reference only; compare them through the X/C ratios, never directly.
 
 Alice startup floor (`bfs 0`, smallest input): serial 26 ms, parallel 29 ms.

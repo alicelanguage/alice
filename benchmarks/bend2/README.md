@@ -59,6 +59,11 @@ machine-independent comparison is each language divided by the serial C twin on 
 
 ## Results
 
+**1.0.1 re-run (2026-11-04, commit b2e41c8):** serial tables for all 16 workloads, the IL backend (`alice emit --il`)
+against `alice build` (which still uses the C# backend for loose files in 1.0.1) and the checksums are in
+[results/summary.md](results/summary.md) and [results/il-vs-csharp.md](results/il-vs-csharp.md). The tables below are
+the earlier runs (C# backend images).
+
 Machine: x86-64 build box, 32 cores, 61 GB, Arch Linux, .NET 10.0.114, clang 23 with libomp. The box was shared
 with other jobs during the run (load average 8-10 on 32 cores), so read ratios within ~1.2x as equal. Median ms,
 lower is better. Full tables with max, peak RSS and every ratio: [results/summary.md](results/summary.md).
