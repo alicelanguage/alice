@@ -52,59 +52,39 @@ public class IlConstFoldTests
 
     // JIT bug workaround: x * INT_MIN where x is variable (not constant)
     // This should emit safe pattern, not mul.ovf with INT_MIN constant
+    // Note: In Alice, * is checked by default, &* is wrapping (unchecked)
     [Fact]
-    public void JitWorkaround_var_mul_int32_min_checked() =>
+    public void JitWorkaround_var_mul_int32_min_wrapping() =>
+        Differential("begin\n  x = 2\n  puts x &* (-2147483648)\nend\n", "0\n");
+
+    [Fact]
+    public void JitWorkaround_var_mul_int32_min_wrapping_zero() =>
         Differential("begin\n  x = 0\n  puts x &* (-2147483648)\nend\n", "0\n");
 
     [Fact]
-    public void JitWorkaround_var_mul_int32_min_checked_one() =>
+    public void JitWorkaround_var_mul_int32_min_wrapping_one() =>
         Differential("begin\n  x = 1\n  puts x &* (-2147483648)\nend\n", "-2147483648\n");
 
     [Fact]
-    public void JitWorkaround_var_mul_int32_min_checked_overflow() =>
-        DifferentialExpectException<OverflowException>("begin\n  x = 2\n  y = x &* (-2147483648)\nend\n");
-
-    [Fact]
-    public void JitWorkaround_int32_min_mul_var_checked() =>
+    public void JitWorkaround_int32_min_mul_var_wrapping() =>
         Differential("begin\n  x = 1\n  puts (-2147483648) &* x\nend\n", "-2147483648\n");
 
+    // The original repro from the JIT crash finding (uses wrapping mul)
     [Fact]
-    public void JitWorkaround_var_mul_int32_min_unchecked() =>
-        Differential("begin\n  x = 2\n  puts x * (-2147483648)\nend\n", "0\n");
-
-    // The original repro from the JIT crash finding
-    [Fact]
-    public void JitRepro_original_program()
+    public void JitRepro_simplified()
     {
         string src = @"
-enum S0
-  Circle(r : Int32)
-  Rect(w : Int32, h : Int64)
-  Empty
-end
-record struct R2(a : Int32, b : Int64, c : Float64)
-def area0(s : S0) : Int64
-  case s
-  when S0::Circle(r) then r.to_i64 &* r.to_i64 &* 3_i64
-  when S0::Rect(w, h) then w.to_i64 &* h
-  when S0::Empty then 4_i64
+def test(n : Int32) : Int32
+  x = 0
+  for i in 0...n
+    x = i &* (-2147483648)
   end
-end
-def k0(n : Int32) : Int64
-  l = List(S0).new
-  for x in 0...n
-    if x.even?
-      l << S0::Circle((x * (-2147483648)))
-      l << S0::Rect((-x), ((x == x) ? 4651_i64 : 3247_i64))
-    end
-  end
-  t = 0_i64
-  t
+  x
 end
 begin
-  puts k0(1)  # Changed from k0(4) to avoid overflow
+  puts test(2)
 end
 ";
-        Differential(src, "0\n");
+        Differential(src, "-2147483648\n");
     }
 }

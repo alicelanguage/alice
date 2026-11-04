@@ -1630,7 +1630,7 @@ internal sealed partial class IlBody
             else il.EmitLoadConst(-1L);
             il.Emit(ILOpCode.Beq, lblM1);
 
-            // Any other value: overflow
+            // Any other value: overflow (throw doesn't return, no branch needed)
             EmitThrow(typeof(OverflowException));
 
             // x == 0: return 0
@@ -1644,7 +1644,7 @@ internal sealed partial class IlBody
             il.EmitLoadLocal(tmpMin);
             il.EmitBranch(lblEnd);
 
-            // x == -1: overflow
+            // x == -1: overflow (throw doesn't return, no fall-through to lblEnd)
             il.MarkLabel(lblM1);
             EmitThrow(typeof(OverflowException));
 
@@ -1654,22 +1654,24 @@ internal sealed partial class IlBody
         {
             // Unchecked: use shift instead of mul to avoid JIT bug
             // x * MIN_VALUE = x * (-2^(bits-1)) = -(x << (bits-1))
-            // But left shift by 31/63 then negate
+            // Stack: [x, MIN_VALUE] -> pop MIN, then x << shift, then neg
             var tmpMin = Temp(t);
+            var tmpX = Temp(t);
             il.EmitStoreLocal(tmpMin); // Store MIN_VALUE (not used, but balances stack)
+            il.EmitStoreLocal(tmpX);   // Store x
+            il.EmitLoadLocal(tmpX);    // Load x back for shift
             if (t == typeof(int))
             {
                 il.EmitLoadConst(31);
-                il.Emit(ILOpCode.Shl);
+                il.Emit(ILOpCode.Shl);  // x << 31
+                il.Emit(ILOpCode.Neg);   // -(x << 31) = x * INT_MIN
             }
             else
             {
-                il.EmitLoadConst(31); // shl only takes i32 count
-                il.Emit(ILOpCode.Shl);
-                il.EmitLoadConst(1);
-                il.Emit(ILOpCode.Shl);
+                il.EmitLoadConst(63);    // shl takes i32 count
+                il.Emit(ILOpCode.Shl);   // x << 63
+                il.Emit(ILOpCode.Neg);   // -(x << 63) = x * LONG_MIN
             }
-            il.Emit(ILOpCode.Neg);
         }
     }
 
