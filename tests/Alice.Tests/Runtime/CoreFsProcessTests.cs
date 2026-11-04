@@ -59,7 +59,8 @@ public class CoreFsProcessTests : IDisposable
         Assert.Equal(5, Fs.CountLines(P("l.txt")));
         Fs.Write(P("e.txt"), "");
         Assert.Equal(0, Fs.CountLines(P("e.txt")));
-        Assert.False(Fs.EachLine(P("e.txt")).MoveNext());
+        using var en = Fs.EachLine(P("e.txt"));
+        Assert.False(en.MoveNext());
     }
 
     [Fact]

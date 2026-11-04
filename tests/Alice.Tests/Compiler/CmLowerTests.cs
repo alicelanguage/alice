@@ -616,6 +616,11 @@ public class CmLowerTests
         {
             var f = asm.GetType("Program")!.GetMethod(name)!.CreateDelegate<Func<int[], int[], int>>();
             for (int i = 0; i < 20; i++) f(xs, arr);
+            // Force GC and extra warmup for platform-specific lazily-initialized objects
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            for (int i = 0; i < 10; i++) f(xs, arr);
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 50; i++) f(xs, arr);
             Assert.True(GC.GetAllocatedBytesForCurrentThread() - before == 0, name + " allocates");

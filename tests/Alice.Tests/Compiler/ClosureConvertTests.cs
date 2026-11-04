@@ -328,8 +328,8 @@ public class ClosureConvertTests
     {
         var (body, ctx) = Shape(shape);
         var (before, after, pass) = Convert(body, ctx);
-        Assert.Equal(Expected[shape].Before, before);
-        Assert.Equal(Expected[shape].After, after);
+        Assert.Equal(Expected[shape].Before.ReplaceLineEndings("\n"), before.ReplaceLineEndings("\n"));
+        Assert.Equal(Expected[shape].After.ReplaceLineEndings("\n"), after.ReplaceLineEndings("\n"));
         Assert.Empty(pass.Unsupported);
         Assert.DoesNotContain("(lambda", after);
     }
@@ -359,7 +359,7 @@ public class ClosureConvertTests
         var (body, ctx) = Shape("forvar");
         var (before, after, pass) = Convert(body, ctx);
         Assert.Equal(before, after);
-        Assert.Equal(Expected["forvar"].Before, before);
+        Assert.Equal(Expected["forvar"].Before.ReplaceLineEndings("\n"), before.ReplaceLineEndings("\n"));
         Assert.Equal(["written LoopVar `i` captured by an escaping closure (cannot be hoisted)"], pass.Unsupported);
     }
 

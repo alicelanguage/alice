@@ -210,10 +210,17 @@ public class CoreNetAllocationTests
             }
         }
         for (int i = 0; i < 20; i++) Round();
+        // Force GC to settle platform-specific lazily-initialized objects
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        for (int i = 0; i < 10; i++) Round();
         long least = long.MaxValue;
         const int Rounds = 100;
         for (int attempt = 0; attempt < 3 && least > 0; attempt++)
         {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
             long before = GC.GetTotalAllocatedBytes(precise: true);
             for (int i = 0; i < Rounds; i++) Round();
             least = Math.Min(least, GC.GetTotalAllocatedBytes(precise: true) - before);

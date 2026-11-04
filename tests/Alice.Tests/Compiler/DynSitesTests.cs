@@ -235,7 +235,7 @@ public class DynSitesTests
         Assert.True(res.Ok, string.Join("\n", res.Errors.Select(e => e.Message)));
         var verify = Alice.Tests.Backends.AirToIlTests.IlVerify(res.Pe!);
         Assert.True(verify.Count == 0, string.Join("\n", verify));
-        Assert.Equal(SemanticsExpected, AliceCompiler.Invoke(AliceCompiler.Load(res.Pe!), []));
+        Assert.Equal(SemanticsExpected, AliceCompiler.Invoke(AliceCompiler.Load(res.Pe!), []).ReplaceLineEndings("\n"));
     }
 
     [Fact]

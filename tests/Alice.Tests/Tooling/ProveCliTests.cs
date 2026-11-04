@@ -167,7 +167,7 @@ public class ProveCliTests : IDisposable
         Assert.Equal(0, CompileCommands.ProveAfterBuild(".", null));
         File.WriteAllText("RULES.al", "rule bad(x in 0..9)\n  x > 0\nend\n");
         Assert.Equal(1, CompileCommands.ProveAfterBuild(".", null));        // a failing rule fails the build
-        Assert.Equal(dir, Directory.GetCurrentDirectory().TrimEnd(Path.DirectorySeparatorChar));
+        Assert.Equal(Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar), Directory.GetCurrentDirectory().TrimEnd(Path.DirectorySeparatorChar));
     }
 
     [Fact]

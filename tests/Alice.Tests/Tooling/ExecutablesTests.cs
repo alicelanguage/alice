@@ -30,6 +30,8 @@ public class ExecutablesTests : IDisposable
         Plant(Path.Combine(root, "checkout"));
         var trusted = Plant(Path.Combine(root, "bin"));
         string relative = Path.GetRelativePath(Environment.CurrentDirectory, Path.Combine(root, "checkout"));
+        // On Windows, GetRelativePath returns an absolute path when crossing drives (temp on C:, repo on D:)
+        if (Path.IsPathFullyQualified(relative)) relative = ".";
         string path = string.Join(Path.PathSeparator, "", ".", relative, Path.Combine(root, "bin"));
         Assert.Equal(trusted, Executables.Resolve(Name, path));
     }
@@ -39,6 +41,8 @@ public class ExecutablesTests : IDisposable
     {
         Plant(Path.Combine(root, "checkout"));
         string relative = Path.GetRelativePath(Environment.CurrentDirectory, Path.Combine(root, "checkout"));
+        // On Windows, GetRelativePath returns an absolute path when crossing drives (temp on C:, repo on D:)
+        if (Path.IsPathFullyQualified(relative)) relative = ".";
         Assert.Throws<System.ComponentModel.Win32Exception>(() => Executables.Resolve(Name, string.Join(Path.PathSeparator, ".", relative)));
     }
 
