@@ -13,6 +13,28 @@ public static class Formatter
     const string Unit = "  ";
     static readonly HashSet<string> Openers = new() { "def", "class", "struct", "module", "interface", "enum", "lib", "namespace", "if", "unless", "while", "until", "for", "case", "begin" };
     static readonly HashSet<string> Midders = new() { "else", "elsif", "when", "rescue", "ensure" };
+    static readonly HashSet<string> ContinuingOps = new() { ",", ".", "::", "+", "-", "*", "/", "%", "&+", "&-", "&*", "**", "=", "==", "!=", "<", ">", "<=", ">=", "&&", "||", "->", "=>", "+=", "-=", "*=", "/=", "%=", "|=", "&=", "^=", "||=", "&&=", "**=", "&+=", "&-=", "&*=", "&", "^", "<<", ">>", "?", ":" };
+
+    /// <summary>Computes bracket depth change from this line and whether it ends with a continuing operator.
+    /// BraceDepth tracks `{` brackets separately (they indent content, unlike `(` or `[`).</summary>
+    static (int DepthChange, int BraceDepth, bool Continues) LineState(string line)
+    {
+        string code = CodeOf(line);
+        int depthChange = 0;
+        int braceDepth = 0;
+        for (int i = 0; i < code.Length; i++)
+        {
+            char c = code[i];
+            if (c is '(' or '[') depthChange++;
+            else if (c is '{') { depthChange++; braceDepth++; }
+            else if (c is ')' or ']') depthChange--;
+            else if (c is '}') { depthChange--; braceDepth--; }
+        }
+        // Check if ends with continuing operator
+        var words = Words(code);
+        if (words.Count > 0 && ContinuingOps.Contains(words[^1])) return (depthChange, braceDepth, true);
+        return (depthChange, braceDepth, false);
+    }
 
     public static string Format(string src)
     {
@@ -25,6 +47,8 @@ public static class Formatter
         bool started = false;
         var heredocs = new Queue<(string Id, bool Plain)>();   // opened on an earlier line, bodies still to copy
         bool inString = false;   // a "..." literal is open across the line break: its lines are text (fuzz P3)
+        var continuationStack = new Stack<(char Bracket, string Indent)>();  // stack of (bracket type, indent) for each opening bracket
+        bool prevContinues = false;
         for (int li = 0; li < lines.Length; li++)
         {
             string raw = lines[li];
@@ -59,29 +83,89 @@ public static class Formatter
             foreach (var h in HeredocOpeners(code, lines, li)) heredocs.Enqueue(h);
             var words = Words(code);
             string first = words.Count > 0 ? words[0] : "";
+
+            // Check if this is a continuation line
+            // Exception: if the line is originally indented and we're not inside brackets,
+            // it's a new statement (function body), not a continuation of the signature
+            bool isIndented = raw.Length > 0 && raw[0] is ' ' or '\t';
+            bool isContinuation = (continuationStack.Count > 0 || prevContinues) && !(isIndented && continuationStack.Count == 0);
+
+            string indent;
             int level = stack.Count;
-            bool closes = first == "end" || code.StartsWith("}");
-            if (closes || Midders.Contains(first)) level = Math.Max(0, level - 1);
-            outp.Append(string.Concat(Enumerable.Repeat(Unit, level))).Append(line).Append('\n');
+            if (isContinuation)
+            {
+                // Continuation line: use indent from the opening bracket line
+                if (continuationStack.Count > 0)
+                {
+                    var (bracket, baseIndent) = continuationStack.Peek();
+                    // Braces add one level of indent for their content, parens/brackets don't
+                    indent = bracket == '{' ? baseIndent + Unit : baseIndent;
+                }
+                else
+                {
+                    // Continuing due to operator but no open brackets
+                    indent = string.Concat(Enumerable.Repeat(Unit, level));
+                }
+            }
+            else
+            {
+                // Normal line: indent by block depth
+                bool closes = first == "end" || code.StartsWith("}");
+                if (closes || Midders.Contains(first)) level = Math.Max(0, level - 1);
+                indent = string.Concat(Enumerable.Repeat(Unit, level));
+            }
+
+            outp.Append(indent).Append(line).Append('\n');
             inString = opens;
 
-            // update block structure
-            if (first == "end" && stack.Count > 0) stack.RemoveAt(stack.Count - 1);
-            string owner = stack.Count > 0 ? stack[^1] : "";
-            foreach (var kw in OpenerKeywords(words, owner))
-                if (!ClosesOnSameLine(words, kw)) stack.Add(kw);
-            if (first == "record" && RecordHasBody(lines, li)) stack.Add("record");
-            if (owner == "interface" && first == "def" && InterfaceDefHasBody(lines, li)) stack.Add("def");   // default method
-            // `using r = x` / `await using r = x` resource blocks
-            if (first == "lock" && words.Count > 1 && !ClosesOnSameLine(words, "lock")) stack.Add("lock");
-            int u = first == "await" ? 1 : 0;
-            if (words.Count > u + 2 && words[u] == "using" && words[u + 2] == "=") stack.Add("using");
-            if (words.Count > 0 && words[^1] == "do" || EndsWithDoParams(code)) stack.Add("do");
+            // update block structure (skip keyword/block tracking for continuation lines, but always track braces)
+            if (!isContinuation)
+            {
+                if (first == "end" && stack.Count > 0) stack.RemoveAt(stack.Count - 1);
+                string owner = stack.Count > 0 ? stack[^1] : "";
+                foreach (var kw in OpenerKeywords(words, owner))
+                    if (!ClosesOnSameLine(words, kw)) stack.Add(kw);
+                if (first == "record" && RecordHasBody(lines, li)) stack.Add("record");
+                if (owner == "interface" && first == "def" && InterfaceDefHasBody(lines, li)) stack.Add("def");   // default method
+                // `using r = x` / `await using r = x` resource blocks
+                if (first == "lock" && words.Count > 1 && !ClosesOnSameLine(words, "lock")) stack.Add("lock");
+                int u = first == "await" ? 1 : 0;
+                if (words.Count > u + 2 && words[u] == "using" && words[u + 2] == "=") stack.Add("using");
+                if (words.Count > 0 && words[^1] == "do" || EndsWithDoParams(code)) stack.Add("do");
+            }
+
+            // Always track braces (even on continuation lines) as they affect block depth
             int braces = code.Count(c => c == '{') - code.Count(c => c == '}');
             if (code.StartsWith("}")) braces++;   // its closing brace was consumed by the dedent above
             for (; braces > 0; braces--) stack.Add("{");
             for (; braces < 0 && stack.Count > 0 && stack[^1] == "{"; braces++) stack.RemoveAt(stack.Count - 1);
             if (code.StartsWith("}") && stack.Count > 0 && stack[^1] == "{") stack.RemoveAt(stack.Count - 1);
+
+            // Update continuation state for next line: track bracket opens/closes
+            string code2 = CodeOf(line);
+            for (int i = 0; i < code2.Length; i++)
+            {
+                char c = code2[i];
+                if (c is '(' or '[' or '{')
+                {
+                    // Opening bracket: push current indent onto stack
+                    continuationStack.Push((c, indent));
+                }
+                else if (c is ')' or ']' or '}')
+                {
+                    // Closing bracket: pop from stack if it matches
+                    if (continuationStack.Count > 0)
+                    {
+                        var (open, _) = continuationStack.Peek();
+                        if ((c == ')' && open == '(') || (c == ']' && open == '[') || (c == '}' && open == '{'))
+                            continuationStack.Pop();
+                    }
+                }
+            }
+
+            // Check if line ends with a continuing operator
+            var words2 = Words(code2);
+            prevContinues = words2.Count > 0 && ContinuingOps.Contains(words2[^1]);
         }
         return outp.ToString();
     }
