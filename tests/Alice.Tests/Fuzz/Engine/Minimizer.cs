@@ -159,7 +159,8 @@ public static class Known
             new(@"^\s*record [^\n]*\n(\s*(#[^\n]*)?\n)*\s*(\w+ )*def ", System.Text.RegularExpressions.RegexOptions.Multiline)),
         // by design (ADR 0013): checked arithmetic on constants is folded by Roslyn, an overflow is a compile error
         ("P11-fmt-breaks-record-continuation", "fmt-breaks-parse", new(@"record.*\n.*def self\."), null),
-        ("P12-fmt-not-idempotent-ensure", "fmt-not-idempotent", new(@"begin.*ensure", System.Text.RegularExpressions.RegexOptions.Singleline), null),
+        ("P12-fmt-not-idempotent-ensure", "fmt-not-idempotent", new(""), new(@"begin.*ensure", System.Text.RegularExpressions.RegexOptions.Singleline)),
+        ("P13-fmt-not-idempotent-residue", "fmt-not-idempotent", new(""), null),
         ("D1-constant-overflow", "roslyn-reject", new(@"overflows at compile time in checked mode"), null),
     ];
 
