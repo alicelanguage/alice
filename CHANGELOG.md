@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.0.3 - 2026-11-05
+
+### Fixed
+- Parser: hex, binary, and octal literals (0x, 0b, 0o) now parse correctly in rule domain ranges (P10 regression test)
+- fmt: continuation lines inside parameter lists, types, literals and chained calls are kept and re-indented from the opening bracket, no longer re-indented as new statements (found by the parse fuzzer: 452 cases -> 1 residue, tracked in Known.Issues)
+- IL backend: constant folding and JIT crash workarounds for x/0, INT_MIN/-1 div/mod/mul and x*INT_MIN (safe pattern avoids a .NET 10 JIT SIGFPE in libclrjit constant folding); the C#-vs-IL fuzzer records child crashes as findings instead of dying
+
+
 ## 1.0.2 - 2026-11-04
 - fix: `alice run` and `alice build` on loose files now compile through the IL backend, the 1.0 default (ADR 0033). 1.0.0 and 1.0.1 resolved `--backend` / `ALICE_BACKEND` and dropped the result, so both commands always used the C# printer + Roslyn (only `alice emit --il` reached the IL backend). One `Backend` call in `CompileCommands` feeds both; `--backend csharp` and `ALICE_BACKEND=csharp` select C#. A program the IL backend cannot compile yet (e.g. a C `Callback` parameter, `examples/interop/libc.al`) or one with `@[Native]` C uses the C# image with a one-line `note:` on stderr, never silently. The status line names the backend (`Compiling main (il, 1.3s)`); an IL build writes its `.pdb`; the run cache keys on the backend. `alice check` stays on the C# diagnostic gate. Package and workspace builds (alice.toml, MSBuild) still compile the generated C#. Pinned by `BackendSelectionTests`.
 - fix: a plain `alice prove` at the repository root works: a directory holding a `.alice-noprove` file (and everything below it) is left out of the source scan, like a nested package. `tools/fuzz/findings` (fuzzer inputs meant not to compile), `benchmarks`, `docs`, `examples` and `src` carry the marker, so the root proves `RULES.al` alone, the same as `alice prove RULES.al`. Pinned by `A_plain_prove_skips_directories_marked_alice_noprove`.

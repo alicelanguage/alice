@@ -158,6 +158,8 @@ public static class Known
         ("P5-record-one-liner-then-def", "fmt-breaks-parse", new(""),
             new(@"^\s*record [^\n]*\n(\s*(#[^\n]*)?\n)*\s*(\w+ )*def ", System.Text.RegularExpressions.RegexOptions.Multiline)),
         // by design (ADR 0013): checked arithmetic on constants is folded by Roslyn, an overflow is a compile error
+        ("P11-fmt-breaks-record-continuation", "fmt-breaks-parse", new(@"record.*
+.*def self\."), null),
         ("D1-constant-overflow", "roslyn-reject", new(@"overflows at compile time in checked mode"), null),
     ];
 

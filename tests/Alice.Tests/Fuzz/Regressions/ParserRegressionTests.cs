@@ -100,4 +100,16 @@ public class ParserRegressionTests
         var e4 = ParseError("rule r(x in 0o77)");
         Assert.IsType<CompileException>(e4);
     }
+
+    [Fact(Skip = "P11: residue case after formatter fix")]
+    public void P11_fmt_record_continuation_with_def()
+    {
+        // Formatter still breaks parse in this edge case: record params continuation + def
+        const string src = @"record AlPerformance(eventId : UInt64, id : UInt64, logo : String?, name : String?, prices : Array(AlPrice),
+  topicNames : Hash(String, String), topicSubTopics : Hash(String, Array(UInt64)), venueNames : Hash(String, String))
+  def self.write(c : AlCitm) : String = to_json(c)
+end
+";
+        Assert.Null(Oracles.CheckSyntax(src).Finding);
+    }
 }
