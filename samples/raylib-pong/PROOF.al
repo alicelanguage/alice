@@ -2,7 +2,7 @@
 # Every rule marked proven returned true on every case of its domain. Rules are pure, so this is a proof by
 # exhaustion of the program as Alice compiles it. `alice prove --check` fails when the sources change.
 #
-# alice 1.0.2
+# alice 1.0.3
 # sources sha256 2acf57e997ad3662af70c4ddb9e44581bce9ce75bc3b4afaa92afec04396a8d9
 # certificates in PROOF.cert: re-check them with `alice-check PROOF.cert PROOF.al` (no Z3, no compiler)
 # rule clamp_is_stable: proven for every input of its domain (smt, cert sha256 9bdd9f6edeede7a5cbd8e52f48ca34be3abf2af3b6e41d1027ac52c4e13b696d)
