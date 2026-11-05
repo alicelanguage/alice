@@ -310,7 +310,18 @@ sealed class Driver(string root, string outDir, int seconds, int seed)
         psi.Environment.Remove("ALICE_PAR");
         psi.Environment.Remove("ALICE_DISABLE_PASSES");
         psi.Environment[var] = value;
-        Oracles.RunProcess(psi, 600_000);
+        var childOut = Oracles.RunProcess(psi, 600_000);
+        // If child crashed with signal, write marker files for all programs so parent can detect it
+        if (childOut.Contains("<signal "))
+        {
+            var signalMarker = childOut[childOut.IndexOf("<signal")..];
+            foreach (var f in Directory.GetFiles(dir, "*.al"))
+            {
+                var name = Path.GetFileNameWithoutExtension(f);
+                var crashFile = Path.Combine(dir, name + ".cs.out");
+                if (!File.Exists(crashFile)) File.WriteAllText(crashFile, signalMarker);
+            }
+        }
         var res = new Dictionary<string, (string, string?)>();
         foreach (var f in Directory.GetFiles(dir, "*.cs.out"))
         {
@@ -337,9 +348,13 @@ sealed class Driver(string root, string outDir, int seconds, int seed)
                 var r = Oracles.Execute(() => img);
                 File.WriteAllText(name + ".cs.out", r.Output);
                 if (r.Hung) return 3;
-                var il = IlRun(src);
-                if (il != null) File.WriteAllText(name + ".il.out", il);
-                if (il == "<hang>") return 3;
+                try
+                {
+                    var il = IlRun(src);
+                    if (il != null) File.WriteAllText(name + ".il.out", il);
+                    if (il == "<hang>") return 3;
+                }
+                catch (Exception ie) { File.WriteAllText(name + ".il.out", "<il-crash " + ie.GetType().Name + ": " + ie.Message.Split('\n')[0] + ">"); }
             }
             catch (Exception e) { File.WriteAllText(name + ".cs.out", "<compile " + e.GetType().Name + ": " + e.Message.Split('\n')[0] + ">"); }
         }

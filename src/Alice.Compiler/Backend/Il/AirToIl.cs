@@ -1239,6 +1239,39 @@ internal sealed partial class IlBody
         }
         else
         {
+            // Constant folding to avoid JIT bugs and emit traps directly
+            if (ll != null && rl != null && b.Op is AirBinOp.Add or AirBinOp.Sub or AirBinOp.Mul or AirBinOp.Div or AirBinOp.Mod && IlTypes.IsIntegral(pt))
+            {
+                if (TryFoldBinary(b.Op, pt, ll, rl, chk, out var result, out var exception))
+                {
+                    if (exception != null)
+                    {
+                        EmitThrow(exception);
+                        return pt;
+                    }
+                    else
+                    {
+                        Const(pt, result!);
+                        if (Compare(b.Op, pt)) return typeof(bool);
+                        return lt.IsEnum && lt == rt && b.Op is AirBinOp.BitAnd or AirBinOp.BitOr or AirBinOp.BitXor ? lt : pt;
+                    }
+                }
+            }
+            // JIT bug workaround: avoid emitting mul(.ovf) with INT_MIN constant
+            // Decompose: x * INT_MIN = -(x * (INT_MAX + 1)) but emit as safe pattern
+            if (b.Op == AirBinOp.Mul && IlTypes.IsIntegral(pt) && (pt == typeof(int) || pt == typeof(long)))
+            {
+                bool leftIsMinValue = ll != null && IsMinValue(pt, ll);
+                bool rightIsMinValue = rl != null && IsMinValue(pt, rl);
+                if (leftIsMinValue || rightIsMinValue)
+                {
+                    // Emit the variable operand first, then use safe multiply pattern
+                    if (leftIsMinValue) { EmitAs(b.R, rt, pt); Const(pt, ll!); }
+                    else { EmitAs(b.L, lt, pt); Const(pt, rl!); }
+                    EmitSafeMulWithMinValue(pt, chk);
+                    return lt.IsEnum && lt == rt && b.Op is AirBinOp.BitAnd or AirBinOp.BitOr or AirBinOp.BitXor ? lt : pt;
+                }
+            }
             EmitAs(b.L, lt, pt);
             EmitAs(b.R, rt, pt);
         }
@@ -1419,6 +1452,229 @@ internal sealed partial class IlBody
         }, chk, un && (integral || op is AirBinOp.Div or AirBinOp.Mod));
     }
 
+    /// <summary>Try to fold a binary operation on constants. Returns true if folded, false if should emit normally.
+    /// Sets result or exception based on whether the operation traps.</summary>
+    bool TryFoldBinary(AirBinOp op, Type t, object lv, object rv, bool chk, out object? result, out Type? exception)
+    {
+        result = null;
+        exception = null;
+        bool un = IlTypes.IsUnsigned(t);
+            if (t == typeof(int))
+            {
+                int l = System.Convert.ToInt32(lv), r = System.Convert.ToInt32(rv);
+                switch (op)
+                {
+                    case AirBinOp.Div when r == 0: exception = typeof(DivideByZeroException); return true;
+                    case AirBinOp.Mod when r == 0: exception = typeof(DivideByZeroException); return true;
+                    case AirBinOp.Div when chk && l == int.MinValue && r == -1: exception = typeof(OverflowException); return true;
+                    case AirBinOp.Mod when chk && l == int.MinValue && r == -1: exception = typeof(OverflowException); return true;
+                    case AirBinOp.Mul when (l == int.MinValue && r == -1 || l == -1 && r == int.MinValue):
+                        exception = chk ? typeof(OverflowException) : null;
+                        return exception != null; // Guard even unchecked mul for JIT bug
+                    case AirBinOp.Add when chk:
+                        if (r > 0 && l > int.MaxValue - r || r < 0 && l < int.MinValue - r) { exception = typeof(OverflowException); return true; }
+                        result = l + r; return true;
+                    case AirBinOp.Sub when chk:
+                        if (r < 0 && l > int.MaxValue + r || r > 0 && l < int.MinValue + r) { exception = typeof(OverflowException); return true; }
+                        result = l - r; return true;
+                    case AirBinOp.Mul when chk:
+                        long prod = (long)l * r;
+                        if (prod > int.MaxValue || prod < int.MinValue) { exception = typeof(OverflowException); return true; }
+                        result = (int)prod; return true;
+                    case AirBinOp.Add: result = unchecked(l + r); return true;
+                    case AirBinOp.Sub: result = unchecked(l - r); return true;
+                    case AirBinOp.Mul: result = unchecked(l * r); return true;
+                    case AirBinOp.Div: result = l / r; return true;
+                    case AirBinOp.Mod: result = l % r; return true;
+                }
+            }
+            else if (t == typeof(uint))
+            {
+                uint l = System.Convert.ToUInt32(lv), r = System.Convert.ToUInt32(rv);
+                switch (op)
+                {
+                    case AirBinOp.Div when r == 0: exception = typeof(DivideByZeroException); return true;
+                    case AirBinOp.Mod when r == 0: exception = typeof(DivideByZeroException); return true;
+                    case AirBinOp.Add when chk:
+                        if (l > uint.MaxValue - r) { exception = typeof(OverflowException); return true; }
+                        result = l + r; return true;
+                    case AirBinOp.Sub when chk:
+                        if (l < r) { exception = typeof(OverflowException); return true; }
+                        result = l - r; return true;
+                    case AirBinOp.Mul when chk:
+                        ulong prod = (ulong)l * r;
+                        if (prod > uint.MaxValue) { exception = typeof(OverflowException); return true; }
+                        result = (uint)prod; return true;
+                    case AirBinOp.Add: result = unchecked(l + r); return true;
+                    case AirBinOp.Sub: result = unchecked(l - r); return true;
+                    case AirBinOp.Mul: result = unchecked(l * r); return true;
+                    case AirBinOp.Div: result = l / r; return true;
+                    case AirBinOp.Mod: result = l % r; return true;
+                }
+            }
+            else if (t == typeof(long))
+            {
+                long l = System.Convert.ToInt64(lv), r = System.Convert.ToInt64(rv);
+                switch (op)
+                {
+                    case AirBinOp.Div when r == 0: exception = typeof(DivideByZeroException); return true;
+                    case AirBinOp.Mod when r == 0: exception = typeof(DivideByZeroException); return true;
+                    case AirBinOp.Div when chk && l == long.MinValue && r == -1: exception = typeof(OverflowException); return true;
+                    case AirBinOp.Mod when chk && l == long.MinValue && r == -1: exception = typeof(OverflowException); return true;
+                    case AirBinOp.Mul when (l == long.MinValue && r == -1 || l == -1 && r == long.MinValue):
+                        exception = chk ? typeof(OverflowException) : null;
+                        return exception != null; // Guard even unchecked mul for JIT bug
+                    case AirBinOp.Add when chk:
+                        if (r > 0 && l > long.MaxValue - r || r < 0 && l < long.MinValue - r) { exception = typeof(OverflowException); return true; }
+                        result = l + r; return true;
+                    case AirBinOp.Sub when chk:
+                        if (r < 0 && l > long.MaxValue + r || r > 0 && l < long.MinValue + r) { exception = typeof(OverflowException); return true; }
+                        result = l - r; return true;
+                    case AirBinOp.Mul when chk:
+                        // For long, can't use wider type, so check for overflow using division
+                        if (l != 0 && r != 0 && (l == long.MinValue || r == long.MinValue || System.Math.Abs(l) > long.MaxValue / System.Math.Abs(r)))
+                        { exception = typeof(OverflowException); return true; }
+                        result = l * r; return true;
+                    case AirBinOp.Add: result = unchecked(l + r); return true;
+                    case AirBinOp.Sub: result = unchecked(l - r); return true;
+                    case AirBinOp.Mul: result = unchecked(l * r); return true;
+                    case AirBinOp.Div: result = l / r; return true;
+                    case AirBinOp.Mod: result = l % r; return true;
+                }
+            }
+            else if (t == typeof(ulong))
+            {
+                ulong l = System.Convert.ToUInt64(lv), r = System.Convert.ToUInt64(rv);
+                switch (op)
+                {
+                    case AirBinOp.Div when r == 0: exception = typeof(DivideByZeroException); return true;
+                    case AirBinOp.Mod when r == 0: exception = typeof(DivideByZeroException); return true;
+                    case AirBinOp.Add when chk:
+                        if (l > ulong.MaxValue - r) { exception = typeof(OverflowException); return true; }
+                        result = l + r; return true;
+                    case AirBinOp.Sub when chk:
+                        if (l < r) { exception = typeof(OverflowException); return true; }
+                        result = l - r; return true;
+                    case AirBinOp.Mul when chk:
+                        if (r != 0 && l > ulong.MaxValue / r) { exception = typeof(OverflowException); return true; }
+                        result = l * r; return true;
+                    case AirBinOp.Add: result = unchecked(l + r); return true;
+                    case AirBinOp.Sub: result = unchecked(l - r); return true;
+                    case AirBinOp.Mul: result = unchecked(l * r); return true;
+                    case AirBinOp.Div: result = l / r; return true;
+                    case AirBinOp.Mod: result = l % r; return true;
+                }
+            }
+        return false;
+    }
+
+    void EmitThrow(Type exceptionType)
+    {
+        var ctor = exceptionType.GetConstructor(Type.EmptyTypes);
+        il.EmitNewObj(c.Module.Import(ctor!));
+        il.Emit(ILOpCode.Throw);
+    }
+
+    bool IsMinValue(Type t, object v)
+    {
+        try
+        {
+            if (t == typeof(int)) return System.Convert.ToInt32(v) == int.MinValue;
+            if (t == typeof(long)) return System.Convert.ToInt64(v) == long.MinValue;
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>Emit x * MIN_VALUE using a pattern that avoids the JIT constant-folding bug.
+    /// Stack on entry: [x, MIN_VALUE]. Stack on exit: [result].</summary>
+    void EmitSafeMulWithMinValue(Type t, bool chk)
+    {
+        // Pattern: instead of "x * MIN_VALUE", emit equivalent code that JIT won't fold:
+        // MIN_VALUE is -2^(bits-1), so we can decompose it, but simplest is to check for
+        // overflow-prone values and throw, otherwise compute.
+        // For x * INT_MIN with overflow checking:
+        //   if x == 0: result = 0
+        //   if x == 1: result = INT_MIN
+        //   if x == -1: throw OverflowException (INT_MIN * -1 = INT_MAX + 1)
+        //   otherwise: throw OverflowException (most values overflow)
+        // For unchecked: compute via safe pattern
+
+        if (chk)
+        {
+            // Generate: if (x == 0) 0; else if (x == 1) MIN; else if (x == -1) throw; else throw
+            var lbl0 = il.DefineLabel();
+            var lbl1 = il.DefineLabel();
+            var lblM1 = il.DefineLabel();
+            var lblEnd = il.DefineLabel();
+            var tmpMin = Temp(t);
+            var tmpX = Temp(t);
+            il.EmitStoreLocal(tmpMin); // Store MIN_VALUE
+            il.EmitStoreLocal(tmpX);   // Store x
+
+            // Check x == 0
+            il.EmitLoadLocal(tmpX);
+            if (t == typeof(int)) il.EmitLoadConst(0);
+            else il.EmitLoadConst(0L);
+            il.Emit(ILOpCode.Beq, lbl0);
+
+            // Check x == 1
+            il.EmitLoadLocal(tmpX);
+            if (t == typeof(int)) il.EmitLoadConst(1);
+            else il.EmitLoadConst(1L);
+            il.Emit(ILOpCode.Beq, lbl1);
+
+            // Check x == -1
+            il.EmitLoadLocal(tmpX);
+            if (t == typeof(int)) il.EmitLoadConst(-1);
+            else il.EmitLoadConst(-1L);
+            il.Emit(ILOpCode.Beq, lblM1);
+
+            // Any other value: overflow (throw doesn't return, no branch needed)
+            EmitThrow(typeof(OverflowException));
+
+            // x == 0: return 0
+            il.MarkLabel(lbl0);
+            if (t == typeof(int)) il.EmitLoadConst(0);
+            else il.EmitLoadConst(0L);
+            il.EmitBranch(lblEnd);
+
+            // x == 1: return MIN_VALUE
+            il.MarkLabel(lbl1);
+            il.EmitLoadLocal(tmpMin);
+            il.EmitBranch(lblEnd);
+
+            // x == -1: overflow (throw doesn't return, no fall-through to lblEnd)
+            il.MarkLabel(lblM1);
+            EmitThrow(typeof(OverflowException));
+
+            il.MarkLabel(lblEnd);
+        }
+        else
+        {
+            // Unchecked: use shift instead of mul to avoid JIT bug
+            // x * MIN_VALUE = x * (-2^(bits-1)) = -(x << (bits-1))
+            // Stack: [x, MIN_VALUE] -> pop MIN, then x << shift, then neg
+            var tmpMin = Temp(t);
+            var tmpX = Temp(t);
+            il.EmitStoreLocal(tmpMin); // Store MIN_VALUE (not used, but balances stack)
+            il.EmitStoreLocal(tmpX);   // Store x
+            il.EmitLoadLocal(tmpX);    // Load x back for shift
+            if (t == typeof(int))
+            {
+                il.EmitLoadConst(31);
+                il.Emit(ILOpCode.Shl);  // x << 31
+                il.Emit(ILOpCode.Neg);   // -(x << 31) = x * INT_MIN
+            }
+            else
+            {
+                il.EmitLoadConst(63);    // shl takes i32 count
+                il.Emit(ILOpCode.Shl);   // x << 63
+                il.Emit(ILOpCode.Neg);   // -(x << 63) = x * LONG_MIN
+            }
+        }
+    }
+
     /// <summary>Branch to <paramref name="target"/> when <paramref name="cond"/> == <paramref name="when"/>, fusing
     /// comparisons, `!`, `&amp;&amp;` and `||` into the branch structure as Roslyn does.</summary>
     void Jump(MExpr cond, bool when, IlLabel target)
@@ -1538,7 +1794,20 @@ internal sealed partial class IlBody
                     if (t == typeof(uint)) t = typeof(long);
                     if (t == typeof(decimal)) { Emit(u.E, t); il.EmitCall(c.Module.Import(typeof(decimal).GetMethod("op_UnaryNegation")!)); return t; }
                     if (!IlTypes.IsNumeric(t)) throw No("MUnary:Neg", t.Name);
-                    if (u.Checked && Checked && IlTypes.IsIntegral(t)) { Const(t, 0); Emit(u.E, t); il.EmitBinary(IlBinOp.Sub, true, false); }
+                    if (u.Checked && Checked && IlTypes.IsIntegral(t))
+                    {
+                        // Check for INT_MIN/-INT_MIN which would overflow
+                        if (Literal(u.E, out var ev) && ev != null)
+                        {
+                            if ((t == typeof(int) && System.Convert.ToInt32(ev) == int.MinValue) ||
+                                (t == typeof(long) && System.Convert.ToInt64(ev) == long.MinValue))
+                            {
+                                EmitThrow(typeof(OverflowException));
+                                return t;
+                            }
+                        }
+                        Const(t, 0); Emit(u.E, t); il.EmitBinary(IlBinOp.Sub, true, false);
+                    }
                     else { Emit(u.E, t); il.Emit(ILOpCode.Neg); }
                     return t;
                 }

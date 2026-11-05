@@ -103,4 +103,43 @@ public class FormatterTests
         Assert.Equal(clean, Formatter.Format(messy));
         Assert.Equal(clean, Formatter.Format(clean));
     }
+    [Fact]
+    public void Continuation_lines_preserve_bracket_context()
+    {
+        const string src = "def measure(xs : Array\n(Int32), check : Int64) : Float64\n  1.0\nend\n";
+        string formatted = Formatter.Format(src);
+        Assert.Equal(src, formatted);  // should be unchanged
+        Assert.Equal(formatted, Formatter.Format(formatted));
+        Assert.Equal(Dump(Parser.ParseFile(src, "test.al")), Dump(Parser.ParseFile(formatted, "test.al")));
+    }
+
+    [Fact]
+    public void Continuation_after_colon_in_record()
+    {
+        const string src = "record Node(f0 : Float64, f1 : String, f2 :\nInt64)\n";
+        string formatted = Formatter.Format(src);
+        Assert.Equal(src, formatted);
+        Assert.Equal(formatted, Formatter.Format(formatted));
+        Assert.Equal(Dump(Parser.ParseFile(src, "test.al")), Dump(Parser.ParseFile(formatted, "test.al")));
+    }
+
+    [Fact]
+    public void Multi_line_array_literal()
+    {
+        const string src = "xs = [\n1,\n2,\n3\n]\n";
+        string formatted = Formatter.Format(src);
+        Assert.Equal(src, formatted);
+        Assert.Equal(formatted, Formatter.Format(formatted));
+        Assert.Equal(Dump(Parser.ParseFile(src, "test.al")), Dump(Parser.ParseFile(formatted, "test.al")));
+    }
+
+    [Fact]
+    public void Chained_method_calls_across_lines()
+    {
+        const string src = "[1, 2, 3]\n.map { |x| x * 2 }\n.sum\n";
+        string formatted = Formatter.Format(src);
+        Assert.Equal(src, formatted);
+        Assert.Equal(formatted, Formatter.Format(formatted));
+        Assert.Equal(Dump(Parser.ParseFile(src, "test.al")), Dump(Parser.ParseFile(formatted, "test.al")));
+    }
 }
